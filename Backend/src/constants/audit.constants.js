@@ -1,0 +1,181 @@
+// ========================================
+// AUDIT ACTIONS
+// ========================================
+
+export const AUDIT_ACTIONS = {
+
+  // ======================================
+  // MEMBER
+  // ======================================
+
+  MEMBER_ADDED:
+    'MEMBER_ADDED',
+
+  MEMBER_REACTIVATED:
+    'MEMBER_REACTIVATED',
+
+  MEMBER_ROLE_UPDATED:
+    'MEMBER_ROLE_UPDATED',
+
+  MEMBER_STATUS_UPDATED:
+    'MEMBER_STATUS_UPDATED',
+
+  MEMBER_REMOVED:
+    'MEMBER_REMOVED',
+
+
+  // ======================================
+  // TREASURER
+  // ======================================
+
+  TREASURER_TRANSFERRED:
+    'TREASURER_TRANSFERRED',
+
+
+  // ======================================
+  // CHAMA
+  // ======================================
+
+  CHAMA_CREATED:
+    'CHAMA_CREATED',
+
+  CHAMA_UPDATED:
+    'CHAMA_UPDATED',
+
+  CHAMA_SUSPENDED:
+    'CHAMA_SUSPENDED',
+
+  CHAMA_ACTIVATED:
+    'CHAMA_ACTIVATED',
+
+
+  // ======================================
+  // CONTRIBUTION GROUP
+  // ======================================
+
+  CONTRIBUTION_GROUP_CREATED:
+    'CONTRIBUTION_GROUP_CREATED',
+
+  CONTRIBUTION_GROUP_UPDATED:
+    'CONTRIBUTION_GROUP_UPDATED',
+
+  CONTRIBUTION_GROUP_SUSPENDED:
+    'CONTRIBUTION_GROUP_SUSPENDED',
+
+  CONTRIBUTION_GROUP_ACTIVATED:
+    'CONTRIBUTION_GROUP_ACTIVATED',
+
+  CONTRIBUTION_GROUP_CLOSED:
+    'CONTRIBUTION_GROUP_CLOSED',
+    CONTRIBUTION_GROUP_UPDATED:
+
+  'CONTRIBUTION_GROUP_UPDATED',
+
+CONTRIBUTION_GROUP_COMPLETED:
+
+  'CONTRIBUTION_GROUP_COMPLETED',
+
+CONTRIBUTION_GROUP_CANCELLED:
+
+  'CONTRIBUTION_GROUP_CANCELLED',
+
+CONTRIBUTION_GROUP_ARCHIVED:
+
+  'CONTRIBUTION_GROUP_ARCHIVED',
+
+  // ======================================
+  // CONTRIBUTION GROUP MEMBERS
+  // ======================================
+
+  CONTRIBUTION_GROUP_MEMBER_ADDED:
+    'CONTRIBUTION_GROUP_MEMBER_ADDED',
+
+  CONTRIBUTION_GROUP_MEMBER_REACTIVATED:
+    'CONTRIBUTION_GROUP_MEMBER_REACTIVATED',
+
+  CONTRIBUTION_GROUP_MEMBER_ROLE_UPDATED:
+    'CONTRIBUTION_GROUP_MEMBER_ROLE_UPDATED',
+
+  CONTRIBUTION_GROUP_MEMBER_STATUS_UPDATED:
+    'CONTRIBUTION_GROUP_MEMBER_STATUS_UPDATED',
+
+  CONTRIBUTION_GROUP_MEMBER_REMOVED:
+    'CONTRIBUTION_GROUP_MEMBER_REMOVED',
+
+    CONTRIBUTION_GROUP_MEMBER_INVITED:
+  'CONTRIBUTION_GROUP_MEMBER_INVITED',
+
+
+  // ======================================
+  // CONTRIBUTION GROUP CHAT
+  // ======================================
+
+  GROUP_MESSAGE_SENT:
+    'GROUP_MESSAGE_SENT',
+
+  GROUP_MESSAGE_EDITED:
+    'GROUP_MESSAGE_EDITED',
+
+  GROUP_MESSAGE_DELETED:
+    'GROUP_MESSAGE_DELETED',
+
+
+  // ======================================
+  // ANNOUNCEMENTS
+  // ======================================
+
+  ANNOUNCEMENT_CREATED:
+    'ANNOUNCEMENT_CREATED',
+
+  ANNOUNCEMENT_UPDATED:
+    'ANNOUNCEMENT_UPDATED',
+
+  ANNOUNCEMENT_DELETED:
+    'ANNOUNCEMENT_DELETED',
+
+
+  // ======================================
+  // SAVINGS
+  // ======================================
+
+  SAVING_CREATED:
+    'SAVING_CREATED',
+
+  SAVING_UPDATED:
+    'SAVING_UPDATED',
+
+  SAVING_REVERSED:
+    'SAVING_REVERSED',
+
+
+  // ======================================
+  // LOANS
+  // ======================================
+
+  LOAN_CREATED:
+    'LOAN_CREATED',
+
+  LOAN_APPROVED:
+    'LOAN_APPROVED',
+
+  LOAN_REJECTED:
+    'LOAN_REJECTED',
+
+  LOAN_REPAID:
+    'LOAN_REPAID',
+
+
+  // ======================================
+  // ROTATIONS
+  // ======================================
+
+  ROTATION_CREATED:
+    'ROTATION_CREATED',
+
+  ROTATION_UPDATED:
+    'ROTATION_UPDATED',
+
+  PAYOUT_TRIGGERED:
+    'PAYOUT_TRIGGERED'
+
+};

@@ -1,0 +1,277 @@
+/**
+ * ============================================================================
+ * CONTRIBUTION OBLIGATION SERVICE
+ * ============================================================================
+ *
+ * Manages contribution obligations.
+ *
+ * Responsibilities
+ * ----------------
+ * ✓ Create obligations
+ * ✓ Track expected contributions
+ * ✓ Track paid amounts
+ * ✓ Calculate outstanding balances
+ * ✓ Update obligation status
+ *
+ * DOES NOT
+ * --------
+ * ✗ Handle payments
+ * ✗ Create accounting entries
+ * ✗ Update financial accounts
+ * ✗ Know debit/credit rules
+ *
+ * ============================================================================
+ */
+
+
+import ContributionObligation
+    from "../../models/ContributionObligation.js";
+
+
+
+class ContributionObligationService {
+
+
+
+    /**
+     * ============================================================
+     * CREATE OBLIGATION
+     * ============================================================
+     */
+
+
+    async create(data, session = null) {
+
+
+        const obligation =
+            await ContributionObligation.create(
+                [
+                    {
+
+                        organization:
+                            data.organization,
+
+
+                        member:
+                            data.member,
+
+
+                        plan:
+                            data.plan,
+
+
+                        contributionPeriod:
+                            data.contributionPeriod,
+
+
+                        expectedAmount:
+                            data.amount,
+
+
+                        paidAmount:
+                            0,
+
+
+                        status:
+                            "PENDING",
+
+
+                        dueDate:
+                            data.dueDate
+
+                    }
+                ],
+                {
+                    session
+                }
+            );
+
+
+        return obligation[0];
+
+    }
+
+
+
+
+
+
+    /**
+     * ============================================================
+     * FIND OBLIGATION
+     * ============================================================
+     */
+
+
+    async findById(id) {
+
+
+        return ContributionObligation.findById(id);
+
+
+    }
+
+
+
+
+
+
+
+    /**
+     * ============================================================
+     * RECORD PAYMENT EFFECT
+     * ============================================================
+     *
+     * Important:
+     *
+     * This DOES NOT process money.
+     *
+     * Money was already handled by:
+     *
+     * Accounting Engine
+     *
+     * This only updates business state.
+     *
+     */
+
+
+    async recordPayment(
+        obligationId,
+        amount,
+        session = null
+    ) {
+
+
+
+        const obligation =
+            await ContributionObligation
+                .findById(obligationId)
+                .session(session);
+
+
+
+        if (!obligation) {
+
+            throw new Error(
+                "Contribution obligation not found."
+            );
+
+        }
+
+
+
+
+
+        obligation.paidAmount += Number(amount);
+
+
+
+
+
+        if (
+            obligation.paidAmount >=
+            obligation.expectedAmount
+        ) {
+
+
+            obligation.status =
+                "PAID";
+
+
+        }
+
+        else {
+
+
+            obligation.status =
+                "PARTIALLY_PAID";
+
+
+        }
+
+
+
+
+
+        await obligation.save({
+            session
+        });
+
+
+
+        return obligation;
+
+
+    }
+
+
+
+
+
+
+    /**
+     * ============================================================
+     * GET OUTSTANDING BALANCE
+     * ============================================================
+     */
+
+
+    calculateOutstanding(obligation) {
+
+
+        return Math.max(
+
+            obligation.expectedAmount -
+            obligation.paidAmount,
+
+            0
+
+        );
+
+
+    }
+
+
+
+
+
+
+    /**
+     * ============================================================
+     * MARK AS OVERDUE
+     * ============================================================
+     */
+
+
+    async markOverdue(
+        obligationId
+    ) {
+
+
+        return ContributionObligation.findByIdAndUpdate(
+
+            obligationId,
+
+            {
+
+                status:
+                    "OVERDUE"
+
+            },
+
+            {
+                new:true
+            }
+
+        );
+
+
+    }
+
+
+
+}
+
+
+
+export default new ContributionObligationService();
