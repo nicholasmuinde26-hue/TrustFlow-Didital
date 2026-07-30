@@ -1,12 +1,12 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api",
   headers: {
     "Content-Type": "application/json",
   },
-  // If your backend uses httpOnly cookies for auth, keep withCredentials true
-  withCredentials: true,
+  // We are using token-based auth stored in localStorage. withCredentials is false for tokens.
+  withCredentials: false,
 });
 
 // Attach Authorization header when token is present in localStorage
