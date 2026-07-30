@@ -1,10 +1,12 @@
 import { z } from "zod";
 
 const loginSchema = z.object({
-  email: z
+  phone: z
     .string()
-    .min(1, "Email is required")
-    .email("Invalid email"),
+    .regex(
+      /^(?:\+254|254|0)(7|1)\d{8}$/,
+      "Enter a valid Kenyan phone number"
+    ),
 
   password: z
     .string()

@@ -5,6 +5,10 @@ const authApi = {
     return api.post("/auth/login", credentials);
   },
 
+  register(payload) {
+    return api.post("/auth/register", payload);
+  },
+
   me() {
     return api.get("/auth/me");
   },

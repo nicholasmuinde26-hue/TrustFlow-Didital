@@ -1,4 +1,4 @@
-export { default as Sidebar } from "./Sidebar";
+export { default as Sidebar } from "./sidebar";
 export { default as Topbar } from "./Topbar";
 
 export { default as Logo } from "./Logo";

@@ -1,23 +1,25 @@
+/*
+  Tailwind v4 only generates color utilities (bg-primary, text-primary,
+  border-primary, ring-primary/10, from-primary, ...) for variables
+  declared inside an @theme block. These two were previously only in
+  :root, so every `-primary` utility class used across the app (Sidebar,
+  SidebarItem, Button, StatCard, WorkspaceSwitcher, links, etc.) was
+  silently producing no CSS at all.
+*/
+@theme {
+    --color-primary: #2563eb;
+    --color-primary-dark: #1d4ed8;
+}
+
 :root {
+    --background: #f8fafc;
+    --foreground: #0f172a;
 
+    --card: #ffffff;
 
-    --color-primary:#2563eb;
-    --color-primary-dark:#1d4ed8;
+    --border: #e2e8f0;
 
-
-    --background:#f8fafc;
-    --foreground:#0f172a;
-
-
-    --card:#ffffff;
-
-
-    --border:#e2e8f0;
-
-
-    --radius-sm:8px;
-    --radius-md:12px;
-    --radius-lg:20px;
-
-
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
 }

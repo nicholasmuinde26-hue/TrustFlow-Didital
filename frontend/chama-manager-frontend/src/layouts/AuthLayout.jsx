@@ -2,7 +2,7 @@ import { Outlet } from "react-router-dom";
 
 import ThemeToggle from "@/shared/components/layout/ThemeToggle/ThemeToggle";
 
-export default function AuthLayout() {
+export default function AuthLayout({ children }) {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-slate-50 dark:bg-slate-950">
 
@@ -61,8 +61,13 @@ export default function AuthLayout() {
           <ThemeToggle />
         </div>
 
+        {/*
+          Works both as a route element (children is undefined, so the
+          nested route renders through <Outlet />) and as a plain wrapper
+          component (children is passed explicitly by a page).
+        */}
         <div className="w-full max-w-md">
-          <Outlet />
+          {children ?? <Outlet />}
         </div>
 
       </section>

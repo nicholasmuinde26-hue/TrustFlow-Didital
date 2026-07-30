@@ -6,6 +6,11 @@ const authService = {
     return data;
   },
 
+  async register(payload) {
+    const { data } = await authApi.register(payload);
+    return data;
+  },
+
   async me() {
     const { data } = await authApi.me();
     return data;
