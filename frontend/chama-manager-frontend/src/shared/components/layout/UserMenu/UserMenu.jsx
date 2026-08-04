@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ChevronDown,
   User,
@@ -6,13 +7,29 @@ import {
   LogOut,
 } from "lucide-react";
 
+import useAuth from "@/app/hooks/useAuth";
+
 export default function UserMenu() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
   const [open, setOpen] = useState(false);
 
-  const user = {
-    name: "Nicholas Muinde",
-    email: "nicholas@example.com",
-  };
+  const name = user?.name || "Account";
+  const email = user?.email || "";
+
+  const initials = name
+    .split(" ")
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  async function handleSignOut() {
+    setOpen(false);
+    await logout();
+    navigate("/login", { replace: true });
+  }
 
   return (
     <div className="relative">
@@ -50,17 +67,17 @@ export default function UserMenu() {
           text-white
           "
         >
-          NM
+          {initials || <User size={18} />}
         </div>
 
         <div className="hidden text-left lg:block">
           <p className="text-sm font-semibold text-slate-900 dark:text-white">
-            {user.name}
+            {name}
           </p>
 
-          <p className="text-xs text-slate-500">
-            Administrator
-          </p>
+          {email && (
+            <p className="text-xs text-slate-500">{email}</p>
+          )}
         </div>
 
         <ChevronDown
@@ -88,13 +105,11 @@ export default function UserMenu() {
           "
         >
           <div className="border-b border-slate-200 p-4 dark:border-slate-700">
-            <p className="font-semibold">
-              {user.name}
-            </p>
+            <p className="font-semibold">{name}</p>
 
-            <p className="text-sm text-slate-500">
-              {user.email}
-            </p>
+            {email && (
+              <p className="text-sm text-slate-500">{email}</p>
+            )}
           </div>
 
           <button
@@ -133,6 +148,7 @@ export default function UserMenu() {
 
           <div className="border-t border-slate-200 dark:border-slate-700">
             <button
+              onClick={handleSignOut}
               className="
               flex
               w-full

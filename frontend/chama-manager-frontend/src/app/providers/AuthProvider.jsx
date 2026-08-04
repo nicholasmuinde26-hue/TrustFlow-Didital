@@ -40,28 +40,33 @@ export default function AuthProvider({ children }) {
 
   //-----------------------------------------------------
 
- async function login(credentials) {
-  const response = await authService.login(credentials);
+  async function login(credentials) {
+    const data = await authService.login(credentials);
+    const token = data.access_token || data.token;
 
-  const { token, user } = response.data;
+    if (token) {
+      localStorage.setItem("access_token", token);
+    }
 
-  localStorage.setItem("access_token", token);
-  setUser(user);
+    setUser(data.user ?? null);
 
-  return response;
-}
+    return data;
+  }
+
   //-----------------------------------------------------
 
   async function register(payload) {
-  const response = await authService.register(payload);
+    const data = await authService.register(payload);
+    const token = data.access_token || data.token;
 
-  const { token, user } = response.data;
+    if (token) {
+      localStorage.setItem("access_token", token);
+      setUser(data.user ?? null);
+    }
 
-  localStorage.setItem("access_token", token);
-  setUser(user);
+    return data;
+  }
 
-  return response;
-}
   //-----------------------------------------------------
 
   async function logout() {

@@ -1,8 +1,7 @@
 import Logo from "../Logo";
 import SidebarSection from "./SidebarSection";
-import navigation from "@/shared/config/navigation";
 
-export default function Sidebar() {
+export default function Sidebar({ sections = [] }) {
   return (
     <aside
       className="
@@ -36,7 +35,7 @@ export default function Sidebar() {
         scrollbar-thin
         "
       >
-        {navigation.map((section) => (
+        {sections.map((section) => (
           <SidebarSection
             key={section.title}
             {...section}

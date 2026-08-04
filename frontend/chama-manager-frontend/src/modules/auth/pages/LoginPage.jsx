@@ -13,20 +13,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [form, setForm] = useState({
-    phone: "",
-    password: "",
-  });
-
+  const [form, setForm] = useState({ phone: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   function handleChange(event) {
     const { name, value } = event.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
   async function handleSubmit(event) {
@@ -38,15 +31,11 @@ export default function LoginPage() {
     try {
       await login(form);
 
-      const redirectTo = location.state?.from?.pathname || "/dashboard";
-
-      navigate(redirectTo, {
-        replace: true,
-      });
+      const redirectTo = location.state?.from?.pathname || "/home";
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(
-        err?.response?.data?.message ||
-          "Invalid phone number or password."
+        err?.response?.data?.message || "Invalid phone number or password."
       );
     } finally {
       setSubmitting(false);
@@ -56,33 +45,26 @@ export default function LoginPage() {
   return (
     <AuthLayout>
       <AuthCard>
-        <h2 className="text-2xl font-bold">
-          Welcome Back
-        </h2>
+        <h2 className="text-2xl font-bold">Welcome Back</h2>
 
         <p className="mt-1 text-slate-500">
           Sign in to continue
         </p>
 
-        <form
-          onSubmit={handleSubmit}
-          className="mt-6 space-y-4"
-        >
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <Input
-            label="Phone Number"
+            label="Phone"
             type="tel"
             name="phone"
-            value={form.phone}
+            value={form.phone }
             onChange={handleChange}
-            placeholder="07XXXXXXXX"
+            placeholder="079297XXXX"
             autoComplete="tel"
             required
           />
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Password
-            </label>
+            <label className="text-sm font-medium">Password</label>
 
             <PasswordInput
               name="password"
@@ -95,28 +77,17 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="text-sm text-red-500">
-              {error}
-            </p>
+            <p className="text-sm text-red-500">{error}</p>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={submitting}
-          >
-            {submitting
-              ? "Signing in..."
-              : "Sign In"}
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {submitting ? "Signing in..." : "Sign In"}
           </Button>
         </form>
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}
-          <Link
-            to="/register"
-            className="font-medium text-primary"
-          >
+          <Link to="/register" className="font-medium text-primary">
             Create one
           </Link>
         </p>

@@ -1,7 +1,5 @@
 import axios from "axios";
 
-const TOKEN_KEY = "access_token";
-
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
   headers: {
@@ -9,8 +7,9 @@ const api = axios.create({
   },
 });
 
+// Attach the bearer token (if we have one) to every outgoing request.
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = localStorage.getItem("access_token");
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -19,11 +18,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Clear a stale/expired token so the app falls back to the login screen.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem("access_token");
     }
 
     return Promise.reject(error);

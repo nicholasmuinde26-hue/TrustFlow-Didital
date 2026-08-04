@@ -1,8 +1,10 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import useAuth from "@/app/hooks/useAuth";
-import DashboardLayout from "@/layouts/DashboardLayout";
 import Spinner from "@/shared/components/ui/Spinner";
 
+// Pure auth guard — no layout here. /home and /workspace/:id each supply
+// their own layout (PlatformLayout / WorkspaceLayout) as nested routes,
+// since they need very different shells.
 export default function ProtectedRoute() {
   const { loading, isAuthenticated } = useAuth();
   const location = useLocation();
@@ -17,9 +19,5 @@ export default function ProtectedRoute() {
     );
   }
 
-  return (
-    <DashboardLayout>
-      <Outlet />
-    </DashboardLayout>
-  );
+  return <Outlet />;
 }

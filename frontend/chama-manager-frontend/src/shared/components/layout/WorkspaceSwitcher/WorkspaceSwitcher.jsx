@@ -1,37 +1,24 @@
-import { ChevronDown, Building2, Wallet, Plus } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ChevronDown, Building2, Wallet, Plus } from "lucide-react";
 
-const workspaces = [
-  {
-    id: 1,
-    name: "ABC Investment Chama",
-    type: "chama",
-  },
-  {
-    id: 2,
-    name: "Monthly Savings",
-    type: "group",
-  },
-  {
-    id: 3,
-    name: "Vacation Fund",
-    type: "group",
-  },
-  {
-    id: 4,
-    name: "Building Project",
-    type: "group",
-  },
-];
+import useWorkspace from "@/app/hooks/useWorkspace";
 
 export default function WorkspaceSwitcher() {
-  const [open, setOpen] = useState(false);
-  const [activeWorkspace, setActiveWorkspace] = useState(workspaces[0]);
+  const navigate = useNavigate();
+  const { workspaces, activeWorkspace, selectWorkspace } = useWorkspace();
 
-  const selectWorkspace = (workspace) => {
-    setActiveWorkspace(workspace);
+  const [open, setOpen] = useState(false);
+
+  function handleSelect(workspace) {
+    selectWorkspace(workspace);
     setOpen(false);
-  };
+    navigate(`/workspace/${workspace.id}`);
+  }
+
+  if (!activeWorkspace) {
+    return null;
+  }
 
   return (
     <div className="relative">
@@ -55,21 +42,13 @@ export default function WorkspaceSwitcher() {
         "
       >
         {activeWorkspace.type === "chama" ? (
-          <Building2
-            size={18}
-            className="text-primary"
-          />
+          <Building2 size={18} className="text-primary" />
         ) : (
-          <Wallet
-            size={18}
-            className="text-primary"
-          />
+          <Wallet size={18} className="text-primary" />
         )}
 
         <div className="text-left">
-          <p className="text-xs text-slate-500">
-            Workspace
-          </p>
+          <p className="text-xs text-slate-500">Workspace</p>
 
           <p className="font-medium text-slate-900 dark:text-white">
             {activeWorkspace.name}
@@ -78,9 +57,7 @@ export default function WorkspaceSwitcher() {
 
         <ChevronDown
           size={18}
-          className={`transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -103,16 +80,14 @@ export default function WorkspaceSwitcher() {
           "
         >
           <div className="border-b border-slate-200 p-3 dark:border-slate-700">
-            <p className="text-sm font-semibold">
-              Switch Workspace
-            </p>
+            <p className="text-sm font-semibold">Switch Workspace</p>
           </div>
 
-          <div className="py-2">
+          <div className="max-h-72 overflow-y-auto py-2">
             {workspaces.map((workspace) => (
               <button
                 key={workspace.id}
-                onClick={() => selectWorkspace(workspace)}
+                onClick={() => handleSelect(workspace)}
                 className="
                   flex
                   w-full
@@ -127,20 +102,12 @@ export default function WorkspaceSwitcher() {
                 "
               >
                 {workspace.type === "chama" ? (
-                  <Building2
-                    size={18}
-                    className="text-primary"
-                  />
+                  <Building2 size={18} className="text-primary" />
                 ) : (
-                  <Wallet
-                    size={18}
-                    className="text-primary"
-                  />
+                  <Wallet size={18} className="text-primary" />
                 )}
 
-                <span className="flex-1">
-                  {workspace.name}
-                </span>
+                <span className="flex-1">{workspace.name}</span>
 
                 {workspace.id === activeWorkspace.id && (
                   <div className="h-2 w-2 rounded-full bg-primary" />
@@ -151,6 +118,7 @@ export default function WorkspaceSwitcher() {
 
           <div className="border-t border-slate-200 p-2 dark:border-slate-700">
             <button
+              onClick={() => navigate("/home")}
               className="
                 flex
                 w-full
@@ -165,7 +133,6 @@ export default function WorkspaceSwitcher() {
               "
             >
               <Plus size={18} />
-
               Create Workspace
             </button>
           </div>

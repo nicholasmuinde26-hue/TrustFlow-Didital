@@ -24,11 +24,7 @@ export default function RegisterPage() {
 
   function handleChange(event) {
     const { name, value } = event.target;
-
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
   async function handleSubmit(event) {
@@ -45,16 +41,12 @@ export default function RegisterPage() {
 
     try {
       const { confirmPassword, ...payload } = form;
-
       await register(payload);
 
-      navigate("/dashboard", {
-        replace: true,
-      });
+      navigate("/home", { replace: true });
     } catch (err) {
       setError(
-        err?.response?.data?.message ||
-          "Could not create your account."
+        err?.response?.data?.message || "Could not create your account."
       );
     } finally {
       setSubmitting(false);
@@ -64,18 +56,13 @@ export default function RegisterPage() {
   return (
     <AuthLayout>
       <AuthCard>
-        <h2 className="text-2xl font-bold">
-          Create Account
-        </h2>
+        <h2 className="text-2xl font-bold">Create Account</h2>
 
         <p className="mt-1 text-slate-500">
           Start managing your Chama today
         </p>
 
-        <form
-          onSubmit={handleSubmit}
-          className="mt-6 space-y-4"
-        >
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <Input
             label="Full Name"
             name="name"
@@ -87,20 +74,18 @@ export default function RegisterPage() {
           />
 
           <Input
-            label="Phone Number"
+            label="Phone"
             type="tel"
             name="phone"
             value={form.phone}
             onChange={handleChange}
-            placeholder="07XXXXXXXX"
+            placeholder="079297XXXX"
             autoComplete="tel"
             required
           />
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Password
-            </label>
+            <label className="text-sm font-medium">Password</label>
 
             <PasswordInput
               name="password"
@@ -113,9 +98,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Confirm Password
-            </label>
+            <label className="text-sm font-medium">Confirm Password</label>
 
             <PasswordInput
               name="confirmPassword"
@@ -128,28 +111,17 @@ export default function RegisterPage() {
           </div>
 
           {error && (
-            <p className="text-sm text-red-500">
-              {error}
-            </p>
+            <p className="text-sm text-red-500">{error}</p>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={submitting}
-          >
-            {submitting
-              ? "Creating account..."
-              : "Create Account"}
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {submitting ? "Creating account..." : "Create Account"}
           </Button>
         </form>
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}
-          <Link
-            to="/login"
-            className="font-medium text-primary"
-          >
+          <Link to="/login" className="font-medium text-primary">
             Sign in
           </Link>
         </p>

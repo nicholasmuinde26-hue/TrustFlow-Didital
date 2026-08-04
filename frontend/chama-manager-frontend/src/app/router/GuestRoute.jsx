@@ -17,7 +17,7 @@ export default function GuestRoute() {
   if (isAuthenticated) {
     return (
       <Navigate
-        to="/dashboard"
+        to="/home"
         replace
       />
     );
