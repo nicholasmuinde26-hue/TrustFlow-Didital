@@ -59,6 +59,12 @@ async (
   next
 ) => {
 
+  console.log("========== GROUP MEMBER MIDDLEWARE ==========");
+  console.log("User:", req.user);
+  console.log("Params:", req.params);
+  console.log("Body:", req.body);
+  console.log("=============================================");
+
   try {
 
     // ======================================

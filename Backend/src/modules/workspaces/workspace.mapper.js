@@ -1,6 +1,7 @@
 import {
     WORKSPACE_TYPES
 } from "./workspace.constants.js";
+import { WORKSPACE_STATUS } from "./workspace.constants.js";
 
 export function mapChamaWorkspace(
     membership,
@@ -72,4 +73,17 @@ export function mapContributionWorkspace(
 
     };
 
+}
+
+export function mapBusinessWorkspace(business) {
+    return {
+        id: business._id,
+        workspaceId: business._id,
+        type: WORKSPACE_TYPES.BUSINESS,
+        name: business.name,
+        role: "owner",
+        currency: business.currency,
+        status: WORKSPACE_STATUS.ACTIVE,
+        lastActivity: business.updatedAt
+    };
 }

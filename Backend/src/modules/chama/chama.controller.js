@@ -5,6 +5,8 @@ import {
   updateChama,
   deleteChama
 } from './chama.service.js';
+import PaymentIntent from '../../models/PaymentIntent.js';
+import { getMgrOverview, initiateSavingsDeposit, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
 
 
 // ========================================
@@ -382,4 +384,58 @@ export const deleteChamaController = async (
 
   }
 
+};
+
+export const initiateSavingsDepositController = async (req, res, next) => {
+  try {
+    const { amount, phoneNumber } = req.body;
+    const result = await initiateSavingsDeposit({
+      chama: req.chama, membership: req.membership, userId: req.user._id, amount, phoneNumber,
+      idempotencyKey: req.get('Idempotency-Key') || req.body.idempotencyKey,
+    });
+    res.status(result.reused ? 200 : 201).json({ success: true, message: result.reused ? 'Existing payment request returned' : 'M-Pesa prompt sent', data: { paymentIntent: result.intent, stk: result.stk || null } });
+  } catch (error) { next(error); }
+};
+
+export const getPaymentIntentController = async (req, res, next) => {
+  try {
+    const intent = await PaymentIntent.findOne({ _id: req.params.paymentIntentId, owner_type: 'Chama', owner_id: req.chama._id, participant_id: req.membership._id });
+    if (!intent) return res.status(404).json({ success: false, message: 'Payment intent not found' });
+    res.json({ success: true, data: { paymentIntent: intent } });
+  } catch (error) { next(error); }
+};
+
+export const reconcilePaymentIntentController = async (req, res, next) => {
+  try {
+    const intent = await reconcileSavingsIntent({ intentId: req.params.paymentIntentId, chamaId: req.chama._id });
+    if (!intent || String(intent.participant_id) !== String(req.membership._id)) return res.status(404).json({ success: false, message: 'Payment intent not found' });
+    res.json({ success: true, data: { paymentIntent: intent } });
+  } catch (error) { next(error); }
+};
+
+export const updateMgrSettingsController = async (req, res, next) => {
+  try {
+    const plan = await upsertMgrSettings({ chama: req.chama, userId: req.user._id, ...req.body });
+    res.json({ success: true, message: 'MGR settings saved', data: { plan } });
+  } catch (error) { next(error); }
+};
+
+export const getMgrOverviewController = async (req, res, next) => {
+  try {
+    const overview = await getMgrOverview(req.chama._id);
+    res.json({ success: true, data: overview });
+  } catch (error) { next(error); }
+};
+
+export const recordMgrReminderController = async (req, res, next) => {
+  try {
+    const reminder = await recordMgrReminder({
+      chamaId: req.chama._id,
+      obligationId: req.body.obligationId,
+      channel: req.body.channel,
+      message: req.body.message,
+      userId: req.user._id,
+    });
+    res.status(201).json({ success: true, data: { reminder } });
+  } catch (error) { next(error); }
 };

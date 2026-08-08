@@ -1,80 +1,98 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Building2 } from "lucide-react";
 
-import useCreateChama from "@/modules/chama/hooks/useCreateChama";
+import useWorkspace from "@/app/hooks/useWorkspace";
+import Input from "@/shared/components/ui/Input/Input";
+import Button from "@/shared/components/ui/Button";
 
 export default function CreateChamaPage() {
-  const { create, loading } = useCreateChama();
+  const { createChama, selectWorkspace } = useWorkspace();
+  const navigate = useNavigate();
 
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    location: "",
-    currency: "KES",
-  });
+  // The backend Chama model only stores { name, monthly_savings } — there
+  // is no description field, so this form deliberately doesn't ask for one.
+  const [form, setForm] = useState({ name: "", monthlySavings: "1000" });
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function update(e) {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
-    });
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  async function submit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
 
-    await create(form);
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const workspace = await createChama({
+        name: form.name,
+        monthlySavings: Number(form.monthlySavings),
+      });
+
+      selectWorkspace(workspace);
+      navigate(`/workspace/${workspace.id ?? workspace._id}`, {
+        replace: true,
+      });
+    } catch (err) {
+      setError(
+        err?.response?.data?.message || "Could not create the Chama."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="text-3xl font-bold">
-        Create Chama
-      </h1>
+    <div className="mx-auto max-w-lg">
+      <div className="mb-6 flex items-center gap-3">
+        <span className="rounded-xl bg-primary/10 p-3">
+          <Building2 size={22} className="text-primary" />
+        </span>
+
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+            Create a Chama
+          </h1>
+
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            You'll be the first member and treasurer.
+          </p>
+        </div>
+      </div>
 
       <form
-        onSubmit={submit}
-        className="mt-8 space-y-6"
+        onSubmit={handleSubmit}
+        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900"
       >
-        <input
+        <Input
+          label="Chama Name"
           name="name"
-          placeholder="Chama Name"
           value={form.name}
-          onChange={update}
-          className="w-full rounded-xl border p-4"
+          onChange={handleChange}
+          placeholder="ABC Investment Chama"
+          minLength={2}
+          required
         />
 
-        <textarea
-          name="description"
-          placeholder="Description"
-          value={form.description}
-          onChange={update}
-          className="w-full rounded-xl border p-4"
+        <Input
+          label="Monthly Savings Target (KES)"
+          name="monthlySavings"
+          type="number"
+          min="1"
+          value={form.monthlySavings}
+          onChange={handleChange}
+          required
         />
 
-        <input
-          name="location"
-          placeholder="Location"
-          value={form.location}
-          onChange={update}
-          className="w-full rounded-xl border p-4"
-        />
+        {error && <p className="text-sm text-red-500">{error}</p>}
 
-        <select
-          name="currency"
-          value={form.currency}
-          onChange={update}
-          className="w-full rounded-xl border p-4"
-        >
-          <option value="KES">KES</option>
-          <option value="USD">USD</option>
-        </select>
-
-        <button
-          disabled={loading}
-          className="rounded-xl bg-primary px-6 py-3"
-        >
-          {loading ? "Creating..." : "Create Chama"}
-        </button>
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? "Creating..." : "Create Chama"}
+        </Button>
       </form>
     </div>
   );

@@ -6,7 +6,8 @@ import {
   updateMemberRoleController,
   updateMemberStatusController,
   removeMemberController,
-  transferTreasurerController
+  transferTreasurerController,
+  updateMemberProfileController
 } from './member.controller.js';
 
 import {
@@ -15,7 +16,7 @@ import {
 
 import {
   requireChamaMember,
-  requireChamaTreasurer
+  requireChamaTreasurerOrChairperson
 } from '../../middleware/chama.middleware.js';
 
 
@@ -38,9 +39,16 @@ const router =
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the Treasurer
+// 3. User must be the Treasurer or Chairperson
 //
 // Body:
+//
+// {
+//   "phone": "0712345678",
+//   "name": "John Doe" (optional)
+// }
+//
+// OR
 //
 // {
 //   "userId": "USER_OBJECT_ID"
@@ -50,8 +58,8 @@ const router =
 //
 // req.user._id
 //
-// The userId in the request body represents
-// the User being added.
+// The phone number or userId in the request body
+// represents the User being added.
 //
 // Service layer independently verifies
 // the actor's Chama membership and role.
@@ -62,7 +70,7 @@ router.post(
   '/:chamaId/members',
   protect,
   requireChamaMember,
-  requireChamaTreasurer,
+  requireChamaTreasurerOrChairperson,
   addMemberController
 );
 
@@ -78,7 +86,7 @@ router.post(
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the current Treasurer
+// 3. User must be the Treasurer or Chairperson
 //
 // Body:
 //
@@ -95,7 +103,10 @@ router.post(
 // It is NOT the User ID.
 //
 // The service layer independently verifies
-// that the actor is the current Treasurer.
+// that the actor is the Treasurer or
+// Chairperson, and separately looks up
+// whichever membership currently holds the
+// Treasurer role to demote.
 //
 // This route is intentionally placed BEFORE
 // the dynamic :memberId routes.
@@ -106,7 +117,7 @@ router.patch(
   '/:chamaId/members/transfer-treasurer',
   protect,
   requireChamaMember,
-  requireChamaTreasurer,
+  requireChamaTreasurerOrChairperson,
   transferTreasurerController
 );
 
@@ -151,7 +162,7 @@ router.get(
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the Treasurer
+// 3. User must be the Treasurer or Chairperson
 //
 // Body:
 //
@@ -171,8 +182,49 @@ router.patch(
   '/:chamaId/members/:memberId/role',
   protect,
   requireChamaMember,
-  requireChamaTreasurer,
+  requireChamaTreasurerOrChairperson,
   updateMemberRoleController
+);
+
+
+// ========================================
+// UPDATE MEMBER PROFILE
+// ========================================
+//
+// PATCH
+// /api/v1/chamas/:chamaId/members/:memberId/profile
+//
+// Requirements:
+//
+// 1. User must be authenticated
+// 2. User must be an active Chama member
+// 3. User must be EITHER:
+//    - the member themselves, OR
+//    - the Treasurer or Chairperson
+//
+// Permission between "self" and "manager" is
+// resolved in the service layer (updateMemberProfile),
+// since it depends on whose membership memberId
+// points to, not just the actor's own role — so
+// no requireChamaTreasurerOrChairperson gate here.
+//
+// Body (all optional):
+//
+// {
+//   "name": "Jane Doe",
+//   "phone": "0712345678",
+//   "email": "jane@example.com",
+//   "id_number": "12345678",
+//   "avatar_url": "data:image/png;base64,..."
+// }
+//
+// ========================================
+
+router.patch(
+  '/:chamaId/members/:memberId/profile',
+  protect,
+  requireChamaMember,
+  updateMemberProfileController
 );
 
 
@@ -187,7 +239,7 @@ router.patch(
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the Treasurer
+// 3. User must be the Treasurer or Chairperson
 //
 // Body:
 //
@@ -208,7 +260,7 @@ router.patch(
   '/:chamaId/members/:memberId/status',
   protect,
   requireChamaMember,
-  requireChamaTreasurer,
+  requireChamaTreasurerOrChairperson,
   updateMemberStatusController
 );
 
@@ -224,7 +276,7 @@ router.patch(
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the Treasurer
+// 3. User must be the Treasurer or Chairperson
 //
 // IMPORTANT:
 //
@@ -246,7 +298,7 @@ router.patch(
   '/:chamaId/members/:memberId/remove',
   protect,
   requireChamaMember,
-  requireChamaTreasurer,
+  requireChamaTreasurerOrChairperson,
   removeMemberController
 );
 

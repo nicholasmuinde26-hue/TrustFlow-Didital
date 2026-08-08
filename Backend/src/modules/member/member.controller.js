@@ -4,10 +4,12 @@ import {
   updateMemberRole,
   updateMemberStatus,
   removeMemberFromChama,
-  transferTreasurerRole
+  transferTreasurerRole,
+  updateMemberProfile
 } from './member.service.js';
 
 import AppError from '../../utils/AppError.js';
+import { PROFILE_UPDATE_FIELDS } from '../../utils/userProfile.js';
 
 
 // ========================================
@@ -19,9 +21,7 @@ export const addMemberController = async (
   res,
   next
 ) => {
-
   try {
-
     const {
       chamaId
     } = req.params;
@@ -36,20 +36,22 @@ export const addMemberController = async (
       typeof req.body !== 'object' ||
       Array.isArray(req.body)
     ) {
-
       throw new AppError(
         'Request body is required',
         400
       );
-
     }
 
     const {
+      phone,
+      name,
       userId
     } = req.body;
 
-    // Only userId is allowed
+    // Allow phone, name, and userId
     const allowedFields = [
+      'phone',
+      'name',
       'userId'
     ];
 
@@ -65,12 +67,18 @@ export const addMemberController = async (
     if (
       unexpectedFields.length > 0
     ) {
-
       throw new AppError(
         `Unexpected field(s): ${unexpectedFields.join(', ')}`,
         400
       );
+    }
 
+    // Ensure at least phone or userId is provided
+    if (!phone && !userId) {
+      throw new AppError(
+        'Either phone number or user ID is required',
+        400
+      );
     }
 
     // Service independently verifies:
@@ -78,36 +86,28 @@ export const addMemberController = async (
     // actor is active
     // actor is Chama member
     // actor is Treasurer
+    // target user exists by phone/userId
     const membership =
       await addMemberToChama({
-
         chamaId,
-
         actorUserId,
-
+        phone,
+        name,
         userId
-
       });
 
     res.status(201).json({
-
       success: true,
-
       message:
         'Member added to Chama successfully',
-
       data: {
         member: membership
       }
-
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 
@@ -120,9 +120,7 @@ export const getMemberController = async (
   res,
   next
 ) => {
-
   try {
-
     const {
       chamaId,
       memberId
@@ -134,31 +132,21 @@ export const getMemberController = async (
 
     const membership =
       await getMemberById({
-
         chamaId,
-
         memberId,
-
         actorUserId
-
       });
 
     res.status(200).json({
-
       success: true,
-
       data: {
         member: membership
       }
-
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 
@@ -171,9 +159,7 @@ export const updateMemberRoleController = async (
   res,
   next
 ) => {
-
   try {
-
     const {
       chamaId,
       memberId
@@ -189,12 +175,10 @@ export const updateMemberRoleController = async (
       typeof req.body !== 'object' ||
       Array.isArray(req.body)
     ) {
-
       throw new AppError(
         'Request body is required',
         400
       );
-
     }
 
     const {
@@ -218,46 +202,32 @@ export const updateMemberRoleController = async (
     if (
       unexpectedFields.length > 0
     ) {
-
       throw new AppError(
         `Unexpected field(s): ${unexpectedFields.join(', ')}`,
         400
       );
-
     }
 
     const membership =
       await updateMemberRole({
-
         chamaId,
-
         memberId,
-
         actorUserId,
-
         role
-
       });
 
     res.status(200).json({
-
       success: true,
-
       message:
         'Member role updated successfully',
-
       data: {
         member: membership
       }
-
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 
@@ -270,9 +240,7 @@ export const updateMemberStatusController = async (
   res,
   next
 ) => {
-
   try {
-
     const {
       chamaId,
       memberId
@@ -288,12 +256,10 @@ export const updateMemberStatusController = async (
       typeof req.body !== 'object' ||
       Array.isArray(req.body)
     ) {
-
       throw new AppError(
         'Request body is required',
         400
       );
-
     }
 
     const {
@@ -317,57 +283,37 @@ export const updateMemberStatusController = async (
     if (
       unexpectedFields.length > 0
     ) {
-
       throw new AppError(
         `Unexpected field(s): ${unexpectedFields.join(', ')}`,
         400
       );
-
     }
 
     const membership =
       await updateMemberStatus({
-
         chamaId,
-
         memberId,
-
         actorUserId,
-
         status
-
       });
 
     res.status(200).json({
-
       success: true,
-
       message:
         'Member status updated successfully',
-
       data: {
         member: membership
       }
-
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 
 // ========================================
 // REMOVE MEMBER FROM CHAMA
-// ========================================
-//
-// Soft delete.
-//
-// status = removed
-//
 // ========================================
 
 export const removeMemberController = async (
@@ -375,9 +321,7 @@ export const removeMemberController = async (
   res,
   next
 ) => {
-
   try {
-
     const {
       chamaId,
       memberId
@@ -389,51 +333,116 @@ export const removeMemberController = async (
 
     const membership =
       await removeMemberFromChama({
-
         chamaId,
-
         memberId,
-
         actorUserId
-
       });
 
     res.status(200).json({
-
       success: true,
-
       message:
         'Member removed from Chama successfully',
-
       data: {
         member: membership
       }
-
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 
 // ========================================
-// TRANSFER TREASURER ROLE
+// UPDATE MEMBER PROFILE
 // ========================================
 //
-// PATCH
-// /api/v1/chamas/:chamaId/members/transfer-treasurer
+// PATCH /api/v1/chamas/:chamaId/members/:memberId/profile
 //
-// Body:
+// Allowed actors:
+//
+// 1. The member themselves
+// 2. The Chama Treasurer or Chairperson
+//
+// Body (all optional):
 //
 // {
-//   "newTreasurerMemberId":
-//   "MEMBERSHIP_OBJECT_ID"
+//   "name": "Jane Doe",
+//   "phone": "0712345678",
+//   "email": "jane@example.com",
+//   "id_number": "12345678",
+//   "avatar_url": "data:image/png;base64,..."
 // }
 //
+// ========================================
+
+export const updateMemberProfileController = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      chamaId,
+      memberId
+    } = req.params;
+
+    const actorUserId =
+      req.user._id;
+
+    if (
+      !req.body ||
+      typeof req.body !== 'object' ||
+      Array.isArray(req.body)
+    ) {
+      throw new AppError(
+        'Request body is required',
+        400
+      );
+    }
+
+    const receivedFields =
+      Object.keys(req.body);
+
+    const unexpectedFields =
+      receivedFields.filter(
+        (field) =>
+          !PROFILE_UPDATE_FIELDS.includes(field)
+      );
+
+    if (
+      unexpectedFields.length > 0
+    ) {
+      throw new AppError(
+        `Unexpected field(s): ${unexpectedFields.join(', ')}`,
+        400
+      );
+    }
+
+    const membership =
+      await updateMemberProfile({
+        chamaId,
+        memberId,
+        actorUserId,
+        updates: req.body
+      });
+
+    res.status(200).json({
+      success: true,
+      message:
+        'Member profile updated successfully',
+      data: {
+        member: membership
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========================================
+// TRANSFER TREASURER ROLE
 // ========================================
 
 export const transferTreasurerController = async (
@@ -441,51 +450,28 @@ export const transferTreasurerController = async (
   res,
   next
 ) => {
-
   try {
-
     const {
       chamaId
     } = req.params;
 
-    // --------------------------------------
-    // 1. Get authenticated actor
-    // --------------------------------------
-
     const actorUserId =
       req.user._id;
-
-
-    // --------------------------------------
-    // 2. Validate body
-    // --------------------------------------
 
     if (
       !req.body ||
       typeof req.body !== 'object' ||
       Array.isArray(req.body)
     ) {
-
       throw new AppError(
         'Request body is required',
         400
       );
-
     }
-
-
-    // --------------------------------------
-    // 3. Extract target membership
-    // --------------------------------------
 
     const {
       newTreasurerMemberId
     } = req.body;
-
-
-    // --------------------------------------
-    // 4. Reject unexpected fields
-    // --------------------------------------
 
     const allowedFields = [
       'newTreasurerMemberId'
@@ -503,58 +489,32 @@ export const transferTreasurerController = async (
     if (
       unexpectedFields.length > 0
     ) {
-
       throw new AppError(
         `Unexpected field(s): ${unexpectedFields.join(', ')}`,
         400
       );
-
     }
-
-
-    // --------------------------------------
-    // 5. Transfer Treasurer
-    // --------------------------------------
 
     const result =
       await transferTreasurerRole({
-
         chamaId,
-
         actorUserId,
-
         newTreasurerMemberId
-
       });
 
-
-    // --------------------------------------
-    // 6. Response
-    // --------------------------------------
-
     res.status(200).json({
-
       success: true,
-
       message:
         'Treasurer role transferred successfully',
-
       data: {
-
         previousTreasurer:
           result.previousTreasurer,
-
         newTreasurer:
           result.newTreasurer
-
       }
-
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };

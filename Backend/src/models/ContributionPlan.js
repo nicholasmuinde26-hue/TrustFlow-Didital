@@ -928,7 +928,7 @@ contributionPlanSchema.pre(
 
   'validate',
 
-  function(next) {
+  function() {
 
     // ======================================
     // OWNER / PARTICIPANT COMPATIBILITY
@@ -946,15 +946,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Chama contribution plans must use ChamaMembership participants'
-
-        )
-
-      );
+      throw new Error('Chama contribution plans must use ChamaMembership participants');
 
     }
 
@@ -971,15 +963,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'ContributionGroup contribution plans must use ContributionGroupMember participants'
-
-        )
-
-      );
+      throw new Error('ContributionGroup contribution plans must use ContributionGroupMember participants');
 
     }
 
@@ -1000,15 +984,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Plan end date must be later than plan start date'
-
-        )
-
-      );
+      throw new Error('Plan end date must be later than plan start date');
 
     }
 
@@ -1025,15 +1001,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Permanent contribution plans cannot have an end date'
-
-        )
-
-      );
+      throw new Error('Permanent contribution plans cannot have an end date');
 
     }
 
@@ -1052,15 +1020,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Custom contribution frequency requires custom_frequency_days'
-
-        )
-
-      );
+      throw new Error('Custom contribution frequency requires custom_frequency_days');
 
     }
 
@@ -1075,15 +1035,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'custom_frequency_days can only be used with custom frequency'
-
-        )
-
-      );
+      throw new Error('custom_frequency_days can only be used with custom frequency');
 
     }
 
@@ -1106,15 +1058,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Minimum contribution amount cannot exceed maximum contribution amount'
-
-        )
-
-      );
+      throw new Error('Minimum contribution amount cannot exceed maximum contribution amount');
 
     }
 
@@ -1133,15 +1077,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Fixed contribution plans require an amount'
-
-        )
-
-      );
+      throw new Error('Fixed contribution plans require an amount');
 
     }
 
@@ -1160,15 +1096,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Target contribution plans require a target amount'
-
-        )
-
-      );
+      throw new Error('Target contribution plans require a target amount');
 
     }
 
@@ -1187,15 +1115,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Merry-Go-Round contribution plans must enable merry_go_round settings'
-
-        )
-
-      );
+      throw new Error('Merry-Go-Round contribution plans must enable merry_go_round settings');
 
     }
 
@@ -1212,15 +1132,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Merry-Go-Round plans require a payout interval'
-
-        )
-
-      );
+      throw new Error('Merry-Go-Round plans require a payout interval');
 
     }
 
@@ -1239,15 +1151,7 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'Custom Merry-Go-Round payout interval requires payout_interval_days'
-
-        )
-
-      );
+      throw new Error('Custom Merry-Go-Round payout interval requires payout_interval_days');
 
     }
 
@@ -1262,20 +1166,10 @@ contributionPlanSchema.pre(
 
     ) {
 
-      return next(
-
-        new Error(
-
-          'payout_interval_days can only be used with a custom payout interval'
-
-        )
-
-      );
+      throw new Error('payout_interval_days can only be used with a custom payout interval');
 
     }
 
-
-    next();
 
   }
 

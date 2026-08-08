@@ -64,7 +64,7 @@ export default function Sidebar({ sections = [] }) {
           "
         >
           <p className="text-sm font-semibold">
-            ChamaManager Pro
+            VeriCircle Pro
           </p>
 
           <p className="mt-1 text-xs text-blue-100">

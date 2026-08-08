@@ -19,7 +19,7 @@ export default function MeetingsPage() {
   const { workspaces } = useWorkspace();
 
   const workspace = workspaces.find((w) => (w.id ?? w._id) === workspaceId);
-  const manage = canManageMeetings(workspace?.role);
+  const manage = canManageMeetings(workspace?.role, workspace?.type);
 
   const { data: meetings = [], isLoading, isError } = useMeetings(workspaceId);
   const createMeeting = useCreateMeeting(workspaceId);

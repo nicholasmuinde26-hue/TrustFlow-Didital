@@ -1287,15 +1287,10 @@ export const getContributionPlanObligations = async({
 
 
 
-    const query = {
+    const query = { plan_id };
 
-
-        plan:
-
-            plan_id
-
-
-    };
+    if (owner_type) query.owner_type = owner_type;
+    if (owner_id) query.owner_id = owner_id;
 
 
 
@@ -1305,9 +1300,7 @@ export const getContributionPlanObligations = async({
     if(status){
 
 
-        query.status =
-
-            status;
+        query.status = status.includes(',') ? { $in: status.split(',') } : status;
 
 
     }
@@ -1320,9 +1313,7 @@ export const getContributionPlanObligations = async({
     if(participant_id){
 
 
-        query.member =
-
-            participant_id;
+        query.participant_id = participant_id;
 
 
     }
@@ -1338,22 +1329,7 @@ export const getContributionPlanObligations = async({
 
 
 
-        .populate({
-
-
-            path:
-
-                "member",
-
-
-
-            select:
-
-                "user role status"
-
-
-
-        })
+        .populate({ path: 'participant_id', model: participant_type || 'ChamaMembership', select: 'user_id role status', populate: { path: 'user_id', select: 'name phone' } })
 
 
 

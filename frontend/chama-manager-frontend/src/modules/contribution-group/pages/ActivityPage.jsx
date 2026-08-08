@@ -1,11 +1,7 @@
-export default function ActivityPage() {
-  return (
-    <div>
-      <h1 className="text-3xl font-bold">Activity</h1>
+import { Link, useParams } from "react-router-dom";
+import { BellRing, MessageCircle, UsersRound } from "lucide-react";
 
-      <p className="mt-2 text-slate-500">
-        A live feed of joins, payments and announcements coming soon...
-      </p>
-    </div>
-  );
+export default function ActivityPage() {
+  const { workspaceId } = useParams(); const base = `/workspace/${workspaceId}`;
+  return <div className="mx-auto max-w-3xl"><p className="text-sm font-semibold text-violet-700">GROUP PULSE</p><h1 className="mt-1 text-3xl font-bold">Activity</h1><p className="mt-2 text-slate-500">A simple, shared record of the moments moving your group forward.</p><div className="mt-7 rounded-3xl border border-violet-100 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><BellRing size={25}/></div><h2 className="mt-4 text-xl font-bold">Your group is ready to begin</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">Member joins, updates, and contributions will show up here as your shared activity stream.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><Link to={`${base}/members`} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white"><UsersRound size={16}/> Add members</Link><Link to={`${base}/chat`} className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-white"><MessageCircle size={16}/> Start a chat</Link></div></div></div>;
 }

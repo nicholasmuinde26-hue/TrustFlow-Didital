@@ -22,7 +22,7 @@ export default function Logo() {
       <div>
 
         <h2 className="font-black text-lg">
-          ChamaManager
+          VeriCircle
         </h2>
 
         <p className="text-xs text-slate-500">

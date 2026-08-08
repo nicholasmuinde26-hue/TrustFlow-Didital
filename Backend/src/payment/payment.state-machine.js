@@ -42,14 +42,20 @@ const TRANSITIONS = Object.freeze({
 class PaymentStateMachine {
 
     canTransition(from, to) {
+        // Allow self-transitions for webhook retries / idempotency
+        if (from === to) return true;
 
         return TRANSITIONS[from]?.includes(to);
-
     }
 
     transition(payment, nextStatus) {
 
         const currentStatus = payment.status;
+
+        // Gracefully handle duplicate state sets (no-op for webhook retries)
+        if (currentStatus === nextStatus) {
+            return payment;
+        }
 
         if (!this.canTransition(currentStatus, nextStatus)) {
 

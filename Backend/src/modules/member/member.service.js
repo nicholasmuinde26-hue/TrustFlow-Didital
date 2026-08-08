@@ -5,6 +5,7 @@ import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 
 import AppError from '../../utils/AppError.js';
+import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
 
 import {
   createAuditLog
@@ -14,6 +15,10 @@ import {
   AUDIT_ACTIONS
 } from '../../constants/audit.constants.js';
 
+import {
+  buildUserProfileUpdates
+} from '../../utils/userProfile.js';
+
 
 // ========================================
 // CONSTANTS
@@ -22,7 +27,9 @@ import {
 const ALLOWED_ROLES = [
   'member',
   'treasurer',
-  'auditor'
+  'secretary',
+  'auditor',
+  'chairperson'
 ];
 
 const ALLOWED_STATUSES = [
@@ -213,16 +220,35 @@ const requireChamaRole = async ({
   // --------------------------------------
   // 8. Check required role
   // --------------------------------------
+  //
+  // requiredRole may be a single role string
+  // (e.g. 'treasurer') or an array of roles
+  // (e.g. ['treasurer', 'chairperson']), any
+  // one of which satisfies the check.
+  //
+  // --------------------------------------
 
-  if (
-    requiredRole &&
-    actorMembership.role !== requiredRole
-  ) {
+  if (requiredRole) {
 
-    throw new AppError(
-      `Only the ${requiredRole} can perform this action`,
-      403
-    );
+    const allowedRoles =
+      Array.isArray(requiredRole)
+        ? requiredRole
+        : [requiredRole];
+
+    if (
+      !allowedRoles.includes(
+        actorMembership.role
+      )
+    ) {
+
+      throw new AppError(
+        allowedRoles.length > 1
+          ? `Only the ${allowedRoles.join(' or ')} can perform this action`
+          : `Only the ${allowedRoles[0]} can perform this action`,
+        403
+      );
+
+    }
 
   }
 
@@ -243,7 +269,6 @@ const requireChamaRole = async ({
 
 };
 
-
 // ========================================
 // ADD MEMBER TO CHAMA
 // ========================================
@@ -251,11 +276,13 @@ const requireChamaRole = async ({
 export const addMemberToChama = async ({
   chamaId,
   actorUserId,
-  userId
+  userId,
+  phone,
+  name
 }) => {
 
   // --------------------------------------
-  // 1. Validate IDs
+  // 1. Validate IDs & Inputs
   // --------------------------------------
 
   validateObjectId(
@@ -268,62 +295,83 @@ export const addMemberToChama = async ({
     'actor user ID'
   );
 
-  validateObjectId(
-    userId,
-    'user ID'
-  );
+  const cleanUserId = (userId && String(userId).trim() !== '') ? userId : null;
+  const cleanPhone = (phone && String(phone).trim() !== '')
+    ? formatPhone(String(phone))
+    : null;
 
-
-  // --------------------------------------
-  // 2. Verify Treasurer
-  // --------------------------------------
-
-  await requireChamaRole({
-
-    chamaId,
-
-    actorUserId,
-
-    requiredRole:
-      'treasurer'
-
-  });
-
-
-  // --------------------------------------
-  // 3. Prevent self-addition
-  // --------------------------------------
-
-  if (
-    actorUserId.toString() ===
-    userId.toString()
-  ) {
-
+  // Require either phone or userId
+  if (!cleanUserId && !cleanPhone) {
     throw new AppError(
-      'You are already a member of this Chama',
-      409
+      'Either phone number or user ID must be provided',
+      400
     );
+  }
 
+  // Only validate userId as an ObjectId if it was passed
+  if (cleanUserId) {
+    validateObjectId(
+      cleanUserId,
+      'user ID'
+    );
+  }
+
+  if (cleanPhone && !isValidKenyanPhone(cleanPhone)) {
+    throw new AppError('Enter a valid Kenyan phone number', 400);
   }
 
 
   // --------------------------------------
-  // 4. Find target User
+  // 2. Verify Treasurer or Chairperson
   // --------------------------------------
 
-  const user =
-    await User.findById(
-      userId
-    );
+  await requireChamaRole({
+    chamaId,
+    actorUserId,
+    requiredRole: ['treasurer', 'chairperson']
+  });
 
+
+  // --------------------------------------
+  // 3. Find target User
+  // --------------------------------------
+
+  let user = null;
+
+  if (cleanUserId) {
+    user = await User.findById(cleanUserId);
+  } else if (cleanPhone) {
+    user = await User.findOne({
+      $or: [
+        { phone: cleanPhone }
+      ]
+    });
+  }
 
   if (!user) {
-
     throw new AppError(
-      'User not found',
+      cleanPhone
+        ? `No registered user account found for phone number ${cleanPhone}. User must register on the platform before joining.`
+        : 'User not found',
       404
     );
+  }
 
+  const targetUserId = user._id;
+
+
+  // --------------------------------------
+  // 4. Prevent self-addition
+  // --------------------------------------
+
+  if (
+    actorUserId.toString() ===
+    targetUserId.toString()
+  ) {
+    throw new AppError(
+      'You are already a member of this Chama',
+      409
+    );
   }
 
 
@@ -334,12 +382,10 @@ export const addMemberToChama = async ({
   if (
     user.status !== 'active'
   ) {
-
     throw new AppError(
       'This user account is not active',
       403
     );
-
   }
 
 
@@ -349,13 +395,8 @@ export const addMemberToChama = async ({
 
   const existingMembership =
     await ChamaMembership.findOne({
-
-      user_id:
-        userId,
-
-      chama_id:
-        chamaId
-
+      user_id: targetUserId,
+      chama_id: chamaId
     });
 
 
@@ -365,115 +406,50 @@ export const addMemberToChama = async ({
 
   if (existingMembership) {
 
-    // ------------------------------------
-    // Prevent duplicate active membership
-    // ------------------------------------
-
     if (
       existingMembership.status === 'active'
     ) {
-
       throw new AppError(
         'User is already an active member of this Chama',
         409
       );
-
     }
 
-
-    // ------------------------------------
-    // Capture BEFORE state
-    // ------------------------------------
-
     const before = {
-
-      userId:
-        existingMembership.user_id,
-
-      role:
-        existingMembership.role,
-
-      status:
-        existingMembership.status,
-
-      payout_position:
-        existingMembership.payout_position
-
+      userId: existingMembership.user_id,
+      role: existingMembership.role,
+      status: existingMembership.status,
+      payout_position: existingMembership.payout_position
     };
 
-
-    // ------------------------------------
-    // Reactivate membership
-    // ------------------------------------
-
-    existingMembership.status =
-      'active';
-
-    existingMembership.role =
-      'member';
-
-    existingMembership.payout_position =
-      null;
-
-    existingMembership.joined_at =
-      new Date();
-
+    existingMembership.status = 'active';
+    existingMembership.role = 'member';
+    existingMembership.payout_position = null;
+    existingMembership.joined_at = new Date();
 
     await existingMembership.save();
 
-
-    // ------------------------------------
-    // Populate User
-    // ------------------------------------
-
     await existingMembership.populate(
       'user_id',
-      'name phone status'
+      'name phone email id_number avatar_url status'
     );
 
-
-    // ------------------------------------
-    // Create Audit Log
-    // ------------------------------------
-
     await createAuditLog({
-
       actorUserId,
-
       chamaId,
-
-      action:
-        AUDIT_ACTIONS.MEMBER_REACTIVATED,
-
-      resourceType:
-        'ChamaMembership',
-
-      resourceId:
-        existingMembership._id,
-
+      action: AUDIT_ACTIONS.MEMBER_REACTIVATED,
+      resourceType: 'ChamaMembership',
+      resourceId: existingMembership._id,
       before,
-
       after: {
-
-        userId:
-          existingMembership.user_id,
-
-        role:
-          existingMembership.role,
-
-        status:
-          existingMembership.status,
-
-        payout_position:
-          existingMembership.payout_position
-
+        userId: existingMembership.user_id,
+        role: existingMembership.role,
+        status: existingMembership.status,
+        payout_position: existingMembership.payout_position
       }
-
     });
 
-
     return existingMembership;
-
   }
 
 
@@ -483,81 +459,35 @@ export const addMemberToChama = async ({
 
   const membership =
     await ChamaMembership.create({
-
-      user_id:
-        userId,
-
-      chama_id:
-        chamaId,
-
-      role:
-        'member',
-
-      status:
-        'active',
-
-      payout_position:
-        null
-
+      user_id: targetUserId,
+      chama_id: chamaId,
+      role: 'member',
+      status: 'active',
+      payout_position: null
     });
-
-
-  // --------------------------------------
-  // Populate User
-  // --------------------------------------
 
   await membership.populate(
     'user_id',
-    'name phone status'
+    'name phone email id_number avatar_url status'
   );
 
-
-  // --------------------------------------
-  // Create Audit Log
-  // --------------------------------------
-
   await createAuditLog({
-
     actorUserId,
-
     chamaId,
-
-    action:
-      AUDIT_ACTIONS.MEMBER_ADDED,
-
-    resourceType:
-      'ChamaMembership',
-
-    resourceId:
-      membership._id,
-
-    before:
-      null,
-
+    action: AUDIT_ACTIONS.MEMBER_ADDED,
+    resourceType: 'ChamaMembership',
+    resourceId: membership._id,
+    before: null,
     after: {
-
-      userId:
-        membership.user_id,
-
-      role:
-        membership.role,
-
-      status:
-        membership.status
-
+      userId: membership.user_id,
+      role: membership.role,
+      status: membership.status
     }
-
   });
 
-
   return membership;
-
 };
 
-
-// ========================================
-// GET MEMBER BY ID
-// ========================================
 
 export const getMemberById = async ({
   chamaId,
@@ -614,7 +544,7 @@ export const getMemberById = async ({
     })
       .populate(
         'user_id',
-        'name phone status createdAt'
+        'name phone email id_number avatar_url status createdAt'
       )
       .populate(
         'chama_id',
@@ -689,7 +619,7 @@ export const updateMemberRole = async ({
 
 
   // --------------------------------------
-  // 3. Verify Treasurer
+  // 3. Verify Treasurer or Chairperson
   // --------------------------------------
 
   await requireChamaRole({
@@ -699,7 +629,7 @@ export const updateMemberRole = async ({
     actorUserId,
 
     requiredRole:
-      'treasurer'
+      ['treasurer', 'chairperson']
 
   });
 
@@ -837,7 +767,7 @@ export const updateMemberRole = async ({
 
   await membership.populate(
     'user_id',
-    'name phone status'
+    'name phone email id_number avatar_url status'
   );
 
 
@@ -931,7 +861,7 @@ export const updateMemberStatus = async ({
 
 
   // --------------------------------------
-  // 3. Verify Treasurer
+  // 3. Verify Treasurer or Chairperson
   // --------------------------------------
 
   await requireChamaRole({
@@ -941,7 +871,7 @@ export const updateMemberStatus = async ({
     actorUserId,
 
     requiredRole:
-      'treasurer'
+      ['treasurer', 'chairperson']
 
   });
 
@@ -1079,7 +1009,7 @@ export const updateMemberStatus = async ({
 
   await membership.populate(
     'user_id',
-    'name phone status'
+    'name phone email id_number avatar_url status'
   );
 
 
@@ -1131,10 +1061,6 @@ export const updateMemberStatus = async ({
 // ========================================
 // REMOVE MEMBER FROM CHAMA
 // ========================================
-//
-// Soft delete.
-//
-// ========================================
 
 export const removeMemberFromChama = async ({
   chamaId,
@@ -1163,7 +1089,7 @@ export const removeMemberFromChama = async ({
 
 
   // --------------------------------------
-  // 2. Verify Treasurer
+  // 2. Verify Treasurer or Chairperson
   // --------------------------------------
 
   await requireChamaRole({
@@ -1173,7 +1099,7 @@ export const removeMemberFromChama = async ({
     actorUserId,
 
     requiredRole:
-      'treasurer'
+      ['treasurer', 'chairperson']
 
   });
 
@@ -1296,7 +1222,7 @@ export const removeMemberFromChama = async ({
 
   await membership.populate(
     'user_id',
-    'name phone status'
+    'name phone email id_number avatar_url status'
   );
 
 
@@ -1348,14 +1274,6 @@ export const removeMemberFromChama = async ({
 // ========================================
 // TRANSFER TREASURER ROLE
 // ========================================
-//
-// This operation changes two membership
-// documents.
-//
-// Ideally this should use a MongoDB
-// transaction.
-//
-// ========================================
 
 export const transferTreasurerRole = async ({
   chamaId,
@@ -1384,7 +1302,19 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 2. Verify Current Treasurer
+  // 2. Verify Actor Is Treasurer Or
+  //    Chairperson
+  // --------------------------------------
+  //
+  // NOTE: The actor performing this action
+  // is NOT necessarily the current Treasurer
+  // — a Chairperson may initiate the transfer
+  // on the Treasurer's behalf. The CURRENT
+  // Treasurer (whoever holds that role right
+  // now) is looked up separately in step 3
+  // below and is the membership that actually
+  // gets demoted to 'member'.
+  //
   // --------------------------------------
 
   const {
@@ -1397,13 +1327,42 @@ export const transferTreasurerRole = async ({
       actorUserId,
 
       requiredRole:
-        'treasurer'
+        ['treasurer', 'chairperson']
 
     });
 
 
   // --------------------------------------
-  // 3. Find Target Membership
+  // 3. Find Current Treasurer Membership
+  // --------------------------------------
+
+  const currentTreasurerMembership =
+    await ChamaMembership.findOne({
+
+      chama_id:
+        chamaId,
+
+      role:
+        'treasurer',
+
+      status:
+        'active'
+
+    });
+
+
+  if (!currentTreasurerMembership) {
+
+    throw new AppError(
+      'This Chama does not currently have an active Treasurer',
+      404
+    );
+
+  }
+
+
+  // --------------------------------------
+  // 4. Find Target Membership
   // --------------------------------------
 
   const targetMembership =
@@ -1429,16 +1388,16 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 4. Prevent Transfer to Self
+  // 5. Prevent Transfer To Current Treasurer
   // --------------------------------------
 
   if (
-    actorMembership._id.toString() ===
+    currentTreasurerMembership._id.toString() ===
     targetMembership._id.toString()
   ) {
 
     throw new AppError(
-      'You are already the Treasurer of this Chama',
+      'This member is already the Treasurer of this Chama',
       409
     );
 
@@ -1446,7 +1405,7 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 5. Check Target Status
+  // 6. Check Target Status
   // --------------------------------------
 
   if (
@@ -1462,7 +1421,7 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 6. Check Target Role
+  // 7. Check Target Role
   // --------------------------------------
 
   if (
@@ -1478,12 +1437,12 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 7. Capture BEFORE State
+  // 8. Capture BEFORE State
   // --------------------------------------
 
   const before = {
 
-    previousTreasurer: {
+    actor: {
 
       membershipId:
         actorMembership._id,
@@ -1493,6 +1452,19 @@ export const transferTreasurerRole = async ({
 
       role:
         actorMembership.role
+
+    },
+
+    previousTreasurer: {
+
+      membershipId:
+        currentTreasurerMembership._id,
+
+      userId:
+        currentTreasurerMembership.user_id,
+
+      role:
+        currentTreasurerMembership.role
 
     },
 
@@ -1513,10 +1485,18 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 8. Transfer Roles
+  // 9. Transfer Roles
+  // --------------------------------------
+  //
+  // Only the CURRENT Treasurer is demoted
+  // to 'member'. The actor's own role is
+  // left untouched — this matters when a
+  // Chairperson (not the Treasurer) is the
+  // one initiating the transfer.
+  //
   // --------------------------------------
 
-  actorMembership.role =
+  currentTreasurerMembership.role =
     'member';
 
   targetMembership.role =
@@ -1524,26 +1504,26 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 9. Save Both Memberships
+  // 10. Save Memberships
   // --------------------------------------
 
-  await actorMembership.save();
+  await currentTreasurerMembership.save();
 
   await targetMembership.save();
 
 
   // --------------------------------------
-  // 10. Populate Users
+  // 11. Populate Users
   // --------------------------------------
 
-  await actorMembership.populate(
+  await currentTreasurerMembership.populate(
     'user_id',
-    'name phone status'
+    'name phone email id_number avatar_url status'
   );
 
   await targetMembership.populate(
     'user_id',
-    'name phone status'
+    'name phone email id_number avatar_url status'
   );
 
 
@@ -1573,13 +1553,13 @@ export const transferTreasurerRole = async ({
       previousTreasurer: {
 
         membershipId:
-          actorMembership._id,
+          currentTreasurerMembership._id,
 
         userId:
-          actorMembership.user_id,
+          currentTreasurerMembership.user_id,
 
         role:
-          actorMembership.role
+          currentTreasurerMembership.role
 
       },
 
@@ -1608,11 +1588,255 @@ export const transferTreasurerRole = async ({
   return {
 
     previousTreasurer:
-      actorMembership,
+      currentTreasurerMembership,
 
     newTreasurer:
       targetMembership
 
   };
+
+};
+
+
+// ========================================
+// UPDATE MEMBER PROFILE
+// ========================================
+//
+// Edits the User account backing a Chama
+// membership: name, phone, email, id_number,
+// avatar_url.
+//
+// Allowed actors:
+//
+// 1. The member themselves (self-service)
+// 2. The Chama Treasurer or Chairperson
+//    (managing any member's profile)
+//
+// NOTE: This updates the global User document,
+// not the ChamaMembership. If the target User
+// belongs to multiple Chamas, the change is
+// visible everywhere they're a member — this
+// mirrors how phone/name already work as
+// account-level, not membership-level, fields.
+//
+// ========================================
+
+export const updateMemberProfile = async ({
+  chamaId,
+  memberId,
+  actorUserId,
+  updates
+}) => {
+
+  // --------------------------------------
+  // 1. Validate IDs
+  // --------------------------------------
+
+  validateObjectId(
+    chamaId,
+    'Chama ID'
+  );
+
+  validateObjectId(
+    memberId,
+    'member ID'
+  );
+
+  validateObjectId(
+    actorUserId,
+    'actor user ID'
+  );
+
+
+  // --------------------------------------
+  // 2. Verify Actor Is An Active
+  //    Chama Member (any role)
+  // --------------------------------------
+
+  const {
+    actorMembership
+  } =
+    await requireChamaRole({
+
+      chamaId,
+
+      actorUserId
+
+    });
+
+
+  // --------------------------------------
+  // 3. Find Target Membership + User
+  // --------------------------------------
+
+  const targetMembership =
+    await ChamaMembership.findOne({
+
+      _id:
+        memberId,
+
+      chama_id:
+        chamaId
+
+    })
+      .populate(
+        'user_id',
+        'name phone email id_number avatar_url status'
+      );
+
+
+  if (
+    !targetMembership ||
+    !targetMembership.user_id
+  ) {
+
+    throw new AppError(
+      'Member not found in this Chama',
+      404
+    );
+
+  }
+
+
+  const targetUser =
+    targetMembership.user_id;
+
+
+  // --------------------------------------
+  // 4. Check Permission
+  // --------------------------------------
+  //
+  // Allowed:
+  //
+  // - The member editing their own profile
+  // - Treasurer or Chairperson editing
+  //   any member's profile
+  //
+  // --------------------------------------
+
+  const isSelf =
+    String(targetUser._id) ===
+    String(actorUserId);
+
+  const isManager =
+    ['treasurer', 'chairperson'].includes(
+      actorMembership.role
+    );
+
+
+  if (
+    !isSelf &&
+    !isManager
+  ) {
+
+    throw new AppError(
+      'Only the treasurer, chairperson, or the member themselves can edit this profile',
+      403
+    );
+
+  }
+
+
+  // --------------------------------------
+  // 5. Capture BEFORE State
+  // --------------------------------------
+  //
+  // avatar_url is tracked as a boolean
+  // (photo set or not) rather than storing
+  // the base64 blob in the audit trail.
+  //
+  // --------------------------------------
+
+  const before = {
+
+    name:
+      targetUser.name,
+
+    phone:
+      targetUser.phone,
+
+    email:
+      targetUser.email,
+
+    id_number:
+      targetUser.id_number,
+
+    hasAvatar:
+      Boolean(targetUser.avatar_url)
+
+  };
+
+
+  // --------------------------------------
+  // 6. Validate & Apply Updates
+  // --------------------------------------
+
+  const set =
+    await buildUserProfileUpdates({
+
+      targetUser,
+
+      updates
+
+    });
+
+
+  Object.assign(
+    targetUser,
+    set
+  );
+
+
+  await targetUser.save();
+
+
+  // --------------------------------------
+  // 7. Create Audit Log
+  // --------------------------------------
+
+  await createAuditLog({
+
+    actorUserId,
+
+    chamaId,
+
+    action:
+      AUDIT_ACTIONS.MEMBER_PROFILE_UPDATED,
+
+    resourceType:
+      'User',
+
+    resourceId:
+      targetUser._id,
+
+    before,
+
+    after: {
+
+      name:
+        targetUser.name,
+
+      phone:
+        targetUser.phone,
+
+      email:
+        targetUser.email,
+
+      id_number:
+        targetUser.id_number,
+
+      hasAvatar:
+        Boolean(targetUser.avatar_url)
+
+    }
+
+  });
+
+
+  // --------------------------------------
+  // 8. Return Updated Membership
+  // --------------------------------------
+
+  return targetMembership;
 
 };

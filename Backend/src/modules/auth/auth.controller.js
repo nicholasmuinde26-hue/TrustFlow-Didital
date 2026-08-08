@@ -1,186 +1,188 @@
 import {
+  sendOtp,
+  verifyOtp,
+  refreshAccessToken,
   registerUser,
   loginUser,
-  getCurrentUser
+  getCurrentUser,
+  updateCurrentUser,
 } from './auth.service.js';
 
+import AppError from '../../utils/AppError.js';
+import { PROFILE_UPDATE_FIELDS } from '../../utils/userProfile.js';
 
 // ========================================
-// REGISTER USER
+// REQUEST OTP (SMS / AUTHENTICATION)
 // ========================================
 
-export const registerController = async (
-  req,
-  res,
-  next
-) => {
-
+export const sendOtpController = async (req, res, next) => {
   try {
+    const { phone } = req.body;
 
+    const result = await sendOtp({ phone });
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========================================
+// VERIFY OTP (COMPLETES AUTH & ISSUES TOKENS)
+// ========================================
+
+export const verifyOtpController = async (req, res, next) => {
+  try {
+    const { phone, otpCode } = req.body;
+
+    const result = await verifyOtp({ phone, otpCode });
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP verification successful',
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========================================
+// REFRESH ACCESS TOKEN
+// ========================================
+
+export const refreshTokenController = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    const result = await refreshAccessToken(refreshToken);
+
+    res.status(200).json({
+      success: true,
+      message: 'Access token refreshed successfully',
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========================================
+// REGISTER USER (PASSWORD + REQUIRES OTP)
+// ========================================
+
+export const registerController = async (req, res, next) => {
+  try {
     // ----------------------------------------
     // Only accept public registration fields
     // ----------------------------------------
-    //
-    // The client cannot control:
-    //
-    // - role
-    // - chama_id
-    // - payout_position
-    // - status
-    //
-    // Chama-specific roles and membership
-    // will be managed through ChamaMembership.
-    // ----------------------------------------
+    const { name, phone, password } = req.body;
 
-    const {
+    // ----------------------------------------
+    // Register User (Creates unverified user & sends OTP)
+    // ----------------------------------------
+    const result = await registerUser({
       name,
       phone,
-      password
-    } = req.body;
-
-
-    // ----------------------------------------
-    // Register User
-    // ----------------------------------------
-
-    const result =
-      await registerUser({
-        name,
-        phone,
-        password
-      });
-
-
-    // ----------------------------------------
-    // Send response
-    // ----------------------------------------
+      password,
+    });
 
     res.status(201).json({
-
       success: true,
-
-      message:
-        'Registration successful',
-
-      data: result
-
+      message: result.message || 'Registration initiated. OTP code sent via SMS.',
+      data: result,
     });
-
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
-
-
 // ========================================
-// LOGIN USER
+// LOGIN USER (PASSWORD + REQUIRES OTP)
 // ========================================
 
-export const loginController = async (
-  req,
-  res,
-  next
-) => {
-
+export const loginController = async (req, res, next) => {
   try {
+    const { phone, password } = req.body;
 
     // ----------------------------------------
-    // Only accept login fields
+    // Verify Password & Trigger OTP
     // ----------------------------------------
-
-    const {
+    const result = await loginUser({
       phone,
-      password
-    } = req.body;
-
-
-    // ----------------------------------------
-    // Login User
-    // ----------------------------------------
-
-    const result =
-      await loginUser({
-        phone,
-        password
-      });
-
-
-    // ----------------------------------------
-    // Send response
-    // ----------------------------------------
+      password,
+    });
 
     res.status(200).json({
-
       success: true,
-
-      message:
-        'Login successful',
-
-      data: result
-
+      message: result.message || 'Password verified. Security OTP code sent via SMS.',
+      data: result,
     });
-
   } catch (error) {
-
     next(error);
-
   }
-
 };
-
-
 
 // ========================================
 // GET CURRENT USER
 // ========================================
 
-export const getMeController = async (
-  req,
-  res,
-  next
-) => {
-
+export const getMeController = async (req, res, next) => {
   try {
-
-    // ----------------------------------------
-    // Get authenticated User
-    // ----------------------------------------
-    //
-    // auth.middleware.js should attach
-    // the authenticated user's ID to:
-    //
-    // req.user._id
-    //
-    // ----------------------------------------
-
-    const user =
-      await getCurrentUser(
-        req.user._id
-      );
-
-
-    // ----------------------------------------
-    // Send response
-    // ----------------------------------------
+    // auth.middleware.js attaches authenticated user ID to req.user._id
+    const user = await getCurrentUser(req.user._id);
 
     res.status(200).json({
-
       success: true,
-
       data: {
-        user
-      }
-
+        user,
+      },
     });
-
   } catch (error) {
-
     next(error);
-
   }
+};
 
+// ========================================
+// UPDATE CURRENT USER PROFILE
+// ========================================
+
+export const updateMeController = async (req, res, next) => {
+  try {
+    if (
+      !req.body ||
+      typeof req.body !== 'object' ||
+      Array.isArray(req.body)
+    ) {
+      throw new AppError('Request body is required', 400);
+    }
+
+    const receivedFields = Object.keys(req.body);
+    const unexpectedFields = receivedFields.filter(
+      (field) => !PROFILE_UPDATE_FIELDS.includes(field)
+    );
+
+    if (unexpectedFields.length > 0) {
+      throw new AppError(
+        `Unexpected field(s): ${unexpectedFields.join(', ')}`,
+        400
+      );
+    }
+
+    const user = await updateCurrentUser(req.user._id, req.body);
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        user,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };

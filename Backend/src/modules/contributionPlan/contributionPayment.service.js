@@ -55,13 +55,13 @@ from "../../shared/decimal.js";
 const PAYMENT_STATUS = {
 
     PROCESSING:
-        "PROCESSING",
+        "pending",
 
     COMPLETED:
-        "COMPLETED",
+        "completed",
 
     FAILED:
-        "FAILED"
+        "failed"
 
 };
 
@@ -136,6 +136,9 @@ class ContributionPaymentService {
 
 
 
+            const paymentMethod = ({ manual: 'cash', cash: 'cash', bank: 'bank', mpesa: 'mpesa' })[String(data.paymentMethod || 'cash').toLowerCase()];
+            if (!paymentMethod) throw new Error('Unsupported payment method. Use cash, bank, or mpesa.');
+
             const amount =
                 toDecimal(
                     data.amount
@@ -170,6 +173,9 @@ class ContributionPaymentService {
                 [
                     {
 
+                        plan_id:
+                            obligation.plan_id,
+
                         owner_type:
                             obligation.owner_type,
 
@@ -178,8 +184,11 @@ class ContributionPaymentService {
                             obligation.owner_id,
 
 
-                        member_id:
-                            obligation.member_id,
+                        participant_type:
+                            obligation.participant_type,
+
+                        participant_id:
+                            obligation.participant_id,
 
 
                         obligation_id:
@@ -194,12 +203,30 @@ class ContributionPaymentService {
                             DEFAULT_CURRENCY,
 
 
-                        payment_method:
-                            data.paymentMethod,
+                        payment_method: paymentMethod,
+
+                        channel_type: paymentMethod === "bank" ? "bank_transfer" : paymentMethod,
+
+                        processing_mode:
+                            data.processingMode || "manual",
+
+                        payment_provider: paymentMethod,
+
+                        provider_payment_id:
+                            data.providerPaymentId || null,
+
+                        external_reference:
+                            data.externalReference || null,
 
 
                         status:
-                            PAYMENT_STATUS.PROCESSING
+                            PAYMENT_STATUS.PROCESSING,
+
+                        created_by:
+                            data.createdBy,
+
+                        recorded_by:
+                            data.createdBy
 
 
                     }
@@ -259,8 +286,8 @@ class ContributionPaymentService {
                         metadata: {
  
  
-                            member_id:
-                                obligation.member_id,
+                            participant_id:
+                                obligation.participant_id,
  
  
                             obligation_id:
@@ -271,8 +298,7 @@ class ContributionPaymentService {
                                 obligation.plan_id,
  
  
-                            payment_method:
-                                data.paymentMethod
+                            payment_method: paymentMethod
  
  
                         }
@@ -339,6 +365,14 @@ class ContributionPaymentService {
 
                 await session.commitTransaction();
 
+            }
+
+            // An MGR payout can be created only after every obligation in the
+            // round is settled. This runs after commit so a failed payout check
+            // never rolls back a valid member contribution.
+            if (obligation.owner_type === 'Chama') {
+                const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');
+                await maybeCreateMgrPayoutForChama(String(obligation.owner_id), data.createdBy).catch(() => null);
             }
 
 

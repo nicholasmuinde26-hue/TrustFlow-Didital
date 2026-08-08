@@ -59,6 +59,19 @@ const payoutSchema = new mongoose.Schema(
       index: true
     },
 
+    // Present for Merry-Go-Round payouts. Null keeps legacy/manual payouts valid.
+    contribution_plan_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ContributionPlan',
+      default: null,
+      index: true
+    },
+
+    round_start: {
+      type: Date,
+      default: null
+    },
+
 
     // ========================================
     // RECIPIENT

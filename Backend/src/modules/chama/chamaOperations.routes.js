@@ -1,0 +1,20 @@
+import express from "express";
+import { protect } from "../../middleware/auth.middleware.js";
+import { requireChamaMember } from "../../middleware/chama.middleware.js";
+import * as controller from "./chamaOperations.controller.js";
+const router = express.Router({ mergeParams: true });
+router.use(protect, requireChamaMember);
+router.get("/command-center", controller.getCommandCenter);
+router.get("/profile", controller.getProfile);
+router.put("/profile", controller.saveProfile);
+router.put("/officials/:membershipId", controller.setOfficial);
+router.post("/goals", controller.addGoal);
+router.post("/kyc", controller.submitKyc);
+router.put("/kyc/:membershipId", controller.verifyKyc);
+router.post("/invitations", controller.makeInvite);
+// Loans moved to modules/loans/loan.routes.js (mounted at /api/v1/chamas/:chamaId/loans)
+router.post("/meeting-records", controller.createMeetingRecord);
+router.post("/meeting-records/:meetingId/check-in", controller.checkInMeeting);
+router.post("/meeting-records/:meetingId/votes", controller.castVote);
+router.put("/meeting-records/:meetingId", controller.saveMeetingRecord);
+export default router;

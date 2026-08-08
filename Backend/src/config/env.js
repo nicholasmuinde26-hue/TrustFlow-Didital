@@ -4,33 +4,13 @@ dotenv.config();
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 
-// ========================================
-// JWT SECRET
-// ========================================
-//
-// This must never silently fall back to a
-// known, public value. A guessable secret
-// lets anyone forge auth tokens for any user.
-//
-// In non-development environments, a missing
-// JWT_SECRET must fail startup loudly rather
-// than run with a compromised secret.
-//
-// In development only, a fixed placeholder is
-// tolerated so the app can boot locally without
-// a .env file, but it is never used outside
-// development.
-//
-// ========================================
+const jwtAccessSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
 
-const jwtSecret = process.env.JWT_SECRET;
-
-if (!jwtSecret && nodeEnv !== 'development') {
-
+if ((!jwtAccessSecret || !jwtRefreshSecret) && nodeEnv !== 'development') {
   throw new Error(
-    'JWT_SECRET environment variable is required outside development'
+    'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET environment variables are required outside development'
   );
-
 }
 
 const env = {
@@ -40,9 +20,17 @@ const env = {
 
   mongoUri: process.env.MONGO_URI,
 
-  jwtSecret: jwtSecret || 'development-only-insecure-secret',
+  // Short-lived Access Token (15 minutes default)
+  jwtAccessSecret: jwtAccessSecret || 'dev-access-secret-change-in-prod',
+  jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
 
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d'
+  // Long-lived Refresh Token (7 days default)
+  jwtRefreshSecret: jwtRefreshSecret || 'dev-refresh-secret-change-in-prod',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+
+  // OTP Configuration
+  otpExpiresInMinutes: Number(process.env.OTP_EXPIRES_IN_MINUTES) || 10,
+  otpLength: Number(process.env.OTP_LENGTH) || 6,
 };
 
 export default env;

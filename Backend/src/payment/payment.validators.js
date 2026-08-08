@@ -1,20 +1,32 @@
+/**
+ * ============================================================================
+ * PAYMENT VALIDATORS
+ * ============================================================================
+ */
+
 import { PaymentValidationError } from "./payment.errors.js";
 
-export function validateInitiateRequest(context) {
+/**
+ * Validate payment initiation payload & context.
+ */
+export function validateInitiatePayment(context) {
+    if (!context) {
+        throw new PaymentValidationError("Payment context is missing.");
+    }
 
-    if (!context.payment.amount || context.payment.amount <= 0) {
+    if (!context.payment?.amount || Number(context.payment.amount) <= 0) {
         throw new PaymentValidationError(
             "Payment amount must be greater than zero."
         );
     }
 
-    if (!context.provider.name) {
+    if (!context.provider?.name) {
         throw new PaymentValidationError(
             "Payment provider is required."
         );
     }
 
-    if (!context.participant.phoneNumber) {
+    if (!context.participant?.phoneNumber) {
         throw new PaymentValidationError(
             "Phone number is required."
         );
@@ -23,9 +35,52 @@ export function validateInitiateRequest(context) {
     return true;
 }
 
-export function validateCompletion(context) {
+// Backwards-compatibility alias matching original function name
+export const validateInitiateRequest = validateInitiatePayment;
 
-    if (!context.payment.id) {
+/**
+ * Validate incoming webhooks or provider callbacks.
+ */
+export function validateCallback(callbackPayload) {
+    if (!callbackPayload) {
+        throw new PaymentValidationError("Callback payload is missing.");
+    }
+
+    if (!callbackPayload.provider) {
+        throw new PaymentValidationError(
+            "Callback provider identifier is required."
+        );
+    }
+
+    return true;
+}
+
+/**
+ * Validate transaction query parameters.
+ */
+export function validateQuery(payload) {
+    if (!payload) {
+        throw new PaymentValidationError("Query payload is missing.");
+    }
+
+    if (!payload.provider) {
+        throw new PaymentValidationError(
+            "Query provider is required."
+        );
+    }
+
+    return true;
+}
+
+/**
+ * Validate payment completion structures.
+ */
+export function validateCompletion(context) {
+    if (!context) {
+        throw new PaymentValidationError("Completion context is missing.");
+    }
+
+    if (!context.payment?.id && !context.payment?._id) {
         throw new PaymentValidationError(
             "Payment ID is required."
         );

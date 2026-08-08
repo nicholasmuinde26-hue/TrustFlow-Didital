@@ -1,7 +1,7 @@
 import { Trash2 } from "lucide-react";
 
 import PresenceBadge from "@/modules/presence/components/PresenceBadge";
-import { ASSIGNABLE_ROLES } from "@/modules/workspaces/permissions/permissions";
+import { assignableRoles } from "@/modules/workspaces/permissions/permissions";
 
 function initialsOf(name) {
   return String(name || "?")
@@ -12,15 +12,29 @@ function initialsOf(name) {
     .toUpperCase();
 }
 
+// The backend populates the person's account details under `user_id`
+// (name/phone/status) — the membership document itself only holds role,
+// status, and timestamps. This reads that shape directly rather than a
+// flattened { name, email } like a typical REST API might return.
 export default function MemberRow({
   member,
+  type,
   status,
   canManage,
   isSelf,
   onChangeRole,
   onRemove,
 }) {
-  const name = member.name || member.email || "Member";
+  const user = member.user_id || {};
+  const name = user.name || user.phone || "Member";
+
+  // Chama's treasurer and a Contribution Group's primary organizer aren't
+  // reassignable from this list (treasurer transfer has its own backend
+  // flow; organizer status follows the group's created_by field) — lock
+  // those rows even for a manager viewing someone else.
+  const isLockedRole =
+    (type === "chama" && member.role === "treasurer") ||
+    (type === "contribution-group" && member.role === "organizer");
 
   return (
     <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -44,14 +58,14 @@ export default function MemberRow({
           )}
         </p>
 
-        {member.email && (
+        {user.phone && (
           <p className="truncate text-sm text-slate-500 dark:text-slate-400">
-            {member.email}
+            {user.phone}
           </p>
         )}
       </div>
 
-      {canManage && !isSelf ? (
+      {canManage && !isSelf && !isLockedRole ? (
         <div className="flex shrink-0 items-center gap-2">
           <select
             value={member.role || "member"}
@@ -62,9 +76,9 @@ export default function MemberRow({
               dark:border-slate-700 dark:bg-slate-800 dark:text-white
             "
           >
-            {ASSIGNABLE_ROLES.map((role) => (
+            {assignableRoles(type).map((role) => (
               <option key={role} value={role}>
-                {role}
+                {role.replace("_", " ")}
               </option>
             ))}
           </select>
@@ -79,7 +93,7 @@ export default function MemberRow({
         </div>
       ) : (
         <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-          {member.role || "member"}
+          {String(member.role || "member").replace("_", " ")}
         </span>
       )}
     </div>

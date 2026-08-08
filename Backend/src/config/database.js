@@ -10,6 +10,22 @@ export const connectDatabase = async () => {
     await mongoose.connect(env.mongoUri);
 
     console.log('MongoDB connected successfully');
+
+    // Automatically drop legacy non-sparse indexes causing E11000 duplicate null errors
+    try {
+      await mongoose.connection.collection('mpesaattempts').dropIndex('mpesa_receipt_number_1');
+      console.log('Successfully dropped legacy index: mpesa_receipt_number_1');
+    } catch (err) {
+      // Index may already be dropped or doesn't exist yet, safe to ignore
+    }
+
+    try {
+      await mongoose.connection.collection('paymentintents').dropIndex('provider_1_provider_request_id_1');
+      console.log('Successfully dropped legacy index: provider_1_provider_request_id_1');
+    } catch (err) {
+      // Safe to ignore
+    }
+
   } catch (error) {
     console.error('MongoDB connection failed');
     console.error(error.message);

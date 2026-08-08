@@ -181,76 +181,87 @@ class PaymentService {
 
             }
 
-            /**
-             * Persist payment state
-             */
-            const payment =
-                await PaymentStore.markCompleted(
+            // Determine status from the normalized callback object
+            const status =
+                callback.status ||
+                (callback.success ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED);
 
-                    callback.paymentId,
+            let payment;
 
-                    callback.providerData,
+            if (status === PAYMENT_STATUS.COMPLETED) {
+                /**
+                 * Persist payment state as completed
+                 */
+                payment =
+                    await PaymentStore.markCompleted(
+                        callback.paymentId,
+                        callback.providerData,
+                        session
+                    );
 
+                /**
+                 * Finance Engine
+                 */
+                await contributionPaymentService.completeContributionPayment(
+                    {
+                          payment,
+                          callback
+                    },
                     session
-
                 );
 
-            /**
-             * Finance Engine
-             */
-            await contributionPaymentService.completeContributionPayment(
+            } else if (status === PAYMENT_STATUS.CANCELLED) {
+                /**
+                 * Persist payment state as cancelled
+                 */
+                payment =
+                    await PaymentStore.markCancelled(
+                          callback.paymentId,
+                          callback.reason || "Transaction cancelled by user",
+                          session
+                );
 
-                {
-
-                    payment,
-
-                    callback
-
-                },
-
-                session
-
-            );
+            } else {
+                /**
+                 * Persist payment state as failed
+                 */
+                payment =
+                    await PaymentStore.markFailed(
+                          callback.paymentId,
+                          callback.reason || "Transaction failed",
+                          session
+                );
+            }
 
             await session.commitTransaction();
 
             /**
-             * Emit AFTER commit
+             * Emit AFTER commit (Only for completed status)
              */
-
-            paymentEventBus.emit(
-
-                PAYMENT_EVENTS.COMPLETED,
-
-                PaymentEventFactory.create(
-
+            if (status === PAYMENT_STATUS.COMPLETED) {
+                paymentEventBus.emit(
                     PAYMENT_EVENTS.COMPLETED,
-
-                    {
-
-                        payment,
-
-                        provider: callback.provider,
-
-                        actor: callback.actor,
-
-                        participant: callback.participant,
-
-                        obligation: callback.obligation,
-
-                        metadata: callback.metadata
-
-                    }
-
-                )
-
-            );
+                    PaymentEventFactory.create(
+                          PAYMENT_EVENTS.COMPLETED,
+                          {
+                              payment,
+                              provider: callback.provider,
+                              actor: callback.actor,
+                              participant: callback.participant,
+                              obligation: callback.obligation,
+                              metadata: callback.metadata
+                        }
+                  )
+              );
+            }
 
             return {
 
-                success: true,
+                success: status === PAYMENT_STATUS.COMPLETED,
 
-                payment
+                payment,
+
+                status
 
             };
 

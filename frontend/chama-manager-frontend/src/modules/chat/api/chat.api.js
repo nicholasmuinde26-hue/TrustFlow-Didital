@@ -6,11 +6,11 @@ import api from "@/app/services/api";
 // a contribution group.
 const chatApi = {
   list(workspaceId, params) {
-    return api.get(`/workspaces/${workspaceId}/messages`, { params });
+    return api.get(`/chat/workspace/${workspaceId}`, { params });
   },
 
   send(workspaceId, payload) {
-    return api.post(`/workspaces/${workspaceId}/messages`, payload);
+    return api.post(`/chat/workspace/${workspaceId}`, payload);
   },
 };
 

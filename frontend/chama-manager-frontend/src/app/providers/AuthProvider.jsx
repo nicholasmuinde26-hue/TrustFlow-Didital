@@ -41,13 +41,27 @@ export default function AuthProvider({ children }) {
   //-----------------------------------------------------
 
   async function login(credentials) {
-    const data = await authService.login(credentials);
-    const token = data.access_token || data.token;
+    // OTP-first flow: this only verifies phone+password and triggers
+    // an SMS OTP. It returns { otpRequired, phone, message } — no
+    // token yet. Tokens are only issued after verifyOtp() succeeds.
+    return authService.login(credentials);
+  }
 
-    if (token) {
-      localStorage.setItem("access_token", token);
-    }
+  //-----------------------------------------------------
 
+  async function register(payload) {
+    // Same as login: creates an unverified account and sends the OTP.
+    // No token until verifyOtp() completes the flow.
+    return authService.register(payload);
+  }
+
+  //-----------------------------------------------------
+
+  async function verifyOtp(payload) {
+    const data = await authService.verifyOtp(payload);
+
+    // authService.verifyOtp already persists accessToken/refreshToken
+    // to localStorage — just sync the user into context here.
     setUser(data.user ?? null);
 
     return data;
@@ -55,16 +69,8 @@ export default function AuthProvider({ children }) {
 
   //-----------------------------------------------------
 
-  async function register(payload) {
-    const data = await authService.register(payload);
-    const token = data.access_token || data.token;
-
-    if (token) {
-      localStorage.setItem("access_token", token);
-      setUser(data.user ?? null);
-    }
-
-    return data;
+  async function sendOtp(payload) {
+    return authService.sendOtp(payload);
   }
 
   //-----------------------------------------------------
@@ -87,6 +93,8 @@ export default function AuthProvider({ children }) {
       isAuthenticated: Boolean(user),
       login,
       register,
+      verifyOtp,
+      sendOtp,
       logout,
       refresh: loadUser,
     }),

@@ -11,7 +11,7 @@ export default function ChatComposer({ onSend, sending }) {
     if (!trimmed) return;
 
     setContent("");
-    await onSend({ content: trimmed });
+    await onSend({ message: trimmed });
   }
 
   return (

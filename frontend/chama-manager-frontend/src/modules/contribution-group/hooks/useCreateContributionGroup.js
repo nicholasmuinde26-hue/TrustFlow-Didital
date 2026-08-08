@@ -10,7 +10,7 @@ export default function useCreateContributionGroup() {
 
   const navigate = useNavigate();
 
-  const { refreshWorkspaces } = useWorkspace();
+  const workspace = useWorkspace();
 
   async function create(payload) {
     setLoading(true);
@@ -19,7 +19,9 @@ export default function useCreateContributionGroup() {
       const group =
         await contributionGroupService.create(payload);
 
-      await refreshWorkspaces();
+      if (workspace.refresh) {
+        await workspace.refresh();
+      }
 
       navigate(`/workspace/${group._id}`);
 
@@ -30,7 +32,7 @@ export default function useCreateContributionGroup() {
   }
 
   return {
-    create,
     loading,
+    create,
   };
 }

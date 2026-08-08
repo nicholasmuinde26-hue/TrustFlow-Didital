@@ -6,90 +6,402 @@ import GuestRoute from "./GuestRoute";
 import PlatformLayout from "@/layouts/PlatformLayout";
 import WorkspaceLayout from "@/layouts/WorkspaceLayout";
 
+// ======================================================
+// Landing
+// ======================================================
+
 import LandingPage from "@/modules/landing/pages/LandingPage";
+
+// ======================================================
+// Authentication
+// ======================================================
 
 import LoginPage from "@/modules/auth/pages/LoginPage";
 import RegisterPage from "@/modules/auth/pages/RegisterPage";
+
+// ======================================================
+// Home & Creation Routes
+// ======================================================
 
 import HomePage from "@/modules/home/pages/HomePage";
 import CreateChamaPage from "@/modules/home/pages/CreateChamaPage";
 import JoinChamaPage from "@/modules/home/pages/JoinChamaPage";
 import CreateContributionGroupPage from "@/modules/home/pages/CreateContributionGroupPage";
-import JoinContributionGroupPage from "@/modules/home/pages/JoinContributionGroupPage";
+import CreateBusinessPage from "@/modules/home/pages/CreateBusinessPage";
+
+// ======================================================
+// Invitations
+// ======================================================
+
+import InvitationsPage from "@/modules/invitations/pages/InvitationsPage";
+
+// ======================================================
+// Workspace Core
+// ======================================================
 
 import WorkspaceOverviewPage from "@/modules/workspaces/pages/WorkspaceOverviewPage";
 import WorkspaceSettingsPage from "@/modules/workspaces/pages/WorkspaceSettingsPage";
+import WorkspacesPage from "@/modules/workspaces/pages/WorkspacesPage";
+
+// ======================================================
+// Business Module
+// ======================================================
+
+import BusinessDashboard from "@/modules/business/pages/BusinessDashboard";
+import SalesPage from "@/modules/business/pages/SalesPage";
+import ExpensesPage from "@/modules/business/pages/ExpensesPage";
+import AccountsPage from "@/modules/business/pages/AccountsPage";
+import CustomersPage from "@/modules/business/pages/CustomersPage";
+import SuppliersPage from "@/modules/business/pages/SuppliersPage";
+import InventoryPage from "@/modules/business/pages/InventoryPage";
+import BusinessReportsPage from "@/modules/business/pages/ReportsPage";
+import BusinessSettingsPage from "@/modules/business/pages/BusinessSettingsPage";
+
+// ======================================================
+// Members
+// ======================================================
+
 import MembersPage from "@/modules/members/pages/MembersPage";
 
-import FinancePage from "@/modules/chama/pages/FinancePage";
-import LoansPage from "@/modules/chama/pages/LoansPage";
-import ReportsPage from "@/modules/chama/pages/ReportsPage";
-
-import ContributionsPage from "@/modules/contribution-group/pages/ContributionsPage";
-import SchedulePage from "@/modules/contribution-group/pages/SchedulePage";
-import ActivityPage from "@/modules/contribution-group/pages/ActivityPage";
+// ======================================================
+// Communication
+// ======================================================
 
 import AnnouncementsPage from "@/modules/announcements/pages/AnnouncementsPage";
 import ChatPage from "@/modules/chat/pages/ChatPage";
 import MeetingsPage from "@/modules/meetings/pages/MeetingsPage";
 
+// ======================================================
+// Chama Module
+// ======================================================
+
+import LoansPage from "@/modules/loans/pages/LoansPage";
+import ReportsPage from "@/modules/chama/pages/ReportsPage";
+import ChamaFinancePage from "@/modules/chama/pages/FinancePage";
+import MerryGoRoundPage from "@/modules/chama/pages/MerryGoRoundPage";
+import ChamaCommandCenterPage from "@/modules/chama/pages/ChamaCommandCenterPage";
+import MemberDashboardPage from "@/modules/chama/pages/MemberDashboardPage";
+
+// ======================================================
+// Contribution Groups
+// ======================================================
+
+import ContributionsPage from "@/modules/contribution-group/pages/ContributionsPage";
+import SchedulePage from "@/modules/contribution-group/pages/SchedulePage";
+import ActivityPage from "@/modules/contribution-group/pages/ActivityPage";
+
+// ======================================================
+// Finance Engine
+// ======================================================
+
+import FinanceDashboard from "@/modules/finance/pages/FinanceDashboard";
+import RecordContributionPage from "@/modules/finance/pages/RecordContributionPage";
+import TransactionsPage from "@/modules/finance/pages/TransactionsPage";
+import LedgerPage from "@/modules/finance/pages/LedgerPage";
+import FinanceAccountsPage from "@/modules/finance/pages/AccountsPage";
+import SavingsPage from "@/modules/finance/pages/SavingsPage";
+import TrialBalancePage from "@/modules/finance/pages/TrialBalancePage";
+import BalanceSheetPage from "@/modules/finance/pages/BalanceSheetPage";
+import IncomeStatementPage from "@/modules/finance/pages/IncomeStatementPage";
+import CashFlowStatementPage from "@/modules/finance/pages/CashFlowStatementPage";
+import PayoutsPage from "@/modules/finance/pages/PayoutsPage";
+import CreatePayoutPage from "@/modules/finance/pages/CreatePayoutPage";
+import FinanceOperationPage from "@/modules/finance/pages/FinanceOperationPage";
+
 const router = createBrowserRouter([
-  // Public
+  // ======================================================
+  // PUBLIC
+  // ======================================================
+
   {
     path: "/",
     element: <LandingPage />,
   },
 
-  // Guest-only
+  // ======================================================
+  // GUEST
+  // ======================================================
+
   {
     element: <GuestRoute />,
     children: [
-      { path: "/login", element: <LoginPage /> },
-      { path: "/register", element: <RegisterPage /> },
+      {
+        path: "/login",
+        element: <LoginPage />,
+      },
+      {
+        path: "/register",
+        element: <RegisterPage />,
+      },
     ],
   },
 
-  // Authenticated
+  // ======================================================
+  // AUTHENTICATED
+  // ======================================================
+
   {
     element: <ProtectedRoute />,
     children: [
-      // User Platform layer — no workspace selected yet
+      // ==================================================
+      // PLATFORM LAYOUT (Global Shell)
+      // ==================================================
+
       {
         element: <PlatformLayout />,
         children: [
-          { path: "/home", element: <HomePage /> },
-          { path: "/chamas/new", element: <CreateChamaPage /> },
-          { path: "/chamas/join", element: <JoinChamaPage /> },
-          { path: "/contribution-groups/new", element: <CreateContributionGroupPage /> },
-          { path: "/contribution-groups/join", element: <JoinContributionGroupPage /> },
+          {
+            path: "/home",
+            element: <HomePage />,
+          },
+          {
+            path: "/workspaces",
+            element: <WorkspacesPage />,
+          },
+          {
+            path: "/invitations",
+            element: <InvitationsPage />,
+          },
+
+          // Workspace Creation Pages
+          {
+            path: "/business/new",
+            element: <CreateBusinessPage />,
+          },
+          {
+            path: "/chamas/new",
+            element: <CreateChamaPage />,
+          },
+          {
+            path: "/chamas/join",
+            element: <JoinChamaPage />,
+          },
+          {
+            path: "/contribution-groups/new",
+            element: <CreateContributionGroupPage />,
+          },
         ],
       },
 
-      // Workspace layer — everything below is scoped to one workspace
+      // ==================================================
+      // WORKSPACE LAYOUT (Scoped Workspace Shell)
+      // ==================================================
+
       {
         path: "/workspace/:workspaceId",
         element: <WorkspaceLayout />,
         children: [
-          { index: true, element: <WorkspaceOverviewPage /> },
-          { path: "members", element: <MembersPage /> },
-          { path: "settings", element: <WorkspaceSettingsPage /> },
-          { path: "announcements", element: <AnnouncementsPage /> },
-          { path: "chat", element: <ChatPage /> },
-          { path: "meetings", element: <MeetingsPage /> },
+          // Dashboard Overview Root
+          {
+            index: true,
+            element: <WorkspaceOverviewPage />,
+          },
 
-          // Chama-only
-          { path: "finance", element: <FinancePage /> },
-          { path: "loans", element: <LoansPage /> },
-          { path: "reports", element: <ReportsPage /> },
+          // ----------------------------------------------
+          // BUSINESS MODULE
+          // ----------------------------------------------
 
-          // Contribution-group-only
-          { path: "contributions", element: <ContributionsPage /> },
-          { path: "schedule", element: <SchedulePage /> },
-          { path: "activity", element: <ActivityPage /> },
+          {
+            path: "business",
+            element: <BusinessDashboard />,
+          },
+          {
+            path: "business/sales",
+            element: <SalesPage />,
+          },
+          {
+            path: "business/expenses",
+            element: <ExpensesPage />,
+          },
+          {
+            path: "business/inventory",
+            element: <InventoryPage />,
+          },
+          {
+            path: "business/customers",
+            element: <CustomersPage />,
+          },
+          {
+            path: "business/suppliers",
+            element: <SuppliersPage />,
+          },
+          {
+            path: "business/accounts",
+            element: <AccountsPage />,
+          },
+          {
+            path: "business/reports",
+            element: <BusinessReportsPage />,
+          },
+          {
+            path: "business/settings",
+            element: <BusinessSettingsPage />,
+          },
+
+          // ----------------------------------------------
+          // CONTRIBUTION GROUPS
+          // ----------------------------------------------
+
+          {
+            path: "contributions",
+            element: <ContributionsPage />,
+          },
+          {
+            path: "schedule",
+            element: <SchedulePage />,
+          },
+          {
+            path: "activity",
+            element: <ActivityPage />,
+          },
+
+          // ----------------------------------------------
+          // CHAMA OPERATIONS
+          // ----------------------------------------------
+
+          {
+            path: "loans",
+            element: <LoansPage />,
+          },
+          {
+            path: "reports",
+            element: <ReportsPage />,
+          },
+          {
+            path: "chama-finance",
+            element: <ChamaFinancePage />,
+          },
+          {
+            path: "mgr",
+            element: <MerryGoRoundPage />,
+          },
+          {
+            path: "command-center",
+            element: <ChamaCommandCenterPage />,
+          },
+          {
+            path: "my-chama",
+            element: <MemberDashboardPage />,
+          },
+
+          // ----------------------------------------------
+          // FINANCE ENGINE
+          // ----------------------------------------------
+
+          {
+            path: "finance",
+            element: <FinanceDashboard />,
+          },
+          {
+            path: "finance/overview",
+            element: <FinanceDashboard />,
+          },
+          {
+            path: "finance/record-contribution",
+            element: <RecordContributionPage />,
+          },
+          // Backwards-compatible aliases
+          {
+            path: "finance/contributions",
+            // Keep the legacy sidebar URL on the same route level. Using
+            // "../record-contribution" here resolves to /workspace/:id/
+            // record-contribution and falls through to the landing page.
+            element: <RecordContributionPage />,
+          },
+          {
+            path: "finance/contributions/new",
+            element: <RecordContributionPage />,
+          },
+          {
+            path: "finance/transactions",
+            element: <TransactionsPage />,
+          },
+          {
+            path: "finance/ledger",
+            element: <LedgerPage />,
+          },
+          {
+            path: "finance/accounts",
+            element: <FinanceAccountsPage />,
+          },
+          {
+            path: "finance/savings",
+            element: <SavingsPage />,
+          },
+          {
+            path: "finance/trial-balance",
+            element: <TrialBalancePage />,
+          },
+          {
+            path: "finance/balance-sheet",
+            element: <BalanceSheetPage />,
+          },
+          {
+            path: "finance/income-statement",
+            element: <IncomeStatementPage />,
+          },
+          {
+            path: "finance/cash-flow",
+            element: <CashFlowStatementPage />,
+          },
+          {
+            path: "finance/payouts",
+            element: <PayoutsPage />,
+          },
+          {
+            path: "finance/payouts/new",
+            element: <CreatePayoutPage />,
+          },
+          {
+            path: "finance/deposits/new",
+            element: <FinanceOperationPage operation="deposit" />,
+          },
+          {
+            path: "finance/withdrawals/new",
+            element: <FinanceOperationPage operation="withdrawal" />,
+          },
+          {
+            path: "finance/transfers/new",
+            element: <FinanceOperationPage operation="transfer" />,
+          },
+
+          // ----------------------------------------------
+          // COLLABORATION & COMMUNICATION
+          // ----------------------------------------------
+
+          {
+            path: "members",
+            element: <MembersPage />,
+          },
+          {
+            path: "chat",
+            element: <ChatPage />,
+          },
+          {
+            path: "announcements",
+            element: <AnnouncementsPage />,
+          },
+          {
+            path: "meetings",
+            element: <MeetingsPage />,
+          },
+
+          // ----------------------------------------------
+          // SETTINGS
+          // ----------------------------------------------
+
+          {
+            path: "settings",
+            element: <WorkspaceSettingsPage />,
+          },
         ],
       },
     ],
   },
+
+  // ======================================================
+  // FALLBACK
+  // ======================================================
 
   {
     path: "*",

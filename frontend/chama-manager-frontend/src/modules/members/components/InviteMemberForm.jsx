@@ -1,63 +1,51 @@
 import { useState } from "react";
-import { UserPlus } from "lucide-react";
+import { Mail } from "lucide-react";
 
 import Button from "@/shared/components/ui/Button";
 import Input from "@/shared/components/ui/Input/Input";
-import { ASSIGNABLE_ROLES } from "@/modules/workspaces/permissions/permissions";
 
 export default function InviteMemberForm({ onSubmit, submitting }) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("member");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (!phone.trim()) return;
 
-    if (!email.trim()) return;
-
-    await onSubmit({ email: email.trim(), role });
-    setEmail("");
-    setRole("member");
+    await onSubmit({
+      phone: phone.trim(),
+      message: message.trim() || undefined,
+    });
+    setPhone("");
+    setMessage("");
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
-    >
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
-        <UserPlus size={18} />
-        Invite a Member
+        <Mail size={18} />
+        Invite Someone
       </h3>
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <div className="flex-1">
-          <Input
-            type="email"
-            placeholder="member@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </div>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Send an invitation using the phone number they used to register.
+      </p>
 
-        <select
-          value={role}
-          onChange={(event) => setRole(event.target.value)}
-          className="
-            rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm
-            capitalize outline-none focus:border-primary
-            dark:border-slate-700 dark:bg-slate-900 dark:text-white
-          "
-        >
-          {ASSIGNABLE_ROLES.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-
-        <Button type="submit" disabled={submitting}>
-          {submitting ? "Inviting..." : "Invite"}
+      <div className="mt-4 space-y-3">
+        <Input
+          type="tel"
+          placeholder="Phone number (e.g. 0712 345 678)"
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+          required
+        />
+        <Input
+          placeholder="Personal message (optional)"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+        />
+        <Button type="submit" disabled={submitting} className="w-full">
+          {submitting ? "Sending..." : "Send Invitation"}
         </Button>
       </div>
     </form>

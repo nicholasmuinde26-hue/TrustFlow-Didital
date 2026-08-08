@@ -1,217 +1,120 @@
 import User from '../models/User.js';
-import { verifyToken } from '../utils/jwt.js';
-
+import { verifyAccessToken, verifyToken } from '../utils/jwt.js';
 
 // ========================================
-// PROTECT ROUTES
+// PROTECT ROUTES (Access Token + OTP Guard)
 // ========================================
 
-export const protect = async (
-  req,
-  res,
-  next
-) => {
-
+export const protect = async (req, res, next) => {
   try {
-
     let token;
 
-
-    // ========================================
-    // 1. GET TOKEN FROM AUTHORIZATION HEADER
-    // ========================================
-
+    // 1. EXTRACT TOKEN FROM AUTHORIZATION HEADER
     if (
       req.headers.authorization &&
-      req.headers.authorization.startsWith(
-        'Bearer '
-      )
+      req.headers.authorization.startsWith('Bearer ')
     ) {
-
-      token =
-        req.headers.authorization
-          .split(' ')[1];
-
+      token = req.headers.authorization.split(' ')[1];
     }
-
-
-    // ========================================
-    // 2. CHECK TOKEN EXISTS
-    // ========================================
 
     if (!token) {
-
       return res.status(401).json({
-
         success: false,
-
-        message:
-          'Authentication required'
-
+        code: 'TOKEN_MISSING',
+        message: 'Authentication token required',
       });
-
     }
 
+    // 2. VERIFY SHORT-LIVED ACCESS TOKEN & HANDLE EXPIRATION
+    const verifyFn = verifyAccessToken || verifyToken;
+    let decoded;
 
-    // ========================================
-    // 3. VERIFY JWT TOKEN
-    // ========================================
-
-    const decoded =
-      verifyToken(token);
-
-
-    // ========================================
-    // 4. CHECK DECODED TOKEN
-    // ========================================
-
-    if (
-      !decoded ||
-      !decoded.id
-    ) {
-
+    try {
+      decoded = verifyFn(token);
+    } catch (jwtError) {
+      if (jwtError.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          code: 'TOKEN_EXPIRED',
+          message: 'Access token expired. Use refresh token to obtain a new token.',
+        });
+      }
       return res.status(401).json({
-
         success: false,
-
-        message:
-          'Invalid authentication token'
-
+        code: 'TOKEN_INVALID',
+        message: 'Invalid authentication token',
       });
-
     }
 
+    // 3. REJECT TEMPORARY OTP / PENDING-VERIFICATION TOKENS
+    if (decoded.type === 'otp_pending' || decoded.isOtpPending) {
+      return res.status(403).json({
+        success: false,
+        code: 'OTP_REQUIRED',
+        message: 'OTP verification incomplete. Complete OTP verification to continue.',
+      });
+    }
 
-    // ========================================
-    // 5. FIND USER
-    // ========================================
+    if (!decoded || !decoded.id) {
+      return res.status(401).json({
+        success: false,
+        code: 'TOKEN_INVALID',
+        message: 'Invalid authentication token payload',
+      });
+    }
 
-    const user =
-      await User.findById(
-        decoded.id
-      )
-        .select('-password');
-
-
-    // ========================================
-    // 6. CHECK USER EXISTS
-    // ========================================
+    // 4. FIND USER
+    const user = await User.findById(decoded.id).select('-password');
 
     if (!user) {
-
       return res.status(401).json({
-
         success: false,
-
-        message:
-          'User no longer exists'
-
+        code: 'USER_NOT_FOUND',
+        message: 'User no longer exists',
       });
-
     }
 
-
-    // ========================================
-    // 7. CHECK USER ACCOUNT STATUS
-    // ========================================
-
-    if (
-      user.status === 'inactive'
-    ) {
-
+    // 5. CHECK USER ACCOUNT STATUS
+    if (user.status === 'inactive') {
       return res.status(403).json({
-
         success: false,
-
-        message:
-          'User account is inactive'
-
+        code: 'ACCOUNT_INACTIVE',
+        message: 'User account is inactive',
       });
-
     }
 
-
-    if (
-      user.status === 'suspended'
-    ) {
-
+    if (user.status === 'suspended') {
       return res.status(403).json({
-
         success: false,
-
-        message:
-          'User account has been suspended'
-
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'User account has been suspended',
       });
-
     }
 
+    // 6. CHECK OTP / PHONE VERIFICATION STATUS
+    if (
+      user.status === 'unverified' ||
+      (user.isPhoneVerified === false && user.isEmailVerified === false)
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: 'OTP_UNVERIFIED',
+        message: 'Account phone/email is unverified. Please complete OTP verification.',
+      });
+    }
 
-    // ========================================
-    // 8. ATTACH AUTHENTICATED USER
-    // ========================================
-    //
-    // IMPORTANT:
-    //
-    // req.user now represents the global
-    // User account.
-    //
-    // It does NOT contain:
-    //
-    // - chama_id
-    // - role
-    // - payout_position
-    //
-    // Those are resolved through:
-    //
-    // ChamaMembership
-    //
-    // Example:
-    //
-    // req.user
-    //     │
-    //     ▼
-    // User
-    //     │
-    //     ▼
-    // ChamaMembership
-    //     │
-    //     ├── Chama A → Treasurer
-    //     ├── Chama B → Member
-    //     └── Chama C → Auditor
-    //
-    // ========================================
-
+    // 7. ATTACH AUTHENTICATED USER & PAYLOAD
     req.user = user;
-
-
-    // ========================================
-    // 9. CONTINUE REQUEST
-    // ========================================
+    req.tokenPayload = decoded;
 
     next();
-
   } catch (error) {
-
-    // ========================================
-    // AUTHENTICATION ERROR
-    // ========================================
-
-    console.error(
-      'AUTH MIDDLEWARE ERROR:',
-      error.message
-    );
-
+    console.error('AUTH MIDDLEWARE ERROR:', error.message);
 
     return res.status(401).json({
-
       success: false,
-
-      message:
-        'Invalid or expired token'
-
+      code: 'AUTH_FAILED',
+      message: 'Authentication failed',
     });
-
   }
-
 };

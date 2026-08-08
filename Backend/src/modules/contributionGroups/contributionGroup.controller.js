@@ -26,6 +26,9 @@ import {
 
 } from './contributionGroupMember.service.js';
 
+import User from '../../models/User.js';
+import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
+
 
 
 
@@ -247,13 +250,7 @@ export const addContributionGroupMemberController = async (
     // 3. GET TARGET USER ID
     // ======================================
 
-    const {
-
-      userId
-
-    } =
-
-      req.body;
+    const { userId, phone } = req.body;
 
 
     // ======================================
@@ -306,11 +303,26 @@ export const addContributionGroupMemberController = async (
     // 6. VALIDATE TARGET USER ID
     // ======================================
 
-    if (
+    let targetUserId = userId;
 
-      !userId
+    if (!targetUserId && phone) {
+      const normalizedPhone = formatPhone(phone);
 
-    ) {
+      if (!isValidKenyanPhone(normalizedPhone)) {
+        return res.status(400).json({ success: false, message: 'Enter a valid Kenyan phone number' });
+      }
+
+      const registeredUser = await User.findOne({ phone: normalizedPhone }).select('_id status');
+      if (!registeredUser) {
+        return res.status(404).json({ success: false, message: 'No account is registered with this phone number' });
+      }
+      if (registeredUser.status !== 'active') {
+        return res.status(403).json({ success: false, message: 'This user account is not active' });
+      }
+      targetUserId = registeredUser._id;
+    }
+
+    if (!targetUserId) {
 
       return res.status(400).json({
 
@@ -318,7 +330,7 @@ export const addContributionGroupMemberController = async (
           false,
 
         message:
-          'User ID is required'
+          'A registered user ID or phone number is required'
 
       });
 
@@ -326,54 +338,7 @@ export const addContributionGroupMemberController = async (
 
 
     // ======================================
-    // 7. DEBUG REQUEST
-    // ======================================
-
-    console.log(
-
-      '\n========================================'
-
-    );
-
-    console.log(
-
-      'ADD CONTRIBUTION GROUP MEMBER REQUEST'
-
-    );
-
-    console.log(
-
-      'Actor User ID:',
-
-      actorUserId
-
-    );
-
-    console.log(
-
-      'Contribution Group ID:',
-
-      groupId
-
-    );
-
-    console.log(
-
-      'Target User ID:',
-
-      userId
-
-    );
-
-    console.log(
-
-      '========================================\n'
-
-    );
-
-
-    // ======================================
-    // 8. ADD MEMBER
+    // 7. ADD MEMBER
     // ======================================
 
     const result =
@@ -384,7 +349,7 @@ export const addContributionGroupMemberController = async (
 
         groupId,
 
-        userId
+        userId: targetUserId
 
       });
 
@@ -843,6 +808,8 @@ export const inviteUserToContributionGroupController = async (
 
       userId,
 
+      phone,
+
       message,
 
       expiresAt
@@ -851,6 +818,28 @@ export const inviteUserToContributionGroupController = async (
 
       req.body;
 
+
+    let invitedUserId = userId;
+
+    if (!invitedUserId && phone) {
+      const normalizedPhone = formatPhone(phone);
+
+      if (!isValidKenyanPhone(normalizedPhone)) {
+        return res.status(400).json({ success: false, message: 'Enter a valid Kenyan phone number' });
+      }
+
+      const invitedUser = await User.findOne({ phone: normalizedPhone }).select('_id');
+
+      if (!invitedUser) {
+        return res.status(404).json({ success: false, message: 'No account is registered with this phone number' });
+      }
+
+      invitedUserId = invitedUser._id;
+    }
+
+    if (!invitedUserId) {
+      return res.status(400).json({ success: false, message: 'A phone number is required' });
+    }
 
     // ======================================
     // 4. VALIDATE AUTHENTICATION
@@ -889,9 +878,7 @@ export const inviteUserToContributionGroupController = async (
 
         groupId,
 
-        invitedUserId:
-
-          userId,
+        invitedUserId,
 
         message,
 

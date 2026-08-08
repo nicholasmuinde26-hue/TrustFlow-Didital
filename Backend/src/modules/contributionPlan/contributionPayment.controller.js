@@ -126,7 +126,11 @@ class ContributionPaymentController {
                         paymentMethod:
 
 
-                            paymentMethod || "MANUAL"
+                            paymentMethod || "cash",
+
+                        createdBy:
+
+                            req.user._id
 
 
                     });

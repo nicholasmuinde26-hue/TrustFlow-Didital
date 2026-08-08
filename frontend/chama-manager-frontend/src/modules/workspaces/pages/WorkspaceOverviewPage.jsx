@@ -1,28 +1,48 @@
-import { useParams } from "react-router-dom";
+import { useParams, Navigate } from "react-router-dom";
 
-import useWorkspace from "@/app/hooks/useWorkspace";
+import Spinner from "@/shared/components/ui/Spinner";
+
+import useDashboard from "../hooks/useDashboard";
+
+import ChamaOverviewPage from "@/modules/chama/pages/ChamaOverviewPage";
+import ContributionGroupOverviewPage from "@/modules/contribution-group/pages/ContributionGroupOverviewPage";
 
 export default function WorkspaceOverviewPage() {
   const { workspaceId } = useParams();
-  const { workspaces } = useWorkspace();
 
-  const workspace = workspaces.find(
-    (w) => (w.id ?? w._id) === workspaceId
-  );
+  const {
+    data: dashboard,
+    isLoading,
+    isFetching,
+    error,
+  } = useDashboard(workspaceId);
 
-  const isChama = workspace?.type === "chama";
+  if (isLoading) {
+    return <Spinner fullscreen />;
+  }
 
-  return (
-    <div>
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-        {workspace?.name || "Workspace"}
-      </h1>
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-900 dark:bg-red-950/30">
+        <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">
+          Unable to load dashboard
+        </h2>
 
-      <p className="mt-2 text-slate-500 dark:text-slate-400">
-        {isChama
-          ? "Chama overview coming soon — contributions, loan book and cash position at a glance."
-          : "Contribution group overview coming soon — progress, countdown and recent activity at a glance."}
-      </p>
-    </div>
-  );
+        <p className="mt-2 text-sm text-red-500">
+          Please refresh the page or try again later.
+        </p>
+      </div>
+    );
+  }
+
+  // Redirect business workspaces straight to the Business Dashboard
+  if (dashboard?.type === "business") {
+    return <Navigate to="business" replace />;
+  }
+
+  if (dashboard?.type === "contribution-group") {
+    return <ContributionGroupOverviewPage dashboard={dashboard} />;
+  }
+
+  return <ChamaOverviewPage dashboard={dashboard} refreshing={isFetching} />;
 }

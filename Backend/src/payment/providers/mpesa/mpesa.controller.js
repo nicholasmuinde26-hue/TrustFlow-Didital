@@ -1,9 +1,16 @@
 import mpesaService from "./mpesa.service.js";
+import ContributionObligation from '../../../models/ContributionObligation.js';
+import ChamaMembership from '../../../models/ChamaMembership.js';
+import ContributionGroupMember from '../../../models/ContributionGroupMember.js';
+import AppError from '../../../utils/AppError.js';
 
-import {
-  initiateMpesaContributionPayment,
-  processMpesaCallback
-} from "../payment.service.js";
+
+import { reconcileB2cResult, reconcileStkCallback } from '../../../modules/business/business.service.js';
+
+import MpesaAttempt from '../../../models/MpesaAttempt.js';
+import contributionPaymentService from '../../../modules/contributionPlan/contributionPayment.service.js';
+import { reconcileSavingsCallback, maybeCreateMgrPayoutForChama } from '../../../modules/chama/chamaFinance.service.js';
+import loanRepayment from '../../../modules/loans/loanRepayment.service.js';
 
 /**
  * ============================================================
@@ -141,22 +148,34 @@ export const initiateContributionStkPush =
       // INITIATE PAYMENT
       // --------------------------------------------------------
 
-      const result =
-        await paymentService.initiateMpesaContributionPayment({
-          userId,
+      const obligation = await ContributionObligation.findById(contributionObligationId).lean();
+      if (!obligation) throw new AppError('Contribution obligation not found', 404);
 
-          contributionObligationId,
+      const membership = obligation.owner_type === 'Chama'
+        ? await ChamaMembership.findOne({ chama_id: obligation.owner_id, user_id: userId, status: 'active' }).lean()
+        : await ContributionGroupMember.findOne({ contribution_group_id: obligation.owner_id, user_id: userId, status: 'active' }).lean();
+      const permitted = obligation.owner_type === 'Chama'
+        // The treasurer may send an STK prompt to a member, but the completed
+        // payment is still posted against that member's obligation.
+        ? Boolean(membership && (String(obligation.participant_id) === String(membership._id) || membership.role === 'treasurer'))
+        : ['organizer', 'co_organizer'].includes(membership?.role);
+      if (!permitted) throw new AppError('Only the workspace financial manager can initiate this payment', 403);
 
-          amount,
+      const result = await mpesaService.initiateStkPush({
+        amount,
+        phoneNumber,
+        accountReference: accountReference || `CONTRIBUTION-${String(obligation._id).slice(-8)}`,
+        transactionDescription: transactionDescription || 'Chama contribution',
+      });
 
-          phoneNumber,
-
-          accountReference,
-
-          transactionDescription,
-
-          idempotencyKey,
-        });
+      await MpesaAttempt.create({
+        obligation_id: obligation._id,
+        amount,
+        phone_number: mpesaService.normalizePhoneNumber(phoneNumber),
+        initiated_by: userId,
+        checkout_request_id: result.checkoutRequestId,
+        merchant_request_id: result.merchantRequestId,
+      });
 
       // --------------------------------------------------------
       // RESPONSE
@@ -222,6 +241,41 @@ export const handleMpesaCallback =
           callbackBody
         );
 
+      // Chama self-service savings attempts own a PaymentIntent and must be
+      // reconciled exactly once before falling back to legacy contribution flow.
+      if (await reconcileSavingsCallback(callback)) {
+        return res.status(200).json({ ResultCode: 0, ResultDesc: 'Savings payment processed' });
+      }
+
+      if (await reconcileStkCallback(callback)) {
+        return res.status(200).json({
+          ResultCode: 0,
+          ResultDesc: "Business payment processed",
+        });
+      }
+
+      const attempt = await MpesaAttempt.findOne({ checkout_request_id: callback.checkoutRequestId });
+      if (attempt && attempt.status === "pending") {
+        if (callback.success && Number(callback.amount) === Number(attempt.amount.toString())) {
+          await contributionPaymentService.processPayment({
+            obligationId: attempt.obligation_id,
+            amount: callback.amount,
+            paymentMethod: "mpesa",
+            processingMode: "webhook",
+            createdBy: attempt.initiated_by,
+          });
+          const obligation = await ContributionObligation.findById(attempt.obligation_id).lean();
+          if (obligation?.owner_type === 'Chama') {
+            await maybeCreateMgrPayoutForChama(obligation.owner_id, attempt.initiated_by);
+          }
+          attempt.status = "completed";
+          attempt.mpesa_receipt_number = callback.mpesaReceiptNumber;
+        } else {
+          attempt.status = "failed";
+        }
+        await attempt.save();
+      }
+
       // --------------------------------------------------------
       // PROCESS CALLBACK
       // --------------------------------------------------------
@@ -241,9 +295,10 @@ export const handleMpesaCallback =
        * - Trigger Finance Engine only once
        */
 
-      await paymentService.processMpesaCallback({
-        callback,
-      });
+      // The provider callback is accepted here. The matching payment is
+      // reconciled by the contribution-payment workflow after verification.
+      // Keep the parsed value available for the reconciliation worker.
+      console.info('M-Pesa callback received', callback.checkoutRequestId);
 
       // --------------------------------------------------------
       // ACKNOWLEDGE CALLBACK
@@ -281,6 +336,15 @@ export const handleMpesaCallback =
       });
     }
   };
+
+export const handleB2cResult = async (req, res) => {
+  try {
+    await reconcileB2cResult(req.body);
+  } catch (error) {
+    console.error("M-Pesa B2C result processing error:", error);
+  }
+  return res.status(200).json({ ResultCode: 0, ResultDesc: "Result received" });
+};
 
 
 /**

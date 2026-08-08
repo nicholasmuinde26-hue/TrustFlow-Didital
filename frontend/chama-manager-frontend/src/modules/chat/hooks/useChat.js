@@ -12,11 +12,11 @@ function messagesKey(workspaceId) {
   return ["messages", workspaceId];
 }
 
-export function useMessages(workspaceId) {
+export function useMessages(workspaceId, workspaceType) {
   return useQuery({
     queryKey: messagesKey(workspaceId),
-    queryFn: () => chatService.list(workspaceId),
-    enabled: Boolean(workspaceId),
+    queryFn: () => chatService.list(workspaceId, { workspaceType }),
+    enabled: Boolean(workspaceId && workspaceType),
     refetchInterval: POLL_INTERVAL,
   });
 }

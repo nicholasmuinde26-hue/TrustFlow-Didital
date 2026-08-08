@@ -9,6 +9,10 @@ import WorkspaceContext from "../store/workspace.store";
 import workspaceService from "../services/workspace.service";
 import useAuth from "../hooks/useAuth";
 
+import chamaService from "@/modules/chama/services/chama.service";
+import contributionGroupService from "@/modules/contribution-group/services/contributionGroup.service";
+import { businessService } from "@/modules/business/services/business.service";
+
 export default function WorkspaceProvider({
   children,
 }) {
@@ -28,10 +32,9 @@ export default function WorkspaceProvider({
     setLoading(true);
 
     try {
-      const data =
-        await workspaceService.getWorkspaces();
-
-      const items = data.workspaces || [];
+      // workspaceService.getWorkspaces() already unwraps to the plain
+      // array (see the comment in that file for the response shape).
+      const items = await workspaceService.getWorkspaces();
 
       setWorkspaces(items);
 
@@ -84,6 +87,48 @@ export default function WorkspaceProvider({
   }
 
   //-----------------------------------------------------
+  //
+  // There is no unified POST /workspaces on the backend — creating a
+  // workspace means POSTing to /chamas or /contribution-groups directly,
+  // which have genuinely different accepted fields. This dispatches to
+  // the right one and reloads the aggregate list afterward so the new
+  // workspace shows up with the shape workspace.mapper.js produces (id,
+  // type, role, ...).
+  //
+  //-----------------------------------------------------
+
+  async function createChama(payload) {
+    const chama = await chamaService.create(payload);
+    const items = await workspaceService.getWorkspaces();
+    setWorkspaces(items);
+
+    const created = items.find(
+      (w) => String(w.id ?? w._id) === String(chama._id)
+    );
+
+    return created || chama;
+  }
+
+  async function createContributionGroup(payload) {
+    const group = await contributionGroupService.create(payload);
+    const items = await workspaceService.getWorkspaces();
+    setWorkspaces(items);
+
+    const created = items.find(
+      (w) => String(w.id ?? w._id) === String(group._id)
+    );
+
+    return created || group;
+  }
+
+  async function createBusiness(payload) {
+    const business = await businessService.createBusiness(payload);
+    const items = await workspaceService.getWorkspaces();
+    setWorkspaces(items);
+    return items.find((workspace) => String(workspace.id ?? workspace._id) === String(business._id)) || business;
+  }
+
+  //-----------------------------------------------------
 
   const value = useMemo(
     () => ({
@@ -96,6 +141,12 @@ export default function WorkspaceProvider({
       selectWorkspace,
 
       refresh,
+
+      createChama,
+
+      createContributionGroup,
+
+      createBusiness,
     }),
     [
       workspaces,

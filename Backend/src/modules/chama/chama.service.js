@@ -176,7 +176,7 @@ export const createChama = async ({
         chama._id,
 
       role:
-        'treasurer',
+        'chairperson',
 
       status:
         'active',
@@ -447,10 +447,10 @@ export const getChamaMembers = async (
 // UPDATE CHAMA
 // ========================================
 //
-// Only the Treasurer of THIS Chama
-// can update the Chama.
+// Only the Treasurer or Chairperson of
+// THIS Chama can update the Chama.
 //
-// Treasurer role is checked through:
+// Role is checked through:
 //
 // ChamaMembership.role
 //
@@ -551,14 +551,21 @@ export const updateChama = async (
 
 
   // ----------------------------------------
-  // 6. Check Treasurer Role
+  // 6. Check Treasurer or Chairperson Role
   // ----------------------------------------
 
+  const allowedUpdaterRoles = [
+    'treasurer',
+    'chairperson'
+  ];
+
   if (
-    membership.role !== 'treasurer'
+    !allowedUpdaterRoles.includes(
+      membership.role
+    )
   ) {
     throw new AppError(
-      'Only the treasurer can update the Chama',
+      'Only the treasurer or chairperson can update the Chama',
       403
     );
   }

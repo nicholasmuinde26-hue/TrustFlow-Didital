@@ -324,6 +324,12 @@ export const startPayout = async ({
 
     created_by,
 
+    contributionPlanId = null,
+
+    amount: requestedAmount = null,
+
+    roundStart = null,
+
     posted_by = null,
 
     session: existingSession = null
@@ -400,6 +406,8 @@ export const startPayout = async ({
             await Payout.findOne({
 
                 chama_id: chamaId,
+
+                contribution_plan_id: contributionPlanId,
 
                 status:"pending"
 
@@ -523,6 +531,8 @@ export const startPayout = async ({
 
                 chama_id: chamaId,
 
+                contribution_plan_id: contributionPlanId,
+
                 status:"paid"
 
             })
@@ -596,17 +606,9 @@ export const startPayout = async ({
         // ----------------------------------------------------
 
 
-        const amount =
-
-            multiplyMoney(
-
-                toDecimal(
-                    chama.monthly_savings
-                ),
-
-                memberships.length
-
-            );
+        const amount = requestedAmount === null
+            ? multiplyMoney(toDecimal(chama.monthly_savings), memberships.length)
+            : toDecimal(requestedAmount);
 
 
 
@@ -638,6 +640,10 @@ export const startPayout = async ({
                 [{
 
                     chama_id:chamaId,
+
+                    contribution_plan_id: contributionPlanId,
+
+                    round_start: roundStart,
 
                     member_id:
                         recipient._id,

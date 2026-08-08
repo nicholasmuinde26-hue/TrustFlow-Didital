@@ -48,36 +48,7 @@ class ContributionObligationService {
                 [
                     {
 
-                        organization:
-                            data.organization,
-
-
-                        member:
-                            data.member,
-
-
-                        plan:
-                            data.plan,
-
-
-                        contributionPeriod:
-                            data.contributionPeriod,
-
-
-                        expectedAmount:
-                            data.amount,
-
-
-                        paidAmount:
-                            0,
-
-
-                        status:
-                            "PENDING",
-
-
-                        dueDate:
-                            data.dueDate
+                        ...data
 
                     }
                 ],
@@ -162,20 +133,21 @@ class ContributionObligationService {
 
 
 
-        obligation.paidAmount += Number(amount);
+        const paidAmount = Number(obligation.paid_amount?.toString() || 0) + Number(amount);
+        obligation.paid_amount = paidAmount;
 
 
 
 
 
         if (
-            obligation.paidAmount >=
-            obligation.expectedAmount
+            paidAmount >=
+            Number(obligation.expected_amount?.toString() || 0)
         ) {
 
 
             obligation.status =
-                "PAID";
+                "paid";
 
 
         }
@@ -184,7 +156,7 @@ class ContributionObligationService {
 
 
             obligation.status =
-                "PARTIALLY_PAID";
+                "partially_paid";
 
 
         }
@@ -221,8 +193,8 @@ class ContributionObligationService {
 
         return Math.max(
 
-            obligation.expectedAmount -
-            obligation.paidAmount,
+            Number(obligation.expected_amount || 0) -
+            Number(obligation.paid_amount || 0),
 
             0
 
@@ -255,7 +227,7 @@ class ContributionObligationService {
             {
 
                 status:
-                    "OVERDUE"
+                    "overdue"
 
             },
 

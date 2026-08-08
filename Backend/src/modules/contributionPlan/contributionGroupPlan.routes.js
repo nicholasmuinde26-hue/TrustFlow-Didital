@@ -67,57 +67,24 @@ const router = express.Router({
 //   req.params.groupId
 //
 // ========================================
+const scopeToContributionGroup = (req, res, next) => {
 
-const scopeToContributionGroup = (
+  if (!req.body) {
+    req.body = {};
+  }
 
-  req,
+  if (!req.query) {
+    req.query = {};
+  }
 
-  res,
+  req.body.owner_type = "ContributionGroup";
+  req.body.owner_id = req.params.groupId;
 
-  next
-
-) => {
-
-  // ======================================
-  // OWNER TYPE
-  // ======================================
-
-  req.body.owner_type =
-
-    'ContributionGroup';
-
-
-  // ======================================
-  // OWNER ID
-  // ======================================
-
-  req.body.owner_id =
-
-    req.params.groupId;
-
-
-  // ======================================
-  // QUERY OWNER SCOPE
-  // ======================================
-  //
-  // This is used by GET /plans.
-  //
-  // ======================================
-
-  req.query.owner_type =
-
-    'ContributionGroup';
-
-
-  req.query.owner_id =
-
-    req.params.groupId;
-
+  req.query.owner_type = "ContributionGroup";
+  req.query.owner_id = req.params.groupId;
 
   next();
-
 };
-
 
 // ========================================
 // APPLY GROUP SCOPE

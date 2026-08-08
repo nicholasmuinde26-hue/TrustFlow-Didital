@@ -348,6 +348,65 @@ export const requireChamaTreasurer = async (
 
 
 // ========================================
+// REQUIRE CHAMA TREASURER OR CHAIRPERSON
+// ========================================
+//
+// Used to gate actions that either the
+// Treasurer or the Chairperson may perform:
+//
+// - Updating core Chama settings
+// - Managing members (add/remove/status)
+// - Changing a member's role
+// - Transferring the Treasurer role
+//
+// ========================================
+
+export const requireChamaTreasurerOrChairperson = async (
+  req,
+  res,
+  next
+) => {
+
+  try {
+
+    validateChamaContext(req);
+
+
+    const allowedRoles = [
+
+      'treasurer',
+
+      'chairperson'
+
+    ];
+
+
+    if (
+      !allowedRoles.includes(
+        req.membership.role
+      )
+    ) {
+
+      throw new AppError(
+        'Only the treasurer or chairperson can perform this action',
+        403
+      );
+
+    }
+
+
+    next();
+
+  } catch (error) {
+
+    next(error);
+
+  }
+
+};
+
+
+// ========================================
 // REQUIRE CHAMA AUDITOR
 // ========================================
 

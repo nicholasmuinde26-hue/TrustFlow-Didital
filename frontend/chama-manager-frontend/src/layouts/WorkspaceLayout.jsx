@@ -7,43 +7,64 @@ import { getWorkspaceNavigation } from "@/modules/workspaces/config/workspaceNav
 import Sidebar from "@/shared/components/layout/sidebar";
 import Topbar from "@/shared/components/layout/Topbar";
 import Spinner from "@/shared/components/ui/Spinner";
+import ContributionGroupLayout from "./ContributionGroupLayout";
 
 export default function WorkspaceLayout() {
   const { workspaceId } = useParams();
   const { workspaces, activeWorkspace, loading, selectWorkspace } = useWorkspace();
 
-  const matchesId = (w) => (w.id ?? w._id) === workspaceId;
+  const matchesId = (w) => (w?.id ?? w?._id) === workspaceId;
 
+  // Search in global list, OR fallback to activeWorkspace if created locally on the fly
   const workspace = workspaces.find(matchesId) || activeWorkspace;
 
   useEffect(() => {
     const match = workspaces.find(matchesId);
 
-    if (match && (match.id ?? match._id) !== (activeWorkspace?.id ?? activeWorkspace?._id)) {
+    if (
+      match &&
+      (match.id ?? match._id) !== (activeWorkspace?.id ?? activeWorkspace?._id)
+    ) {
       selectWorkspace(match);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, workspaces]);
 
   if (loading) {
     return <Spinner fullscreen />;
   }
 
-  // The workspace doesn't exist, or the user doesn't belong to it.
-  if (!workspaces.some(matchesId)) {
+  // FIX: Allow access if workspace is found in `workspaces` OR matches `activeWorkspace`
+  const hasWorkspace = workspaces.some(matchesId) || (activeWorkspace && matchesId(activeWorkspace));
+
+  if (!hasWorkspace) {
     return <Navigate to="/home" replace />;
   }
 
   const sections = getWorkspaceNavigation(workspaceId, workspace?.type);
 
+  if (workspace?.type === "contribution-group") {
+    return (
+      <ContributionGroupLayout
+        workspace={workspace}
+        workspaceId={workspaceId}
+      />
+    );
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      <Sidebar sections={sections} />
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+      {/* Sidebar */}
+      <aside className="h-screen flex-shrink-0 overflow-y-auto">
+        <Sidebar sections={sections} />
+      </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
+      {/* Main Area */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="sticky top-0 z-30">
+          <Topbar />
+        </div>
 
-        <main className="flex-1 p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
           <Outlet />
         </main>
       </div>

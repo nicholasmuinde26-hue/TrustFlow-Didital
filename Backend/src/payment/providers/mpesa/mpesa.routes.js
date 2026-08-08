@@ -3,6 +3,7 @@ import express from 'express';
 import {
   initiateContributionStkPush,
   handleMpesaCallback,
+  handleB2cResult,
   queryMpesaPayment,
 } from './mpesa.controller.js';
 
@@ -10,7 +11,7 @@ import {
 // MIDDLEWARE
 // ============================================================
 
-import { protect } from '../../middleware/auth.middleware.js';
+import { protect } from '../../../middleware/auth.middleware.js';
 
 // ============================================================
 // ROUTER
@@ -61,6 +62,11 @@ router.post(
 router.post(
   "/callback",
   handleMpesaCallback
+);
+
+router.post(
+  "/b2c/result",
+  handleB2cResult
 );
 
 

@@ -20,16 +20,14 @@
  */
 
 import { randomUUID } from "crypto";
-
-import { PAYMENT_EVENTS }
-from "./payment.constants.js";
+import { PAYMENT_EVENTS } from "./payment.constants.js";
 
 class PaymentEventFactory {
 
     /**
      * Create a standardized payment event.
      */
-    static create(type, context, payload = {}) {
+    static create(type, context = {}, payload = {}) {
 
         return {
 
@@ -41,61 +39,36 @@ class PaymentEventFactory {
 
             occurredAt: new Date(),
 
-            correlationId:
-                context.correlationId,
+            correlationId: context.correlationId || null,
 
             payment: {
-
-                id:
-                    context.payment.id,
-
-                amount:
-                    context.payment.amount,
-
-                currency:
-                    context.payment.currency,
-
-                status:
-                    context.payment.status
-
+                id: context.payment?.id || context.payment?._id || null,
+                amount: context.payment?.amount || null,
+                currency: context.payment?.currency || null,
+                status: context.payment?.status || null
             },
 
             provider: {
-
-                name:
-                    context.provider.name,
-
-                metadata:
-                    context.provider.metadata
-
+                name: typeof context.provider === "string" 
+                    ? context.provider 
+                    : (context.provider?.name || context.provider?.providerName || null),
+                metadata: context.provider?.metadata || context.providerData || null
             },
 
             participant: {
-
-                memberId:
-                    context.participant.memberId,
-
-                phoneNumber:
-                    context.participant.phoneNumber
-
+                memberId: context.participant?.memberId || context.participant?.id || null,
+                phoneNumber: context.participant?.phoneNumber || null
             },
 
             obligation: {
-
-                id:
-                    context.obligation.id
-
+                id: context.obligation?.id || context.obligation?._id || null
             },
 
             actor: {
-
-                userId:
-                    context.actor.userId
-
+                userId: context.actor?.userId || context.actor?.id || null
             },
 
-            metadata:
-                context.metadata,
+            metadata: context.metadata || {},
 
             payload
 

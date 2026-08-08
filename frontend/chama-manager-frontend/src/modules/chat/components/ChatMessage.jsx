@@ -8,7 +8,7 @@ function formatTime(value) {
 }
 
 export default function ChatMessage({ message, isOwn }) {
-  const author = message.author?.name || "Member";
+  const author = message.sender?.name || "Member";
 
   return (
     <div className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
@@ -29,7 +29,7 @@ export default function ChatMessage({ message, isOwn }) {
         )}
 
         <p className="whitespace-pre-wrap break-words">
-          {message.content}
+          {message.message}
         </p>
 
         <p
@@ -38,7 +38,7 @@ export default function ChatMessage({ message, isOwn }) {
             ${isOwn ? "text-blue-100" : "text-slate-400"}
           `}
         >
-          {formatTime(message.createdAt)}
+          {formatTime(message.created_at)}
         </p>
       </div>
     </div>

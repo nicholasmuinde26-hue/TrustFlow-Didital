@@ -10,19 +10,19 @@ function membersKey(workspaceId) {
   return ["members", workspaceId];
 }
 
-export function useMembers(workspaceId) {
+export function useMembers(type, workspaceId) {
   return useQuery({
     queryKey: membersKey(workspaceId),
-    queryFn: () => membersService.list(workspaceId),
-    enabled: Boolean(workspaceId),
+    queryFn: () => membersService.list(type, workspaceId),
+    enabled: Boolean(type && workspaceId),
   });
 }
 
-export function useInviteMember(workspaceId) {
+export function useAddMember(type, workspaceId) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload) => membersService.invite(workspaceId, payload),
+    mutationFn: (userId) => membersService.add(type, workspaceId, userId),
 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });
@@ -30,12 +30,12 @@ export function useInviteMember(workspaceId) {
   });
 }
 
-export function useUpdateMemberRole(workspaceId) {
+export function useUpdateMemberRole(type, workspaceId) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ memberId, role }) =>
-      membersService.updateRole(workspaceId, memberId, role),
+      membersService.updateRole(type, workspaceId, memberId, role),
 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });
@@ -43,11 +43,24 @@ export function useUpdateMemberRole(workspaceId) {
   });
 }
 
-export function useRemoveMember(workspaceId) {
+export function useRemoveMember(type, workspaceId) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (memberId) => membersService.remove(workspaceId, memberId),
+    mutationFn: (memberId) => membersService.remove(type, workspaceId, memberId),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateMemberProfile(type, workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ memberId, payload }) =>
+      membersService.updateProfile(type, workspaceId, memberId, payload),
 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });

@@ -4,16 +4,21 @@ import { Users } from "lucide-react";
 import useAuth from "@/app/hooks/useAuth";
 import useWorkspace from "@/app/hooks/useWorkspace";
 import { usePresence } from "@/modules/presence/hooks/usePresence";
-import { canManageMembers } from "@/modules/workspaces/permissions/permissions";
+import {
+  canManageMembers,
+  canInviteMembers,
+} from "@/modules/workspaces/permissions/permissions";
 
 import {
   useMembers,
-  useInviteMember,
+  useAddMember,
   useUpdateMemberRole,
   useRemoveMember,
 } from "../hooks/useMembers";
+import { useSendInvitation } from "@/modules/invitations/hooks/useInvitations";
 
 import MemberRow from "../components/MemberRow";
+import AddMemberForm from "../components/AddMemberForm";
 import InviteMemberForm from "../components/InviteMemberForm";
 import Spinner from "@/shared/components/ui/Spinner";
 
@@ -23,14 +28,18 @@ export default function MembersPage() {
   const { workspaces } = useWorkspace();
 
   const workspace = workspaces.find((w) => (w.id ?? w._id) === workspaceId);
-  const manage = canManageMembers(workspace?.role);
+  const type = workspace?.type;
 
-  const { data: members = [], isLoading, isError } = useMembers(workspaceId);
+  const manage = canManageMembers(workspace?.role, type);
+  const canInvite = canInviteMembers(workspace?.role, type);
+
+  const { data: members = [], isLoading, isError } = useMembers(type, workspaceId);
   const { data: presence = [] } = usePresence(workspaceId);
 
-  const inviteMember = useInviteMember(workspaceId);
-  const updateRole = useUpdateMemberRole(workspaceId);
-  const removeMember = useRemoveMember(workspaceId);
+  const addMember = useAddMember(type, workspaceId);
+  const updateRole = useUpdateMemberRole(type, workspaceId);
+  const removeMember = useRemoveMember(type, workspaceId);
+  const sendInvitation = useSendInvitation(workspaceId);
 
   const presenceById = new Map(
     presence.map((p) => [String(p.id ?? p._id), p.status])
@@ -55,9 +64,16 @@ export default function MembersPage() {
 
       <div className="mt-6 space-y-6">
         {manage && (
+          <AddMemberForm
+            submitting={addMember.isPending}
+            onSubmit={(userId) => addMember.mutateAsync(userId)}
+          />
+        )}
+
+        {canInvite && (
           <InviteMemberForm
-            submitting={inviteMember.isPending}
-            onSubmit={(payload) => inviteMember.mutateAsync(payload)}
+            submitting={sendInvitation.isPending}
+            onSubmit={(payload) => sendInvitation.mutateAsync(payload)}
           />
         )}
 
@@ -85,21 +101,20 @@ export default function MembersPage() {
 
         <div className="space-y-3">
           {members.map((member) => {
-            const memberId = member.id ?? member._id;
+            const memberUserId = member.user_id?._id ?? member.user_id;
 
             return (
               <MemberRow
-                key={memberId}
+                key={member._id}
                 member={member}
-                status={presenceById.get(String(memberId)) || "offline"}
+                type={type}
+                status={presenceById.get(String(memberUserId)) || "offline"}
                 canManage={manage}
-                isSelf={Boolean(userId) && String(memberId) === String(userId)}
+                isSelf={Boolean(userId) && String(memberUserId) === String(userId)}
                 onChangeRole={(item, role) =>
-                  updateRole.mutate({ memberId: item.id ?? item._id, role })
+                  updateRole.mutate({ memberId: item._id, role })
                 }
-                onRemove={(item) =>
-                  removeMember.mutate(item.id ?? item._id)
-                }
+                onRemove={(item) => removeMember.mutate(item._id)}
               />
             );
           })}

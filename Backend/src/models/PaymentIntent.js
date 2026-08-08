@@ -572,8 +572,12 @@ paymentIntentSchema.index(
     unique:
       true,
 
-    sparse:
-      true
+    // A pending STK request has no CheckoutRequestID yet. `sparse` is not
+    // enough for this compound index because `provider` is always present.
+    // Only real provider request IDs are unique.
+    partialFilterExpression: {
+      provider_request_id: { $type: 'string' }
+    }
 
   }
 

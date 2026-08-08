@@ -1,371 +1,265 @@
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
 
-
-// ========================================
+// ============================================================================
 // ROUTES
-// ========================================
+// ============================================================================
 
-import authRoutes
-  from './modules/auth/auth.routes.js';
+// Authentication
+import authRoutes from "./modules/auth/auth.routes.js";
 
-import chamaRoutes
-  from './modules/chama/chama.routes.js';
+// Workspace
+import workspaceRoutes from "./modules/workspaces/workspace.routes.js";
 
-import memberRoutes
-  from './modules/member/member.routes.js';
+// Chamas
+import chamaRoutes from "./modules/chama/chama.routes.js";
+import chamaOperationsRoutes from "./modules/chama/chamaOperations.routes.js";
+import chamaInvitationRoutes from "./modules/chama/chamaInvitation.routes.js";
+import memberRoutes from "./modules/member/member.routes.js";
 
-import payoutRoutes
-  from './modules/payout/payout.routes.js';
+// Contribution Groups
+import contributionGroupRoutes from "./modules/contributionGroups/contributionGroup.routes.js";
+import contributionGroupPlanRoutes from "./modules/contributionPlan/contributionGroupPlan.routes.js";
+import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
+import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
+import mpesaRoutes from "./payment/providers/mpesa/mpesa.routes.js";
 
-import contributionGroupRoutes
-  from './modules/contributionGroups/contributionGroup.routes.js';
+// Finance
+import financeRoutes from "./modules/finance/finance.routes.js";
 
-import contributionPlanRoutes
-  from './modules/contributionPlan/contributionPlan.routes.js';
+// Payouts
+import payoutRoutes from "./modules/payout/payout.routes.js";
 
-import contributionGroupPlanRoutes
-  from './modules/contributionPlan/contributionGroupPlan.routes.js';
+// Chat
+import chatRoutes from "./modules/chat/chat.routes.js";
 
-import contributionPaymentRoutes
-  from './modules/contributionPlan/contributionPayment.routes.js';
+// Meetings
+import meetingRoutes from "./modules/meetings/meetings.routes.js";
 
+// Audit
+import auditRoutes from "./modules/audit/audit.routes.js";
+import businessRoutes from "./modules/business/business.routes.js";
+import loanRoutes from "./modules/loans/loan.routes.js";
 
-  import auditRoutes
-  from './modules/audit/audit.routes.js';
-
-
-// ========================================
+// ============================================================================
 // ERROR MIDDLEWARE
-// ========================================
+// ============================================================================
 
-import {
-  notFound
-} from './middleware/notFound.middleware.js';
+import { notFound } from "./middleware/notFound.middleware.js";
+import { errorHandler } from "./middleware/error.middleware.js";
 
-import {
-  errorHandler
-} from './middleware/error.middleware.js';
-
-
-// ========================================
+// ============================================================================
 // CREATE EXPRESS APP
-// ========================================
+// ============================================================================
 
 const app = express();
 
-
-// ========================================
+// ============================================================================
 // GLOBAL MIDDLEWARE
-// ========================================
+// ============================================================================
 
-// Security headers
+app.use(helmet());
+
 app.use(
-  helmet()
+    cors({
+        origin: true,
+        credentials: true,
+    })
 );
 
+// Body size limit raised from Express's 100kb default to accommodate
+// base64-encoded profile photo uploads (see src/utils/userProfile.js —
+// avatar_url is capped at ~2.8MB as a data URI string).
+app.use(express.json({ limit: "5mb" }));
 
-// Cross-Origin Resource Sharing
 app.use(
-  cors()
+    express.urlencoded({
+        extended: true,
+        limit: "5mb",
+    })
 );
 
-
-// Parse JSON request bodies
-app.use(
-  express.json()
-);
-
-
-// Parse URL-encoded request bodies
-app.use(
-  express.urlencoded({
-    extended: true
-  })
-);
-
-
-// ========================================
+// ============================================================================
 // HEALTH CHECK
-// ========================================
-//
-// GET /api/v1/health
-//
-// Used to verify that the API is running.
-//
-// ========================================
+// ============================================================================
 
-app.get(
-  '/api/v1/health',
-  (req, res) => {
-
+app.get("/api/v1/health", (req, res) => {
     res.status(200).json({
-
-      success: true,
-
-      message:
-        'ChamaManager API is healthy'
-
+        success: true,
+        message: "ChamaManager API is healthy",
+        timestamp: new Date(),
     });
+});
 
-  }
-);
-
-
-// ========================================
-// AUTH ROUTES
-// ========================================
-//
-// Base URL:
-//
-// /api/v1/auth
-//
-// Examples:
-//
-// POST /api/v1/auth/register
-// POST /api/v1/auth/login
-//
-// ========================================
+// ============================================================================
+// AUTHENTICATION
+// ============================================================================
 
 app.use(
-  '/api/v1/auth',
-  authRoutes
+    "/api/v1/auth",
+    authRoutes
 );
 
-
-// ========================================
-// CHAMA ROUTES
-// ========================================
-//
-// Base URL:
-//
-// /api/v1/chamas
-//
-// Examples:
-//
-// POST   /api/v1/chamas
-// GET    /api/v1/chamas/:id
-// GET    /api/v1/chamas/:id/members
-// PATCH  /api/v1/chamas/:id
-// DELETE /api/v1/chamas/:id
-//
-// ========================================
+// ============================================================================
+// WORKSPACES
+// ============================================================================
 
 app.use(
-  '/api/v1/chamas',
-  chamaRoutes
+    "/api/v1/workspaces",
+    workspaceRoutes
 );
 
-
-// ========================================
-// MEMBER ROUTES
-// ========================================
-//
-// Base URL:
-//
-// /api/v1/chamas
-//
-// Member routes are mounted under the
-// Chama resource.
-//
-// Examples:
-//
-// GET
-// /api/v1/chamas/:chamaId/members
-//
-// POST
-// /api/v1/chamas/:chamaId/members
-//
-// DELETE
-// /api/v1/chamas/:chamaId/members/:memberId
-//
-// ========================================
+// ============================================================================
+// CHAMAS
+// ============================================================================
 
 app.use(
-  '/api/v1/chamas',
-  memberRoutes
+    "/api/v1/chamas",
+    chamaRoutes
 );
 
+app.use("/api/v1/chamas/:chamaId", chamaOperationsRoutes);
+app.use("/api/v1/chama-invitations", chamaInvitationRoutes);
 
-// ========================================
-// PAYOUT ROUTES
-// ========================================
-//
-// Base URL:
-//
-// /api/v1/chamas
-//
-// ========================================
+// ============================================================================
+// MEMBERS
+// ============================================================================
 
 app.use(
-  '/api/v1/chamas',
-  payoutRoutes
+    "/api/v1/chamas",
+    memberRoutes
 );
 
-
-// ========================================
-// CONTRIBUTION GROUP ROUTES
-// ========================================
-//
-// Base URL:
-//
-// /api/v1/contribution-groups
-//
-// Examples:
-//
-// POST
-// /api/v1/contribution-groups
-//
-// GET
-// /api/v1/contribution-groups/:groupId
-//
-// GET
-// /api/v1/contribution-groups/:groupId/members
-//
-// POST
-// /api/v1/contribution-groups/:groupId/members
-//
-// ========================================
+// ============================================================================
+// PAYOUTS
+// ============================================================================
 
 app.use(
-  '/api/v1/contribution-groups',
-  contributionGroupRoutes
+    "/api/v1/chamas",
+    payoutRoutes
 );
+app.use("/api/v1/chamas", loanRoutes);
 
-
-// ========================================
-// CONTRIBUTION GROUP PLAN ROUTES
-// ========================================
-//
-// Group-scoped contribution plans.
-//
-// Base URL:
-//
-// /api/v1/contribution-groups
-//
-// Examples:
-//
-// GET
-// /api/v1/contribution-groups/:groupId/plans
-//
-// POST
-// /api/v1/contribution-groups/:groupId/plans
-//
-// ========================================
+// ============================================================================
+// CONTRIBUTION GROUPS
+// ============================================================================
 
 app.use(
-  '/api/v1/contribution-groups',
-  contributionGroupPlanRoutes
+    "/api/v1/contribution-groups",
+    contributionGroupRoutes
 );
 
-
-// ========================================
-// CONTRIBUTION PLAN ROUTES
-// ========================================
-//
-// Individual contribution plan operations.
-//
-// Base URL:
-//
-// /api/v1/contribution-plans
-//
-// Examples:
-//
-// GET
-// /api/v1/contribution-plans/:planId
-//
-// PATCH
-// /api/v1/contribution-plans/:planId/pause
-//
-// PATCH
-// /api/v1/contribution-plans/:planId/resume
-//
-// ========================================
+// ============================================================================
+// CONTRIBUTION GROUP PLANS
+// ============================================================================
 
 app.use(
-  '/api/v1/contribution-plans',
-  contributionPlanRoutes
+    "/api/v1/contribution-groups",
+    contributionGroupPlanRoutes
 );
 
-
-// ========================================
-// CONTRIBUTION ROUTES
-// ========================================
-//
-// Actual member contribution transactions.
-//
-// Base URL:
-//
-// /api/v1/contributions
-//
-// Examples:
-//
-// POST
-// /api/v1/contributions
-//
-// POST
-// /api/v1/contributions/callback
-//
-// ========================================
+// ============================================================================
+// CONTRIBUTION PLANS
+// ============================================================================
 
 app.use(
-  '/api/v1/contributions',
-  contributionPaymentRoutes
+    "/api/v1/contribution-plans",
+    contributionPlanRoutes
 );
 
-
-// ========================================
-// AUDIT ROUTES
-// ========================================
+// ============================================================================
+// CONTRIBUTION PAYMENTS
+// ============================================================================
 
 app.use(
-  '/api/v1/chamas',
-  auditRoutes
+    "/api/v1/contributions",
+    contributionPaymentRoutes
 );
-
-
-// ========================================
-// 404 NOT FOUND
-// ========================================
-//
-// IMPORTANT:
-//
-// This must come AFTER all routes.
-//
-// Any request that reaches this point
-// did not match an existing route.
-//
-// ========================================
 
 app.use(
-  notFound
+    "/api/v1/mpesa",
+    mpesaRoutes
 );
 
+app.use(
+    "/api/v1/businesses",
+    businessRoutes
+);
 
-// ========================================
+// ============================================================================
+// FINANCE ENGINE
+// ============================================================================
+//
+// Mounted under:
+//
+// /api/v1/workspaces/:workspaceId/finance/*
+//
+// Examples
+//
+// GET    /finance/summary
+// GET    /finance/accounts
+// GET    /finance/transactions
+// GET    /finance/ledger
+// GET    /finance/trial-balance
+// GET    /finance/balance-sheet
+// GET    /finance/income-statement
+// GET    /finance/cash-flow
+//
+// ============================================================================
+
+app.use(
+    "/api/v1/workspaces",
+    financeRoutes
+);
+
+app.use(
+    "/api/v1/workspaces",
+    meetingRoutes
+);
+
+// ============================================================================
+// CHAT
+// ============================================================================
+//
+// REST API
+//
+// GET    /api/v1/chat/workspace/:workspaceId
+// GET    /api/v1/chat/workspace/:workspaceId/search
+//
+// Realtime communication is handled separately
+// by Socket.IO in socketServer.js.
+//
+// ============================================================================
+
+app.use(
+    "/api/v1/chat",
+    chatRoutes
+);
+
+// ============================================================================
+// AUDIT LOGS
+// ============================================================================
+
+app.use(
+    "/api/v1/chamas",
+    auditRoutes
+);
+
+// ============================================================================
+// 404 HANDLER
+// ============================================================================
+
+app.use(notFound);
+
+// ============================================================================
 // GLOBAL ERROR HANDLER
-// ========================================
-//
-// IMPORTANT:
-//
-// This must be the LAST middleware.
-//
-// It handles errors passed using:
-//
-// next(error)
-//
-// ========================================
+// ============================================================================
 
-app.use(
-  errorHandler
-);
+app.use(errorHandler);
 
-
-
-
-// ========================================
-// EXPORT APP
-// ========================================
+// ============================================================================
+// EXPORT
+// ============================================================================
 
 export default app;

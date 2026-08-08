@@ -2,7 +2,9 @@ export const WORKSPACE_TYPES = {
 
     CHAMA: "chama",
 
-    CONTRIBUTION_GROUP: "contribution-group"
+    CONTRIBUTION_GROUP: "contribution-group",
+
+    BUSINESS: "business"
 
 };
 
