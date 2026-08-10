@@ -2,343 +2,139 @@
  * ============================================================================
  * PAYMENT STORE
  * ============================================================================
- *
- * Transaction-aware persistence gateway.
- *
- * Responsibilities
- * ----------------
- * • Persist Contribution Payments
- * • Persist Payment Intents
- * • Provider metadata
- * • Idempotency
- * • State persistence
- * • MongoDB transactions
- *
- * DOES NOT
- * --------
- * ✗ Call M-Pesa
- * ✗ Run Finance Engine
- * ✗ Validate requests
- * ✗ Execute business rules
- *
- * ============================================================================
  */
 
+import mongoose from "mongoose"; // ADD
 import ContributionPayment from "../../models/ContributionPayment.js";
 import PaymentIntent from "../../models/PaymentIntent.js";
-
 import PaymentMapper from "./payment.mapper.js";
 import paymentStateMachine from "../payment.state-machine.js";
+import { PAYMENT_STATUS } from "../payment.constants.js";
+import { DuplicatePaymentError, PaymentNotFoundError, PaymentAlreadyCompletedError } from "../payment.errors.js";
 
-import {
-    PAYMENT_STATUS
-} from "../payment.constants.js";
+const canUseTransactions = () => {
+  const topology = mongoose.connection?.client?.topology;
+  return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
+};
 
-import {
-    DuplicatePaymentError,
-    PaymentNotFoundError,
-    PaymentAlreadyCompletedError
-} from "../payment.errors.js";
+const getOpts = (session) => {
+  return canUseTransactions() && session? { session } : {}; // <-- KEY FIX
+};
 
 class PaymentStore {
 
-    /**
-     * ========================================================
-     * CREATE PENDING PAYMENT
-     * ========================================================
-     */
     async createPending(context, session = null) {
+        const opts = getOpts(session);
 
-        const paymentDocument =
-            PaymentMapper.toContributionPaymentDocument(context);
+        const paymentDocument = PaymentMapper.toContributionPaymentDocument(context);
+        const intentDocument = PaymentMapper.toPaymentIntentDocument(context);
 
-        const intentDocument =
-            PaymentMapper.toPaymentIntentDocument(context);
-
-        const payment = await ContributionPayment.create(
-            [paymentDocument],
-            { session }
-        );
+        const payment = await ContributionPayment.create([paymentDocument], opts);
 
         intentDocument.payment = payment[0]._id;
-
-        const intent = await PaymentIntent.create(
-            [intentDocument],
-            { session }
-        );
+        const intent = await PaymentIntent.create([intentDocument], opts);
 
         payment[0].paymentIntent = intent[0]._id;
-
-        await payment[0].save({ session });
+        await payment[0].save(opts); // <-- use opts
 
         return payment[0];
-
     }
 
-    /**
-     * ========================================================
-     * FINDERS
-     * ========================================================
-     */
-
-    async findById(id) {
-
-        return ContributionPayment.findById(id);
-
+    async findById(id, session = null) { // ADD session param
+        const opts = getOpts(session);
+        return ContributionPayment.findById(id, null, opts);
     }
 
-    async findByReference(reference) {
-
-        return ContributionPayment.findOne({
-            reference
-        });
-
+    async findByReference(reference, session = null) {
+        const opts = getOpts(session);
+        return ContributionPayment.findOne({ reference }, null, opts);
     }
 
-    async findByCheckoutRequestId(checkoutRequestId) {
-
-        return ContributionPayment.findOne({
-            "provider.checkoutRequestId":
-                checkoutRequestId
-        });
-
+    async findByCheckoutRequestId(checkoutRequestId, session = null) {
+        const opts = getOpts(session);
+        return ContributionPayment.findOne({ "provider.checkoutRequestId": checkoutRequestId }, null, opts);
     }
 
-    async findByMerchantRequestId(merchantRequestId) {
-
-        return ContributionPayment.findOne({
-            "provider.merchantRequestId":
-                merchantRequestId
-        });
-
+    async findByMerchantRequestId(merchantRequestId, session = null) {
+        const opts = getOpts(session);
+        return ContributionPayment.findOne({ "provider.merchantRequestId": merchantRequestId }, null, opts);
     }
 
-    async findByProviderReference(providerReference) {
-
-        return ContributionPayment.findOne({
-            "provider.providerReference":
-                providerReference
-        });
-
+    async findByProviderReference(providerReference, session = null) {
+        const opts = getOpts(session);
+        return ContributionPayment.findOne({ "provider.providerReference": providerReference }, null, opts);
     }
 
-    /**
-     * ========================================================
-     * PROVIDER METADATA
-     * ========================================================
-     */
+    async attachProviderMetadata(paymentId, providerResponse, session = null) {
+        const opts = getOpts(session);
+        const payment = await this.findById(paymentId, session);
+        if (!payment) throw new PaymentNotFoundError();
 
-    async attachProviderMetadata(
-        paymentId,
-        providerResponse,
-        session = null
-    ) {
-
-        const payment =
-            await this.findById(paymentId);
-
-        if (!payment)
-            throw new PaymentNotFoundError();
-
-        payment.provider = {
-
-            ...payment.provider,
-
-            ...PaymentMapper.toProviderMetadata(
-                providerResponse
-            )
-
-        };
-
-        await payment.save({ session });
-
+        payment.provider = {...payment.provider,...PaymentMapper.toProviderMetadata(providerResponse) };
+        await payment.save(opts); // <-- use opts
         return payment;
-
     }
 
-    /**
-     * ========================================================
-     * MARK PROCESSING
-     * ========================================================
-     */
+    async markProcessing(paymentId, session = null) {
+        const opts = getOpts(session);
+        const payment = await this.findById(paymentId, session);
+        if (!payment) throw new PaymentNotFoundError();
 
-    async markProcessing(
-        paymentId,
-        session = null
-    ) {
-
-        const payment =
-            await this.findById(paymentId);
-
-        if (!payment)
-            throw new PaymentNotFoundError();
-
-        paymentStateMachine.transition(
-
-            payment,
-
-            PAYMENT_STATUS.PROCESSING
-
-        );
-
-        await payment.save({ session });
-
+        paymentStateMachine.transition(payment, PAYMENT_STATUS.PROCESSING);
+        await payment.save(opts);
         return payment;
-
     }
 
-    /**
-     * ========================================================
-     * MARK COMPLETED
-     * ========================================================
-     */
+    async markCompleted(paymentId, providerData, session = null) {
+        const opts = getOpts(session);
+        const payment = await this.findById(paymentId, session);
+        if (!payment) throw new PaymentNotFoundError();
+        if (payment.status === PAYMENT_STATUS.COMPLETED) throw new PaymentAlreadyCompletedError();
 
-    async markCompleted(
-        paymentId,
-        providerData,
-        session = null
-    ) {
-
-        const payment =
-            await this.findById(paymentId);
-
-        if (!payment)
-            throw new PaymentNotFoundError();
-
-        if (payment.status === PAYMENT_STATUS.COMPLETED)
-            throw new PaymentAlreadyCompletedError();
-
-        paymentStateMachine.transition(
-
-            payment,
-
-            PAYMENT_STATUS.COMPLETED
-
-        );
-
-        payment.provider = {
-
-            ...payment.provider,
-
-            ...PaymentMapper.toProviderMetadata(
-                providerData
-            )
-
-        };
-
+        paymentStateMachine.transition(payment, PAYMENT_STATUS.COMPLETED);
+        payment.provider = {...payment.provider,...PaymentMapper.toProviderMetadata(providerData) };
         payment.completedAt = new Date();
-
-        await payment.save({ session });
-
+        await payment.save(opts); // <-- use opts
         return payment;
-
     }
 
-    /**
-     * ========================================================
-     * MARK FAILED
-     * ========================================================
-     */
+    async markFailed(paymentId, reason, session = null) {
+        const opts = getOpts(session);
+        const payment = await this.findById(paymentId, session);
+        if (!payment) throw new PaymentNotFoundError();
 
-    async markFailed(
-        paymentId,
-        reason,
-        session = null
-    ) {
-
-        const payment =
-            await this.findById(paymentId);
-
-        if (!payment)
-            throw new PaymentNotFoundError();
-
-        paymentStateMachine.transition(
-
-            payment,
-
-            PAYMENT_STATUS.FAILED
-
-        );
-
+        paymentStateMachine.transition(payment, PAYMENT_STATUS.FAILED);
         payment.failureReason = reason;
-
-        await payment.save({ session });
-
+        await payment.save(opts);
         return payment;
-
     }
 
-    /**
-     * ========================================================
-     * MARK CANCELLED
-     * ========================================================
-     */
+    async markCancelled(paymentId, reason, session = null) {
+        const opts = getOpts(session);
+        const payment = await this.findById(paymentId, session);
+        if (!payment) throw new PaymentNotFoundError();
 
-    async markCancelled(
-        paymentId,
-        reason,
-        session = null
-    ) {
-
-        const payment =
-            await this.findById(paymentId);
-
-        if (!payment)
-            throw new PaymentNotFoundError();
-
-        paymentStateMachine.transition(
-
-            payment,
-
-            PAYMENT_STATUS.CANCELLED
-
-        );
-
+        paymentStateMachine.transition(payment, PAYMENT_STATUS.CANCELLED);
         payment.cancelReason = reason;
-
-        await payment.save({ session });
-
+        await payment.save(opts);
         return payment;
-
     }
 
-    /**
-     * ========================================================
-     * IDEMPOTENCY
-     * ========================================================
-     */
-
-    async exists(paymentId) {
-
-        return ContributionPayment.exists({
-            _id: paymentId
-        });
-
+    async exists(paymentId, session = null) {
+        const opts = getOpts(session);
+        return ContributionPayment.exists({ _id: paymentId }, opts);
     }
 
-    async existsByProviderReference(reference) {
-
-        return ContributionPayment.exists({
-
-            "provider.providerReference":
-                reference
-
-        });
-
+    async existsByProviderReference(reference, session = null) {
+        const opts = getOpts(session);
+        return ContributionPayment.exists({ "provider.providerReference": reference }, opts);
     }
 
-    async isCompleted(paymentId) {
-
-        const payment =
-            await this.findById(paymentId);
-
-        if (!payment)
-            return false;
-
+    async isCompleted(paymentId, session = null) { // ADD session param
+        const payment = await this.findById(paymentId, session);
+        if (!payment) return false;
         return payment.status === PAYMENT_STATUS.COMPLETED;
-
     }
-
 }
 
 export default new PaymentStore();

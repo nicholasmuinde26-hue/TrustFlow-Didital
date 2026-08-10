@@ -131,7 +131,7 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
         isOpen={isStkOpen}
         onClose={() => setIsStkOpen(false)}
         chamaId={workspaceId}
-        title="Chama M-Pesa STK Push"
+        title="Deposit to Savings via M-Pesa"
       />
     </div>
   );

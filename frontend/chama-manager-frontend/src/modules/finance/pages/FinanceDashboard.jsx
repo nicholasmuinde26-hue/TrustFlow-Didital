@@ -1,8 +1,10 @@
 import React from "react";
 import { useParams } from "react-router-dom";
+import { Toaster } from "react-hot-toast"; // not needed here if in App
 
 import useWorkspace from "../../../app/hooks/useWorkspace";
 import useFinanceSummary from "../hooks/useFinanceSummary";
+import usePaymentWatcher from "../hooks/usePaymentWatcher"; // ADD THIS
 
 import BalanceCard from "../components/BalanceCard";
 import CashFlowCard from "../components/CashFlowCard";
@@ -13,8 +15,9 @@ export default function FinanceDashboard() {
   const routeParams = useParams();
   const workspaceCtx = useWorkspace();
   
-  // Resolve workspace ID from workspace hook context or route params
   const workspaceId = workspaceCtx?.workspaceId || routeParams?.workspaceId;
+
+  usePaymentWatcher(workspaceId); // ADD THIS - runs in background
 
   const {
     summary,
@@ -47,29 +50,28 @@ export default function FinanceDashboard() {
           </p>
         </div>
 
-        {/* Action controls including Treasurer M-Pesa STK push */}
         <FinanceActions onRefresh={() => refetch && refetch()} />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <BalanceCard
           title="Current Balance"
-          amount={financeData?.cash_balance ?? financeData?.balance ?? "0"}
+          amount={formatKES(financeData?.cash_balance ?? financeData?.balance ?? 0)} // format it
         />
 
         <BalanceCard
           title="Total Contributions"
-          amount={financeData?.total_contributions ?? "0"}
+          amount={formatKES(financeData?.total_contributions ?? 0)}
         />
 
         <BalanceCard
           title="Pending Payouts"
-          amount={financeData?.pending_payouts ?? "0"}
+          amount={formatKES(financeData?.pending_payouts ?? 0)}
         />
 
         <BalanceCard
           title="Outstanding Loans"
-          amount={financeData?.outstanding_loans ?? "0"}
+          amount={formatKES(financeData?.outstanding_loans ?? 0)}
         />
       </div>
 
@@ -77,3 +79,6 @@ export default function FinanceDashboard() {
     </div>
   );
 }
+
+const formatKES = (value) => 
+  new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(Number(value??0));

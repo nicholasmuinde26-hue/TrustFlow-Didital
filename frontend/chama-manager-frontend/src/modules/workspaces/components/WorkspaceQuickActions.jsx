@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
-import { useInitiateMpesaStkPush } from "../../finance/hooks/useInitiateMpesaStkPush";
 import MpesaStkModal from "../../finance/components/MpesaStkModal";
 
 const baseActions = [
@@ -72,16 +71,9 @@ export default function WorkspaceQuickActions() {
   const { workspaceId: paramId } = useParams();
   const workspaceCtx = useWorkspace();
   const workspaceId = paramId || workspaceCtx?.workspaceId;
+  const isChama = workspaceCtx?.isChama;
 
   const [isStkOpen, setIsStkOpen] = useState(false);
-  const { initiateStkPush, isPending, isLoading } = useInitiateMpesaStkPush();
-
-  const handleStkSubmit = async (payload) => {
-    await initiateStkPush({
-      workspaceId,
-      ...payload,
-    });
-  };
 
   return (
     <section className="space-y-4">
@@ -90,43 +82,47 @@ export default function WorkspaceQuickActions() {
           Quick Actions
         </h2>
 
-        {/* Top Header Trigger */}
-        <button
-          type="button"
-          onClick={() => setIsStkOpen(true)}
-          className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors"
-        >
-          <Smartphone size={16} />
-          M-Pesa STK Push
-        </button>
+        {/* Top Header Trigger — savings deposits only apply to chamas */}
+        {isChama && (
+          <button
+            type="button"
+            onClick={() => setIsStkOpen(true)}
+            className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors"
+          >
+            <Smartphone size={16} />
+            M-Pesa STK Push
+          </button>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {/* Dedicated M-Pesa Interactive Action Card */}
-        <button
-          type="button"
-          onClick={() => setIsStkOpen(true)}
-          className="group text-left rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-400 hover:shadow-lg dark:border-emerald-900/40 dark:bg-emerald-950/20"
-        >
-          <div className="flex items-center justify-between">
-            <div className="rounded-xl bg-emerald-600 p-3 text-white dark:bg-emerald-500">
-              <Smartphone size={20} />
+        {/* Dedicated M-Pesa Interactive Action Card — savings deposits only apply to chamas */}
+        {isChama && (
+          <button
+            type="button"
+            onClick={() => setIsStkOpen(true)}
+            className="group text-left rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 transition-all duration-300 hover:-translate-y-1 hover:border-emerald-400 hover:shadow-lg dark:border-emerald-900/40 dark:bg-emerald-950/20"
+          >
+            <div className="flex items-center justify-between">
+              <div className="rounded-xl bg-emerald-600 p-3 text-white dark:bg-emerald-500">
+                <Smartphone size={20} />
+              </div>
+
+              <ChevronRight
+                size={18}
+                className="text-emerald-600 transition-transform group-hover:translate-x-1 dark:text-emerald-400"
+              />
             </div>
 
-            <ChevronRight
-              size={18}
-              className="text-emerald-600 transition-transform group-hover:translate-x-1 dark:text-emerald-400"
-            />
-          </div>
+            <h3 className="mt-4 font-semibold text-emerald-950 dark:text-emerald-200">
+              M-Pesa Express
+            </h3>
 
-          <h3 className="mt-4 font-semibold text-emerald-950 dark:text-emerald-200">
-            M-Pesa Express
-          </h3>
-
-          <p className="mt-1 text-sm text-emerald-700/80 dark:text-emerald-400/80">
-            Trigger STK push payment
-          </p>
-        </button>
+            <p className="mt-1 text-sm text-emerald-700/80 dark:text-emerald-400/80">
+              Deposit to savings via STK push
+            </p>
+          </button>
+        )}
 
         {/* Standard Navigation Actions */}
         {baseActions.map((action) => {
@@ -162,13 +158,14 @@ export default function WorkspaceQuickActions() {
       </div>
 
       {/* Payment STK Modal */}
-      <MpesaStkModal
-        isOpen={isStkOpen}
-        onClose={() => setIsStkOpen(false)}
-        onSubmit={handleStkSubmit}
-        loading={isPending ?? isLoading}
-        title="Instant M-Pesa STK Push"
-      />
+      {isChama && (
+        <MpesaStkModal
+          isOpen={isStkOpen}
+          onClose={() => setIsStkOpen(false)}
+          chamaId={workspaceId}
+          title="Deposit to Savings via M-Pesa"
+        />
+      )}
     </section>
   );
 }

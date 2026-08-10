@@ -8,7 +8,7 @@ const mpesaAttemptSchema = new mongoose.Schema({
   initiated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   checkout_request_id: { type: String, unique: true, sparse: true },
   merchant_request_id: { type: String, default: null },
-  status: { type: String, enum: ["pending", "completed", "failed"], default: "pending" },
+  status: { type: String, enum: ["pending", "processing", "completed", "failed"], default: "pending" },
   mpesa_receipt_number: { type: String, default: null, unique: true, sparse: true },
 }, { timestamps: true });
 

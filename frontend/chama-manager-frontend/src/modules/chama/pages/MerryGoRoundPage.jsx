@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Bell, CircleDollarSign, MessageCircle, Save, Smartphone } from "lucide-react";
+import { Bell, CircleDollarSign, MessageCircle, Save, Smartphone, Loader2, XCircle } from "lucide-react";
 import useWorkspace from "@/app/hooks/useWorkspace";
 import useAuth from "@/app/hooks/useAuth";
 import chamaApi from "../api/chama.api";
@@ -25,6 +25,25 @@ export default function MerryGoRoundPage() {
   const [notice, setNotice] = useState(null);
   const [sendingObligationId, setSendingObligationId] = useState(null);
   const [reminding, setReminding] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+
+  const pollRef = useRef(null);
+  const countdownRef = useRef(null);
+
+  const clearTimers = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+  };
+
+  const handleCancelPayment = () => {
+    clearTimers();
+    setIsPolling(false);
+    setNotice({
+      error: true,
+      text: "Payment process was cancelled by user.",
+    });
+  };
 
   const load = async () => {
     try {
@@ -54,7 +73,10 @@ export default function MerryGoRoundPage() {
     load();
     const timer = setInterval(load, 15000);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      clearTimers();
+    };
   }, [chamaId]);
 
   const currentMembership = overview?.members?.find(
@@ -98,6 +120,59 @@ export default function MerryGoRoundPage() {
     }
   };
 
+  const startPolling = (paymentIntent, memberName) => {
+    clearTimers();
+    setIsPolling(true);
+    setCountdown(60);
+
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearTimers();
+          setIsPolling(false);
+          setNotice({
+            error: true,
+            text: `Payment confirmation timed out for ${memberName}. If you completed the payment, the list will update shortly.`,
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    let pollCount = 0;
+    pollRef.current = setInterval(async () => {
+      try {
+        pollCount += 1;
+        const response = pollCount >= 4 && pollCount % 4 === 0
+          ? await chamaApi.reconcilePaymentIntent(chamaId, paymentIntent._id)
+          : await chamaApi.getPaymentIntent(chamaId, paymentIntent._id);
+        const updated = response.data.data.paymentIntent;
+
+        if (["completed", "failed", "cancelled"].includes(updated.status)) {
+          clearTimers();
+          setIsPolling(false);
+
+          if (updated.status === "completed") {
+            setNotice({
+              text: `Payment confirmed successfully for ${memberName}!`,
+            });
+            window.dispatchEvent(new Event("finance:updated"));
+            load();
+          } else {
+            setNotice({
+              error: true,
+              text: updated.failure_reason || `The transaction for ${memberName} failed or was cancelled.`,
+            });
+            load();
+          }
+        }
+      } catch (err) {
+        console.debug("Polling attempt failed, retrying...", err);
+      }
+    }, 3000);
+  };
+
   const requestPayment = async (item) => {
     const phoneNumber = window.prompt(
       `M-Pesa phone number for ${item.member_name}`,
@@ -107,9 +182,10 @@ export default function MerryGoRoundPage() {
     if (!phoneNumber) return;
 
     setSendingObligationId(item.obligation._id);
+    setNotice(null);
 
     try {
-      await financeService.initiateMpesaStkPush({
+      const responseData = await financeService.initiateMpesaStkPush({
         contributionObligationId: item.obligation._id,
         amount: Number(
           item.obligation.expected_amount?.$numberDecimal ||
@@ -120,10 +196,16 @@ export default function MerryGoRoundPage() {
         transactionDescription: "Merry-Go-Round contribution",
       });
 
+      const paymentIntent = responseData?.paymentIntent;
+
       setNotice({
         text: `STK prompt sent to ${item.member_name}. Complete it on the selected phone number.`,
       });
       window.dispatchEvent(new Event("finance:updated"));
+
+      if (paymentIntent?._id) {
+        startPolling(paymentIntent, item.member_name);
+      }
     } catch (error) {
       setNotice({
         error: true,
@@ -319,7 +401,27 @@ export default function MerryGoRoundPage() {
         </p>
       )}
 
-      <section className="rounded-2xl border bg-white p-6">
+      <section className="rounded-2xl border bg-white p-6 relative">
+        {isPolling && (
+          <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs z-10 flex flex-col items-center justify-center rounded-2xl p-6 text-center animate-fade-in">
+            <Loader2 size={38} className="animate-spin text-emerald-600 mb-2" />
+            <p className="text-sm font-bold text-slate-900 dark:text-white">
+              Waiting for M-Pesa PIN Entry ({countdown}s)
+            </p>
+            <p className="text-xs text-slate-500 mt-1 max-w-xs">
+              Check the phone screen for the prompt and enter the PIN.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleCancelPayment}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/60 dark:text-red-300 transition-colors cursor-pointer shadow-xs"
+            >
+              <XCircle size={16} />
+              Cancel Payment
+            </button>
+          </div>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold">Current MGR round</h2>

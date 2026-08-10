@@ -10,6 +10,13 @@ import mpesaService from '../../payment/providers/mpesa/mpesa.service.js';
 import contributionPaymentService from '../contributionPlan/contributionPayment.service.js';
 import { startPayout } from '../payout/payout.service.js';
 
+// helper to generate unique reference for DB
+const generateUniqueReference = (displayRef) => {
+  const ts = Date.now();
+  const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `${displayRef}-${ts}-${rand}`.slice(0, 100);
+};
+
 const periodFor = (frequency, customDays = null, from = new Date()) => {
   const start = new Date(from);
   start.setHours(0, 0, 0, 0);
@@ -24,21 +31,10 @@ const periodFor = (frequency, customDays = null, from = new Date()) => {
   return { start, end };
 };
 
-// Anchor every MGR round to the plan start date. Rebuilding a period from
-// "now" on each request would create overlapping rounds before the selected
-// payout interval has elapsed.
 const currentMgrPeriod = (plan, now = new Date()) => {
-  let period = periodFor(
-    plan.merry_go_round.payout_interval,
-    plan.merry_go_round.payout_interval_days,
-    plan.start_date
-  );
+  let period = periodFor(plan.merry_go_round.payout_interval, plan.merry_go_round.payout_interval_days, plan.start_date);
   while (period.end <= now) {
-    period = periodFor(
-      plan.merry_go_round.payout_interval,
-      plan.merry_go_round.payout_interval_days,
-      period.end
-    );
+    period = periodFor(plan.merry_go_round.payout_interval, plan.merry_go_round.payout_interval_days, period.end);
   }
   return period;
 };
@@ -79,63 +75,79 @@ export const initiateSavingsDeposit = async ({ chama, membership, userId, amount
   const existing = await PaymentIntent.findOne({ idempotency_key: key });
   if (existing) return { intent: existing, reused: true };
 
-  // FIX: Provide a unique temporary provider_request_id to avoid E11000 null duplicates in MongoDB
   const temporaryRequestId = `pending_${crypto.randomUUID()}`;
+  const normalizedPhone = mpesaService.normalizePhoneNumber(phoneNumber);
+  const displayRef = 'CHAMA-SAVE'.slice(0, 20);
+  const uniqueRef = generateUniqueReference(displayRef);
 
   const intent = await PaymentIntent.create({
-    obligation_id: obligation._id,
-    plan_id: plan._id,
-    owner_type: 'Chama',
-    owner_id: chama._id,
-    participant_type: 'ChamaMembership',
-    participant_id: membership._id,
-    amount: value,
-    currency: 'KES',
-    payment_method: 'mpesa',
-    phone_number: mpesaService.normalizePhoneNumber(phoneNumber),
-    reference: `SAV-${crypto.randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`,
-    idempotency_key: key,
-    provider: 'mpesa',
-    provider_request_id: temporaryRequestId,
-    status: 'pending',
-    created_by: userId,
+    obligation_id: obligation._id, plan_id: plan._id, owner_type: 'Chama', owner_id: chama._id,
+    participant_type: 'ChamaMembership', participant_id: membership._id, amount: value, currency: 'KES',
+    payment_method: 'mpesa', phone_number: normalizedPhone, reference: uniqueRef, display_reference: displayRef,
+    idempotency_key: key, provider: 'mpesa', provider_request_id: temporaryRequestId, status: 'pending', created_by: userId,
   });
 
   try {
-    const result = await mpesaService.initiateStkPush({ amount: value, phoneNumber, accountReference: intent.reference, transactionDescription: 'Chama savings deposit' });
+    const result = await mpesaService.initiateStkPush({
+      amount: value, phoneNumber: normalizedPhone, accountReference: intent.reference,
+      displayReference: intent.display_reference, transactionDescription: 'Chama savings deposit',
+    });
     intent.provider_request_id = result.checkoutRequestId;
     intent.provider_response_id = result.merchantRequestId;
     intent.provider_response = result.rawResponse;
     intent.status = 'processing';
     await intent.save();
-    await MpesaAttempt.create({ obligation_id: obligation._id, payment_intent_id: intent._id, amount: value, phone_number: intent.phone_number, initiated_by: userId, checkout_request_id: result.checkoutRequestId, merchant_request_id: result.merchantRequestId });
+    await MpesaAttempt.create({
+      obligation_id: obligation._id, payment_intent_id: intent._id, amount: value, phone_number: intent.phone_number,
+      initiated_by: userId, checkout_request_id: result.checkoutRequestId, merchant_request_id: result.merchantRequestId,
+    });
     return { intent, stk: result };
   } catch (error) {
-    intent.status = 'failed'; intent.failure_reason = error.message; intent.failed_at = new Date(); await intent.save();
+    intent.status = 'failed'; intent.failure_reason = error.message; intent.failed_at = new Date();
+    await intent.save();
     throw error;
   }
 };
 
 export const reconcileSavingsCallback = async (callback) => {
-  const attempt = await MpesaAttempt.findOneAndUpdate({ checkout_request_id: callback.checkoutRequestId, payment_intent_id: { $ne: null }, status: 'pending' }, { $set: { status: callback.success ? 'processing' : 'failed' } }, { new: true });
+  // FIX 1: replace new:true with returnDocument
+  const attempt = await MpesaAttempt.findOneAndUpdate(
+    { checkout_request_id: callback.checkoutRequestId, payment_intent_id: { $ne: null }, status: 'pending' },
+    { $set: { status: callback.success ? 'processing' : 'failed' } },
+    { returnDocument: 'after' } // was new:true
+  );
+
   if (!attempt) return false;
   const intent = await PaymentIntent.findById(attempt.payment_intent_id);
   if (!intent) throw new AppError('Payment intent missing for M-Pesa attempt', 500);
+
   if (!callback.success || Number(callback.amount) !== Number(attempt.amount.toString()) || (callback.phoneNumber && callback.phoneNumber !== attempt.phone_number)) {
     attempt.status = 'failed'; await attempt.save();
     const status = Number(callback.resultCode) === 1032 ? 'cancelled' : 'failed';
-    await PaymentIntent.findByIdAndUpdate(intent._id, { status, failure_code: String(callback.resultCode), failure_reason: callback.resultDescription, failed_at: new Date(), provider_response: callback.rawCallback });
+    await PaymentIntent.findByIdAndUpdate(intent._id, {
+      status, failure_code: String(callback.resultCode), failure_reason: callback.resultDescription,
+      failed_at: new Date(), provider_response: callback.rawCallback,
+    });
     return true;
   }
-  const result = await contributionPaymentService.processPayment({ obligationId: attempt.obligation_id, amount: callback.amount, paymentMethod: 'mpesa', processingMode: 'webhook', createdBy: attempt.initiated_by, providerPaymentId: callback.checkoutRequestId, externalReference: callback.mpesaReceiptNumber });
+
+  const result = await contributionPaymentService.processPayment({
+    obligationId: attempt.obligation_id, amount: callback.amount, paymentMethod: 'mpesa',
+    processingMode: 'webhook', createdBy: attempt.initiated_by, providerPaymentId: callback.checkoutRequestId,
+    externalReference: callback.mpesaReceiptNumber, displayReference: intent.display_reference,
+  });
+
   attempt.status = 'completed'; attempt.mpesa_receipt_number = callback.mpesaReceiptNumber; await attempt.save();
-  await PaymentIntent.findByIdAndUpdate(intent._id, { status: 'completed', external_reference: callback.mpesaReceiptNumber, contribution_payment_id: result.payment._id, financial_transaction_id: result.accounting.transactionId || null, completed_at: new Date(), provider_response: callback.rawCallback });
+
+  await PaymentIntent.findByIdAndUpdate(intent._id, {
+    status: 'completed', external_reference: callback.mpesaReceiptNumber, contribution_payment_id: result.payment._id,
+    financial_transaction_id: result.accounting.transactionId || null, completed_at: new Date(), provider_response: callback.rawCallback,
+  });
+
   await maybeCreateMgrPayoutForChama(intent.owner_id, attempt.initiated_by);
   return true;
 };
 
-// Recover a final STK result when Safaricom cannot reach the configured callback
-// URL (a common local-development and private-network configuration issue).
 export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
   const intent = await PaymentIntent.findOne({ _id: intentId, owner_type: 'Chama', owner_id: chamaId });
   if (!intent || ['completed', 'failed', 'cancelled'].includes(intent.status)) return intent;
@@ -144,7 +156,12 @@ export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
   const query = await mpesaService.queryStkPush({ checkoutRequestId: attempt.checkout_request_id });
   if (query.resultCode === null || query.resultCode === undefined) return intent;
   const successful = Number(query.resultCode) === 0;
-  await reconcileSavingsCallback({ checkoutRequestId: attempt.checkout_request_id, resultCode: Number(query.resultCode), resultDescription: query.resultDescription || 'M-Pesa STK status received', success: successful, amount: successful ? Number(attempt.amount.toString()) : null, phoneNumber: successful ? attempt.phone_number : null, mpesaReceiptNumber: null, rawCallback: query.rawResponse });
+  await reconcileSavingsCallback({
+    checkoutRequestId: attempt.checkout_request_id, resultCode: Number(query.resultCode),
+    resultDescription: query.resultDescription || 'M-Pesa STK status received', success: successful,
+    amount: successful ? Number(attempt.amount.toString()) : null, phoneNumber: successful ? attempt.phone_number : null,
+    mpesaReceiptNumber: null, rawCallback: query.rawResponse,
+  });
   return PaymentIntent.findById(intent._id);
 };
 
@@ -169,43 +186,134 @@ export const ensureMgrRound = async (plan) => {
   return { period, members };
 };
 
+
 export const getMgrOverview = async (chamaId) => {
-  const plan = await ContributionPlan.findOne({ owner_type: 'Chama', owner_id: chamaId, contribution_type: 'merry_go_round' });
-  const members = await activeMembers(chamaId).populate('user_id', 'name phone');
-  const round = plan ? await ensureMgrRound(plan) : null;
+  const plan = await ContributionPlan.findOne({
+    owner_type: 'Chama',
+    owner_id: chamaId,
+    contribution_type: 'merry_go_round',
+  });
+
+  const members = await activeMembers(chamaId)
+    .populate('user_id', 'name phone');
+
+  const round = plan
+    ? await ensureMgrRound(plan)
+    : null;
+
   const obligations = plan
     ? await ContributionObligation.find({
-      plan_id: plan._id,
-      participant_id: { $in: members.map(({ _id }) => _id) },
-      period_start: round.period.start,
-      period_end: round.period.end,
-    })
+        plan_id: plan._id,
+        participant_id: {
+          $in: members.map(({ _id }) => _id),
+        },
+        period_start: round.period.start,
+        period_end: round.period.end,
+      })
     : [];
-  const obligationByMember = new Map(obligations.map((item) => [String(item.participant_id), item]));
+
+  const obligationByMember = new Map(
+    obligations.map((item) => [
+      String(item.participant_id),
+      item,
+    ])
+  );
+
   const reminders = obligations.length
     ? await MgrReminder.aggregate([
-      { $match: { obligation_id: { $in: obligations.map(({ _id }) => _id) } } },
-      { $sort: { createdAt: -1 } },
-      { $group: { _id: '$obligation_id', channel: { $first: '$channel' }, createdAt: { $first: '$createdAt' } } },
-    ])
+        {
+          $match: {
+            obligation_id: {
+              $in: obligations.map(
+                ({ _id }) => _id
+              ),
+            },
+          },
+        },
+        {
+          $sort: {
+            createdAt: -1,
+          },
+        },
+        {
+          $group: {
+            _id: '$obligation_id',
+            channel: {
+              $first: '$channel',
+            },
+            createdAt: {
+              $first: '$createdAt',
+            },
+          },
+        },
+      ])
     : [];
-  const reminderByObligation = new Map(reminders.map((item) => [String(item._id), { channel: item.channel, sent_at: item.createdAt }]));
-  const currentPayout = await (await import('../../models/Payout.js')).default.findOne({ chama_id: chamaId, contribution_plan_id: plan?._id, status: 'pending' }).populate('member_id', 'payout_position user_id');
+
+  const reminderByObligation = new Map(
+    reminders.map((item) => [
+      String(item._id),
+      {
+        channel: item.channel,
+        sent_at: item.createdAt,
+      },
+    ])
+  );
+
+  const currentPayout =
+    await (
+      await import('../../models/Payout.js')
+    ).default
+      .findOne({
+        chama_id: chamaId,
+        contribution_plan_id: plan?._id,
+        status: 'pending',
+      })
+      .populate(
+        'member_id',
+        'payout_position user_id'
+      );
+
   return {
     plan,
     members,
     currentPayout,
-    round: round ? { start: round.period.start, end: round.period.end } : null,
+
+    round: round
+      ? {
+          start: round.period.start,
+          end: round.period.end,
+        }
+      : null,
+
     obligations: members.map((member) => ({
       member_id: member._id,
-      member_name: member.user_id?.name || 'Member',
-      phone: member.user_id?.phone || null,
-      payout_position: member.payout_position,
-      obligation: obligationByMember.get(String(member._id)) || null,
-      last_reminder: reminderByObligation.get(String(obligationByMember.get(String(member._id))?._id)) || null,
+
+      member_name:
+        member.user_id?.name || 'Member',
+
+      phone:
+        member.user_id?.phone || null,
+
+      payout_position:
+        member.payout_position,
+
+      obligation:
+        obligationByMember.get(
+          String(member._id)
+        ) || null,
+
+      last_reminder:
+        reminderByObligation.get(
+          String(
+            obligationByMember.get(
+              String(member._id)
+            )?._id
+          )
+        ) || null,
     })),
   };
 };
+
 
 export const recordMgrReminder = async ({ chamaId, obligationId, channel, userId, message }) => {
   if (!['sms', 'whatsapp'].includes(channel)) throw new AppError('Reminder channel must be sms or whatsapp', 400);

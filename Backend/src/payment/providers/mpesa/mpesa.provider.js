@@ -20,11 +20,8 @@
  * ============================================================================
  */
 
-import ProviderInterface
-from "../provider.interface.js";
-
-import mpesaService
-from "./mpesa.service.js";
+import ProviderInterface from "../provider.interface.js";
+import mpesaService from "./mpesa.service.js";
 
 class MpesaProvider extends ProviderInterface {
 
@@ -33,57 +30,37 @@ class MpesaProvider extends ProviderInterface {
      * Provider Name
      * --------------------------------------------------------
      */
-
     getName() {
-
         return "MPESA";
-
     }
 
     /**
      * --------------------------------------------------------
      * Initiate STK Push
      * --------------------------------------------------------
+     * context = {
+     *   participant: { phoneNumber },
+     *   payment: { amount, reference, displayReference, description }
+     * }
      */
-
     async initiate(context) {
-
-        const response =
-            await mpesaService.initiateSTKPush({
-
-                phoneNumber:
-                    context.participant.phoneNumber,
-
-                amount:
-                    context.payment.amount,
-
-                reference:
-                    context.payment.reference,
-
-                accountReference:
-                    context.payment.reference,
-
-                description:
-                    context.payment.description
-
-            });
+        const response = await mpesaService.initiateStkPush({
+            phoneNumber: context.participant.phoneNumber,
+            amount: context.payment.amount,
+            accountReference: context.payment.reference, // unique for DB
+            displayReference: context.payment.displayReference || context.payment.reference, // what shows on M-Pesa
+            transactionDescription: context.payment.description
+        });
 
         return {
-
-            providerReference:
-                response.CheckoutRequestID,
-
-            checkoutRequestId:
-                response.CheckoutRequestID,
-
-            merchantRequestId:
-                response.MerchantRequestID,
-
-            raw:
-                response
-
+            success: response.success,
+            providerReference: response.checkoutRequestId,
+            checkoutRequestId: response.checkoutRequestId,
+            merchantRequestId: response.merchantRequestId,
+            customerMessage: response.customerMessage,
+            mocked: response.mocked,
+            raw: response.rawResponse
         };
-
     }
 
     /**
@@ -91,47 +68,29 @@ class MpesaProvider extends ProviderInterface {
      * Callback
      * --------------------------------------------------------
      */
-
     async processCallback(callback) {
-
-        const result =
-            mpesaService.parseCallback(callback);
+        const result = mpesaService.parseStkCallback(callback);
 
         return {
-
-            paymentId:
-                result.paymentId,
-
-            provider: {
-
-                name: "MPESA"
-
-            },
-
+            checkoutRequestId: result.checkoutRequestId,
+            merchantRequestId: result.merchantRequestId,
+            success: result.success,
+            resultCode: result.resultCode,
+            resultDescription: result.resultDescription,
+            amount: result.amount,
+            receiptNumber: result.mpesaReceiptNumber,
+            transactionDate: result.transactionDate,
+            phoneNumber: result.phoneNumber,
             providerData: {
-
-                providerReference:
-                    result.checkoutRequestId,
-
-                checkoutRequestId:
-                    result.checkoutRequestId,
-
-                merchantRequestId:
-                    result.merchantRequestId,
-
-                receiptNumber:
-                    result.receiptNumber,
-
-                transactionDate:
-                    result.transactionDate
-
+                provider: "MPESA",
+                providerReference: result.checkoutRequestId,
+                checkoutRequestId: result.checkoutRequestId,
+                merchantRequestId: result.merchantRequestId,
+                receiptNumber: result.mpesaReceiptNumber,
+                transactionDate: result.transactionDate
             },
-
-            metadata:
-                result.raw
-
+            metadata: result.rawCallback
         };
-
     }
 
     /**
@@ -139,29 +98,21 @@ class MpesaProvider extends ProviderInterface {
      * Query
      * --------------------------------------------------------
      */
-
     async query(payload) {
+        const result = await mpesaService.queryStkPush({
+            checkoutRequestId: payload.checkoutRequestId
+        });
 
-        const result =
-            await mpesaService.querySTKStatus(
-
-                payload.checkoutRequestId
-
-            );
+        const mapped = mpesaService.mapResultCode(result.resultCode);
 
         return {
-
-            status:
-                result.ResultCode,
-
-            description:
-                result.ResultDesc,
-
-            raw:
-                result
-
+            status: mapped.paymentStatus, // 'completed' | 'failed' | 'pending' | 'cancelled'
+            resultCode: result.resultCode,
+            description: result.resultDescription,
+            retryable: mapped.retryable,
+            reason: mapped.reason,
+            raw: result.rawResponse
         };
-
     }
 
 }

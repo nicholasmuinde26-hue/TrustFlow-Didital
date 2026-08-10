@@ -399,7 +399,12 @@ export const initiateSavingsDepositController = async (req, res, next) => {
 
 export const getPaymentIntentController = async (req, res, next) => {
   try {
-    const intent = await PaymentIntent.findOne({ _id: req.params.paymentIntentId, owner_type: 'Chama', owner_id: req.chama._id, participant_id: req.membership._id });
+    const query = { _id: req.params.paymentIntentId, owner_type: 'Chama', owner_id: req.chama._id };
+    const hasAdminAccess = ['treasurer', 'admin', 'chairperson', 'owner'].includes(req.membership.role);
+    if (!hasAdminAccess) {
+      query.participant_id = req.membership._id;
+    }
+    const intent = await PaymentIntent.findOne(query);
     if (!intent) return res.status(404).json({ success: false, message: 'Payment intent not found' });
     res.json({ success: true, data: { paymentIntent: intent } });
   } catch (error) { next(error); }
@@ -407,8 +412,15 @@ export const getPaymentIntentController = async (req, res, next) => {
 
 export const reconcilePaymentIntentController = async (req, res, next) => {
   try {
+    const query = { _id: req.params.paymentIntentId, owner_type: 'Chama', owner_id: req.chama._id };
+    const hasAdminAccess = ['treasurer', 'admin', 'chairperson', 'owner'].includes(req.membership.role);
+    if (!hasAdminAccess) {
+      query.participant_id = req.membership._id;
+    }
+    const intentExists = await PaymentIntent.findOne(query);
+    if (!intentExists) return res.status(404).json({ success: false, message: 'Payment intent not found' });
+
     const intent = await reconcileSavingsIntent({ intentId: req.params.paymentIntentId, chamaId: req.chama._id });
-    if (!intent || String(intent.participant_id) !== String(req.membership._id)) return res.status(404).json({ success: false, message: 'Payment intent not found' });
     res.json({ success: true, data: { paymentIntent: intent } });
   } catch (error) { next(error); }
 };

@@ -1,43 +1,24 @@
-import { useEffect, useState } from "react";
-
+import { useQuery } from "@tanstack/react-query";
 import financeService from "../services/finance.service";
 
-export default function useLedger(workspaceId) {
-  const [entries, setEntries] =
-    useState([]);
+export default function useLedger(workspaceId, filters = {}) {
+  const { data, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ["ledger", workspaceId, filters],
+    queryFn: () => financeService.getLedger(workspaceId, filters),
+    enabled: !!workspaceId,
+    refetchOnWindowFocus: true,
+  });
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState(null);
-
-  useEffect(() => {
-    if (!workspaceId) return;
-
-    async function load() {
-      setLoading(true);
-
-      try {
-        const data =
-          await financeService.getLedger(
-            workspaceId
-          );
-
-        setEntries(data);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [workspaceId]);
+  // Normalize: handles {data: {entries: []}} or {entries: []} or []
+  const raw = data?.data ?? data ?? {};
+  const entries = Array.isArray(raw.entries) ? raw.entries : Array.isArray(raw) ? raw : [];
+  const totals = raw.totals ?? {};
 
   return {
     entries,
+    totals,
     loading,
     error,
+    refetch
   };
 }

@@ -1,337 +1,110 @@
-/**
- * ============================================================================
- * PAYMENT ENGINE
- * ============================================================================
- *
- * The Payment Engine orchestrates the complete payment lifecycle.
- *
- * Responsibilities
- * ----------------
- * ✓ Build payment context
- * ✓ Validate requests
- * ✓ Resolve payment provider
- * ✓ Coordinate persistence
- * ✓ Manage MongoDB transactions
- * ✓ Trigger contribution completion
- * ✓ Emit payment events
- *
- * DOES NOT
- * --------
- * ✗ Talk directly to M-Pesa
- * ✗ Talk directly to MongoDB models
- * ✗ Calculate financial postings
- * ✗ Perform ledger updates
- *
- * ============================================================================
- */
-
 import mongoose from "mongoose";
-
 import PaymentContext from "./payment.context.js";
 import PaymentStore from "./store/payment.store.js";
-
 import providerRegistry from "./providers/provider.registry.js";
+import { validateInitiatePayment, validateCallback, validateQuery } from "./payment.validators.js";
+import contributionPaymentService from "../modules/contributionPlan/contributionPayment.service.js";
+import PaymentEventFactory from "./events/payment.events.js";
+import paymentEventBus from "./events/payment.event.bus.js";
+import { PAYMENT_EVENTS, PAYMENT_STATUS } from "./payment.constants.js";
 
-import {
-    validateInitiatePayment,
-    validateCallback,
-    validateQuery
-} from "./payment.validators.js";
+const canUseTransactions = () => {
+  const topology = mongoose.connection?.client?.topology;
+  return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
+};
 
-import contributionPaymentService
-    from "../modules/contributionPlan/contributionPayment.service.js";
+const withSession = async (fn) => {
+  const useTx = canUseTransactions();
+  console.log(`MongoDB ${useTx ? 'ReplicaSet' : 'Standalone'} detected. ${useTx ? 'Using' : 'Retrying without'} transactions`);
+  
+  const session = useTx ? await mongoose.startSession() : null;
+  if (session) session.startTransaction();
+  
+  try {
+    const result = await fn(session);
+    if (session) await session.commitTransaction();
+    return result;
+  } catch (error) {
+    if (session) await session.abortTransaction();
+    throw error;
+  } finally {
+    if (session) session.endSession();
+  }
+};
 
-import PaymentEventFactory
-    from "./events/payment.events.js";
-
-import paymentEventBus
-    from "./events/payment.event.bus.js";
-
-import {
-    PAYMENT_EVENTS,
-    PAYMENT_STATUS
-} from "./payment.constants.js";
+// Cache for M-Pesa queries
+const queryCache = new Map();
 
 class PaymentService {
-
-    /**
-     * =====================================================
-     * INITIATE PAYMENT
-     * =====================================================
-     */
-
     async initiate(payload) {
-
-        const session = await mongoose.startSession();
-
-        session.startTransaction();
-
-        try {
-
-            const context =
-                new PaymentContext(payload);
-
+        return withSession(async (session) => {
+            const context = new PaymentContext(payload);
             validateInitiatePayment(context);
-
-            const provider =
-                providerRegistry.get(
-                    context.provider.name
-                );
-
-            const payment =
-                await PaymentStore.createPending(
-                    context,
-                    session
-                );
-
-            const providerResponse =
-                await provider.initiate({
-
-                    ...context,
-
-                    paymentId: payment.id
-
-                });
-
-            await PaymentStore.attachProviderMetadata(
-
-                payment.id,
-
-                providerResponse,
-
-                session
-
-            );
-
-            await session.commitTransaction();
-
-            return {
-
-                success: true,
-
-                payment,
-
-                providerResponse
-
-            };
-
-        } catch (error) {
-
-            await session.abortTransaction();
-
-            throw error;
-
-        } finally {
-
-            session.endSession();
-
-        }
-
+            const provider = providerRegistry.get(context.provider.name);
+            const payment = await PaymentStore.createPending(context, session);
+            const providerResponse = await provider.initiate({ ...context, paymentId: payment.id });
+            await PaymentStore.attachProviderMetadata(payment.id, providerResponse, session);
+            return { success: true, payment, providerResponse };
+        });
     }
 
-    /**
-     * =====================================================
-     * PROCESS CALLBACK
-     * =====================================================
-     */
-
     async processCallback(callbackPayload) {
-
-        const session =
-            await mongoose.startSession();
-
-        session.startTransaction();
-
-        try {
-
+        return withSession(async (session) => {
             validateCallback(callbackPayload);
+            const provider = providerRegistry.get(callbackPayload.provider);
+            const callback = await provider.processCallback(callbackPayload);
+            const completed = await PaymentStore.isCompleted(callback.paymentId, session);
+            if (completed) return { success: true, duplicate: true };
 
-            const provider =
-                providerRegistry.get(
-                    callbackPayload.provider
-                );
-
-            /**
-             * Normalize callback
-             */
-            const callback =
-                await provider.processCallback(
-                    callbackPayload
-                );
-
-            /**
-             * Idempotency
-             */
-            const completed =
-                await PaymentStore.isCompleted(
-                    callback.paymentId
-                );
-
-            if (completed) {
-
-                await session.commitTransaction();
-
-                return {
-
-                    success: true,
-
-                    duplicate: true
-
-                };
-
-            }
-
-            // Determine status from the normalized callback object
-            const status =
-                callback.status ||
-                (callback.success ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED);
-
+            const status = callback.status || (callback.success ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED);
             let payment;
 
             if (status === PAYMENT_STATUS.COMPLETED) {
-                /**
-                 * Persist payment state as completed
-                 */
-                payment =
-                    await PaymentStore.markCompleted(
-                        callback.paymentId,
-                        callback.providerData,
-                        session
-                    );
-
-                /**
-                 * Finance Engine
-                 */
-                await contributionPaymentService.completeContributionPayment(
-                    {
-                          payment,
-                          callback
-                    },
-                    session
-                );
-
+                payment = await PaymentStore.markCompleted(callback.paymentId, callback.providerData, session);
+                await contributionPaymentService.completeContributionPayment({ payment, callback }, session);
             } else if (status === PAYMENT_STATUS.CANCELLED) {
-                /**
-                 * Persist payment state as cancelled
-                 */
-                payment =
-                    await PaymentStore.markCancelled(
-                          callback.paymentId,
-                          callback.reason || "Transaction cancelled by user",
-                          session
-                );
-
+                payment = await PaymentStore.markCancelled(callback.paymentId, callback.reason || "Cancelled", session);
             } else {
-                /**
-                 * Persist payment state as failed
-                 */
-                payment =
-                    await PaymentStore.markFailed(
-                          callback.paymentId,
-                          callback.reason || "Transaction failed",
-                          session
-                );
+                payment = await PaymentStore.markFailed(callback.paymentId, callback.reason || "Failed", session);
             }
 
-            await session.commitTransaction();
-
-            /**
-             * Emit AFTER commit (Only for completed status)
-             */
             if (status === PAYMENT_STATUS.COMPLETED) {
-                paymentEventBus.emit(
-                    PAYMENT_EVENTS.COMPLETED,
-                    PaymentEventFactory.create(
-                          PAYMENT_EVENTS.COMPLETED,
-                          {
-                              payment,
-                              provider: callback.provider,
-                              actor: callback.actor,
-                              participant: callback.participant,
-                              obligation: callback.obligation,
-                              metadata: callback.metadata
-                        }
-                  )
-              );
+                paymentEventBus.emit(PAYMENT_EVENTS.COMPLETED, PaymentEventFactory.create(PAYMENT_EVENTS.COMPLETED, {
+                    payment, provider: callback.provider, actor: callback.actor, 
+                    participant: callback.participant, obligation: callback.obligation, metadata: callback.metadata
+                }));
             }
-
-            return {
-
-                success: status === PAYMENT_STATUS.COMPLETED,
-
-                payment,
-
-                status
-
-            };
-
-        }
-
-        catch (error) {
-
-            await session.abortTransaction();
-
-            throw error;
-
-        }
-
-        finally {
-
-            session.endSession();
-
-        }
-
+            return { success: status === PAYMENT_STATUS.COMPLETED, payment, status };
+        });
     }
-
-    /**
-     * =====================================================
-     * QUERY PAYMENT
-     * =====================================================
-     */
 
     async query(payload) {
-
         validateQuery(payload);
+        const cacheKey = payload.paymentId || payload.checkoutRequestId;
+        const cached = queryCache.get(cacheKey);
+        if (cached && Date.now() - cached.ts < 10000) return cached.data;
 
-        const provider =
-            providerRegistry.get(
-                payload.provider
-            );
-
-        return provider.query(payload);
-
+        const provider = providerRegistry.get(payload.provider);
+        let attempts = 0;
+        while (attempts < 3) {
+            try {
+                const result = await provider.query(payload);
+                queryCache.set(cacheKey, { data: result, ts: Date.now() });
+                return result;
+            } catch (error) {
+                if (error?.response?.status === 429) {
+                    await new Promise(r => setTimeout(r, 5000 * (attempts + 1)));
+                    attempts++;
+                    continue;
+                }
+                throw error;
+            }
+        }
+        throw new Error("M-Pesa API rate limit reached. Please wait before retrying.");
     }
 
-    /**
-     * =====================================================
-     * CANCEL
-     * =====================================================
-     */
-
-    async cancel(paymentId, reason) {
-
-        return PaymentStore.markCancelled(
-            paymentId,
-            reason
-        );
-
-    }
-
-    /**
-     * =====================================================
-     * FAIL
-     * =====================================================
-     */
-
-    async fail(paymentId, reason) {
-
-        return PaymentStore.markFailed(
-            paymentId,
-            reason
-        );
-
-    }
-
+    async cancel(paymentId, reason) { return PaymentStore.markCancelled(paymentId, reason); }
+    async fail(paymentId, reason) { return PaymentStore.markFailed(paymentId, reason); }
 }
 
 export default new PaymentService();

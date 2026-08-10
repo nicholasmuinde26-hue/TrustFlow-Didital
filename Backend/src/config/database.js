@@ -7,7 +7,11 @@ export const connectDatabase = async () => {
       throw new Error('MONGO_URI is not defined');
     }
 
-    await mongoose.connect(env.mongoUri);
+    // Explicitly disable retryable writes and reads to support standalone MongoDB deployments
+    await mongoose.connect(env.mongoUri, {
+      retryWrites: false,
+      retryReads: false
+    });
 
     console.log('MongoDB connected successfully');
 
