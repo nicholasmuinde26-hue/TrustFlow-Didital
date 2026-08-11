@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * CONTRIBUTION PAYMENT SERVICE
+ * CONTRIBUTION PAYMENT SERVICE - V2: Dumb CRUD, no GL
  * ============================================================================
  */
 
@@ -8,18 +8,17 @@ import mongoose from "mongoose";
 import crypto from "node:crypto";
 import ContributionPayment from "../../models/ContributionPayment.js";
 import contributionObligationService from "./contributionObligation.service.js";
-import accountingService from "../finance/accounting/accounting.service.js";
 import { toDecimal, isMoneyPositive } from "../../shared/decimal.js";
 
 const PAYMENT_STATUS = { PROCESSING: "pending", COMPLETED: "completed", FAILED: "failed" };
 const DEFAULT_CURRENCY = "KES";
+const STALE_PENDING_MS = 2 * 60 * 1000; // 2 minutes
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
   return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
 };
-
-const getOpts = (session) => canUseTransactions() && session ? { session } : {};
+const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 const generatePaymentReference = (prefix = 'PAY') => {
   const ts = Date.now();
@@ -29,158 +28,120 @@ const generatePaymentReference = (prefix = 'PAY') => {
 
 class ContributionPaymentService {
 
-  async processPayment(data, existingSession = null, _retryWithoutTx = false) {
-    const useTx = canUseTransactions();
-    let session = useTx ? existingSession || await mongoose.startSession() : null;
-    const ownsSession = !existingSession && useTx;
+  async findById(id, session = null) {
+    return contributionObligationService.findById(id, session);
+  }
 
-    if (ownsSession && session) session.startTransaction();
+  /**
+   * Step 1: Create pending payment record. No GL here anymore
+   */
+  async createPendingPayment(data, session = null) {
+    const opts = getOpts(session);
 
-    try {
-      const opts = getOpts(session);
+    const obligation = await contributionObligationService.findById(data.obligationId, session);
+    if (!obligation) throw new Error("Contribution obligation not found.");
+    if (obligation.status === 'paid') throw new Error("Obligation already paid.");
 
-      const obligation = await contributionObligationService.findById(data.obligationId, session);
-      if (!obligation) throw new Error("Contribution obligation not found.");
-      if (obligation.status === 'paid') throw new Error("Obligation already paid.");
+    const paymentMethod = ({ manual: 'cash', cash: 'cash', bank: 'bank', mpesa: 'mpesa' })[String(data.paymentMethod || 'cash').toLowerCase()];
+    if (!paymentMethod) throw new Error('Unsupported payment method. Use cash, bank, or mpesa.');
 
-      const paymentMethod = ({ manual: 'cash', cash: 'cash', bank: 'bank', mpesa: 'mpesa' })[String(data.paymentMethod || 'cash').toLowerCase()];
-      if (!paymentMethod) throw new Error('Unsupported payment method. Use cash, bank, or mpesa.');
+    const amount = toDecimal(data.amount);
+    if (!isMoneyPositive(amount)) throw new Error("Payment amount must be greater than zero.");
 
-      const amount = toDecimal(data.amount);
-      if (!isMoneyPositive(amount)) throw new Error("Payment amount must be greater than zero.");
-
-      // ========================================================
-      // IDEMPOTENCY CHECK - CRITICAL FOR M-PESA RETRIES
-      // Check 1: M-Pesa Receipt Number - Most reliable
-      // Check 2: Provider Payment ID - CheckoutRequestID
-      // Check 3: Custom Idempotency Key from callback
-      // ========================================================
-      const idempotencyQuery = {
-        obligation_id: obligation._id,
-        status: PAYMENT_STATUS.COMPLETED,
-        $or: []
-      };
-
-      if (data.externalReference) {
-        idempotencyQuery.$or.push({ external_reference: data.externalReference });
-      }
-      if (data.providerPaymentId) {
-        idempotencyQuery.$or.push({ provider_payment_id: data.providerPaymentId });
-      }
-      if (data.idempotencyKey) {
-        idempotencyQuery.$or.push({ reference: data.idempotencyKey });
-      }
-
-      // Only run if we have at least 1 key to check
-      if (idempotencyQuery.$or.length > 0) {
-        const idempotencyCheck = await ContributionPayment.findOne(idempotencyQuery, null, opts);
-        if (idempotencyCheck) {
-          console.warn(`Duplicate payment detected. Returning existing payment: ${idempotencyCheck._id}`);
-          return { payment: idempotencyCheck, accounting: null, duplicate: true };
-        }
-      }
-
-      const referencePrefix = data.displayReference || 'CONTRIB';
-      const paymentReference = data.reference || data.idempotencyKey || generatePaymentReference(referencePrefix);
-
-      const [payment] = await ContributionPayment.create([{
-          plan_id: obligation.plan_id,
-          owner_type: obligation.owner_type,
-          owner_id: obligation.owner_id,
-          participant_type: obligation.participant_type,
-          participant_id: obligation.participant_id,
-          obligation_id: obligation._id,
-          amount: amount.toString(),
-          currency: DEFAULT_CURRENCY,
-          payment_method: paymentMethod,
-          channel_type: paymentMethod === "bank"? "bank_transfer" : paymentMethod,
-          processing_mode: data.processingMode || "manual",
-          payment_provider: paymentMethod,
-          provider_payment_id: data.providerPaymentId || null,
-          external_reference: data.externalReference || null,
-          display_reference: data.displayReference || null,
-          reference: paymentReference,
-          status: PAYMENT_STATUS.PROCESSING,
-          created_by: data.createdBy,
-          recorded_by: data.createdBy
-        }], opts);
-
-      // Accounting - CRITICAL: pass session, service will use getOpts
-      const accountingResult = await accountingService.post({
-          owner_type: obligation.owner_type,
-          owner_id: obligation.owner_id,
-          referenceType: "CONTRIBUTION_PAYMENT",
-          referenceId: payment._id,
-          amount,
-          currency: DEFAULT_CURRENCY,
-          source_type: "ContributionPayment",
-          source_id: payment._id,
-          metadata: {
-            participant_id: obligation.participant_id,
-            obligation_id: obligation._id,
-            contribution_plan_id: obligation.plan_id,
-            payment_method: paymentMethod
-          }
-        }, session);
-
-      // Update obligation - sets status to paid + links transaction
-      await contributionObligationService.markPaid(
-        obligation._id, 
-        amount, 
-        accountingResult.transactionId,
-        session
-      );
-
-      payment.status = PAYMENT_STATUS.COMPLETED;
-      payment.financial_transaction_id = accountingResult.transactionId;
-      payment.journal_id = accountingResult.journalId;
-      await payment.save(opts);
-
-      if (ownsSession && session) await session.commitTransaction();
-
-      if (obligation.owner_type === 'Chama') {
-        const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');
-        await maybeCreateMgrPayoutForChama(String(obligation.owner_id), data.createdBy).catch(() => null);
-      }
-
-      return { payment, accounting: accountingResult };
-
-    } catch (error) {
-      if (ownsSession && session && session.inTransaction()) {
-        try { await session.abortTransaction(); } catch {}
-      }
-
-      // Auto retry once without tx if standalone
-      if (!_retryWithoutTx && error.code === 20 && error.codeName === 'IllegalOperation') {
-        console.warn("MongoDB standalone detected. Retrying processPayment without transactions");
-        if (ownsSession && session) { try { await session.endSession(); } catch {} }
-        return this.processPayment(data, null, true);
-      }
-
-      // Handle MongoDB duplicate key error
-      if (error.code === 11000) {
-        console.warn("Mongo duplicate key error. Fetching existing payment");
-        const existing = await ContributionPayment.findOne({ 
-          $or: [
-            { external_reference: data.externalReference },
-            { provider_payment_id: data.providerPaymentId }
-          ]
-        });
-        if (existing) return { payment: existing, accounting: null, duplicate: true };
-        throw new Error("Duplicate payment detected. This payment has already been processed.");
-      }
-      throw error;
-    } finally {
-      if (ownsSession && session) { try { await session.endSession(); } catch {} }
+    // IDEMPOTENCY CHECK
+    const idempotencyQuery = {
+      obligation_id: obligation._id,
+      status: { $ne: PAYMENT_STATUS.FAILED },
+      $or: []
+    };
+    if (data.externalReference) idempotencyQuery.$or.push({ external_reference: data.externalReference });
+    if (data.providerPaymentId) idempotencyQuery.$or.push({ provider_payment_id: data.providerPaymentId });
+    if (data.idempotencyKey) idempotencyQuery.$or.push({ reference: data.idempotencyKey });
+    if (idempotencyQuery.$or.length > 0) {
+      const existing = await ContributionPayment.findOne(idempotencyQuery, null, opts);
+      if (existing) return { payment: existing, duplicate: true };
     }
+
+    const reference = data.reference || data.idempotencyKey || generatePaymentReference(data.displayReference || 'CONTRIB');
+
+    const [payment] = await ContributionPayment.create([{
+        plan_id: obligation.plan_id,
+        owner_type: obligation.owner_type,
+        owner_id: obligation.owner_id,
+        participant_type: obligation.participant_type,
+        participant_id: obligation.participant_id,
+        obligation_id: obligation._id,
+        amount: amount.toString(),
+        currency: DEFAULT_CURRENCY,
+        payment_method: paymentMethod,
+        channel_type: paymentMethod === "bank"? "bank_transfer" : paymentMethod,
+        processing_mode: data.processingMode || "manual",
+        payment_provider: paymentMethod,
+        provider_payment_id: data.providerPaymentId || null,
+        external_reference: data.externalReference || null,
+        display_reference: data.displayReference || null,
+        reference,
+        status: PAYMENT_STATUS.PROCESSING,
+        created_by: data.createdBy,
+        recorded_by: data.createdBy
+      }], opts);
+
+    return { payment, duplicate: false };
+  }
+
+  /**
+   * Step 2: Called AFTER payment.service marks payment COMPLETED and GL is posted
+   * Only updates obligation and links the GL transaction
+   */
+  async completeContributionPayment({ payment, callback }, session = null) {
+    const opts = getOpts(session);
+
+    const obligation = await contributionObligationService.findById(payment.obligationId, session);
+    if (!obligation) throw new Error("Obligation not found for payment");
+
+    // Find our pending ContributionPayment record
+    const contributionPayment = await ContributionPayment.findOne({
+      obligation_id: obligation._id,
+      reference: payment.idempotencyKey || payment.reference
+    }, null, opts);
+
+    if (!contributionPayment) throw new Error("ContributionPayment record not found");
+
+    // Update with GL references from payment.metadata
+    contributionPayment.status = PAYMENT_STATUS.COMPLETED;
+    contributionPayment.financial_transaction_id = payment.financialTransactionId; // set by pipeline
+    contributionPayment.journal_id = payment.journalId;
+    contributionPayment.provider_payment_id = callback?.providerData?.MpesaReceiptNumber || payment.providerPaymentId;
+    contributionPayment.external_reference = callback?.providerData?.CheckoutRequestID;
+    await contributionPayment.save(opts);
+
+    // Close obligation
+    await contributionObligationService.markPaid(
+      obligation._id,
+      toDecimal(contributionPayment.amount),
+      payment.financialTransactionId,
+      session
+    );
+
+    // MGR logic stays here because it's chama business logic, not GL
+    if (obligation.owner_type === 'Chama') {
+      const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');
+      await maybeCreateMgrPayoutForChama(String(obligation.owner_id), payment.payerId).catch(() => null);
+    }
+
+    return { payment: contributionPayment };
+  }
+
+  async markFailed(paymentId, reason, session = null) {
+    return ContributionPayment.findByIdAndUpdate(paymentId, { status: PAYMENT_STATUS.FAILED, failureReason: reason }, getOpts(session));
   }
 }
 
 export const getOwnerContributionPayments = async ({ owner_type, owner_id, session = null }) => {
   const opts = getOpts(session);
   return ContributionPayment.find({ owner_type, owner_id }, null, opts)
-    .populate({ path: "member_id", select: "role status user_id", populate: { path: "user_id", select: "name phone" }})
-    .sort({ createdAt: -1 });
+   .populate({ path: "participant_id", select: "role status user_id", populate: { path: "user_id", select: "name phone" }})
+   .sort({ createdAt: -1 });
 };
 
 export const reconcileContributionObligationPayments = async ({ obligationId, session = null }) => {

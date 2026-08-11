@@ -292,7 +292,22 @@ payoutSchema.index(
 );
 
 
-export default mongoose.model(
+// ========================================
+// JSON TRANSFORM
+// ========================================
+// Same Decimal128-serialization fix as the other finance models — without
+// this, `amount` returns as { $numberDecimal: "..." } and breaks
+// Number(payout.amount) on the frontend Payouts page.
+payoutSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    if (ret.amount !== undefined && ret.amount !== null) {
+      ret.amount = ret.amount.toString();
+    }
+    return ret;
+  }
+});
+
+export default mongoose.models.Payout || mongoose.model(
   'Payout',
   payoutSchema
 );

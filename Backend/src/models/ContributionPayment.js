@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 
 
@@ -309,7 +308,16 @@ const contributionPaymentSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 150,
-      default: null,
+      // IMPORTANT: no `default: null` here. The unique index below is
+      // `sparse`, which only excludes documents where this field is
+      // genuinely MISSING — not documents where it's explicitly `null`.
+      // A `default: null` would write the literal value null onto every
+      // cash/bank/manual payment (which never has an external reference),
+      // so they'd all collide on the same (owner_type, owner_id, null)
+      // unique key — the first manual payment for a chama would then
+      // block every manual payment after it with a duplicate-key error.
+      // Leaving this undefined when not provided keeps those documents
+      // genuinely excluded from the sparse index.
       index: true
     },
 

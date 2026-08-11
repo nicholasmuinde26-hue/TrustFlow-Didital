@@ -15,21 +15,18 @@ export function validateInitiatePayment(context) {
     }
 
     if (!context.payment?.amount || Number(context.payment.amount) <= 0) {
-        throw new PaymentValidationError(
-            "Payment amount must be greater than zero."
-        );
+        throw new PaymentValidationError("Payment amount must be greater than zero.");
     }
 
     if (!context.provider?.name) {
-        throw new PaymentValidationError(
-            "Payment provider is required."
-        );
+        throw new PaymentValidationError("Payment provider is required.");
     }
 
-    if (!context.participant?.phoneNumber) {
-        throw new PaymentValidationError(
-            "Phone number is required."
-        );
+    // FIX: Only require phone number for MPESA
+    if (context.provider.name.toLowerCase() === 'mpesa') {
+        if (!context.participant?.phoneNumber) {
+            throw new PaymentValidationError("Phone number is required for M-Pesa payments.");
+        }
     }
 
     return true;
@@ -47,9 +44,7 @@ export function validateCallback(callbackPayload) {
     }
 
     if (!callbackPayload.provider) {
-        throw new PaymentValidationError(
-            "Callback provider identifier is required."
-        );
+        throw new PaymentValidationError("Callback provider identifier is required.");
     }
 
     return true;
@@ -64,9 +59,7 @@ export function validateQuery(payload) {
     }
 
     if (!payload.provider) {
-        throw new PaymentValidationError(
-            "Query provider is required."
-        );
+        throw new PaymentValidationError("Query provider is required.");
     }
 
     return true;
@@ -81,9 +74,7 @@ export function validateCompletion(context) {
     }
 
     if (!context.payment?.id && !context.payment?._id) {
-        throw new PaymentValidationError(
-            "Payment ID is required."
-        );
+        throw new PaymentValidationError("Payment ID is required.");
     }
 
     return true;

@@ -1,46 +1,45 @@
 export class PaymentError extends Error {
-    constructor(message, code = "PAYMENT_ERROR") {
-        super(message);
-        this.name = this.constructor.name;
-        this.code = code;
-    }
-}
-
-export class ProviderNotFoundError extends PaymentError {
-    constructor(provider) {
-        super(
-            `Payment provider "${provider}" not found.`,
-            "PROVIDER_NOT_FOUND"
-        );
-    }
-}
-
-export class PaymentValidationError extends PaymentError {
-    constructor(message) {
-        super(message, "VALIDATION_ERROR");
-    }
+  constructor(message, code = 'PAYMENT_ERROR') {
+    super(message);
+    this.name = 'PaymentError';
+    this.code = code;
+    Error.captureStackTrace(this, this.constructor);
+  }
 }
 
 export class DuplicatePaymentError extends PaymentError {
-    constructor(reference) {
-        super(
-            `Duplicate payment detected (${reference}).`,
-            "DUPLICATE_PAYMENT"
-        );
-    }
+  constructor(message = 'Duplicate payment detected') {
+    super(message, 'DUPLICATE_PAYMENT');
+    this.name = 'DuplicatePaymentError';
+  }
+}
+
+export class PaymentNotFoundError extends PaymentError {
+  constructor(message = 'Payment not found') {
+    super(message, 'PAYMENT_NOT_FOUND');
+    this.name = 'PaymentNotFoundError';
+  }
 }
 
 export class PaymentAlreadyCompletedError extends PaymentError {
-    constructor() {
-        super(
-            "Payment has already been completed.",
-            "PAYMENT_ALREADY_COMPLETED"
-        );
-    }
+  constructor(message = 'Payment already completed') {
+    super(message, 'PAYMENT_ALREADY_COMPLETED');
+    this.name = 'PaymentAlreadyCompletedError';
+  }
 }
 
-export class ProviderCallbackError extends PaymentError {
-    constructor(message) {
-        super(message, "PROVIDER_CALLBACK_ERROR");
-    }
+export class PaymentValidationError extends PaymentError { // <- ADD THIS
+  constructor(message = 'Payment validation failed', details = null) {
+    super(message, 'PAYMENT_VALIDATION_ERROR');
+    this.name = 'PaymentValidationError';
+    this.details = details;
+  }
+}
+
+export class ProviderError extends PaymentError {
+  constructor(message = 'Provider error', provider = null) {
+    super(message, 'PROVIDER_ERROR');
+    this.name = 'ProviderError';
+    this.provider = provider;
+  }
 }

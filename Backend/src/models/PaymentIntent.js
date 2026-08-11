@@ -219,6 +219,12 @@ paymentIntentSchema.index({ participant_id: 1, display_reference: 1, createdAt: 
 paymentIntentSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.__v;
+    // Same Decimal128-serialization fix as the other finance models —
+    // without this, `amount` returns as { $numberDecimal: "..." } and
+    // breaks Number(intent.amount) wherever it's rendered on the frontend.
+    if (ret.amount !== undefined && ret.amount !== null) {
+      ret.amount = ret.amount.toString();
+    }
     return ret;
   }
 });

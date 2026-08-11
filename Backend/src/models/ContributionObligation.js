@@ -881,6 +881,29 @@ contributionObligationSchema.index(
 
 
 // ========================================
+// JSON TRANSFORM
+// ========================================
+// Mongoose Decimal128 fields serialize by default as
+// { $numberDecimal: "1000" } — an object, not a number. Frontend code
+// doing Number(obligation.expected_amount) on that gets NaN. Convert to a
+// plain string here, matching the pattern already used on
+// FinancialAccount/FinancialTransaction/ContributionPayment, so every
+// consumer of this model (e.g. RecordContributionPage) gets a value that
+// Number()/parseFloat() actually understands.
+contributionObligationSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    if (ret.expected_amount !== undefined && ret.expected_amount !== null) {
+      ret.expected_amount = ret.expected_amount.toString();
+    }
+    if (ret.paid_amount !== undefined && ret.paid_amount !== null) {
+      ret.paid_amount = ret.paid_amount.toString();
+    }
+    return ret;
+  }
+});
+
+
+// ========================================
 // EXPORT MODEL
 // ========================================
 

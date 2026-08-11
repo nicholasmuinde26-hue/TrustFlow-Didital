@@ -10,7 +10,7 @@ import ChamaMembership from "../../models/ChamaMembership.js";
 import MgrReminder from "../../models/MgrReminder.js";
 
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
-import contributionPaymentService from "../contributionPlan/contributionPayment.service.js";
+import paymentService from "../../payment/payment.service.js"; // NEW: single entry point
 import { startPayout } from "../payout/payout.service.js";
 
 // ---------------------------------------------------------
@@ -120,6 +120,11 @@ export const initiateSavingsDeposit = async ({ chama, membership, userId, amount
     participant_type: "ChamaMembership", participant_id: membership._id, amount: value, currency: "KES",
     payment_method: "mpesa", phone_number: normalizedPhone, reference: uniqueRef, display_reference: displayRef,
     idempotency_key: key, provider: "mpesa", provider_request_id: temporaryRequestId, status: "pending", created_by: userId,
+    metadata: { // ADD THIS: needed by finance engine
+      productType: 'SAVINGS',
+      chamaId: chama._id,
+      obligationId: obligation._id
+    }
   });
 
   try {
@@ -147,12 +152,14 @@ export const initiateSavingsDeposit = async ({ chama, membership, userId, amount
   }
 };
 
+// ---------------------------------------------------------
+// Reconcile savings callback - FIXED TO USE paymentService
+// ---------------------------------------------------------
+
 export const reconcileSavingsCallback = async (callback) => {
-  // 1. Idempotency check: if we already processed this receipt, return true and exit
+  // 1. Idempotency check
   if (callback.mpesaReceiptNumber) {
-    const alreadyProcessed = await PaymentIntent.findOne({ 
-      external_reference: callback.mpesaReceiptNumber 
-    });
+    const alreadyProcessed = await PaymentIntent.findOne({ external_reference: callback.mpesaReceiptNumber });
     if (alreadyProcessed?.status === 'completed') {
       console.log(`Duplicate callback ignored. Receipt: ${callback.mpesaReceiptNumber}`);
       return true;
@@ -173,7 +180,6 @@ export const reconcileSavingsCallback = async (callback) => {
   const intent = await PaymentIntent.findById(attempt.payment_intent_id);
   if (!intent) throw new AppError("Payment intent missing for M-Pesa attempt", 500);
 
-  // 2. Second idempotency check: intent already completed
   if (intent.status === 'completed') {
     console.log(`Intent ${intent._id} already completed. Ignoring duplicate callback.`);
     return true;
@@ -202,17 +208,28 @@ export const reconcileSavingsCallback = async (callback) => {
   try {
     if (session) session.startTransaction();
 
-    // 3. Add idempotency key to processPayment so it also blocks duplicates
-    const result = await contributionPaymentService.processPayment({
-      obligationId: attempt.obligation_id,
+    // 2. CRITICAL FIX: Use paymentService instead of contributionPaymentService
+    const result = await paymentService.processCallback({
+      provider: 'mpesa',
+      paymentId: intent._id,
+      success: true,
+      status: 'COMPLETED',
       amount: callback.amount,
-      paymentMethod: "mpesa",
-      processingMode: "webhook",
-      createdBy: attempt.initiated_by,
-      providerPaymentId: callback.checkoutRequestId,
-      externalReference: callback.mpesaReceiptNumber, // This is the true unique id
-      displayReference: intent.display_reference,
-      idempotencyKey: callback.mpesaReceiptNumber || callback.checkoutRequestId // ADD THIS
+      currency: 'KES',
+      providerData: {
+        CheckoutRequestID: callback.checkoutRequestId,
+        MpesaReceiptNumber: callback.mpesaReceiptNumber,
+        PhoneNumber: callback.phoneNumber,
+        Amount: callback.amount,
+        rawCallback: callback.rawCallback
+      },
+      metadata: {
+        productType: 'SAVINGS', // tells finance engine which rule to run
+        chamaId: intent.owner_id,
+        obligationId: attempt.obligation_id,
+        paymentIntentId: intent._id,
+        memberId: intent.participant_id
+      }
     }, session);
 
     if (session) await session.commitTransaction();
@@ -221,11 +238,12 @@ export const reconcileSavingsCallback = async (callback) => {
     attempt.mpesa_receipt_number = callback.mpesaReceiptNumber;
     await attempt.save();
 
+    // 3. Update PaymentIntent with GL refs
     await PaymentIntent.findByIdAndUpdate(intent._id, {
       status: "completed",
       external_reference: callback.mpesaReceiptNumber,
-      contribution_payment_id: result?.payment?._id,
-      financial_transaction_id: result?.accounting?.transactionId || null,
+      financial_transaction_id: result?.payment?.financialTransactionId || null,
+      journal_id: result?.payment?.journalId || null,
       completed_at: new Date(),
       provider_response: callback.rawCallback,
     });
@@ -235,16 +253,16 @@ export const reconcileSavingsCallback = async (callback) => {
   } catch (error) {
     if (session && session.inTransaction()) await session.abortTransaction();
     
-    // If duplicate error from contributionPaymentService, swallow it
-    if (error.message?.includes('Duplicate payment detected')) {
+    if (error.name === 'DuplicatePaymentError' || error.message?.includes('duplicate')) {
       console.warn(`Duplicate payment caught and ignored: ${callback.mpesaReceiptNumber}`);
       return true;
     }
     throw error;
   } finally {
-    if (session) await session.endSession();
+    if (session) session.endSession();
   }
 };
+
 // ---------------------------------------------------------
 // Reconcile payment intent - RATE LIMIT SAFE
 // ---------------------------------------------------------
@@ -256,7 +274,6 @@ export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
   const attempt = await MpesaAttempt.findOne({ payment_intent_id: intent._id });
   if (!attempt?.checkout_request_id) return intent;
 
-  // Prevent spamming M-Pesa. Only query if >30s old
   const ageSeconds = (Date.now() - attempt.createdAt.getTime()) / 1000;
   if (ageSeconds < 30) {
     console.log(`Skipping STK query. Too soon. Age: ${ageSeconds}s`);
@@ -268,7 +285,6 @@ export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
     if (query.resultCode === null || query.resultCode === undefined) return intent;
 
     const successful = Number(query.resultCode) === 0;
-    // Extract receipt from query if available
     const mpesaReceipt = query.rawResponse?.MpesaReceiptNumber || null;
 
     await reconcileSavingsCallback({
@@ -282,7 +298,6 @@ export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
       rawCallback: query.rawResponse,
     });
   } catch (e) {
-    // CRITICAL: Don't throw 429/500 to frontend. Just log and wait for callback
     if (e.statusCode === 429 || e.statusCode === 500) {
       console.warn(`STK Query failed ${e.statusCode}. Relying on M-Pesa callback. Checkout: ${attempt.checkout_request_id}`);
       return intent;
@@ -294,7 +309,7 @@ export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
 };
 
 // ---------------------------------------------------------
-// MGR settings - rest unchanged
+// MGR settings - unchanged
 // ---------------------------------------------------------
 
 export const upsertMgrSettings = async ({ chama, userId, amount, frequency, payoutInterval, payoutIntervalDays }) => {
@@ -361,6 +376,7 @@ export const getMgrOverview = async (chamaId) => {
     }),
   };
 };
+
 export const recordMgrReminder = async ({ chamaId, obligationId, channel, userId, message }) => {
   if (!["sms", "whatsapp"].includes(channel)) throw new AppError("Reminder channel must be sms or whatsapp", 400);
   const obligation = await ContributionObligation.findOne({ _id: obligationId, owner_type: "Chama", owner_id: chamaId });

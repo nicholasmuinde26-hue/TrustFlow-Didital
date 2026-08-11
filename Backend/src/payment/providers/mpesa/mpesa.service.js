@@ -3,11 +3,12 @@ import dns from "node:dns";
 
 /**
  * ============================================================
- * M-PESA SERVICE
+ * M-PESA SERVICE v2.1
+ * Handles: STK Push, STK Query with retry, Callback Parsing, B2C Payouts
  * ============================================================
  */
 
-if (process.env.NODE_ENV!== "production") {
+if (process.env.NODE_ENV !== "production") {
   try { dns.setServers(["1.1.1.1", "8.8.8.8"]); }
   catch (error) { console.warn("Unable to set custom DNS servers for M-Pesa service:", error.message); }
 }
@@ -22,9 +23,9 @@ const MPESA_B2C_RESULT_URL = process.env.MPESA_B2C_RESULT_URL?.trim();
 const MPESA_B2C_TIMEOUT_URL = process.env.MPESA_B2C_TIMEOUT_URL?.trim();
 const MPESA_INITIATOR_NAME = process.env.MPESA_INITIATOR_NAME?.trim();
 const MPESA_SECURITY_CREDENTIAL = process.env.MPESA_SECURITY_CREDENTIAL?.trim();
-const MPESA_TIMEOUT = Number(process.env.MPESA_TIMEOUT) || 15000;
+const MPESA_TIMEOUT = Number(process.env.MPESA_TIMEOUT) || 20000; // bumped to 20s for sandbox
 const MPESA_FORCE_MOCK = String(process.env.MPESA_FORCE_MOCK || "").toLowerCase() === "true";
-const MPESA_BASE_URL = MPESA_ENVIRONMENT === "production"? "https://api.safaricom.co.ke" : "https://sandbox.safaricom.co.ke";
+const MPESA_BASE_URL = MPESA_ENVIRONMENT === "production" ? "https://api.safaricom.co.ke" : "https://sandbox.safaricom.co.ke";
 
 export function validateConfiguration() {
   const missing = [];
@@ -59,7 +60,7 @@ const generateTimestamp = () => {
 };
 
 const generatePassword = (timestamp) => {
-  if (!MPESA_SHORTCODE ||!MPESA_PASSKEY) throw new Error("M-Pesa shortcode and passkey are required");
+  if (!MPESA_SHORTCODE || !MPESA_PASSKEY) throw new Error("M-Pesa shortcode and passkey are required");
   return Buffer.from(`${MPESA_SHORTCODE}${MPESA_PASSKEY}${timestamp}`).toString("base64");
 };
 
@@ -102,6 +103,9 @@ const createMockStkResponse = ({ amount, phoneNumber, accountReference }) => ({
   rawResponse: { mocked: true, amount, phoneNumber, accountReference },
 });
 
+/**
+ * STK PUSH - Customer pays us
+ */
 const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayReference, transactionDescription }) => {
   validateConfiguration();
   const validatedAmount = validateAmount(amount);
@@ -129,7 +133,7 @@ const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayR
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: MPESA_TIMEOUT,
     });
     const data = response.data || {};
-    if (data.ResponseCode!== undefined && String(data.ResponseCode)!== "0") {
+    if (data.ResponseCode !== undefined && String(data.ResponseCode) !== "0") {
       throw createMpesaError({ response: { status: response.status || 502, data } }, "M-Pesa STK Push was rejected");
     }
     if (!data.CheckoutRequestID) throw new Error("M-Pesa STK Push response did not contain CheckoutRequestID");
@@ -141,7 +145,10 @@ const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayR
   } catch (error) { throw createMpesaError(error, "Failed to initiate M-Pesa STK Push"); }
 };
 
-const queryStkPush = async ({ checkoutRequestId }) => {
+/**
+ * STK QUERY - Check status with retry for socket hang up + 429
+ */
+const queryStkPush = async ({ checkoutRequestId }, retries = 2) => {
   validateConfiguration();
   if (!checkoutRequestId) throw new Error("CheckoutRequestID is required");
   if (String(checkoutRequestId).startsWith("MOCK_CO_")) {
@@ -153,37 +160,160 @@ const queryStkPush = async ({ checkoutRequestId }) => {
     const password = generatePassword(timestamp);
     const payload = { BusinessShortCode: MPESA_SHORTCODE, Password: password, Timestamp: timestamp, CheckoutRequestID: checkoutRequestId };
     const response = await axios.post(`${MPESA_BASE_URL}/mpesa/stkpushquery/v1/query`, payload, {
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: MPESA_TIMEOUT,
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, 
+      timeout: MPESA_TIMEOUT,
     });
     const data = response.data || {};
-    const resultCode = data.ResultCode!== undefined && data.ResultCode!== null? Number(data.ResultCode) : null;
+    const resultCode = data.ResultCode !== undefined && data.ResultCode !== null ? Number(data.ResultCode) : null;
     return {
       success: true, mocked: false, responseCode: data.ResponseCode || null, responseDescription: data.ResponseDescription || null,
       merchantRequestId: data.MerchantRequestID || null, checkoutRequestId: data.CheckoutRequestID || checkoutRequestId,
-      resultCode: Number.isNaN(resultCode)? null : resultCode, resultDescription: data.ResultDesc || null, rawResponse: data,
+      resultCode: Number.isNaN(resultCode) ? null : resultCode, resultDescription: data.ResultDesc || null, rawResponse: data,
     };
   } catch (error) {
     const normalizedError = createMpesaError(error, "Failed to query M-Pesa STK Push");
-    console.error("❌ M-Pesa STK QUERY FAILED", {checkoutRequestId, status: normalizedError.statusCode});
+    
+    // FIX: Retry on socket hang up, ETIMEDOUT, or 429
+    const isRetryable = 
+      normalizedError.message.includes('socket hang up') || 
+      normalizedError.message.includes('ETIMEDOUT') ||
+      normalizedError.statusCode === 429;
+      
+    if (isRetryable && retries > 0) {
+      const delay = (3 - retries) * 2000; // 2s, then 4s
+      console.warn(`[M-PESA] Retrying STK query for ${checkoutRequestId} in ${delay}ms. Retries left: ${retries}`);
+      await new Promise(r => setTimeout(r, delay));
+      return queryStkPush({ checkoutRequestId }, retries - 1);
+    }
+
+    console.error("❌ M-Pesa STK QUERY FAILED", { checkoutRequestId, status: normalizedError.statusCode, message: normalizedError.message });
     throw normalizedError;
   }
 };
 
+/**
+ * B2C PAYOUT - We pay customer. For MGR payouts
+ */
+const initiateB2cPayment = async ({ amount, phoneNumber, remarks, occasion, commandId = 'BusinessPayment' }) => {
+  validateConfiguration();
+  const validatedAmount = validateAmount(amount);
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+  if (!MPESA_INITIATOR_NAME || !MPESA_SECURITY_CREDENTIAL) {
+    throw new Error("M-Pesa B2C initiator name and security credential required. Set MPESA_INITIATOR_NAME and MPESA_SECURITY_CREDENTIAL");
+  }
+  if (!MPESA_B2C_RESULT_URL || !MPESA_B2C_TIMEOUT_URL) {
+    throw new Error("M-Pesa B2C result and timeout URLs required. Set MPESA_B2C_RESULT_URL and MPESA_B2C_TIMEOUT_URL");
+  }
+
+  try {
+    const accessToken = await getAccessToken();
+    const payload = {
+      InitiatorName: MPESA_INITIATOR_NAME,
+      SecurityCredential: MPESA_SECURITY_CREDENTIAL,
+      CommandID: commandId,
+      Amount: validatedAmount,
+      PartyA: MPESA_SHORTCODE,
+      PartyB: normalizedPhone,
+      Remarks: String(remarks || 'Chama Payout').substring(0, 100),
+      QueueTimeOutURL: MPESA_B2C_TIMEOUT_URL,
+      ResultURL: MPESA_B2C_RESULT_URL,
+      Occasion: String(occasion || '').substring(0, 100)
+    };
+
+    const response = await axios.post(`${MPESA_BASE_URL}/mpesa/b2c/v1/paymentrequest`, payload, {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      timeout: MPESA_TIMEOUT,
+    });
+
+    const data = response.data || {};
+    if (data.ResponseCode !== '0') {
+      throw createMpesaError({ response: { status: 400, data } }, "M-Pesa B2C was rejected");
+    }
+
+    return {
+      success: true,
+      originatorConversationId: data.OriginatorConversationID,
+      conversationId: data.ConversationID,
+      responseCode: data.ResponseCode,
+      responseDescription: data.ResponseDescription,
+      rawResponse: data
+    };
+  } catch (error) {
+    throw createMpesaError(error, "Failed to initiate M-Pesa B2C payment");
+  }
+};
+
+/**
+ * PARSE CALLBACK - Never throws
+ */
 const parseStkCallback = (callbackBody) => {
-  const stkCallback = callbackBody?.Body?.stkCallback;
-  if (!stkCallback) throw new Error("Invalid M-Pesa callback payload");
-  const metadataItems = stkCallback.CallbackMetadata?.Item || [];
-  const metadata = {};
-  for (const item of metadataItems) { if (item?.Name && item?.Value!== undefined) metadata[item.Name] = item.Value; }
-  const resultCode = Number(stkCallback.ResultCode);
-  return {
-    merchantRequestId: stkCallback.MerchantRequestID || null, checkoutRequestId: stkCallback.CheckoutRequestID || null,
-    resultCode: Number.isNaN(resultCode)? null : resultCode, resultDescription: stkCallback.ResultDesc || null,
-    success: resultCode === 0, amount: metadata.Amount?? null, mpesaReceiptNumber: metadata.MpesaReceiptNumber?? null,
-    transactionDate: metadata.TransactionDate?? null,
-    phoneNumber: metadata.PhoneNumber? normalizePhoneNumber(String(metadata.PhoneNumber)) : null,
-    rawCallback: callbackBody,
-  };
+  try {
+    const stkCallback = callbackBody?.Body?.stkCallback;
+    if (stkCallback) {
+      const metadataItems = stkCallback.CallbackMetadata?.Item || [];
+      const metadata = {};
+      for (const item of metadataItems) { 
+        if (item?.Name && item?.Value !== undefined) metadata[item.Name] = item.Value; 
+      }
+      const resultCode = Number(stkCallback.ResultCode);
+      return {
+        merchantRequestId: stkCallback.MerchantRequestID || null, 
+        checkoutRequestId: stkCallback.CheckoutRequestID || null,
+        resultCode: Number.isNaN(resultCode) ? null : resultCode, 
+        resultDescription: stkCallback.ResultDesc || null,
+        success: resultCode === 0, 
+        amount: metadata.Amount ? Number(metadata.Amount) : null, 
+        mpesaReceiptNumber: metadata.MpesaReceiptNumber ?? null,
+        transactionDate: metadata.TransactionDate ?? null,
+        phoneNumber: metadata.PhoneNumber ? normalizePhoneNumber(String(metadata.PhoneNumber)) : null,
+        rawCallback: callbackBody,
+      };
+    }
+
+    if (callbackBody?.checkoutRequestId) {
+      return {
+        merchantRequestId: null,
+        checkoutRequestId: callbackBody.checkoutRequestId,
+        resultCode: null,
+        resultDescription: 'Reconciliation query',
+        success: false,
+        amount: null,
+        mpesaReceiptNumber: null,
+        transactionDate: null,
+        phoneNumber: null,
+        rawCallback: callbackBody,
+      };
+    }
+
+    return {
+      merchantRequestId: null,
+      checkoutRequestId: 'unknown',
+      resultCode: 1,
+      resultDescription: 'Invalid M-Pesa callback payload structure',
+      success: false,
+      amount: null,
+      mpesaReceiptNumber: null,
+      transactionDate: null,
+      phoneNumber: null,
+      rawCallback: callbackBody,
+    };
+
+  } catch (error) {
+    console.error('parseStkCallback crashed:', error, callbackBody);
+    return {
+      merchantRequestId: null,
+      checkoutRequestId: 'unknown',
+      resultCode: 1,
+      resultDescription: `Parser error: ${error.message}`,
+      success: false,
+      amount: null,
+      mpesaReceiptNumber: null,
+      transactionDate: null,
+      phoneNumber: null,
+      rawCallback: callbackBody,
+    };
+  }
 };
 
 const mapResultCode = (resultCode) => {
@@ -198,6 +328,16 @@ const mapResultCode = (resultCode) => {
 };
 
 const createMpesaError = (error, defaultMessage) => {
+  if (error?.code === 'ECONNABORTED') {
+    const mpesaError = new Error('M-Pesa request timed out');
+    mpesaError.name = "MpesaProviderError"; mpesaError.statusCode = 504; mpesaError.provider = "mpesa";
+    return mpesaError;
+  }
+  if (error?.code === 'ECONNRESET' || error?.message?.includes('socket hang up')) {
+    const mpesaError = new Error('socket hang up');
+    mpesaError.name = "MpesaProviderError"; mpesaError.statusCode = 502; mpesaError.provider = "mpesa";
+    return mpesaError;
+  }
   if (error?.response) {
     const providerData = error.response.data;
     const providerMessage = providerData?.errorMessage || providerData?.ResponseDescription || providerData?.ResultDesc || providerData?.message || null;
@@ -215,5 +355,12 @@ const createMpesaError = (error, defaultMessage) => {
 };
 
 export default {
-  getAccessToken, initiateStkPush, queryStkPush, parseStkCallback, mapResultCode, normalizePhoneNumber, validateAmount,
+  getAccessToken, 
+  initiateStkPush, 
+  queryStkPush, 
+  parseStkCallback, 
+  mapResultCode, 
+  normalizePhoneNumber, 
+  validateAmount,
+  initiateB2cPayment
 };

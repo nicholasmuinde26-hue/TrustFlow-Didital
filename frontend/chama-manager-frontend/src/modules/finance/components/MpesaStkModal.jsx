@@ -60,6 +60,9 @@ export default function MpesaStkModal({
          ? "Payment confirmed successfully!"
           : "Payment confirmed successfully! Your savings deposit has been recorded.",
       });
+      // Balance card doesn't share a data layer with this modal, so nudge
+      // it to refetch immediately instead of waiting on its own poll.
+      window.dispatchEvent(new Event("finance:updated"));
       if (onSuccess) onSuccess(data);
       setTimeout(() => onClose(), 2000);
     } else {

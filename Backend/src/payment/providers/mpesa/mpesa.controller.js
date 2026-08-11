@@ -9,7 +9,7 @@ import AppError from '../../../utils/AppError.js';
 
 import { reconcileB2cResult, reconcileStkCallback } from '../../../modules/business/business.service.js';
 import MpesaAttempt from '../../../models/MpesaAttempt.js';
-import contributionPaymentService from '../../../modules/contributionPlan/contributionPayment.service.js';
+import paymentService from '../../../payment/payment.service.js'; // REMOVED contributionPaymentService
 import { reconcileSavingsCallback, maybeCreateMgrPayoutForChama } from '../../../modules/chama/chamaFinance.service.js';
 
 // helper to generate unique reference for DB
@@ -19,15 +19,20 @@ const generateUniqueReference = (displayRef) => {
   return `${displayRef}-${ts}-${rand}`.slice(0, 100);
 };
 
-// helper to update intent
-const updateIntentFromCallback = async (checkoutRequestId, callback) => {
+// helper to record that a callback was received, WITHOUT deciding the
+// final status. The actual status transition to 'completed' must only
+// happen after the payment has actually been posted to the ledger
+const recordCallbackReceipt = async (checkoutRequestId, callback) => {
   const intent = await PaymentIntent.findOne({ provider_request_id: checkoutRequestId });
   if (!intent) return;
-  
-  intent.status = callback.success ? 'completed' : 'failed';
-  intent.completed_at = callback.success ? new Date() : null;
-  intent.failure_reason = callback.success ? null : callback.resultDescription;
+
   intent.provider_response = callback.rawCallback;
+  if (!callback.success) {
+    intent.status = 'failed';
+    intent.failure_reason = callback.resultDescription;
+    intent.failure_code = callback.resultCode !== undefined ? String(callback.resultCode) : intent.failure_code;
+    intent.failed_at = new Date();
+  }
   await intent.save();
 };
 
@@ -108,6 +113,11 @@ export const initiateContributionStkPush = async (req, res, next) => {
       provider_request_id: temporaryRequestId,
       status: 'pending',
       created_by: userId,
+      metadata: { // ADD THIS for finance engine
+        productType: 'CONTRIBUTION',
+        chamaId: obligation.owner_id,
+        obligationId: obligation._id
+      }
     });
 
     try {
@@ -158,7 +168,7 @@ export const initiateContributionStkPush = async (req, res, next) => {
 
 /**
  * ============================================================
- * M-PESA CALLBACK
+ * M-PESA CALLBACK - FULLY REFACTORED
  * ============================================================
  */
 export const handleMpesaCallback = async (req, res, next) => {
@@ -166,31 +176,48 @@ export const handleMpesaCallback = async (req, res, next) => {
     const callbackBody = req.body;
     const callback = mpesaService.parseStkCallback(callbackBody);
 
-    // Update PaymentIntent first in all cases
-    await updateIntentFromCallback(callback.checkoutRequestId, callback);
+    // Record receipt of the callback
+    await recordCallbackReceipt(callback.checkoutRequestId, callback);
 
+    // 1. Try savings first
     if (await reconcileSavingsCallback(callback)) {
       return res.status(200).json({ ResultCode: 0, ResultDesc: 'Savings payment processed' });
     }
 
+    // 2. Try business/other
     if (await reconcileStkCallback(callback)) {
       return res.status(200).json({ ResultCode: 0, ResultDesc: "Business payment processed" });
     }
 
+    // 3. FALLBACK: Generic CONTRIBUTION/MGR payment via central paymentService
     const attempt = await MpesaAttempt.findOne({ checkout_request_id: callback.checkoutRequestId, status: 'pending' });
     if (attempt) {
       if (callback.success && Number(callback.amount) === Number(attempt.amount.toString())) {
         const obligation = await ContributionObligation.findById(attempt.obligation_id).lean();
+        const intent = await PaymentIntent.findById(attempt.payment_intent_id);
 
-        await contributionPaymentService.processPayment({
-          obligationId: attempt.obligation_id,
+        // NEW: Route through paymentService instead of contributionPaymentService
+        const result = await paymentService.processCallback({
+          provider: 'mpesa',
+          paymentId: intent._id,
+          success: true,
+          status: 'COMPLETED',
           amount: callback.amount,
-          paymentMethod: "mpesa",
-          processingMode: "webhook",
-          createdBy: attempt.initiated_by,
-          providerPaymentId: callback.checkoutRequestId,
-          externalReference: callback.mpesaReceiptNumber,
-          displayReference: attempt.payment_intent_id ? (await PaymentIntent.findById(attempt.payment_intent_id).select('display_reference'))?.display_reference : null
+          currency: 'KES',
+          providerData: {
+            CheckoutRequestID: callback.checkoutRequestId,
+            MpesaReceiptNumber: callback.mpesaReceiptNumber,
+            PhoneNumber: callback.phoneNumber,
+            Amount: callback.amount,
+            rawCallback: callback.rawCallback
+          },
+          metadata: {
+            productType: obligation?.plan_id ? 'CONTRIBUTION' : 'MGR', // infer product
+            chamaId: intent.owner_id,
+            obligationId: attempt.obligation_id,
+            paymentIntentId: intent._id,
+            memberId: intent.participant_id
+          }
         });
 
         if (obligation?.owner_type === 'Chama') {
@@ -199,10 +226,33 @@ export const handleMpesaCallback = async (req, res, next) => {
 
         attempt.status = "completed";
         attempt.mpesa_receipt_number = callback.mpesaReceiptNumber;
+        await attempt.save();
+
+        await PaymentIntent.findOneAndUpdate(
+          { provider_request_id: callback.checkoutRequestId },
+          {
+            status: 'completed',
+            completed_at: new Date(),
+            external_reference: callback.mpesaReceiptNumber,
+            financial_transaction_id: result?.payment?.financialTransactionId || null,
+            journal_id: result?.payment?.journalId || null
+          }
+        );
       } else {
         attempt.status = "failed";
+        await attempt.save();
+
+        await PaymentIntent.findOneAndUpdate(
+          { provider_request_id: callback.checkoutRequestId },
+          {
+            status: 'failed',
+            failed_at: new Date(),
+            failure_reason: callback.success
+              ? 'The amount confirmed by M-Pesa did not match the requested contribution amount.'
+              : (callback.resultDescription || 'M-Pesa payment failed.')
+          }
+        );
       }
-      await attempt.save();
 
       return res.status(200).json({ ResultCode: 0, ResultDesc: "Contribution payment processed" });
     }
@@ -211,7 +261,11 @@ export const handleMpesaCallback = async (req, res, next) => {
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Callback processed successfully" });
 
   } catch (error) {
-    console.error("M-Pesa callback processing error:", error);
+    console.error("M-Pesa callback processing error:", {
+      checkoutRequestId: req.body?.Body?.stkCallback?.CheckoutRequestID,
+      message: error.message,
+      stack: error.stack,
+    });
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Callback received" });
   }
 };
@@ -268,7 +322,7 @@ export const getPaymentIntentStatus = async (req, res, next) => {
       success: true,
       data: {
         id: intent._id,
-        status: intent.status, // pending | processing | completed | failed
+        status: intent.status,
         amount: intent.amount,
         currency: intent.currency,
         reference: intent.reference,

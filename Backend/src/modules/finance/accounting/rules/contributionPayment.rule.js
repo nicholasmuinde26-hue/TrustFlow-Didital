@@ -42,14 +42,35 @@ class ContributionPaymentRule {
             }
         }
 
+        // 3. Use MEMBER_CONTRIBUTIONS to match your FinanceService summary
+        let equityAccount = await FinancialAccount.findOne({
+            owner_type, owner_id, account_code: "MEMBER_CONTRIBUTIONS"
+        }, null, opts);
+
+        // 4. Self-heal: workspaces created before account bootstrapping was
+        // wired into chama/contribution-group creation (or any other gap)
+        // won't have a chart of accounts yet. Rather than hard-failing every
+        // contribution for them, create the missing system accounts on
+        // first use. bootstrapSystemAccounts() is idempotent (findOne then
+        // create), so this is safe to call even when accounts partially exist.
+        if (!assetAccount || !equityAccount) {
+            await FinancialAccount.bootstrapSystemAccounts({ owner_type, owner_id });
+
+            if (!assetAccount) {
+                assetAccount = await FinancialAccount.findOne({
+                    owner_type, owner_id, account_code: assetAccountCode
+                }, null, opts);
+            }
+            if (!equityAccount) {
+                equityAccount = await FinancialAccount.findOne({
+                    owner_type, owner_id, account_code: "MEMBER_CONTRIBUTIONS"
+                }, null, opts);
+            }
+        }
+
         if (!assetAccount) {
             throw new Error(`${assetAccountCode} account not configured.`);
         }
-
-        // 3. Use MEMBER_CONTRIBUTIONS to match your FinanceService summary
-        const equityAccount = await FinancialAccount.findOne({
-            owner_type, owner_id, account_code: "MEMBER_CONTRIBUTIONS"
-        }, null, opts);
 
         if (!equityAccount) {
             throw new Error("MEMBER_CONTRIBUTIONS account not configured.");

@@ -80,5 +80,7 @@ export default function FinanceDashboard() {
   );
 }
 
-const formatKES = (value) => 
-  new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(Number(value??0));
+const formatKES = (value) => {
+  const n = Number(value);
+  return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(Number.isFinite(n) ? n : 0);
+};

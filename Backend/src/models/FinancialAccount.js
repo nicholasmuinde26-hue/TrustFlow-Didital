@@ -158,6 +158,24 @@ financialAccountSchema.statics.bootstrapSystemAccounts = async function({ owner_
 };
 
 // ========================================
+// JSON TRANSFORM
+// ========================================
+// Mongoose Decimal128 fields serialize by default as
+// { $numberDecimal: "1000" } — an object, not a number. Frontend code
+// doing Number(account.current_balance) on that gets NaN. Convert to a
+// plain string here, matching the pattern already used on
+// FinancialTransaction/ContributionPayment, so every consumer of this
+// model gets a value that Number()/parseFloat() actually understands.
+financialAccountSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    if (ret.current_balance !== undefined && ret.current_balance !== null) {
+      ret.current_balance = ret.current_balance.toString();
+    }
+    return ret;
+  }
+});
+
+// ========================================
 // EXPORT MODEL
 // ========================================
 export default mongoose.models.FinancialAccount || mongoose.model("FinancialAccount", financialAccountSchema);

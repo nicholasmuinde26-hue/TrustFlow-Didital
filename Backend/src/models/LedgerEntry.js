@@ -391,10 +391,25 @@ ledgerEntrySchema.index({
 
 
 // ========================================
+// JSON TRANSFORM
+// ========================================
+// Same Decimal128-serialization issue as FinancialAccount/PaymentIntent:
+// without this, `amount` comes back as { $numberDecimal: "..." } and
+// breaks Number(entry.amount) on the frontend ledger table.
+ledgerEntrySchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    if (ret.amount !== undefined && ret.amount !== null) {
+      ret.amount = ret.amount.toString();
+    }
+    return ret;
+  }
+});
+
+// ========================================
 // EXPORT MODEL
 // ========================================
 
-export default mongoose.model(
+export default mongoose.models.LedgerEntry || mongoose.model(
 
   'LedgerEntry',
 

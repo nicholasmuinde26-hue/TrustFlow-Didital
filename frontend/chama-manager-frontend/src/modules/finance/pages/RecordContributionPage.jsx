@@ -1,4 +1,3 @@
-
 import React, {
   useEffect,
   useRef,
@@ -22,11 +21,17 @@ import Button from "../../../shared/components/ui/Button";
 import Input from "../../../shared/components/ui/Input/Input";
 import Spinner from "../../../shared/components/ui/Spinner";
 
+// Defensively unwrap MongoDB Decimal128 ({ $numberDecimal: "1500" }) in
+// case any obligation/amount source ever sends a raw decimal instead of
+// the stringified value the backend is expected to serialize.
+const toAmountNumber = (value) =>
+  Number(value?.$numberDecimal ?? value ?? 0);
+
 const formatKES = (value) =>
   new Intl.NumberFormat("en-KE", {
     style: "currency",
     currency: "KES",
-  }).format(Number(value ?? 0));
+  }).format(toAmountNumber(value));
 
 export default function RecordContributionPage() {
   const { workspaceId: paramWorkspaceId } = useParams();
@@ -260,18 +265,23 @@ export default function RecordContributionPage() {
           ) === String(selectedId)
       );
 
-    const expected =
+    const rawExpected =
       selectedObligation?.expected_amount ??
       selectedObligation?.expectedAmount ??
       selectedObligation?.amount ??
       "";
+
+    const expected =
+      rawExpected !== ""
+        ? String(toAmountNumber(rawExpected))
+        : "";
 
     setForm((previous) => ({
       ...previous,
       obligationId: selectedId,
       amount:
         expected !== ""
-          ? String(expected)
+          ? expected
           : previous.amount,
     }));
   };
@@ -784,10 +794,11 @@ export default function RecordContributionPage() {
                     obligation.participant_name ||
                     "Member";
 
-                  const expected =
+                  const expected = toAmountNumber(
                     obligation.expected_amount ??
-                    obligation.amount ??
-                    0;
+                      obligation.amount ??
+                      0
+                  );
 
                   return (
                     <option

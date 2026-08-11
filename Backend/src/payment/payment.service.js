@@ -3,10 +3,10 @@ import PaymentContext from "./payment.context.js";
 import PaymentStore from "./store/payment.store.js";
 import providerRegistry from "./providers/provider.registry.js";
 import { validateInitiatePayment, validateCallback, validateQuery } from "./payment.validators.js";
-import contributionPaymentService from "../modules/contributionPlan/contributionPayment.service.js";
-import PaymentEventFactory from "./events/payment.events.js";
-import paymentEventBus from "./events/payment.event.bus.js";
+import PaymentEventFactory from "./payment.events.js";
+import paymentEventBus from "./payment.event.bus.js";
 import { PAYMENT_EVENTS, PAYMENT_STATUS } from "./payment.constants.js";
+import PaymentIntent from "../models/PaymentIntent.js";
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
@@ -15,11 +15,11 @@ const canUseTransactions = () => {
 
 const withSession = async (fn) => {
   const useTx = canUseTransactions();
-  console.log(`MongoDB ${useTx ? 'ReplicaSet' : 'Standalone'} detected. ${useTx ? 'Using' : 'Retrying without'} transactions`);
-  
-  const session = useTx ? await mongoose.startSession() : null;
+  console.log(`MongoDB ${useTx? 'ReplicaSet' : 'Standalone'} detected. ${useTx? 'Using' : 'Retrying without'} transactions`);
+
+  const session = useTx? await mongoose.startSession() : null;
   if (session) session.startTransaction();
-  
+
   try {
     const result = await fn(session);
     if (session) await session.commitTransaction();
@@ -32,7 +32,6 @@ const withSession = async (fn) => {
   }
 };
 
-// Cache for M-Pesa queries
 const queryCache = new Map();
 
 class PaymentService {
@@ -42,7 +41,7 @@ class PaymentService {
             validateInitiatePayment(context);
             const provider = providerRegistry.get(context.provider.name);
             const payment = await PaymentStore.createPending(context, session);
-            const providerResponse = await provider.initiate({ ...context, paymentId: payment.id });
+            const providerResponse = await provider.initiate({...context, paymentId: payment.id });
             await PaymentStore.attachProviderMetadata(payment.id, providerResponse, session);
             return { success: true, payment, providerResponse };
         });
@@ -53,25 +52,64 @@ class PaymentService {
             validateCallback(callbackPayload);
             const provider = providerRegistry.get(callbackPayload.provider);
             const callback = await provider.processCallback(callbackPayload);
-            const completed = await PaymentStore.isCompleted(callback.paymentId, session);
-            if (completed) return { success: true, duplicate: true };
+            
+            // FIX 1: Resolve paymentId from checkoutRequestId if needed
+            let paymentId = callbackPayload.paymentId || callback.paymentId;
+            if (!paymentId && callback.checkoutRequestId) {
+              const intent = await PaymentIntent.findOne({ provider_request_id: callback.checkoutRequestId }).session(session);
+              if (!intent) {
+                console.warn(`[payment.service] No PaymentIntent found for checkoutRequestId: ${callback.checkoutRequestId}. Skipping.`);
+                return { success: false, skipped: true, reason: 'PaymentIntent not found' };
+              }
+              paymentId = intent._id;
+            }
+            if (!paymentId) throw new Error('paymentId is required to process callback');
 
-            const status = callback.status || (callback.success ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED);
+            // FIX 2: Check if already completed
+            const existing = await PaymentIntent.findById(paymentId).session(session).lean();
+            if (!existing) {
+              console.warn(`[payment.service] PaymentIntent ${paymentId} not found. Skipping.`);
+              return { success: false, skipped: true, reason: 'PaymentIntent not found' };
+            }
+            if (existing.status === PAYMENT_STATUS.COMPLETED) {
+              return { success: true, duplicate: true, payment: existing };
+            }
+
+            const status = callback.status || (callback.success? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED);
             let payment;
 
             if (status === PAYMENT_STATUS.COMPLETED) {
-                payment = await PaymentStore.markCompleted(callback.paymentId, callback.providerData, session);
-                await contributionPaymentService.completeContributionPayment({ payment, callback }, session);
+                payment = await PaymentStore.markCompleted(paymentId, callback.providerData, session);
+
+                // Product-specific handlers
+                if (payment.productType === 'CONTRIBUTION') {
+                  const contributionPaymentService = (await import("../modules/contributionPlan/contributionPayment.service.js")).default;
+                  await contributionPaymentService.completeContributionPayment({ payment, callback }, session);
+                }
+                // Add MGR, SAVINGS, LOAN later
+
             } else if (status === PAYMENT_STATUS.CANCELLED) {
-                payment = await PaymentStore.markCancelled(callback.paymentId, callback.reason || "Cancelled", session);
+                payment = await PaymentStore.markCancelled(paymentId, callback.reason || "Cancelled", session);
             } else {
-                payment = await PaymentStore.markFailed(callback.paymentId, callback.reason || "Failed", session);
+                payment = await PaymentStore.markFailed(paymentId, callback.reason || "Failed", session);
             }
 
-            if (status === PAYMENT_STATUS.COMPLETED) {
+            // Emit event AFTER DB commit
+            if (status === PAYMENT_STATUS.COMPLETED && payment) {
                 paymentEventBus.emit(PAYMENT_EVENTS.COMPLETED, PaymentEventFactory.create(PAYMENT_EVENTS.COMPLETED, {
-                    payment, provider: callback.provider, actor: callback.actor, 
-                    participant: callback.participant, obligation: callback.obligation, metadata: callback.metadata
+                    payment, 
+                    provider: callback.provider, 
+                    actor: { userId: payment.payerId || callback.actor?.userId },
+                    participant: { 
+                      memberId: payment.metadata?.participantId || callback.participant?.memberId, 
+                      phoneNumber: payment.metadata?.phoneNumber || callback.participant?.phoneNumber 
+                    },
+                    obligation: { id: payment.metadata?.obligationId || callback.obligation?.id }, 
+                    metadata: {
+                      ...payment.metadata,
+                      productType: payment.productType,
+                      providerData: callback.providerData
+                    }
                 }));
             }
             return { success: status === PAYMENT_STATUS.COMPLETED, payment, status };
@@ -92,8 +130,10 @@ class PaymentService {
                 queryCache.set(cacheKey, { data: result, ts: Date.now() });
                 return result;
             } catch (error) {
-                if (error?.response?.status === 429) {
-                    await new Promise(r => setTimeout(r, 5000 * (attempts + 1)));
+                if (error?.statusCode === 429 || error?.message?.includes('socket hang up')) {
+                    const delay = 5000 * (attempts + 1);
+                    console.warn(`[payment.service] Query throttled. Retrying in ${delay}ms`);
+                    await new Promise(r => setTimeout(r, delay));
                     attempts++;
                     continue;
                 }
@@ -103,8 +143,15 @@ class PaymentService {
         throw new Error("M-Pesa API rate limit reached. Please wait before retrying.");
     }
 
-    async cancel(paymentId, reason) { return PaymentStore.markCancelled(paymentId, reason); }
-    async fail(paymentId, reason) { return PaymentStore.markFailed(paymentId, reason); }
+    async cancel(paymentId, reason) { 
+      const res = await PaymentStore.markCancelled(paymentId, reason);
+      return res || { success: false, reason: 'Payment not found' };
+    }
+    
+    async fail(paymentId, reason) { 
+      const res = await PaymentStore.markFailed(paymentId, reason);
+      return res || { success: false, reason: 'Payment not found' };
+    }
 }
 
 export default new PaymentService();

@@ -10,8 +10,11 @@ import ContributionGroupMember
   from '../../models/ContributionGroupMember.js';
 
 
-  import ContributionGroupInvitation
+import ContributionGroupInvitation
   from '../../models/ContributionGroupInvitation.js';
+
+import FinancialAccount
+  from '../../models/FinancialAccount.js';
 
 
 import AppError
@@ -603,6 +606,50 @@ export const createContributionGroup = async ({
 
     });
 
+
+    throw error;
+
+  }
+
+
+  // ======================================
+  // 7b. BOOTSTRAP CHART OF ACCOUNTS
+  // ======================================
+  //
+  // Contribution payments (cash and M-Pesa)
+  // are posted against CASH / BANK /
+  // MPESA_CLEARING / MEMBER_CONTRIBUTIONS
+  // financial accounts. Without this step,
+  // the first contribution ever recorded
+  // against a new group fails with
+  // "<code> account not configured."
+  //
+  // ======================================
+
+  try {
+
+    await FinancialAccount.bootstrapSystemAccounts({
+
+      owner_type:
+        'ContributionGroup',
+
+      owner_id:
+        group._id,
+
+      created_by:
+        actorUserId
+
+    });
+
+  } catch (error) {
+
+    await ContributionGroupMember.deleteOne({
+      _id: organizerMembership._id
+    });
+
+    await ContributionGroup.deleteOne({
+      _id: group._id
+    });
 
     throw error;
 
