@@ -49,17 +49,39 @@ class ContributionPaymentService {
       const amount = toDecimal(data.amount);
       if (!isMoneyPositive(amount)) throw new Error("Payment amount must be greater than zero.");
 
-      // IDEMPOTENCY CHECK
-      const idempotencyCheck = await ContributionPayment.findOne({
+      // ========================================================
+      // IDEMPOTENCY CHECK - CRITICAL FOR M-PESA RETRIES
+      // Check 1: M-Pesa Receipt Number - Most reliable
+      // Check 2: Provider Payment ID - CheckoutRequestID
+      // Check 3: Custom Idempotency Key from callback
+      // ========================================================
+      const idempotencyQuery = {
         obligation_id: obligation._id,
-        provider_payment_id: data.providerPaymentId,
-        status: PAYMENT_STATUS.COMPLETED
-      }, null, opts);
+        status: PAYMENT_STATUS.COMPLETED,
+        $or: []
+      };
 
-      if (idempotencyCheck) return { payment: idempotencyCheck, accounting: null, duplicate: true };
+      if (data.externalReference) {
+        idempotencyQuery.$or.push({ external_reference: data.externalReference });
+      }
+      if (data.providerPaymentId) {
+        idempotencyQuery.$or.push({ provider_payment_id: data.providerPaymentId });
+      }
+      if (data.idempotencyKey) {
+        idempotencyQuery.$or.push({ reference: data.idempotencyKey });
+      }
+
+      // Only run if we have at least 1 key to check
+      if (idempotencyQuery.$or.length > 0) {
+        const idempotencyCheck = await ContributionPayment.findOne(idempotencyQuery, null, opts);
+        if (idempotencyCheck) {
+          console.warn(`Duplicate payment detected. Returning existing payment: ${idempotencyCheck._id}`);
+          return { payment: idempotencyCheck, accounting: null, duplicate: true };
+        }
+      }
 
       const referencePrefix = data.displayReference || 'CONTRIB';
-      const paymentReference = data.reference || generatePaymentReference(referencePrefix);
+      const paymentReference = data.reference || data.idempotencyKey || generatePaymentReference(referencePrefix);
 
       const [payment] = await ContributionPayment.create([{
           plan_id: obligation.plan_id,
@@ -101,16 +123,16 @@ class ContributionPaymentService {
           }
         }, session);
 
-      // Update obligation - FIXED: now sets status to paid + links transaction
+      // Update obligation - sets status to paid + links transaction
       await contributionObligationService.markPaid(
         obligation._id, 
         amount, 
-        accountingResult.transactionId, // <-- pass transaction id
+        accountingResult.transactionId,
         session
       );
 
       payment.status = PAYMENT_STATUS.COMPLETED;
-      payment.financial_transaction_id = accountingResult.transactionId; // <-- link back
+      payment.financial_transaction_id = accountingResult.transactionId;
       payment.journal_id = accountingResult.journalId;
       await payment.save(opts);
 
@@ -135,7 +157,18 @@ class ContributionPaymentService {
         return this.processPayment(data, null, true);
       }
 
-      if (error.code === 11000) throw new Error("Duplicate payment detected. This payment has already been processed.");
+      // Handle MongoDB duplicate key error
+      if (error.code === 11000) {
+        console.warn("Mongo duplicate key error. Fetching existing payment");
+        const existing = await ContributionPayment.findOne({ 
+          $or: [
+            { external_reference: data.externalReference },
+            { provider_payment_id: data.providerPaymentId }
+          ]
+        });
+        if (existing) return { payment: existing, accounting: null, duplicate: true };
+        throw new Error("Duplicate payment detected. This payment has already been processed.");
+      }
       throw error;
     } finally {
       if (ownsSession && session) { try { await session.endSession(); } catch {} }

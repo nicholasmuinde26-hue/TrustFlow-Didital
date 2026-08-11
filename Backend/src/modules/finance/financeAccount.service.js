@@ -27,7 +27,7 @@ class FinanceAccountService {
         for(const entry of entries){
             const accountId = entry.account_id || entry.account;
 
-            const account = await FinancialAccount.findById(accountId, null, opts); // FIX: use opts
+            const account = await FinancialAccount.findById(accountId, null, opts);
 
             if(!account){
                 throw new Error(`Financial account '${accountId}' not found`);
@@ -35,7 +35,7 @@ class FinanceAccountService {
 
             this.applyEntry(account, entry);
 
-            await account.save(opts); // FIX: use opts
+            await account.save(opts);
 
             updatedAccounts.push(account);
         }
@@ -45,7 +45,8 @@ class FinanceAccountService {
 
     applyEntry(account, entry){
         const amount = toDecimal(entry.amount);
-        const entryType = (entry.entry_type || entry.type).toLowerCase();
+        // FIX 1: match what rule sends: entryType not entry_type
+        const entryType = (entry.entryType || entry.entry_type || entry.type || "").toLowerCase(); 
 
         switch(account.normal_balance){
             case ACCOUNT_NORMAL_BALANCE.DEBIT:
@@ -121,7 +122,14 @@ export const getPayoutPayableAccount = async ({ owner_type, owner_id, session = 
 export const getContributionPaymentAssetAccount = async ({ owner_type, owner_id, payment_method, session = null })=>{
     const opts = getOpts(session);
     const map = { cash: "CASH", bank: "BANK", mpesa: "MPESA_CLEARING" };
-    return FinancialAccount.findOne({ owner_type, owner_id, account_code: map[payment_method] }, null, opts);
+    const code = map[payment_method] || "CASH";
+    let account = await FinancialAccount.findOne({ owner_type, owner_id, account_code: code }, null, opts);
+    
+    // FIX 2: fallback for mpesa -> bank
+    if(!account && payment_method === 'mpesa'){
+        account = await FinancialAccount.findOne({ owner_type, owner_id, account_code: "BANK" }, null, opts);
+    }
+    return account;
 };
 
 export default new FinanceAccountService();

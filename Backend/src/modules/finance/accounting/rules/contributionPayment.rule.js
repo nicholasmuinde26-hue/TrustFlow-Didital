@@ -2,231 +2,95 @@
  * ============================================================================
  * CONTRIBUTION PAYMENT ACCOUNTING RULE
  * ============================================================================
- *
- * Converts a contribution payment business event into accounting instructions.
- *
- * Responsibilities
- * ----------------
- * ✓ Identify accounts involved
- * ✓ Define accounting effect
- * ✓ Build posting instructions
- *
- * DOES NOT
- * --------
- * ✗ Create journals
- * ✗ Create ledger entries
- * ✗ Update balances
- * ✗ Modify contribution records
- *
- * Flow
- * ----
- *
- * Contribution Payment
- *
- *          |
- *          v
- *
- * Contribution Rule
- *
- *          |
- *          v
- *
- * Posting Context
- *
- *          |
- *          v
- *
- * Accounting Engine
- *
- * ============================================================================
  */
 
-
+import mongoose from "mongoose"; // ADD
 import FinancialAccount from "../../../../models/FinancialAccount.js";
 
+const canUseTransactions = () => {
+  const topology = mongoose.connection?.client?.topology;
+  return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
+};
+const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 class ContributionPaymentRule {
 
+    async resolveAccounts(context, session = null) { // ADD session
+        const opts = getOpts(session);
+        const { owner_type, owner_id, metadata } = context;
+        const paymentMethod = metadata?.payment_method || 'cash';
 
-    /**
-     * ============================================================
-     * RESOLVE ACCOUNTS
-     * ============================================================
-     *
-     * Determines which financial accounts participate.
-     *
-     * Example:
-     *
-     * Cash Account
-     *       |
-     *       | Debit
-     *       |
-     * Contribution Income
-     *       |
-     *       | Credit
-     *
-     */
-
-
-    async resolveAccounts(context) {
-
-        const {
-            owner_type,
-            owner_id
-        } = context;
-
-        const cashAccount =
-            await FinancialAccount.findOne({
-
-                owner_type,
-
-                owner_id,
-
-                account_code: "CASH"
-
-            });
-
-        const contributionIncomeAccount =
-            await FinancialAccount.findOne({
-
-                owner_type,
-
-                owner_id,
-
-                account_code: "CONTRIBUTION_INCOME"
-
-            });
-
-
-        if (!cashAccount) {
-
-            throw new Error(
-                "Cash account not configured."
-            );
-
-        }
-
-
-
-        if (!contributionIncomeAccount) {
-
-            throw new Error(
-                "Contribution income account not configured."
-            );
-
-        }
-
-
-
-        return {
-
-
-            debitAccount:
-                cashAccount._id,
-
-
-            creditAccount:
-                contributionIncomeAccount._id
-
-
+        // 1. Map payment method to asset account
+        const assetAccountCodeMap = {
+            cash: 'CASH',
+            bank: 'BANK',
+            mpesa: 'MPESA_CLEARING'
         };
+        let assetAccountCode = assetAccountCodeMap[paymentMethod] || 'CASH';
 
+        let assetAccount = await FinancialAccount.findOne({
+            owner_type, owner_id, account_code: assetAccountCode
+        }, null, opts);
 
-    }
-
-
-
-
-
-    /**
-     * ============================================================
-     * BUILD POSTING INSTRUCTIONS
-     * ============================================================
-     */
-
-
-    async build(context) {
-
-
-        const accounts =
-            await this.resolveAccounts(context);
-
-
-
-        return {
-
-            transactionType:
-                "CONTRIBUTION_PAYMENT",
-
-            referenceType:
-                "CONTRIBUTION_PAYMENT",
-
-            referenceId:
-                context.referenceId,
-
-            organization:
-                context.organization,
-
-            entries: [
-
-                {
-
-                    account_id:
-                        accounts.debitAccount,
-
-
-                    entryType:
-                        "DEBIT",
-
-
-                    amount:
-                        context.amount
-
-                },
-
-
-                {
-
-                    account_id:
-                        accounts.creditAccount,
-
-
-                    entryType:
-                        "CREDIT",
-
-
-                    amount:
-                        context.amount
-
-                }
-
-
-            ],
-
-
-
-            metadata: {
-
-
-                member:
-                    context.metadata.member,
-
-
-                contributionPlan:
-                    context.metadata.contributionPlan
-
-
+        // 2. Fallback: if MPESA_CLEARING missing, use BANK
+        if (!assetAccount && assetAccountCode === 'MPESA_CLEARING') {
+            assetAccount = await FinancialAccount.findOne({
+                owner_type, owner_id, account_code: 'BANK'
+            }, null, opts);
+            if (assetAccount) {
+                console.warn(`MPESA_CLEARING not found. Falling back to BANK for ${owner_id}`);
             }
+        }
 
+        if (!assetAccount) {
+            throw new Error(`${assetAccountCode} account not configured.`);
+        }
 
+        // 3. Use MEMBER_CONTRIBUTIONS to match your FinanceService summary
+        const equityAccount = await FinancialAccount.findOne({
+            owner_type, owner_id, account_code: "MEMBER_CONTRIBUTIONS"
+        }, null, opts);
+
+        if (!equityAccount) {
+            throw new Error("MEMBER_CONTRIBUTIONS account not configured.");
+        }
+
+        return {
+            debitAccount: assetAccount._id,
+            creditAccount: equityAccount._id
         };
-
-
     }
 
+    async build(context, session = null) { // ADD session
+        const accounts = await this.resolveAccounts(context, session);
 
+        return {
+            transactionType: "CONTRIBUTION_PAYMENT",
+            referenceType: "CONTRIBUTION_PAYMENT",
+            referenceId: context.referenceId,
+            organization: context.organization,
+            entries: [
+                {
+                    account_id: accounts.debitAccount,
+                    entryType: "DEBIT",
+                    amount: context.amount,
+                    description: `Contribution payment ${context.referenceId}`
+                },
+                {
+                    account_id: accounts.creditAccount,
+                    entryType: "CREDIT",
+                    amount: context.amount,
+                    description: `Contribution payment ${context.referenceId}`
+                }
+            ],
+            metadata: {
+                member: context.metadata?.participant_id,
+                contributionPlan: context.metadata?.contribution_plan_id,
+                obligation_id: context.metadata?.obligation_id,
+                payment_method: context.metadata?.payment_method
+            }
+        };
+    }
 }
-
-
 
 export default new ContributionPaymentRule();

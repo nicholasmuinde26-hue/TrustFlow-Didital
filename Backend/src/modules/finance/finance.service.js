@@ -1,4 +1,4 @@
-import mongoose from "mongoose"; // ADD
+import mongoose from "mongoose";
 import FinancialAccount from "../../models/FinancialAccount.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import LedgerEntry from "../../models/LedgerEntry.js";
@@ -8,23 +8,33 @@ const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
   return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
 };
-const getOpts = (session) => canUseTransactions() && session? { session } : {};
+const getOpts = (session) => canUseTransactions() && session ? { session } : {};
+
+// HELPER: safely convert Decimal128 to number
+const toNumber = (val) => {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'object' && val._bsontype === 'Decimal128') {
+    return Number(val.toString());
+  }
+  return Number(val || 0);
+};
 
 class FinanceService {
 
-    async getSummary(ownerType, ownerId, session = null) { // ADD session
+    async getSummary(ownerType, ownerId, session = null) {
         const opts = getOpts(session);
 
         const accounts = await FinancialAccount.find({
             owner_type: ownerType,
             owner_id: ownerId,
-        }, null, opts); // ADD opts
+            status: 'active' // only count active accounts
+        }, null, opts);
 
         const transactions = await FinancialTransaction.countDocuments({
             owner_type: ownerType,
             owner_id: ownerId,
             status: "posted",
-        }, opts); // ADD opts
+        }, opts);
 
         let cash = 0;
         let contributions = 0;
@@ -32,7 +42,7 @@ class FinanceService {
         let payouts = 0;
 
         for (const account of accounts) {
-            const balance = Number(account.current_balance);
+            const balance = toNumber(account.current_balance); // FIX HERE
             switch (account.account_code) {
                 case "CASH":
                 case "BANK":
@@ -52,11 +62,11 @@ class FinanceService {
         }
 
         const contributionRows = await ContributionPayment.aggregate([
-            { $match: { owner_type: ownerType, owner_id: ownerId, status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$amount' } } },
-        ], opts); // ADD opts
+            { $match: { owner_type: ownerType, owner_id: new mongoose.Types.ObjectId(ownerId), status: 'completed' } },
+            { $group: { _id: null, total: { $sum: { $toDecimal: "$amount" } } } }, // FIX: cast to decimal
+        ], opts);
 
-        const completedContributions = Number(contributionRows[0]?.total?.toString?.() || contributionRows[0]?.total || 0);
+        const completedContributions = toNumber(contributionRows[0]?.total); // FIX HERE
 
         return {
             cash_balance: cash,
@@ -67,7 +77,7 @@ class FinanceService {
         };
     }
 
-    async getAccounts(ownerType, ownerId, session = null) { // ADD session
+    async getAccounts(ownerType, ownerId, session = null) {
         const opts = getOpts(session);
         return FinancialAccount.find({
             owner_type: ownerType,
@@ -75,7 +85,7 @@ class FinanceService {
         }, null, opts).sort({ account_code: 1 });
     }
 
-    async getTransactions(ownerType, ownerId, session = null) { // ADD session
+    async getTransactions(ownerType, ownerId, session = null) {
         const opts = getOpts(session);
         return FinancialTransaction.find({
             owner_type: ownerType,
@@ -85,7 +95,7 @@ class FinanceService {
        .limit(100);
     }
 
-    async getLedger(ownerType, ownerId, session = null) { // ADD session
+    async getLedger(ownerType, ownerId, session = null) {
         const opts = getOpts(session);
         return LedgerEntry.find({
             owner_type: ownerType,

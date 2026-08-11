@@ -2,12 +2,8 @@
  * ============================================================================
  * ACCOUNTING SERVICE
  * ============================================================================
- *
- * Central coordinator for accounting operations.
- *
- * ============================================================================
  */
-import mongoose from "mongoose"; // ADD
+import mongoose from "mongoose";
 
 import contributionPaymentRule from "./rules/contributionPayment.rule.js";
 import payoutRule from "./rules/payout.rule.js";
@@ -36,45 +32,21 @@ class AccountingService {
         };
     }
 
-    /**
-     * ============================================================
-     * POST ACCOUNTING EVENT
-     * ============================================================
-     */
-    async post(context){
-        const { referenceType, transactionType, session = null } = context;
-        const opts = getOpts(session); // <-- KEY
+    async post(context, session = null){ // ADD session param here
+        const opts = getOpts(session);
 
-        const rule = this.getRule(referenceType || transactionType);
+        const rule = this.getRule(context.referenceType || context.transactionType);
 
-        /**
-         * Build accounting instructions
-         */
-        const posting = await rule.build(context);
+        const posting = await rule.build(context, session); // pass session down
 
-        /**
-         * Validate debit / credit structure
-         */
         accountingValidator.validate(posting);
 
-        /**
-         * Create Transaction Header
-         */
-        const transaction = await financeTransactionService.create(context, session); // pass raw session, service will use getOpts
+        const transaction = await financeTransactionService.create(context, session);
 
-        /**
-         * Create Journal
-         */
         const journal = await journalService.create(posting, transaction, session);
 
-        /**
-         * Create Ledger Entries
-         */
         const ledgerEntries = await ledgerService.createEntries(journal, transaction, posting.entries, session);
 
-        /**
-         * Update balances
-         */
         await financeAccountService.applyEntries(ledgerEntries, session);
 
         const postedJournal = await journalService.markPosted(journal._id, session);
@@ -82,16 +54,11 @@ class AccountingService {
         return {
             success: true,
             journalId: postedJournal._id,
-            transactionId: postedJournal.transaction || null,
+            transactionId: transaction._id, // use transaction._id, not postedJournal.transaction
             ledgerEntries
         };
     }
 
-    /**
-     * ============================================================
-     * GET ACCOUNTING RULE
-     * ============================================================
-     */
     getRule(type){
         const rule = this.rules[type];
         if(!rule){
