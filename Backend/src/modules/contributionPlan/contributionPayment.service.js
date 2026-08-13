@@ -12,12 +12,12 @@ import { toDecimal, isMoneyPositive } from "../../shared/decimal.js";
 
 const PAYMENT_STATUS = { PROCESSING: "pending", COMPLETED: "completed", FAILED: "failed" };
 const DEFAULT_CURRENCY = "KES";
-const STALE_PENDING_MS = 2 * 60 * 1000; // 2 minutes
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
   return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
 };
+// FIX: was missing :
 const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 const generatePaymentReference = (prefix = 'PAY') => {
@@ -29,12 +29,9 @@ const generatePaymentReference = (prefix = 'PAY') => {
 class ContributionPaymentService {
 
   async findById(id, session = null) {
-    return contributionObligationService.findById(id, session);
+    return ContributionPayment.findById(id, null, getOpts(session));
   }
 
-  /**
-   * Step 1: Create pending payment record. No GL here anymore
-   */
   async createPendingPayment(data, session = null) {
     const opts = getOpts(session);
 
@@ -48,7 +45,6 @@ class ContributionPaymentService {
     const amount = toDecimal(data.amount);
     if (!isMoneyPositive(amount)) throw new Error("Payment amount must be greater than zero.");
 
-    // IDEMPOTENCY CHECK
     const idempotencyQuery = {
       obligation_id: obligation._id,
       status: { $ne: PAYMENT_STATUS.FAILED },
@@ -71,7 +67,7 @@ class ContributionPaymentService {
         participant_type: obligation.participant_type,
         participant_id: obligation.participant_id,
         obligation_id: obligation._id,
-        amount: amount.toString(),
+        amount: amount,
         currency: DEFAULT_CURRENCY,
         payment_method: paymentMethod,
         channel_type: paymentMethod === "bank"? "bank_transfer" : paymentMethod,
@@ -79,7 +75,6 @@ class ContributionPaymentService {
         payment_provider: paymentMethod,
         provider_payment_id: data.providerPaymentId || null,
         external_reference: data.externalReference || null,
-        display_reference: data.displayReference || null,
         reference,
         status: PAYMENT_STATUS.PROCESSING,
         created_by: data.createdBy,
@@ -90,50 +85,67 @@ class ContributionPaymentService {
   }
 
   /**
-   * Step 2: Called AFTER payment.service marks payment COMPLETED and GL is posted
-   * Only updates obligation and links the GL transaction
+   * Step 2A: Called by PaymentService after payment is COMPLETED for CONTRIBUTION/MGR
    */
-  async completeContributionPayment({ payment, callback }, session = null) {
+  async completeContributionPayment({ payment }, session = null) {
     const opts = getOpts(session);
 
-    const obligation = await contributionObligationService.findById(payment.obligationId, session);
+    const obligation = await contributionObligationService.findById(payment.obligation_id, session);
     if (!obligation) throw new Error("Obligation not found for payment");
 
-    // Find our pending ContributionPayment record
-    const contributionPayment = await ContributionPayment.findOne({
-      obligation_id: obligation._id,
-      reference: payment.idempotencyKey || payment.reference
-    }, null, opts);
+    const contributionPayment = payment;
 
-    if (!contributionPayment) throw new Error("ContributionPayment record not found");
-
-    // Update with GL references from payment.metadata
     contributionPayment.status = PAYMENT_STATUS.COMPLETED;
-    contributionPayment.financial_transaction_id = payment.financialTransactionId; // set by pipeline
-    contributionPayment.journal_id = payment.journalId;
-    contributionPayment.provider_payment_id = callback?.providerData?.MpesaReceiptNumber || payment.providerPaymentId;
-    contributionPayment.external_reference = callback?.providerData?.CheckoutRequestID;
+    contributionPayment.completed_at = new Date();
     await contributionPayment.save(opts);
 
-    // Close obligation
     await contributionObligationService.markPaid(
       obligation._id,
       toDecimal(contributionPayment.amount),
-      payment.financialTransactionId,
       session
     );
 
-    // MGR logic stays here because it's chama business logic, not GL
     if (obligation.owner_type === 'Chama') {
       const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');
-      await maybeCreateMgrPayoutForChama(String(obligation.owner_id), payment.payerId).catch(() => null);
+      await maybeCreateMgrPayoutForChama(String(obligation.owner_id), String(contributionPayment.participant_id)).catch(() => null);
     }
 
     return { payment: contributionPayment };
   }
 
+  /**
+   * Step 2B: NEW - Called by PaymentService after payment is COMPLETED for SAVINGS
+   */
+  async completeSavingsPayment({ payment }, session = null) {
+    const opts = getOpts(session);
+
+    const contributionPayment = payment;
+
+    contributionPayment.status = PAYMENT_STATUS.COMPLETED;
+    contributionPayment.completed_at = new Date();
+    await contributionPayment.save(opts);
+
+    // Update SavingsAccount balance
+    const SavingsAccount = (await import("../../models/SavingsAccount.js")).default;
+    await SavingsAccount.findOneAndUpdate(
+      { 
+        owner_type: payment.owner_type, 
+        owner_id: payment.owner_id,
+        participant_id: payment.participant_id 
+      },
+      { $inc: { balance: toDecimal(payment.amount) } },
+      { upsert: true, new: true, ...opts }
+    );
+
+    return { payment: contributionPayment };
+  }
+
   async markFailed(paymentId, reason, session = null) {
-    return ContributionPayment.findByIdAndUpdate(paymentId, { status: PAYMENT_STATUS.FAILED, failureReason: reason }, getOpts(session));
+    return ContributionPayment.findByIdAndUpdate(
+      paymentId, 
+      { status: PAYMENT_STATUS.FAILED, failure_message: reason, failed_at: new Date() }, 
+      getOpts(session)
+    );
   }
 }
 

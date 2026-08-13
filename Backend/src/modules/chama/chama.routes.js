@@ -11,7 +11,9 @@ import {
   reconcilePaymentIntentController,
   updateMgrSettingsController,
   getMgrOverviewController,
-  recordMgrReminderController
+  getMgrHistoryController,
+  recordMgrReminderController,
+  markMgrPaidController
 } from './chama.controller.js';
 
 import {
@@ -48,6 +50,9 @@ router.post('/:chamaId/payment-intents/:paymentIntentId/reconcile', protect, req
 router.get('/:chamaId/mgr', protect, requireChamaMember, getMgrOverviewController);
 router.put('/:chamaId/mgr/settings', protect, requireChamaMember, requireChamaTreasurer, updateMgrSettingsController);
 router.post('/:chamaId/mgr/reminders', protect, requireChamaMember, requireChamaTreasurer, recordMgrReminderController);
+router.get('/:chamaId/mgr/history', protect, requireChamaMember, getMgrHistoryController);
+// Treasurer marks a member's round as paid via cash/bank/other, outside M-Pesa.
+router.post('/:chamaId/mgr/obligations/:obligationId/mark-paid', protect, requireChamaMember, requireChamaTreasurer, markMgrPaidController);
 
 
 // ========================================

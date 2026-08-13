@@ -56,22 +56,22 @@ export default function FinanceDashboard() {
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <BalanceCard
           title="Current Balance"
-          amount={formatKES(financeData?.cash_balance ?? financeData?.balance ?? 0)} // format it
+          value={financeData?.cash_balance ?? financeData?.balance ?? 0}
         />
 
         <BalanceCard
           title="Total Contributions"
-          amount={formatKES(financeData?.total_contributions ?? 0)}
+          value={financeData?.total_contributions ?? 0}
         />
 
         <BalanceCard
           title="Pending Payouts"
-          amount={formatKES(financeData?.pending_payouts ?? 0)}
+          value={financeData?.pending_payouts ?? 0}
         />
 
         <BalanceCard
           title="Outstanding Loans"
-          amount={formatKES(financeData?.outstanding_loans ?? 0)}
+          value={financeData?.outstanding_loans ?? 0}
         />
       </div>
 
@@ -79,8 +79,3 @@ export default function FinanceDashboard() {
     </div>
   );
 }
-
-const formatKES = (value) => {
-  const n = Number(value);
-  return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(Number.isFinite(n) ? n : 0);
-};

@@ -378,8 +378,16 @@ export const TRANSACTION_STATUS = Object.freeze({
         "pending",
 
 
+    // NOTE: FinancialTransaction.status enum is
+    // ['pending','posted','failed','reversed','cancelled'] — there is no
+    // 'completed' value. POSTED is the correct "done" status; COMPLETED is
+    // kept only so any existing external references to it don't break, but
+    // nothing in this codebase should use it going forward.
+    POSTED:
+        "posted",
+
     COMPLETED:
-        "completed",
+        "posted",
 
 
     FAILED:

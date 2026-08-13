@@ -1,65 +1,92 @@
 import mpesaService from './mpesa.service.js';
-import { PAYMENT_STATUS } from '../../payment.constants.js';
+import { PAYMENT_STATUS, PAYMENT_PROVIDER } from '../../payment.constants.js'; 
 
-const MpesaProvider = {
-  name: 'mpesa',
+class MpesaProvider {
+  name = PAYMENT_PROVIDER.MPESA;
 
-  /**
-   * Called by payment.service.initiate
-   */
-  async initiate({ amount, provider, metadata, idempotencyKey }) {
-    if (!provider.phoneNumber) {
+  async initiate(context) {
+    if (!context.phoneNumber) {
       throw new Error('Phone number is required for M-Pesa STK Push');
     }
     
     const result = await mpesaService.initiateStkPush({
-      amount,
-      phoneNumber: provider.phoneNumber,
-      accountReference: metadata.reference,
-      displayReference: metadata.displayReference,
-      transactionDescription: metadata.description || 'Payment'
+      amount: context.amountNumber,
+      phoneNumber: context.phoneNumber,
+      accountReference: context.reference,
+      displayReference: context.reference,
+      transactionDescription: context.metadata?.description || `Chama Payment: ${context.reference}`
     });
 
+    if (!result.success) {
+      throw new Error(result.customerMessage || 'STK Push failed');
+    }
+
     return {
-      providerRequestId: result.checkoutRequestId, // This goes to PaymentIntent.provider_request_id
-      providerResponseId: result.merchantRequestId,
-      providerResponse: result.rawResponse,
-      customerMessage: result.customerMessage
+      checkoutRequestId: result.checkoutRequestId,
+      merchantRequestId: result.merchantRequestId,
+      customerMessage: result.customerMessage,
+      rawResponse: result.rawResponse
     };
-  },
+  }
 
-  /**
-   * Called by payment.service.processCallback
-   * Must return normalized shape that payment.service expects
-   */
-  async processCallback({ providerData }) {
-    const parsed = mpesaService.parseStkCallback(providerData);
+  processCallback(rawBody) {
+    const parsed = mpesaService.parseStkCallback(rawBody);
     
-    const status = parsed.success 
-      ? PAYMENT_STATUS.COMPLETED 
-      : parsed.resultCode === 1032 
-        ? PAYMENT_STATUS.CANCELLED 
-        : PAYMENT_STATUS.FAILED;
+    if (!parsed || !parsed.checkoutRequestId) {
+      return { 
+        provider: PAYMENT_PROVIDER.MPESA,
+        success: false, 
+        status: PAYMENT_STATUS.FAILED, 
+        reason: 'Invalid callback body',
+        raw: rawBody
+      };
+    }
+    
+    let status = PAYMENT_STATUS.PENDING;
+    if (parsed.success) status = PAYMENT_STATUS.COMPLETED;
+    else if (parsed.resultCode === 1032) status = PAYMENT_STATUS.CANCELLED;
+    else status = PAYMENT_STATUS.FAILED;
 
     return {
-      provider: 'mpesa',
-      paymentId: null, // payment.service will resolve this from checkoutRequestId
-      checkoutRequestId: parsed.checkoutRequestId, // critical for lookup
+      provider: PAYMENT_PROVIDER.MPESA,
       success: parsed.success,
       status,
+      checkoutRequestId: parsed.checkoutRequestId,
+      merchantRequestId: parsed.merchantRequestId,
+      mpesaReceiptNumber: parsed.mpesaReceiptNumber,
       amount: parsed.amount,
-      currency: 'KES',
+      phoneNumber: parsed.phoneNumber,
       reason: parsed.resultDescription,
-      participant: {
-        phoneNumber: parsed.phoneNumber
-      },
-      providerData: parsed // full parsed object for audit
+      raw: rawBody
     };
-  },
+  }
+
+  async query(payload) {
+    const result = await mpesaService.queryStkPush({
+      checkoutRequestId: payload.checkoutRequestId
+    });
+
+    let status = PAYMENT_STATUS.PENDING;
+    if (result.resultCode === 0) status = PAYMENT_STATUS.COMPLETED;
+    else if (result.resultCode === 1032) status = PAYMENT_STATUS.CANCELLED;
+    else if (result.resultCode !== null) status = PAYMENT_STATUS.FAILED;
+
+    return {
+      status,
+      reason: result.resultDescription,
+      rawResponse: result.rawResponse
+    };
+  }
 
   getMetadata() {
-    return { name: 'mpesa', supports: ['STK_PUSH', 'B2C'] };
+    return { 
+      name: PAYMENT_PROVIDER.MPESA, 
+      displayName: 'M-Pesa',
+      supports: ['STK_PUSH', 'STK_QUERY', 'B2C'],
+      currencies: ['KES'],
+      countries: ['KE']
+    };
   }
-};
+}
 
-export default MpesaProvider;
+export default new MpesaProvider();

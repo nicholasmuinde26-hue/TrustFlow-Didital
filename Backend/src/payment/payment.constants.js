@@ -14,7 +14,7 @@ export const PAYMENT_PROVIDER = Object.freeze({
     WALLET: "wallet",
     STRIPE: "stripe",
     FLUTTERWAVE: "flutterwave",
-    MANUAL: "manual"
+    CASH: "cash"
 });
 
 export const PAYMENT_TYPE = Object.freeze({
@@ -32,4 +32,8 @@ export const PAYMENT_EVENTS = Object.freeze({
     FAILED: "payment.failed",
     CANCELLED: "payment.cancelled",
     REFUNDED: "payment.refunded"
+});
+
+export const CURRENCY = Object.freeze({
+    KES: "KES"
 });

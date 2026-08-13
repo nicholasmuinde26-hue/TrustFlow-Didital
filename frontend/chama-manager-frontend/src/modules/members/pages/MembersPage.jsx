@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Users } from "lucide-react";
 
@@ -7,17 +8,22 @@ import { usePresence } from "@/modules/presence/hooks/usePresence";
 import {
   canManageMembers,
   canInviteMembers,
-} from "@/modules/workspaces/permissions/permissions";
+  canEditMemberProfile,
+} from "@/modules/workspaces/permissions/Permissions";
 
 import {
   useMembers,
   useAddMember,
   useUpdateMemberRole,
   useRemoveMember,
+  useUpdateMemberProfile,
+  useUpdateMemberStatus,
+  useTransferTreasurer,
 } from "../hooks/useMembers";
 import { useSendInvitation } from "@/modules/invitations/hooks/useInvitations";
 
 import MemberRow from "../components/MemberRow";
+import EditProfileModal from "../components/EditProfileModal";
 import AddMemberForm from "../components/AddMemberForm";
 import InviteMemberForm from "../components/InviteMemberForm";
 import Spinner from "@/shared/components/ui/Spinner";
@@ -40,12 +46,43 @@ export default function MembersPage() {
   const updateRole = useUpdateMemberRole(type, workspaceId);
   const removeMember = useRemoveMember(type, workspaceId);
   const sendInvitation = useSendInvitation(workspaceId);
+  const updateProfile = useUpdateMemberProfile(type, workspaceId);
+  const updateStatus = useUpdateMemberStatus(type, workspaceId);
+  const transferTreasurer = useTransferTreasurer(type, workspaceId);
+
+  const [editingMember, setEditingMember] = useState(null);
+  const [actionError, setActionError] = useState(null);
 
   const presenceById = new Map(
     presence.map((p) => [String(p.id ?? p._id), p.status])
   );
 
   const userId = user?.id ?? user?._id;
+
+  const handleToggleStatus = (member) => {
+    setActionError(null);
+    const nextStatus = member.status === "active" ? "suspended" : "active";
+    updateStatus.mutate(
+      { memberId: member._id, status: nextStatus },
+      {
+        onError: (error) =>
+          setActionError(error.response?.data?.message || "Could not update member status."),
+      }
+    );
+  };
+
+  const handleMakeTreasurer = (member) => {
+    setActionError(null);
+    if (!window.confirm(`Make ${member.user_id?.name || "this member"} the treasurer?`)) return;
+    transferTreasurer.mutate(member._id, {
+      onError: (error) =>
+        setActionError(error.response?.data?.message || "Could not transfer the treasurer role."),
+    });
+  };
+
+  const handleSaveProfile = async (payload) => {
+    await updateProfile.mutateAsync({ memberId: editingMember._id, payload });
+  };
 
   return (
     <div>
@@ -89,6 +126,12 @@ export default function MembersPage() {
           </p>
         )}
 
+        {actionError && (
+          <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
+            {actionError}
+          </p>
+        )}
+
         {!isLoading && !isError && members.length === 0 && (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 py-16 text-center dark:border-slate-700">
             <Users size={28} className="text-slate-400" />
@@ -102,6 +145,7 @@ export default function MembersPage() {
         <div className="space-y-3">
           {members.map((member) => {
             const memberUserId = member.user_id?._id ?? member.user_id;
+            const isSelf = Boolean(userId) && String(memberUserId) === String(userId);
 
             return (
               <MemberRow
@@ -110,16 +154,31 @@ export default function MembersPage() {
                 type={type}
                 status={presenceById.get(String(memberUserId)) || "offline"}
                 canManage={manage}
-                isSelf={Boolean(userId) && String(memberUserId) === String(userId)}
+                canEditProfile={canEditMemberProfile(workspace?.role, type, isSelf)}
+                isSelf={isSelf}
                 onChangeRole={(item, role) =>
                   updateRole.mutate({ memberId: item._id, role })
                 }
                 onRemove={(item) => removeMember.mutate(item._id)}
+                onEditProfile={(item) => setEditingMember(item)}
+                onToggleStatus={handleToggleStatus}
+                onMakeTreasurer={handleMakeTreasurer}
+                updatingRole={updateRole.isPending}
+                updatingStatus={updateStatus.isPending}
+                transferring={transferTreasurer.isPending}
               />
             );
           })}
         </div>
       </div>
+
+      <EditProfileModal
+        open={Boolean(editingMember)}
+        onClose={() => setEditingMember(null)}
+        initial={editingMember?.user_id || {}}
+        onSave={handleSaveProfile}
+        saving={updateProfile.isPending}
+      />
     </div>
   );
 }

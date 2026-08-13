@@ -1,11 +1,11 @@
 import express from 'express';
 
 import {
-  initiateContributionStkPush,
+  initiateStkPush, // RENAMED: was initiateContributionStkPush
   handleMpesaCallback,
   handleB2cResult,
   queryMpesaPayment,
-  getPaymentIntentStatus, // <-- ADD THIS
+  getPaymentIntentStatus,
 } from './mpesa.controller.js';
 
 // ============================================================
@@ -21,13 +21,21 @@ import { protect } from '../../../middleware/auth.middleware.js';
 const router = express.Router();
 
 // ============================================================
-// MEMBER PAYMENT
+// MEMBER PAYMENT - GENERIC STK PUSH
 // ============================================================
+// Body must include: { amount, phoneNumber, productType: 'savings' | 'contribution' | 'mgr', ...ids }
+// productType tells PaymentEngine/FinanceEngine how to route the GL
+router.post(
+  "/stk-push",
+  protect,
+  initiateStkPush
+);
 
+// Backward compatibility for old frontend
 router.post(
   "/contributions/stk-push",
   protect,
-  initiateContributionStkPush
+  initiateStkPush
 );
 
 // ============================================================
@@ -41,21 +49,23 @@ router.get(
 );
 
 // ============================================================
-// M-PESA CALLBACK
+// M-PESA CALLBACKS - PUBLIC, NO AUTH
 // ============================================================
 
 router.post(
   "/callback",
+  express.json({ limit: '1mb' }), // Saf sends big payload
   handleMpesaCallback
 );
 
 router.post(
   "/b2c/result",
+  express.json({ limit: '1mb' }),
   handleB2cResult
 );
 
 // ============================================================
-// STK QUERY
+// STK QUERY - FOR MANUAL RECONCILE BUTTON
 // ============================================================
 
 router.post(

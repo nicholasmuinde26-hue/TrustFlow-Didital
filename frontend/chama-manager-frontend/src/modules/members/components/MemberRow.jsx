@@ -1,161 +1,200 @@
-import { useState, useEffect } from "react";
-import fileToDataUri from "@/utils/fileToDataUri";
+import { useState } from "react";
+import { Pencil, Crown, UserX, UserCheck2, ShieldAlert } from "lucide-react";
 
-const MAX_AVATAR_BYTES = 2_800_000; // matches backend approx limit
-const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
+import { assignableRoles } from "@/modules/workspaces/permissions/Permissions";
 
-export default function EditProfileModal({ open, onClose, initial = {}, onSave, saving }) {
-  const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    id_number: "",
-    avatar_url: null,
-  });
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [error, setError] = useState(null);
+const roleLabel = (role) =>
+  String(role || "member")
+    .replace(/_/g, " ")
+    .replace(/^./, (c) => c.toUpperCase());
 
-  useEffect(() => {
-    if (open) {
-      setForm({
-        name: initial.name || "",
-        phone: initial.phone || "",
-        email: initial.email || "",
-        id_number: initial.id_number || "",
-        avatar_url: initial.avatar_url || null,
-      });
-      setAvatarFile(null);
-      setError(null);
-    }
-  }, [open, initial]);
+const statusStyles = {
+  active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+  inactive: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  suspended: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+  removed: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+};
 
-  if (!open) return null;
+function initials(name) {
+  return String(name || "?")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
 
-  const handleFile = async (ev) => {
-    setError(null);
-    const file = ev.target.files?.[0];
-    if (!file) return;
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setError("Only PNG / JPEG / WEBP images are accepted.");
-      return;
-    }
-    // quick size check (file.size is bytes)
-    if (file.size > MAX_AVATAR_BYTES) {
-      setError("Avatar must be less than ~2.8MB.");
-      return;
-    }
-    try {
-      const dataUri = await fileToDataUri(file);
-      // dataUri length check (conservative)
-      if (dataUri && dataUri.length > MAX_AVATAR_BYTES * 1.5) {
-        setError("Avatar too large after encoding. Use a smaller image.");
-        return;
-      }
-      setAvatarFile(file);
-      setForm((s) => ({ ...s, avatar_url: dataUri }));
-    } catch (err) {
-      setError("Failed to read image file.");
-    }
-  };
+export default function MemberRow({
+  member,
+  type,
+  status, // presence: "online" | "offline"
+  canManage,
+  canEditProfile,
+  isSelf,
+  onChangeRole,
+  onRemove,
+  onEditProfile,
+  onToggleStatus,
+  onMakeTreasurer,
+  updatingRole,
+  updatingStatus,
+  transferring,
+}) {
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
 
-  const handleSubmit = async (ev) => {
-    ev.preventDefault();
-    setError(null);
-    // simple client-side validation
-    if (!form.name?.trim()) {
-      setError("Name is required.");
-      return;
-    }
-    try {
-      // onSave returns a promise
-      await onSave({
-        name: form.name.trim(),
-        phone: form.phone?.trim() || null,
-        email: form.email?.trim() || null,
-        id_number: form.id_number?.trim() || null,
-        avatar_url: form.avatar_url || null,
-      });
-      onClose();
-    } catch (err) {
-      setError(err?.message || "Save failed");
-    }
-  };
+  const user = member.user_id || {};
+  const membershipStatus = member.status || "active";
+  const isRemoved = membershipStatus === "removed";
+  const canSuspend = type === "chama" && canManage && !isSelf && member.role !== "treasurer";
+  const canOfferTreasurer =
+    type === "chama" && canManage && !isSelf && member.role !== "treasurer" && membershipStatus === "active";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 dark:bg-slate-900">
-        <h2 className="text-lg font-semibold">Edit profile</h2>
-
-        <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label className="block text-sm font-medium">Avatar</label>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-slate-100">
-                {form.avatar_url ? (
-                  <img src={form.avatar_url} alt="avatar" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-slate-400">No</div>
-                )}
-              </div>
-              <input type="file" accept="image/*" onChange={handleFile} />
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-center gap-3">
+        <div className="relative h-11 w-11 shrink-0">
+          {user.avatar_url ? (
+            <img
+              src={user.avatar_url}
+              alt={user.name || "Member"}
+              className="h-11 w-11 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {initials(user.name)}
             </div>
-            <p className="mt-1 text-xs text-slate-500">PNG / JPEG / WEBP — max ~2.8MB</p>
-          </div>
+          )}
+          <span
+            title={status === "online" ? "Online" : "Offline"}
+            className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white dark:border-slate-900 ${
+              status === "online" ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+            }`}
+          />
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium">Name</label>
-            <input
-              className="mt-1 block w-full rounded border px-3 py-2"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-          </div>
+        <div>
+          <p className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
+            {user.name || "Member"}
+            {isSelf && <span className="text-xs font-normal text-slate-400">(you)</span>}
+            {member.role === "treasurer" && (
+              <Crown size={14} className="text-amber-500" aria-label="Treasurer" />
+            )}
+          </p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {user.phone || user.email || "No contact on file"}
+            {type === "chama" && member.payout_position && (
+              <span> · Position {member.payout_position}</span>
+            )}
+          </p>
+        </div>
+      </div>
 
-          <div>
-            <label className="block text-sm font-medium">Phone</label>
-            <input
-              className="mt-1 block w-full rounded border px-3 py-2"
-              value={form.phone || ""}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              placeholder="07XXXXXXXX or 2547XXXXXXXX"
-            />
-          </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+            statusStyles[membershipStatus] || statusStyles.active
+          }`}
+        >
+          {roleLabel(membershipStatus)}
+        </span>
 
-          <div>
-            <label className="block text-sm font-medium">Email</label>
-            <input
-              className="mt-1 block w-full rounded border px-3 py-2"
-              value={form.email || ""}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="you@example.com"
-            />
-          </div>
+        {canManage && !isRemoved ? (
+          <select
+            value={member.role}
+            disabled={updatingRole}
+            onChange={(e) => onChangeRole(member, e.target.value)}
+            className="rounded-lg border p-2 text-sm disabled:opacity-50"
+          >
+            {assignableRoles(type).map((role) => (
+              <option key={role} value={role}>
+                {roleLabel(role)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {roleLabel(member.role)}
+          </span>
+        )}
 
-          <div>
-            <label className="block text-sm font-medium">ID number</label>
-            <input
-              className="mt-1 block w-full rounded border px-3 py-2"
-              value={form.id_number || ""}
-              onChange={(e) => setForm({ ...form, id_number: e.target.value })}
-            />
-          </div>
+        {canEditProfile && (
+          <button
+            type="button"
+            onClick={() => onEditProfile(member)}
+            title="Edit profile"
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <Pencil size={14} /> Edit
+          </button>
+        )}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+        {canOfferTreasurer && (
+          <button
+            type="button"
+            disabled={transferring}
+            onClick={() => onMakeTreasurer(member)}
+            title="Make treasurer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+          >
+            <Crown size={14} /> Make treasurer
+          </button>
+        )}
 
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="rounded px-4 py-2">
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded bg-primary px-4 py-2 text-white disabled:opacity-60"
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
+        {canSuspend && (
+          <button
+            type="button"
+            disabled={updatingStatus}
+            onClick={() => onToggleStatus(member)}
+            title={membershipStatus === "active" ? "Suspend member" : "Reactivate member"}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            {membershipStatus === "active" ? (
+              <>
+                <ShieldAlert size={14} /> Suspend
+              </>
+            ) : (
+              <>
+                <UserCheck2 size={14} /> Reactivate
+              </>
+            )}
+          </button>
+        )}
+
+        {canManage && !isSelf && member.role !== "treasurer" && !isRemoved && (
+          <div className="flex items-center gap-1">
+            {confirmingRemove ? (
+              <>
+                <span className="text-xs text-slate-500">Remove?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRemove(member);
+                    setConfirmingRemove(false);
+                  }}
+                  className="rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingRemove(false)}
+                  className="rounded-lg border px-2.5 py-1.5 text-xs font-semibold text-slate-500"
+                >
+                  No
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingRemove(true)}
+                title="Remove member"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40"
+              >
+                <UserX size={14} /> Remove
+              </button>
+            )}
           </div>
-        </form>
+        )}
       </div>
     </div>
   );

@@ -6,11 +6,11 @@ import env from "./config/env.js";
 import { connectDatabase } from "./config/database.js";
 
 import { initSocket } from "./modules/realtime/socketServer.js";
-import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js";
 
-// NEW: Payment Provider Registry
-import providerRegistry from "./payment/providers/provider.registry.js";
-import MpesaProvider from "./payment/providers/mpesa/mpesa.provider.js";
+import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js"; // FIX: was paymentIntentReconciliation.job
+
+// NEW: Payment Provider Bootstrap
+import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
 
 // ============================================================================
 // CREATE HTTP SERVER
@@ -39,17 +39,17 @@ async function startServer() {
         await connectDatabase();
 
         // ============================================================
-        // REGISTER PAYMENT PROVIDERS - ADD THIS
+        // REGISTER PAYMENT PROVIDERS
         // ============================================================
-        providerRegistry.register(MpesaProvider);
-        console.log(` Registered Payment Providers: [${providerRegistry.list().join(', ')}]`);
-        
+        const paymentRegistry = initializePaymentProviders();
+        console.log(` Registered Payment Providers: [${paymentRegistry.list().join(', ')}]`);
 
         // ============================================================
         // START BACKGROUND JOBS
         // ============================================================
 
         startPaymentIntentReconciliationJob();
+        console.log(` Payment Intent Reconciliation Job: Started [30s interval]`);
 
         // ============================================================
         // START HTTP SERVER
@@ -66,7 +66,7 @@ async function startServer() {
                 );
 
                 console.log(
-                    "              CHAMAMANAGER PLATFORM"
+                    " CHAMAMANAGER PLATFORM"
                 );
 
                 console.log(
@@ -76,53 +76,61 @@ async function startServer() {
                 console.log("");
 
                 console.log(
-                    ` Environment      : ${env.nodeEnv}`
+                    ` Environment : ${env.nodeEnv}`
                 );
 
                 console.log(
-                    ` HTTP Server      : http://localhost:${env.port}`
+                    ` HTTP Server : http://localhost:${env.port}`
                 );
 
                 console.log(
-                    ` REST API         : http://localhost:${env.port}/api/v1`
+                    ` REST API : http://localhost:${env.port}/api/v1`
                 );
 
                 console.log(
-                    ` Health Check     : http://localhost:${env.port}/api/v1/health`
+                    ` Health Check : http://localhost:${env.port}/api/v1/health`
                 );
 
                 console.log(
-                    ` Socket.IO        : ws://localhost:${env.port}`
+                    ` Socket.IO : ws://localhost:${env.port}`
                 );
 
                 console.log("");
 
                 console.log(" Enabled Modules");
 
-                console.log("   ✓ Authentication");
-                console.log("   ✓ User Management");
-                console.log("   ✓ Workspaces");
-                console.log("   ✓ Chama Management");
-                console.log("   ✓ Contribution Groups");
-                console.log("   ✓ Contribution Plans");
-                console.log("   ✓ Finance Engine");
-                console.log("   ✓ Double Entry Accounting");
-                console.log("   ✓ Ledger System");
-                console.log("   ✓ Payment Engine");
-                console.log("   ✓ Payout Engine");
-                console.log("   ✓ Audit Logs");
-                console.log("   ✓ Chat API");
+                console.log(" ✓ Authentication");
+                console.log(" ✓ User Management");
+                console.log(" ✓ Workspaces");
+                console.log(" ✓ Chama Management");
+                console.log(" ✓ Contribution Groups");
+                console.log(" ✓ Contribution Plans");
+                console.log(" ✓ Finance Engine");
+                console.log(" ✓ Double Entry Accounting");
+                console.log(" ✓ Ledger System");
+                console.log(" ✓ Payment Engine");
+                console.log(" ✓ Payout Engine");
+                console.log(" ✓ Audit Logs");
+                console.log(" ✓ Chat API");
+
+                console.log("");
+
+                console.log(" Payment Engine");
+
+                console.log(` ✓ Provider: ${paymentRegistry.list().join(', ')}`);
+                console.log(" ✓ Event Driven GL Posting");
+                console.log(" ✓ Reconciliation Job: Active");
 
                 console.log("");
 
                 console.log(" Realtime");
 
-                console.log("   ✓ Socket.IO Server");
-                console.log("   ✓ Workspace Rooms");
-                console.log("   ✓ Chat Events");
-                console.log("   ✓ Presence Tracking");
-                console.log("   ✓ Notifications Ready");
-                console.log("   ✓ Live Contributions Ready");
+                console.log(" ✓ Socket.IO Server");
+                console.log(" ✓ Workspace Rooms");
+                console.log(" ✓ Chat Events");
+                console.log(" ✓ Presence Tracking");
+                console.log(" ✓ Notifications Ready");
+                console.log(" ✓ Live Contributions Ready");
 
                 console.log("");
 

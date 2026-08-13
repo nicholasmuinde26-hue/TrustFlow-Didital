@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import User from '../../models/User.js';
 import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
+import Payout from '../../models/Payout.js';
 
 import AppError from '../../utils/AppError.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';

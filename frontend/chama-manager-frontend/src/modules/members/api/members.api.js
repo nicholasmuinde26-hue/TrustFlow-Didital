@@ -55,6 +55,27 @@ const membersApi = {
 
     throw new Error("Member profile updates are only supported for Chamas");
   },
+
+  // Chama-only: Chama also supports suspending/reactivating a member and
+  // transferring the Treasurer role. Contribution Groups have no
+  // equivalent backend routes for either.
+  updateStatus(type, workspaceId, memberId, status) {
+    if (type === "chama") {
+      return api.patch(`/chamas/${workspaceId}/members/${memberId}/status`, { status });
+    }
+
+    throw new Error("Member status updates are only supported for Chamas");
+  },
+
+  transferTreasurer(type, workspaceId, newTreasurerMemberId) {
+    if (type === "chama") {
+      return api.patch(`/chamas/${workspaceId}/members/transfer-treasurer`, {
+        newTreasurerMemberId,
+      });
+    }
+
+    throw new Error("Treasurer transfer is only supported for Chamas");
+  },
 };
 
 export default membersApi;

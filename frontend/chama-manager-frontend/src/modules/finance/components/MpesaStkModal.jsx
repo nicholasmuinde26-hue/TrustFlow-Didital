@@ -137,7 +137,9 @@ export default function MpesaStkModal({
 
       const { data } = obligationId
        ? await financeApi.initiateMpesaStkPush({
-            contributionObligationId: obligationId,
+            chamaId,
+            productType: "contribution",
+            obligationId,
             amount: Number(amount),
             phoneNumber: formattedPhone,
             accountReference: title,

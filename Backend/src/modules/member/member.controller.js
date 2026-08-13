@@ -518,3 +518,38 @@ export const transferTreasurerController = async (
     next(error);
   }
 };
+
+// ========================================
+// REARRANGE PAYOUT ORDER
+// TREASURER/CHAIR ONLY
+// ========================================
+export const rearrangePayoutOrderController = async (req, res, next) => {
+  try {
+    const { chamaId } = req.params;
+    const actorUserId = req.user._id;
+    const { order } = req.body; // [{ memberId: 'id', position: 1 }]
+
+    // Verify actor
+    const actor = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
+    if(!actor ||!['treasurer', 'chairperson'].includes(actor.role)){
+      throw new AppError("Only Treasurer or Chairperson can rearrange", 403);
+    }
+
+    // Validate no duplicate positions
+    const positions = order.map(o => o.position);
+    if(new Set(positions).size!== positions.length){
+      throw new AppError("Duplicate positions not allowed", 400);
+    }
+
+    await Promise.all(order.map(o =>
+      ChamaMembership.updateOne(
+        { _id: o.memberId, chama_id: chamaId },
+        { payout_position: o.position }
+      )
+    ));
+
+    res.status(200).json({ success: true, message: 'Payout order updated' });
+  } catch (error) {
+    next(error);
+  }
+};

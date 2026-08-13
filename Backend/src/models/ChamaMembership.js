@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 
-
 // ========================================
 // CHAMA MEMBERSHIP
 // ========================================
@@ -16,37 +15,9 @@ import mongoose from 'mongoose';
 // This document represents the relationship
 // between ONE User and ONE Chama.
 //
-// NAMING CONVENTION:
-//
-// Every other model in this codebase
-// (Chama, FinancialAccount, FinancialTransaction,
-// ContributionGroup, ContributionPayment, ...)
-// uses snake_case field names.
-//
-// This schema MUST also use snake_case.
-//
-// Every consumer of this model
-// (member.service.js, chama.service.js,
-// chama.middleware.js, contributionObligation.service.js,
-// payout.service.js) already queries and creates
-// documents using snake_case field names
-// (user_id, chama_id, payout_position, ...).
-//
-// A previous version of this schema used
-// camelCase (userId, chamaId, payoutPosition, ...),
-// which silently broke every one of those call
-// sites: Mongoose's default strict mode drops
-// unrecognized fields, so ChamaMembership.create()
-// calls throw "user_id is required" / "chama_id is
-// required" validation errors, and every
-// ChamaMembership.findOne({ user_id, chama_id })
-// lookup always returns null.
-//
-// Do NOT rename these fields back to camelCase
-// without also updating every call site above.
+// NAMING CONVENTION: snake_case required
 //
 // ========================================
-
 
 // ========================================
 // MEMBERSHIP ROLES
@@ -60,7 +31,6 @@ const MEMBERSHIP_ROLES = [
   'chairperson'
 ];
 
-
 // ========================================
 // MEMBERSHIP STATUS
 // ========================================
@@ -72,7 +42,6 @@ const MEMBERSHIP_STATUS = [
   'removed'
 ];
 
-
 // ========================================
 // CHAMA MEMBERSHIP SCHEMA
 // ========================================
@@ -83,13 +52,6 @@ const chamaMembershipSchema = new mongoose.Schema(
     // ======================================
     // USER
     // ======================================
-    //
-    // The global User identity.
-    //
-    // A User can have multiple memberships
-    // across different Chamas.
-    //
-    // ======================================
 
     user_id: {
       type: mongoose.Schema.Types.ObjectId,
@@ -98,13 +60,8 @@ const chamaMembershipSchema = new mongoose.Schema(
       index: true
     },
 
-
     // ======================================
     // CHAMA
-    // ======================================
-    //
-    // The Chama this membership belongs to.
-    //
     // ======================================
 
     chama_id: {
@@ -114,23 +71,8 @@ const chamaMembershipSchema = new mongoose.Schema(
       index: true
     },
 
-
     // ======================================
     // ROLE
-    // ======================================
-    //
-    // The user's role inside THIS Chama.
-    //
-    // Example:
-    //
-    // User A
-    //   ├── Chama A → Treasurer
-    //   ├── Chama B → Member
-    //   └── Chama C → Auditor
-    //
-    // Role is therefore scoped to the
-    // membership, not the User.
-    //
     // ======================================
 
     role: {
@@ -141,18 +83,8 @@ const chamaMembershipSchema = new mongoose.Schema(
       index: true
     },
 
-
     // ======================================
     // MEMBERSHIP STATUS
-    // ======================================
-    //
-    // Controls the lifecycle of membership.
-    //
-    // active
-    // inactive
-    // suspended
-    // removed
-    //
     // ======================================
 
     status: {
@@ -163,22 +95,12 @@ const chamaMembershipSchema = new mongoose.Schema(
       index: true
     },
 
-
     // ======================================
     // PAYOUT POSITION
     // ======================================
     //
     // Used for simple rotational Chamas.
-    //
-    // Example:
-    //
-    // Member A → Position 1
-    // Member B → Position 2
-    // Member C → Position 3
-    //
-    // For advanced rotations, this can later
-    // move into a dedicated RotationParticipant
-    // model.
+    // Must be unique 1..N among active members.
     //
     // ======================================
 
@@ -188,13 +110,8 @@ const chamaMembershipSchema = new mongoose.Schema(
       default: null
     },
 
-
     // ======================================
     // INVITED BY
-    // ======================================
-    //
-    // User who invited this member.
-    //
     // ======================================
 
     invited_by: {
@@ -202,7 +119,6 @@ const chamaMembershipSchema = new mongoose.Schema(
       ref: 'User',
       default: null
     },
-
 
     // ======================================
     // JOINED DATE
@@ -214,28 +130,14 @@ const chamaMembershipSchema = new mongoose.Schema(
       immutable: true
     },
 
-
     // ======================================
     // ACCEPTED DATE
-    // ======================================
-    //
-    // Useful when we implement invitations.
-    //
-    // Example:
-    //
-    // Invitation Sent
-    //       ↓
-    // Member Accepts
-    //       ↓
-    // accepted_at = Date
-    //
     // ======================================
 
     accepted_at: {
       type: Date,
       default: null
     },
-
 
     // ======================================
     // REMOVED DATE
@@ -246,13 +148,8 @@ const chamaMembershipSchema = new mongoose.Schema(
       default: null
     },
 
-
     // ======================================
     // REMOVED BY
-    // ======================================
-    //
-    // User who removed this member.
-    //
     // ======================================
 
     removed_by: {
@@ -263,15 +160,9 @@ const chamaMembershipSchema = new mongoose.Schema(
 
   },
   {
-    // Automatically adds:
-    //
-    // createdAt
-    // updatedAt
-    //
     timestamps: true
   }
 );
-
 
 // ========================================
 // UNIQUE MEMBERSHIP CONSTRAINT
@@ -280,38 +171,15 @@ const chamaMembershipSchema = new mongoose.Schema(
 // A user can only have ONE membership
 // record for a specific Chama.
 //
-// User A + Chama A
-//       ↓
-// ONE membership
-//
-// User A + Chama B
-//       ↓
-// ANOTHER membership
-//
 // ========================================
 
 chamaMembershipSchema.index(
-  {
-    user_id: 1,
-    chama_id: 1
-  },
-  {
-    unique: true,
-    name: 'unique_user_chama_membership'
-  }
+  { user_id: 1, chama_id: 1 },
+  { unique: true, name: 'unique_user_chama_membership' }
 );
-
 
 // ========================================
 // CHAMA MEMBERS LOOKUP
-// ========================================
-//
-// Efficiently find members of a Chama.
-//
-// Example:
-//
-// GET /chamas/:chamaId/members
-//
 // ========================================
 
 chamaMembershipSchema.index({
@@ -319,18 +187,8 @@ chamaMembershipSchema.index({
   status: 1
 });
 
-
 // ========================================
 // ROLE LOOKUP
-// ========================================
-//
-// Efficiently find members by role.
-//
-// Example:
-//
-// Find all active auditors
-// in a specific Chama.
-//
 // ========================================
 
 chamaMembershipSchema.index({
@@ -339,14 +197,8 @@ chamaMembershipSchema.index({
   status: 1
 });
 
-
 // ========================================
 // PAYOUT ORDER LOOKUP
-// ========================================
-//
-// Efficiently find active members of a
-// Chama in payout rotation order.
-//
 // ========================================
 
 chamaMembershipSchema.index({
@@ -355,14 +207,8 @@ chamaMembershipSchema.index({
   payout_position: 1
 });
 
-
 // ========================================
 // USER MEMBERSHIP LOOKUP
-// ========================================
-//
-// Efficiently find all Chamas
-// belonging to a specific User.
-//
 // ========================================
 
 chamaMembershipSchema.index({
@@ -371,6 +217,25 @@ chamaMembershipSchema.index({
   createdAt: -1
 });
 
+// ========================================
+// PAYOUT POSITION UNIQUE CONSTRAINT
+// ========================================
+//
+// Prevent 2 active members in same Chama from having same position
+// Allows nulls and removed/inactive members to have duplicate/null
+//
+// This is what stops the "Duplicate payout positions" error
+//
+// ========================================
+
+chamaMembershipSchema.index(
+  { chama_id: 1, payout_position: 1 },
+  {
+    unique: true,
+    name: 'unique_active_payout_position',
+    partialFilterExpression: { status: 'active' }
+  }
+);
 
 // ========================================
 // EXPORT MODEL
@@ -380,6 +245,5 @@ const ChamaMembership = mongoose.model(
   'ChamaMembership',
   chamaMembershipSchema
 );
-
 
 export default ChamaMembership;

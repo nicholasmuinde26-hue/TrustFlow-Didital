@@ -106,7 +106,7 @@ class JournalService {
 
             {
 
-                new: true,
+                returnDocument: "after",
 
                 session
 
@@ -142,7 +142,7 @@ class JournalService {
 
             {
 
-                new: true,
+                returnDocument: "after",
 
                 session
 

@@ -10,7 +10,11 @@ export function useWorkspace() {
     );
   }
 
-  const currentWorkspace = context.currentWorkspace || context.workspace || null;
+  const currentWorkspace =
+    context.activeWorkspace ||
+    context.currentWorkspace ||
+    context.workspace ||
+    null;
   const workspaceId = currentWorkspace?._id || currentWorkspace?.id || context.workspaceId || null;
   const workspaceType = (currentWorkspace?.type || context.workspaceType || "").toLowerCase();
 
@@ -22,6 +26,7 @@ export function useWorkspace() {
     isChama: workspaceType === "chama",
     isBusiness: workspaceType === "business",
     isContributionGroup:
+      workspaceType === "contribution-group" ||
       workspaceType === "contribution_group" ||
       workspaceType === "merry_go_round" ||
       workspaceType === "contribution",

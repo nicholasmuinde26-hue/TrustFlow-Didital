@@ -42,6 +42,8 @@ import auditRoutes from "./modules/audit/audit.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
 import loanRoutes from "./modules/loans/loan.routes.js";
 
+import "./modules/finance/financeEngine.service.js";
+
 // ============================================================================
 // ERROR MIDDLEWARE
 // ============================================================================

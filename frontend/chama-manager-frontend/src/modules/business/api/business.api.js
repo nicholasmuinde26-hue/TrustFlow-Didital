@@ -1,69 +1,78 @@
 import api from "../../../app/services/api";
 
 export const businessApi = {
+  // Create
+  createBusiness: (payload) =>
+    api.post(`/businesses`, payload),
+
   // Dashboard Summary
   getSummary: (workspaceId) =>
-    api.get(`/business/${workspaceId}/summary`),
+    api.get(`/businesses/${workspaceId}/summary`),
 
   // Sales
   getSales: (workspaceId, params) =>
-    api.get(`/business/${workspaceId}/sales`, { params }),
+    api.get(`/businesses/${workspaceId}/sales`, { params }),
 
   createSale: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/sales`, payload),
+    api.post(`/businesses/${workspaceId}/sales`, payload),
 
   // Expenses
   getExpenses: (workspaceId, params) =>
-    api.get(`/business/${workspaceId}/expenses`, { params }),
+    api.get(`/businesses/${workspaceId}/expenses`, { params }),
 
   createExpense: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/expenses`, payload),
+    api.post(`/businesses/${workspaceId}/expenses`, payload),
 
   // Inventory
   getInventory: (workspaceId, params) =>
-    api.get(`/business/${workspaceId}/inventory`, { params }),
+    api.get(`/businesses/${workspaceId}/inventory`, { params }),
 
   addInventoryItem: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/inventory`, payload),
+    api.post(`/businesses/${workspaceId}/inventory`, payload),
 
   updateInventoryItem: (workspaceId, itemId, payload) =>
-    api.put(`/business/${workspaceId}/inventory/${itemId}`, payload),
+    api.put(`/businesses/${workspaceId}/inventory/${itemId}`, payload),
 
   // Customers
   getCustomers: (workspaceId, params) =>
-    api.get(`/business/${workspaceId}/customers`, { params }),
+    api.get(`/businesses/${workspaceId}/customers`, { params }),
 
   createCustomer: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/customers`, payload),
+    api.post(`/businesses/${workspaceId}/customers`, payload),
 
   // Suppliers
   getSuppliers: (workspaceId, params) =>
-    api.get(`/business/${workspaceId}/suppliers`, { params }),
+    api.get(`/businesses/${workspaceId}/suppliers`, { params }),
 
   createSupplier: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/suppliers`, payload),
+    api.post(`/businesses/${workspaceId}/suppliers`, payload),
 
   // Accounts
   getAccounts: (workspaceId) =>
-    api.get(`/business/${workspaceId}/accounts`),
+    api.get(`/businesses/${workspaceId}/accounts`),
 
   createAccount: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/accounts`, payload),
+    api.post(`/businesses/${workspaceId}/accounts`, payload),
 
   // Reports
   getReports: (workspaceId, type, params) =>
-    api.get(`/business/${workspaceId}/reports/${type}`, { params }),
+    api.get(`/businesses/${workspaceId}/reports/${type}`, { params }),
 
   // Business Settings
   getSettings: (workspaceId) =>
-    api.get(`/business/${workspaceId}/settings`),
+    api.get(`/businesses/${workspaceId}/settings`),
 
   updateSettings: (workspaceId, payload) =>
-    api.put(`/business/${workspaceId}/settings`, payload),
+    api.put(`/businesses/${workspaceId}/settings`, payload),
+
+  // Customer payout (M-Pesa B2C) - matches business.routes.js's
+  // POST /:businessId/customer-payouts
+  customerPayout: (workspaceId, payload) =>
+    api.post(`/businesses/${workspaceId}/customer-payouts`, payload),
 
   // M-Pesa Payment STK Push
   initiateMpesaStkPush: (workspaceId, payload) =>
-    api.post(`/business/${workspaceId}/mpesa/stkpush`, payload),
+    api.post(`/businesses/${workspaceId}/mpesa/stkpush`, payload),
 };
 
 export default businessApi;

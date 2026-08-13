@@ -9,6 +9,7 @@ import PaymentIntent from '../../models/PaymentIntent.js';
 import paymentService from "../../payment/payment.service.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import AppError from '../../utils/AppError.js';
+import { PAYMENT_PROVIDER } from '../../payment/payment.constants.js';
 
 const generateUniqueReference = (displayRef) => {
   const ts = Date.now();
@@ -50,27 +51,28 @@ class ContributionPaymentController {
 
       // 3. Build unified payment payload - MATCH validator structure
       const paymentPayload = {
-        productType,
-        payment: { // REQUIRED by validator
-          amount: Number(amount),
-          currency: obligation.currency || 'KES'
+        type: productType,
+        amount: Number(amount),
+        currency: obligation.currency || 'KES',
+        provider: {
+          name: paymentMethod === 'MPESA' ? PAYMENT_PROVIDER.MPESA : PAYMENT_PROVIDER.CASH
         },
-        provider: { 
-          name: paymentMethod === 'MPESA' ? 'mpesa' : 'cash'
-        },
+        // top-level fields required by PaymentContext
+        actorId: userId,
+        chamaId: obligation.owner_id,
+        participantId: obligation.participant_id,
+        obligationId,
+        planId: obligation.plan_id?._id,
+        phoneNumber: normalizedPhone,
+        reference: uniqueRef,
+        displayReference: displayRef,
         participant: { // REQUIRED by validator for mpesa
-          id: userId,
+          id: obligation.participant_id,
           phoneNumber: normalizedPhone
         },
-        obligationId,
         metadata: {
-          reference: uniqueRef, // REQUIRED by mpesa.provider
-          displayReference: displayRef,
           description: `Contribution to ${obligation.plan_id?.name || 'Plan'}`,
-          chamaId: obligation.owner_id,
           ownerType: obligation.owner_type,
-          planId: obligation.plan_id?._id,
-          participantId: obligation.participant_id,
           periodStart: obligation.period_start,
           periodEnd: obligation.period_end
         },

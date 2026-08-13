@@ -2,57 +2,26 @@
  * ============================================================================
  * CONTRIBUTION OBLIGATION SERVICE
  * ============================================================================
- *
- * Manages contribution obligations.
- *
- * Responsibilities
- * ----------------
- * ✓ Create obligations
- * ✓ Track expected contributions
- * ✓ Track paid amounts
- * ✓ Calculate outstanding balances
- * ✓ Update obligation status
- *
- * DOES NOT
- * --------
- * ✗ Handle payments
- * ✗ Create accounting entries
- * ✗ Update financial accounts
- * ✗ Know debit/credit rules
- *
- * ============================================================================
  */
 
 import mongoose from "mongoose";
 import ContributionObligation from "../../models/ContributionObligation.js";
+import { toDecimal, addMoney } from "../../shared/decimal.js"; // use decimal helpers
 
-// Helper: detect if mongo supports transactions
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
   return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
 };
-
-// Helper: only add session to opts if transactions are supported
 const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 class ContributionObligationService {
 
-    /**
-     * ============================================================
-     * CREATE OBLIGATION
-     * ============================================================
-     */
     async create(data, session = null) {
         const opts = getOpts(session);
         const [obligation] = await ContributionObligation.create([data], opts);
         return obligation;
     }
 
-    /**
-     * ============================================================
-     * FIND OBLIGATION
-     * ============================================================
-     */
     async findById(id, session = null) {
         const opts = getOpts(session);
         return ContributionObligation.findById(id, null, opts);
@@ -69,72 +38,51 @@ class ContributionObligationService {
     }
 
     /**
-     * ============================================================
-     * RECORD PAYMENT EFFECT
-     * ============================================================
-     *
-     * Important:
-     *
-     * This DOES NOT process money.
-     *
-     * Money was already handled by:
-     *
-     * Accounting Engine
-     *
-     * This only updates business state.
-     *
+     * NEW: Called by Payment Engine after successful payment
+     * Increments paid_amount and closes obligation if fully paid
      */
-    async recordPayment(obligationId, amount, session = null) {
+    async markPaid(obligationId, amountPaid, session = null) {
         const opts = getOpts(session);
 
         const obligation = await this.findById(obligationId, session);
-        if (!obligation) {
-            throw new Error("Contribution obligation not found.");
-        }
+        if (!obligation) throw new Error("Contribution obligation not found.");
 
-        const paidAmount = Number(obligation.paid_amount?.toString() || 0) + Number(amount);
-        obligation.paid_amount = paidAmount;
+        const currentPaid = toDecimal(obligation.paid_amount);
+        const newPaid = addMoney(currentPaid, toDecimal(amountPaid)); // Decimal safe add
+        const expected = toDecimal(obligation.expected_amount);
 
-        obligation.status = paidAmount >= Number(obligation.expected_amount?.toString() || 0)
-        ? "paid"
-         : "partially_paid";
+        const status = newPaid.greaterThanOrEqualTo(expected)? "paid" : "partially_paid";
 
-        await obligation.save(opts); // <-- FIX: use opts, not {session}
+        obligation.paid_amount = newPaid;
+        obligation.status = status;
+        if (status === 'paid') obligation.paid_at = new Date();
 
+        await obligation.save(opts);
         return obligation;
     }
 
     /**
-     * ============================================================
-     * GET OUTSTANDING BALANCE
-     * ============================================================
+     * LEGACY: For manual admin adjustments
      */
-    calculateOutstanding(obligation) {
-        return Math.max(
-            Number(obligation.expected_amount || 0) - Number(obligation.paid_amount || 0),
-            0
-        );
+    async recordPayment(obligationId, amount, session = null) {
+        return this.markPaid(obligationId, amount, session); // just alias it
     }
 
-    /**
-     * ============================================================
-     * MARK AS OVERDUE
-     * ============================================================
-     */
+    calculateOutstanding(obligation) {
+        const expected = toDecimal(obligation.expected_amount || 0);
+        const paid = toDecimal(obligation.paid_amount || 0);
+        return expected.minus(paid).max(0).toString();
+    }
+
     async markOverdue(obligationId, session = null) {
         const opts = getOpts(session);
         return ContributionObligation.findByIdAndUpdate(
             obligationId,
             { status: "overdue" },
-            {...opts, new: true } // merge opts with new:true
+            {...opts, new: true }
         );
     }
 
-    /**
-     * ============================================================
-     * BULK UPDATE STATUS
-     * ============================================================
-     */
     async bulkUpdateStatus(ids, status, session = null) {
         const opts = getOpts(session);
         return ContributionObligation.updateMany(

@@ -67,3 +67,29 @@ export function useUpdateMemberProfile(type, workspaceId) {
     },
   });
 }
+
+export function useUpdateMemberStatus(type, workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ memberId, status }) =>
+      membersService.updateStatus(type, workspaceId, memberId, status),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });
+    },
+  });
+}
+
+export function useTransferTreasurer(type, workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (newTreasurerMemberId) =>
+      membersService.transferTreasurer(type, workspaceId, newTreasurerMemberId),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });
+    },
+  });
+}

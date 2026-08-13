@@ -1,6 +1,11 @@
 import businessApi from "../api/business.api";
 
 export const businessService = {
+  async createBusiness(payload) {
+    const { data } = await businessApi.createBusiness(payload);
+    return data.data || data;
+  },
+
   async getSummary(workspaceId) {
     const { data } = await businessApi.getSummary(workspaceId);
     return data.data || data;

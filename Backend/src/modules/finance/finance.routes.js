@@ -11,6 +11,7 @@ import {
     getFinanceTransactions,
 
     getGeneralLedger,
+    getRecentPayments,
     createFinanceOperation
 
 } from "./finance.controller.js";
@@ -39,6 +40,11 @@ router.get(
 router.get(
     "/:workspaceId/finance/ledger",
     getGeneralLedger
+);
+
+router.get(
+    "/:workspaceId/finance/payments/recent",
+    getRecentPayments
 );
 
 export default router;

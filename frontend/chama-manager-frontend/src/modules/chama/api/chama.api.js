@@ -55,6 +55,14 @@ const chamaApi = {
   recordMgrReminder(chamaId, payload) {
     return api.post(`/chamas/${chamaId}/mgr/reminders`, payload);
   },
+
+  getMgrHistory(chamaId) {
+    return api.get(`/chamas/${chamaId}/mgr/history`);
+  },
+
+  markMgrPaid(chamaId, obligationId, payload) {
+    return api.post(`/chamas/${chamaId}/mgr/obligations/${obligationId}/mark-paid`, payload);
+  },
 };
 
 export default chamaApi;

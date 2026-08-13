@@ -3,7 +3,7 @@ import dns from "node:dns";
 
 /**
  * ============================================================
- * M-PESA SERVICE v2.1
+ * M-PESA SERVICE v2.2
  * Handles: STK Push, STK Query with retry, Callback Parsing, B2C Payouts
  * ============================================================
  */
@@ -23,7 +23,7 @@ const MPESA_B2C_RESULT_URL = process.env.MPESA_B2C_RESULT_URL?.trim();
 const MPESA_B2C_TIMEOUT_URL = process.env.MPESA_B2C_TIMEOUT_URL?.trim();
 const MPESA_INITIATOR_NAME = process.env.MPESA_INITIATOR_NAME?.trim();
 const MPESA_SECURITY_CREDENTIAL = process.env.MPESA_SECURITY_CREDENTIAL?.trim();
-const MPESA_TIMEOUT = Number(process.env.MPESA_TIMEOUT) || 20000; // bumped to 20s for sandbox
+const MPESA_TIMEOUT = Number(process.env.MPESA_TIMEOUT) || 20000;
 const MPESA_FORCE_MOCK = String(process.env.MPESA_FORCE_MOCK || "").toLowerCase() === "true";
 const MPESA_BASE_URL = MPESA_ENVIRONMENT === "production" ? "https://api.safaricom.co.ke" : "https://sandbox.safaricom.co.ke";
 
@@ -56,7 +56,9 @@ const validateAmount = (amount) => {
 
 const generateTimestamp = () => {
   const now = new Date();
-  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+  const tzOffset = now.getTimezoneOffset() * 60000;
+  const localTime = new Date(now - tzOffset); // use Africa/Nairobi time
+  return localTime.toISOString().replace(/[-:T.Z]/g, '').substring(0, 14);
 };
 
 const generatePassword = (timestamp) => {
@@ -99,7 +101,7 @@ const createMockStkResponse = ({ amount, phoneNumber, accountReference }) => ({
   merchantRequestId: `MOCK_MR_${Date.now()}`,
   checkoutRequestId: `MOCK_CO_${Date.now()}`,
   responseCode: "0", responseDescription: "Mock STK Push accepted",
-  customerMessage: "Mock payment request created",
+  customerMessage: `Request accepted. Please enter M-Pesa PIN for ${amount} KES`,
   rawResponse: { mocked: true, amount, phoneNumber, accountReference },
 });
 
@@ -129,6 +131,9 @@ const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayR
       PartyB: MPESA_SHORTCODE, PhoneNumber: normalizedPhone, CallBackURL: MPESA_CALLBACK_URL,
       AccountReference: displayRef, TransactionDesc: String(transactionDescription).substring(0, 100),
     };
+    
+    console.log(`[M-PESA] STK Push: ${validatedAmount} KES to ${normalizedPhone}, Ref: ${displayRef}`);
+    
     const response = await axios.post(`${MPESA_BASE_URL}/mpesa/stkpush/v1/processrequest`, payload, {
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: MPESA_TIMEOUT,
     });
@@ -137,6 +142,7 @@ const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayR
       throw createMpesaError({ response: { status: response.status || 502, data } }, "M-Pesa STK Push was rejected");
     }
     if (!data.CheckoutRequestID) throw new Error("M-Pesa STK Push response did not contain CheckoutRequestID");
+    
     return {
       success: true, mocked: false, merchantRequestId: data.MerchantRequestID || null,
       checkoutRequestId: data.CheckoutRequestID || null, responseCode: data.ResponseCode || null,
@@ -172,15 +178,13 @@ const queryStkPush = async ({ checkoutRequestId }, retries = 2) => {
     };
   } catch (error) {
     const normalizedError = createMpesaError(error, "Failed to query M-Pesa STK Push");
-    
-    // FIX: Retry on socket hang up, ETIMEDOUT, or 429
     const isRetryable = 
       normalizedError.message.includes('socket hang up') || 
       normalizedError.message.includes('ETIMEDOUT') ||
       normalizedError.statusCode === 429;
       
     if (isRetryable && retries > 0) {
-      const delay = (3 - retries) * 2000; // 2s, then 4s
+      const delay = (3 - retries) * 2000;
       console.warn(`[M-PESA] Retrying STK query for ${checkoutRequestId} in ${delay}ms. Retries left: ${retries}`);
       await new Promise(r => setTimeout(r, delay));
       return queryStkPush({ checkoutRequestId }, retries - 1);
@@ -200,10 +204,10 @@ const initiateB2cPayment = async ({ amount, phoneNumber, remarks, occasion, comm
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
   if (!MPESA_INITIATOR_NAME || !MPESA_SECURITY_CREDENTIAL) {
-    throw new Error("M-Pesa B2C initiator name and security credential required. Set MPESA_INITIATOR_NAME and MPESA_SECURITY_CREDENTIAL");
+    throw new Error("M-Pesa B2C initiator name and security credential required");
   }
   if (!MPESA_B2C_RESULT_URL || !MPESA_B2C_TIMEOUT_URL) {
-    throw new Error("M-Pesa B2C result and timeout URLs required. Set MPESA_B2C_RESULT_URL and MPESA_B2C_TIMEOUT_URL");
+    throw new Error("M-Pesa B2C result and timeout URLs required");
   }
 
   try {

@@ -1,11 +1,12 @@
 const formatKES = (value) => {
   const num = Number(value ?? 0);
+  const safe = Number.isFinite(num) ? num : 0;
   return new Intl.NumberFormat('en-KE', { 
     style: 'currency', 
     currency: 'KES', 
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
-  }).format(num);
+  }).format(safe);
 };
 
 export default function CashFlowCard({ inflow, outflow, summary }) {

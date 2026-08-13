@@ -11,29 +11,23 @@
  * ============================================================================
  */
 
-import mongoose from "mongoose"; // ADD
+import mongoose from "mongoose";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import { TRANSACTION_STATUS } from "./accounting/accounting.constants.js";
 import { toDecimal } from "../../shared/decimal.js";
 
-// Helper: detect if mongo supports transactions
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
   return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
 };
 
-// Helper: only add session to opts if transactions are supported
+// FIX: was missing :
 const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 class FinanceTransactionService {
 
-    /**
-     * ------------------------------------------------------------
-     * CREATE
-     * ------------------------------------------------------------
-     */
     async create(context, session = null) {
-        const opts = getOpts(session); // <-- KEY
+        const opts = getOpts(session);
 
         const transactionType = (context.transactionType || context.referenceType || '').toString().toLowerCase();
         const sourceType = context.source_type || context.referenceType || 'accounting_event';
@@ -43,11 +37,13 @@ class FinanceTransactionService {
             throw new Error('Transaction source id is required.');
         }
 
+        const amount = toDecimal(context.amount); // FIX: keep as Decimal128
+
         const [transaction] = await FinancialTransaction.create([{
             owner_type: context.owner_type,
             owner_id: context.owner_id,
             transaction_type: transactionType,
-            amount: toDecimal(context.amount).toFixed(),
+            amount: amount, // FIX: pass Decimal128 directly, not.toFixed()
             currency: context.currency || 'KES',
             source_type: sourceType,
             source_id: sourceId,
@@ -59,64 +55,55 @@ class FinanceTransactionService {
             posted_by: context.posted_by || null,
             reversed_transaction_id: context.reversed_transaction_id || null,
             reversal_reason: context.reversal_reason || null
-        }], opts); // <-- use opts
+        }], opts);
 
         return transaction;
     }
 
-    /**
-     * ------------------------------------------------------------
-     * MARK COMPLETED
-     * ------------------------------------------------------------
-     */
     async markCompleted(id, session = null) {
         const opts = getOpts(session);
+        // FIX: the schema's status enum is ['pending','posted','failed','reversed','cancelled'] —
+        // there is no 'completed' value. Writing "completed" silently satisfied
+        // findByIdAndUpdate (which skips validators by default) but never matched
+        // any query filtering on status: "posted", so the finance dashboard's
+        // transaction count was always 0. Same for `completed_at`, which isn't a
+        // field on this schema (the real field is `posted_at`) and was being
+        // silently dropped by strict mode.
         return FinancialTransaction.findByIdAndUpdate(
             id,
-            { status: TRANSACTION_STATUS.COMPLETED, completedAt: new Date() },
-            {...opts, new: true } // merge opts with new:true
+            { status: TRANSACTION_STATUS.POSTED, posted_at: new Date() },
+            { ...opts, returnDocument: "after", runValidators: true }
         );
     }
 
-    /**
-     * ------------------------------------------------------------
-     * MARK FAILED
-     * ------------------------------------------------------------
-     */
     async markFailed(id, reason, session = null) {
         const opts = getOpts(session);
-        return FinancialTransaction.findByIdAndUpdate(
-            id,
-            { status: TRANSACTION_STATUS.FAILED, failureReason: reason },
-            {...opts, new: true }
-        );
+        // FIX: `failure_reason` isn't a field on this schema either — it was being
+        // silently dropped. Fold the reason into `description` instead so it's
+        // actually persisted and visible on the transaction record.
+        const transaction = await FinancialTransaction.findById(id, null, opts);
+        if (!transaction) return null;
+
+        transaction.status = TRANSACTION_STATUS.FAILED;
+        if (reason) {
+            transaction.description = transaction.description
+                ? `${transaction.description} | Failed: ${reason}`
+                : `Failed: ${reason}`;
+        }
+
+        return transaction.save(opts);
     }
 
-    /**
-     * ------------------------------------------------------------
-     * FIND
-     * ------------------------------------------------------------
-     */
     async findById(id, session = null) {
         const opts = getOpts(session);
         return FinancialTransaction.findById(id, null, opts);
     }
 
-    /**
-     * ------------------------------------------------------------
-     * CORRELATION
-     * ------------------------------------------------------------
-     */
     async findByCorrelationId(correlationId, session = null) {
         const opts = getOpts(session);
         return FinancialTransaction.findOne({ correlationId }, null, opts);
     }
 
-    /**
-     * ------------------------------------------------------------
-     * PROVIDER REFERENCE
-     * ------------------------------------------------------------
-     */
     async findByProviderReference(reference, session = null) {
         const opts = getOpts(session);
         return FinancialTransaction.findOne({ providerReference: reference }, null, opts);

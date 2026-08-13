@@ -2,25 +2,12 @@
  * ============================================================================
  * PAYMENT PROVIDER BOOTSTRAP
  * ============================================================================
- *
- * Registers all payment providers supported by the Payment Engine.
- *
- * This file is executed once during application startup.
- *
- * Adding a new payment provider should only require:
- *
- *   1. Creating the provider.
- *   2. Registering it here.
- *
- * payment.service.js never changes.
- *
- * ============================================================================
  */
 
 import providerRegistry from "./provider.registry.js";
 
-import MpesaProvider
-    from "./mpesa/mpesa.provider.js";
+import MpesaProvider from "./mpesa/mpesa.provider.js"; // This is already an instance
+import CashProvider from "./cash/cash.provider.js"; // This is already an instance
 
 // Future Providers
 // import AirtelProvider from "./airtel/airtel.provider.js";
@@ -28,7 +15,6 @@ import MpesaProvider
 // import WalletProvider from "./wallet/wallet.provider.js";
 // import StripeProvider from "./stripe/stripe.provider.js";
 // import FlutterwaveProvider from "./flutterwave/flutterwave.provider.js";
-// import ManualProvider from "./manual/manual.provider.js";
 
 let initialized = false;
 
@@ -38,47 +24,23 @@ let initialized = false;
 export const initializePaymentProviders = () => {
 
     if (initialized) {
-
         return providerRegistry;
-
     }
 
-    providerRegistry.register(
-
-        new MpesaProvider()
-
-    );
+    providerRegistry.register(MpesaProvider); // <-- NO new
+    providerRegistry.register(CashProvider); // <-- NO new
 
     /*
-    providerRegistry.register(
-        new AirtelProvider()
-    );
-
-    providerRegistry.register(
-        new BankProvider()
-    );
-
-    providerRegistry.register(
-        new WalletProvider()
-    );
-
-    providerRegistry.register(
-        new StripeProvider()
-    );
-
-    providerRegistry.register(
-        new FlutterwaveProvider()
-    );
-
-    providerRegistry.register(
-        new ManualProvider()
-    );
+    providerRegistry.register(AirtelProvider);
+    providerRegistry.register(BankProvider);
+    providerRegistry.register(WalletProvider);
+    providerRegistry.register(StripeProvider);
+    providerRegistry.register(FlutterwaveProvider);
+    providerRegistry.register(ManualProvider);
     */
 
     initialized = true;
-
     return providerRegistry;
-
 };
 
 export default initializePaymentProviders;

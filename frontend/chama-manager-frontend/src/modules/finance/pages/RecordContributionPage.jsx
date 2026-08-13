@@ -407,8 +407,8 @@ export default function RecordContributionPage() {
         const result =
           await triggerFn({
             workspaceId,
-            contributionObligationId:
-              form.obligationId,
+            chamaId: workspaceId,
+            productType: "contribution",
             obligationId:
               form.obligationId,
             amount,

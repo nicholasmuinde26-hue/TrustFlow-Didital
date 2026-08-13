@@ -44,3 +44,9 @@ export function useUpdateChamaSettings(chamaId) {
     },
   });
 }
+
+export function useDeleteChama(chamaId) {
+  return useMutation({
+    mutationFn: () => chamaService.remove(chamaId),
+  });
+}

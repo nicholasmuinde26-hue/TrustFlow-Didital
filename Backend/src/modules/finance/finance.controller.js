@@ -92,6 +92,22 @@ export async function getGeneralLedger(req, res, next) {
   }
 }
 
+export async function getRecentPayments(req, res, next) {
+  try {
+    const { ownerType, workspaceId } = await resolveWorkspace(req);
+    const sinceMs = Number(req.query.sinceMs) || undefined;
+    const payments = await financeService.getRecentPayments(
+      ownerType,
+      workspaceId,
+      sinceMs ? { sinceMs } : {}
+    );
+
+    res.json({ success: true, data: payments });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function createFinanceOperation(req, res, next) {
   try {
     const { ownerType, workspaceId } = await resolveWorkspace(req);

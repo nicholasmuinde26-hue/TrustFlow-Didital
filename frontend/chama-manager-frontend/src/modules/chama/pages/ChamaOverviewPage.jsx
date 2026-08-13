@@ -7,12 +7,19 @@ import {
   AlertTriangle,
   CalendarDays,
   Smartphone,
+  PiggyBank,
+  HandCoins,
+  Receipt,
 } from "lucide-react";
 
 import useWorkspace from "../../../app/hooks/useWorkspace";
 import MpesaStkModal from "../../finance/components/MpesaStkModal";
 import StatCard from "../../../shared/components/ui/StatCard";
+import useFinanceSummary from "../../finance/hooks/useFinanceSummary";
+import useLedger from "../../finance/hooks/useLedger";
+import financeService from "../../finance/services/finance.service";
 
+const { formatCurrency } = financeService;
 const money = (value) => `KES ${Number(value || 0).toLocaleString()}`;
 
 export default function ChamaOverviewPage({ dashboard = {} }) {
@@ -26,6 +33,13 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
   const workspace = dashboard?.workspace || workspaceCtx?.currentWorkspace || {};
   const stats = dashboard?.stats || {};
   const upcoming = dashboard?.upcoming || [];
+
+  // Real numbers straight from the accounting ledger — cash/savings/loan
+  // balances live on FinancialAccount rows, not the generic contribution
+  // count used for `stats` above.
+  const { summary: financeSummary } = useFinanceSummary(workspaceId);
+  const { entries: ledgerEntries } = useLedger(workspaceId, { limit: 5 });
+  const recentLedgerEntries = (ledgerEntries || []).slice(0, 5);
 
   const base = `/workspace/${workspaceId}`;
 
@@ -69,7 +83,7 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
         </div>
       </section>
 
-      <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard
           title="Members"
           value={stats?.memberCount ?? 0}
@@ -78,18 +92,32 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
           color="emerald"
         />
         <StatCard
-          title="Contributions"
-          value={money(stats?.totalContributed)}
-          description="Confirmed payments"
+          title="Total Contributions"
+          value={money(financeSummary?.total_contributions ?? stats?.totalContributed)}
+          description="Confirmed payments (ledger)"
           icon={WalletCards}
           color="violet"
         />
         <StatCard
-          title="Active plans"
-          value={stats?.activePlans ?? 0}
-          description="Savings plans running"
+          title="Savings Balance"
+          value={money(financeSummary?.savings_balance)}
+          description="Held in member savings"
+          icon={PiggyBank}
+          color="info"
+        />
+        <StatCard
+          title="Cash Balance"
+          value={money(financeSummary?.cash_balance)}
+          description="Cash, bank & M-Pesa clearing"
           icon={Landmark}
-          color="blue"
+          color="success"
+        />
+        <StatCard
+          title="Outstanding Loans"
+          value={money(financeSummary?.outstanding_loans)}
+          description="Loan principal not yet repaid"
+          icon={HandCoins}
+          color="warning"
         />
         <StatCard
           title="Overdue"
@@ -122,6 +150,59 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
           ) : (
             <p className="text-sm text-slate-500 dark:text-slate-400">
               No upcoming meetings scheduled.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-white">
+            <Receipt size={19} /> Recent ledger activity
+          </h2>
+          <Link
+            className="text-sm font-semibold text-primary hover:underline"
+            to={`${base}/finance/ledger`}
+          >
+            View full ledger
+          </Link>
+        </div>
+        <div className="mt-4 space-y-3">
+          {recentLedgerEntries.length ? (
+            recentLedgerEntries.map((entry, idx) => {
+              const isCredit = Number(entry.credit) > 0;
+              const amount = isCredit ? entry.credit : entry.debit;
+              return (
+                <div
+                  key={entry._id || entry.id || idx}
+                  className="flex items-center justify-between rounded-xl bg-slate-50 p-4 dark:bg-slate-800"
+                >
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {entry.description || entry.account_name || "Ledger entry"}
+                    </p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {entry.account_name}
+                      {(entry.posted_at || entry.createdAt) &&
+                        ` · ${new Date(
+                          entry.posted_at || entry.createdAt
+                        ).toLocaleDateString()}`}
+                    </p>
+                  </div>
+                  <p
+                    className={`font-semibold ${
+                      isCredit ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {isCredit ? "+" : "-"}
+                    {formatCurrency(amount)}
+                  </p>
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No ledger activity yet.
             </p>
           )}
         </div>

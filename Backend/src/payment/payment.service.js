@@ -3,9 +3,9 @@ import PaymentContext from "./payment.context.js";
 import PaymentStore from "./store/payment.store.js";
 import providerRegistry from "./providers/provider.registry.js";
 import { validateInitiatePayment, validateCallback, validateQuery } from "./payment.validators.js";
-import PaymentEventFactory from "./payment.events.js";
-import paymentEventBus from "./payment.event.bus.js";
-import { PAYMENT_EVENTS, PAYMENT_STATUS } from "./payment.constants.js";
+import PaymentEventFactory from "./payment.events.js"; 
+import paymentEventBus from "./payment.event.bus.js"; 
+import { PAYMENT_EVENTS, PAYMENT_STATUS, PAYMENT_PROVIDER } from "./payment.constants.js";
 import PaymentIntent from "../models/PaymentIntent.js";
 
 const canUseTransactions = () => {
@@ -37,82 +37,135 @@ const queryCache = new Map();
 class PaymentService {
     async initiate(payload) {
         return withSession(async (session) => {
-            const context = new PaymentContext(payload);
-            validateInitiatePayment(context);
-            const provider = providerRegistry.get(context.provider.name);
-            const payment = await PaymentStore.createPending(context, session);
-            const providerResponse = await provider.initiate({...context, paymentId: payment.id });
-            await PaymentStore.attachProviderMetadata(payment.id, providerResponse, session);
-            return { success: true, payment, providerResponse };
+            const normalizedPayload = validateInitiatePayment(payload);
+            const context = new PaymentContext(normalizedPayload);
+            
+            const providerName = context.provider.name;
+            const provider = providerRegistry.get(providerName);
+            
+            const { intent, payment } = await PaymentStore.createBoth(context, session);
+            
+            const providerResponse = await provider.initiate(context);
+
+            // Providers like "manual" (cash) settle synchronously - there's no
+            // external gateway and no callback will ever arrive, so mark the
+            // intent/payment COMPLETED right away instead of stranding them in
+            // PROCESSING forever.
+            const finalStatus = providerResponse.immediate
+                ? PAYMENT_STATUS.COMPLETED
+                : PAYMENT_STATUS.PROCESSING;
+
+            intent.provider_request_id = providerResponse.checkoutRequestId;
+            intent.status = finalStatus;
+            if (finalStatus === PAYMENT_STATUS.COMPLETED) intent.completed_at = new Date();
+            await intent.save({ session });
+
+            payment.provider_payment_id = providerResponse.checkoutRequestId;
+            payment.status = finalStatus;
+            if (finalStatus === PAYMENT_STATUS.COMPLETED) payment.completed_at = new Date();
+            await payment.save({ session });
+
+            const eventType = finalStatus === PAYMENT_STATUS.COMPLETED
+                ? PAYMENT_EVENTS.COMPLETED
+                : PAYMENT_EVENTS.INITIATED;
+
+            // COMPLETED here is what triggers FinanceEngine to post the GL entries;
+            // INITIATED is audit-only for payments still awaiting a provider callback.
+            // Awaited (emitAsync, not emit) so that for providers that settle
+            // synchronously (cash), the ledger/obligation update has actually
+            // landed by the time this call returns to the caller.
+            await paymentEventBus.emitAsync(eventType, PaymentEventFactory.create(eventType, {
+                payment: { ...payment.toObject(), productType: context.type }, // FIX: attach productType
+                provider: providerName,
+                actor: { userId: context.actorId },
+                participant: { memberId: context.participantId, phoneNumber: context.phoneNumber },
+                obligation: { id: context.obligationId },
+                metadata: { productType: context.type, chamaId: context.chamaId }
+            }, providerResponse));
+
+            return { 
+                success: true, 
+                paymentId: payment._id,
+                paymentIntentId: intent._id,
+                reference: context.reference,
+                checkoutRequestId: providerResponse.checkoutRequestId,
+                phoneNumber: context.phoneNumber,
+                providerResponse 
+            };
         });
     }
 
-    async processCallback(callbackPayload) {
+    async handleCallback(rawBody) {
+        return this.processCallback({ provider: PAYMENT_PROVIDER.MPESA, rawBody });
+    }
+
+    async processCallback({ provider, paymentId, rawBody, success, status, providerData, metadata }) {
         return withSession(async (session) => {
-            validateCallback(callbackPayload);
-            const provider = providerRegistry.get(callbackPayload.provider);
-            const callback = await provider.processCallback(callbackPayload);
-            
-            // FIX 1: Resolve paymentId from checkoutRequestId if needed
-            let paymentId = callbackPayload.paymentId || callback.paymentId;
-            if (!paymentId && callback.checkoutRequestId) {
-              const intent = await PaymentIntent.findOne({ provider_request_id: callback.checkoutRequestId }).session(session);
-              if (!intent) {
-                console.warn(`[payment.service] No PaymentIntent found for checkoutRequestId: ${callback.checkoutRequestId}. Skipping.`);
-                return { success: false, skipped: true, reason: 'PaymentIntent not found' };
-              }
-              paymentId = intent._id;
-            }
-            if (!paymentId) throw new Error('paymentId is required to process callback');
+            let callback;
+            let intent;
 
-            // FIX 2: Check if already completed
-            const existing = await PaymentIntent.findById(paymentId).session(session).lean();
-            if (!existing) {
-              console.warn(`[payment.service] PaymentIntent ${paymentId} not found. Skipping.`);
-              return { success: false, skipped: true, reason: 'PaymentIntent not found' };
-            }
-            if (existing.status === PAYMENT_STATUS.COMPLETED) {
-              return { success: true, duplicate: true, payment: existing };
-            }
-
-            const status = callback.status || (callback.success? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED);
-            let payment;
-
-            if (status === PAYMENT_STATUS.COMPLETED) {
-                payment = await PaymentStore.markCompleted(paymentId, callback.providerData, session);
-
-                // Product-specific handlers
-                if (payment.productType === 'CONTRIBUTION') {
-                  const contributionPaymentService = (await import("../modules/contributionPlan/contributionPayment.service.js")).default;
-                  await contributionPaymentService.completeContributionPayment({ payment, callback }, session);
-                }
-                // Add MGR, SAVINGS, LOAN later
-
-            } else if (status === PAYMENT_STATUS.CANCELLED) {
-                payment = await PaymentStore.markCancelled(paymentId, callback.reason || "Cancelled", session);
+            if (rawBody) {
+                const providerService = providerRegistry.get(provider);
+                callback = providerService.processCallback(rawBody);
+                
+                intent = await PaymentIntent.findOne({ 
+                    provider_request_id: callback.checkoutRequestId 
+                }).session(session);
             } else {
-                payment = await PaymentStore.markFailed(paymentId, callback.reason || "Failed", session);
+                intent = await PaymentIntent.findById(paymentId).session(session);
+                callback = {
+                    checkoutRequestId: intent.provider_request_id,
+                    status: status,
+                    reason: providerData?.ResultDesc,
+                    raw: providerData,
+                    provider
+                }
+            }
+            
+            if (!intent) {
+                console.warn(`[payment.service] No PaymentIntent found for ${callback.checkoutRequestId || paymentId}`);
+                return { success: false, skipped: true, reason: 'PaymentIntent not found' };
             }
 
-            // Emit event AFTER DB commit
-            if (status === PAYMENT_STATUS.COMPLETED && payment) {
-                paymentEventBus.emit(PAYMENT_EVENTS.COMPLETED, PaymentEventFactory.create(PAYMENT_EVENTS.COMPLETED, {
-                    payment, 
-                    provider: callback.provider, 
-                    actor: { userId: payment.payerId || callback.actor?.userId },
-                    participant: { 
-                      memberId: payment.metadata?.participantId || callback.participant?.memberId, 
-                      phoneNumber: payment.metadata?.phoneNumber || callback.participant?.phoneNumber 
-                    },
-                    obligation: { id: payment.metadata?.obligationId || callback.obligation?.id }, 
-                    metadata: {
-                      ...payment.metadata,
-                      productType: payment.productType,
-                      providerData: callback.providerData
-                    }
-                }));
+            if (intent.status === PAYMENT_STATUS.COMPLETED) {
+                return { success: true, duplicate: true, intent };
             }
-            return { success: status === PAYMENT_STATUS.COMPLETED, payment, status };
+
+            intent.status = callback.status;
+            intent.provider_response = callback.raw;
+            intent.completed_at = callback.status === PAYMENT_STATUS.COMPLETED ? new Date() : null;
+            await intent.save({ session });
+
+            let payment = null;
+            let eventType = PAYMENT_EVENTS.FAILED;
+
+            if (callback.status === PAYMENT_STATUS.COMPLETED) {
+                payment = await PaymentStore.markCompletedByIntentId(intent._id, callback, session);
+                eventType = PAYMENT_EVENTS.COMPLETED;
+            } else if (callback.status === PAYMENT_STATUS.CANCELLED) {
+                payment = await PaymentStore.markCancelledByIntentId(intent._id, callback.reason, session);
+                eventType = PAYMENT_EVENTS.CANCELLED;
+            } else {
+                payment = await PaymentStore.markFailedByIntentId(intent._id, callback.reason, session);
+                eventType = PAYMENT_EVENTS.FAILED;
+            }
+
+            if (payment) {
+                const event = PaymentEventFactory.create(eventType, {
+                    payment: { ...payment.toObject(), productType: intent.type }, // FIX: attach productType for FinanceEngine
+                    provider: callback.provider,
+                    actor: { userId: payment.created_by },
+                    participant: { 
+                      memberId: payment.participant_id, 
+                      phoneNumber: payment.payment_instrument?.phone_number 
+                    },
+                    obligation: { id: payment.obligation_id },
+                    metadata: { productType: intent.type, chamaId: intent.owner_id }
+                }, callback.raw);
+                await paymentEventBus.emitAsync(eventType, event);
+            }
+
+            return { success: callback.status === PAYMENT_STATUS.COMPLETED, payment, status: callback.status };
         });
     }
 
@@ -144,13 +197,11 @@ class PaymentService {
     }
 
     async cancel(paymentId, reason) { 
-      const res = await PaymentStore.markCancelled(paymentId, reason);
-      return res || { success: false, reason: 'Payment not found' };
+      return PaymentStore.markCancelled(paymentId, reason);
     }
     
     async fail(paymentId, reason) { 
-      const res = await PaymentStore.markFailed(paymentId, reason);
-      return res || { success: false, reason: 'Payment not found' };
+      return PaymentStore.markFailed(paymentId, reason);
     }
 }
 

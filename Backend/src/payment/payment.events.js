@@ -1,68 +1,37 @@
-/**
- * ============================================================================
- * PAYMENT DOMAIN EVENTS v1.1
- * ============================================================================
- *
- * Every payment lifecycle action emits a standardized domain event.
- *
- * These events are consumed by:
- *
- *  • Audit Engine
- *  • Notification Engine  
- *  • Finance Engine
- *  • Reporting Engine
- *  • Reconciliation Jobs
- *  • WebSocket Gateway
- *
- * The contract must remain stable. Only add fields, never remove.
- *
- * ============================================================================
- */
-
 import { randomUUID } from "crypto";
 import { PAYMENT_EVENTS } from "./payment.constants.js";
+import { toDecimal } from "../shared/decimal.js";
 
 class PaymentEventFactory {
 
-    /**
-     * Create a standardized payment event.
-     * @param {string} type - PAYMENT_EVENTS.COMPLETED etc
-     * @param {object} context - { payment, provider, participant, obligation, actor, metadata }
-     * @param {object} payload - raw provider payload for audit
-     */
     static create(type, context = {}, payload = {}) {
-
         const payment = context.payment || {};
         const meta = context.metadata || {};
 
+        // Always normalize amount to Decimal string for event bus
+        const amount = payment.amount ?? context.amount;
+        const normalizedAmount = amount ? toDecimal(amount).toFixed(2) : null;
+
         return {
-
             id: randomUUID(),
-
             type,
-
-            version: "1.1", // bumped for productType
-
+            version: "1.1",
             occurredAt: new Date(),
+            correlationId: context.correlationId || payment.correlationId || payment.idempotencyKey || null,
+            source: "PaymentService",
 
-            correlationId: context.correlationId || payment.correlationId || null,
-
-            source: "PaymentService", // who emitted this
-
-            // Core payment fields
             payment: {
                 id: payment.id || payment._id || null,
                 reference: payment.reference || payment.idempotencyKey || null,
-                amount: payment.amount || null,
-                currency: payment.currency || "KES",
-                status: payment.status || null,
-                productType: payment.productType || meta.productType || null, // CRITICAL for finance routing
-                paymentMethod: payment.paymentMethod || meta.paymentMethod || null
+                amount: normalizedAmount,
+                currency: payment.currency || context.currency || "KES",
+                status: payment.status || context.status || null,
+                productType: payment.productType || meta.productType || context.type || null,
+                paymentMethod: payment.paymentMethod || payment.method || meta.paymentMethod || context.paymentMethod || null
             },
 
-            // Who paid and where
             context: {
-                chamaId: payment.chamaId || meta.chamaId || null,
+                chamaId: payment.chamaId || meta.chamaId || context.ownerId || null,
                 workspaceId: payment.workspaceId || meta.workspaceId || null,
                 contributionGroupId: meta.contributionGroupId || null
             },
@@ -70,7 +39,7 @@ class PaymentEventFactory {
             provider: {
                 name: typeof context.provider === "string" 
                     ? context.provider 
-                    : (context.provider?.name || context.provider?.providerName || payment.provider || null),
+                    : (context.provider?.name || context.provider?.providerName || payment.provider || context.paymentMethod || null),
                 metadata: context.providerData || context.provider?.metadata || payment.providerData || null
             },
 
@@ -81,27 +50,23 @@ class PaymentEventFactory {
 
             obligation: {
                 id: context.obligation?.id || context.obligation?._id || meta.obligationId || null,
-                type: meta.obligationType || null // 'CONTRIBUTION_OBLIGATION' | 'LOAN_INSTALLMENT' etc
+                type: meta.obligationType || null
             },
 
             actor: {
-                userId: context.actor?.userId || context.actor?.id || payment.payerId || null,
+                userId: context.actor?.userId || context.actor?.id || payment.payerId || context.userId || null,
                 role: context.actor?.role || null
             },
 
-            // Pass-through for rules. Finance engine reads this
             metadata: {
                 ...meta,
-                productType: payment.productType || meta.productType || null,
+                productType: payment.productType || meta.productType || context.type || null,
                 providerData: context.providerData || null
             },
 
-            // Raw payload from provider for reconciliation
             payload
-
         };
     }
-
 }
 
 export default PaymentEventFactory;

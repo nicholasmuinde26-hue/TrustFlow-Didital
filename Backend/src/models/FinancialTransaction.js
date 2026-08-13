@@ -58,6 +58,7 @@ const TRANSACTION_TYPES = [
   'contribution',
   'contribution_payment',
   'contribution_reversal',
+  'mgr_contribution',
   'payout',
   'payout_obligation',
   'payout_settlement',

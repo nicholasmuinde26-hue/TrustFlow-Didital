@@ -36,6 +36,12 @@ import CreateBusinessPage from "@/modules/home/pages/CreateBusinessPage";
 import InvitationsPage from "@/modules/invitations/pages/InvitationsPage";
 
 // ======================================================
+// Personal Account
+// ======================================================
+
+import AccountSettingsPage from "@/modules/account/pages/AccountSettingsPage";
+
+// ======================================================
 // Workspace Core
 // ======================================================
 
@@ -161,6 +167,10 @@ const router = createBrowserRouter([
           {
             path: "/invitations",
             element: <InvitationsPage />,
+          },
+          {
+            path: "/account/settings",
+            element: <AccountSettingsPage />,
           },
 
           // Workspace Creation Pages

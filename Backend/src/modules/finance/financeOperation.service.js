@@ -1,4 +1,4 @@
-import mongoose from "mongoose"; // ADD
+import mongoose from "mongoose";
 import crypto from "node:crypto";
 import FinancialAccount from "../../models/FinancialAccount.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
@@ -6,11 +6,13 @@ import Journal from "../../models/Journal.js";
 import LedgerEntry from "../../models/LedgerEntry.js";
 import financeAccountService from "./financeAccount.service.js";
 import AppError from "../../utils/AppError.js";
+import { toDecimal } from "../../shared/decimal.js"; // ADD
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
   return topology?.description?.type === "ReplicaSetWithPrimary" || topology?.description?.type === "Sharded";
 };
+// FIX: was missing :
 const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 const increaseEntry = (account) => account.normal_balance === "debit"? "debit" : "credit";
@@ -25,19 +27,19 @@ export async function postFinanceOperation({
   destinationAccountId,
   amount,
   description,
-  session = null // ADD: allow passing session from upstream
+  session = null
 }) {
-  const opts = getOpts(session); // <-- KEY
+  const opts = getOpts(session);
 
-  const value = Number(amount);
-  if (!Number.isFinite(value) || value <= 0) throw new AppError("Amount must be greater than zero", 400);
+  const value = toDecimal(amount); // FIX: use Decimal128 not Number
+  if (!Number.isFinite(Number(value)) || value.lte(0)) throw new AppError("Amount must be greater than zero", 400); // FIX
   if (!["deposit", "withdrawal", "transfer"].includes(operation)) throw new AppError("Unsupported finance operation", 400);
   if (!sourceAccountId ||!destinationAccountId || String(sourceAccountId) === String(destinationAccountId)) throw new AppError("Choose two different financial accounts", 400);
 
   const accounts = await FinancialAccount.find(
     { _id: { $in: [sourceAccountId, destinationAccountId] }, owner_type: ownerType, owner_id: ownerId },
     null,
-    opts // <-- FIX
+    opts
   );
   if (accounts.length!== 2) throw new AppError("One or both accounts do not belong to this workspace", 400);
 
@@ -48,16 +50,16 @@ export async function postFinanceOperation({
     throw new AppError("Transfers must be between asset or expense accounts", 400);
   if (operation === "deposit" && (source.normal_balance!== "credit" || destination.normal_balance!== "debit"))
     throw new AppError("A deposit must move from a credit account into an asset account", 400);
-  if (operation === "withdrawal" && (source.normal_balance!== "debit" || destination.normal_balance!== "debit"))
-    throw new AppError("A withdrawal must move from an asset account to an expense or asset account", 400);
+  if (operation === "withdrawal" && (source.normal_balance!== "debit" || destination.normal_balance!== "credit")) // FIX: dest should be credit
+    throw new AppError("A withdrawal must move from an asset account to an expense or liability account", 400);
 
   const reference = `FIN-${crypto.randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
 
-  const [transaction] = await FinancialTransaction.create([{ // <-- use array + opts
+  const [transaction] = await FinancialTransaction.create([{
     owner_type: ownerType,
     owner_id: ownerId,
     transaction_type: operation,
-    amount: value,
+    amount: value, // now Decimal128
     currency: "KES",
     source_type: "FinanceOperation",
     source_id: ownerId,
@@ -69,7 +71,7 @@ export async function postFinanceOperation({
     posted_at: new Date()
   }], opts);
 
-  const [journal] = await Journal.create([{ // <-- use array + opts
+  const [journal] = await Journal.create([{
     journalNumber: `JR-${new Date().getFullYear()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`,
     transaction: transaction._id,
     chama: ownerId,
@@ -82,7 +84,7 @@ export async function postFinanceOperation({
     totalCredit: value
   }], opts);
 
-  const entries = await LedgerEntry.insertMany([ // <-- add opts
+  const entries = await LedgerEntry.insertMany([
     {
       transaction_id: transaction._id,
       owner_type: ownerType,
@@ -111,7 +113,7 @@ export async function postFinanceOperation({
     },
   ], opts);
 
-  await financeAccountService.applyEntries(entries, session); // <-- pass session down
+  await financeAccountService.applyEntries(entries, session);
 
   return { transaction, journal, entries };
 }

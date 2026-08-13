@@ -1,10 +1,14 @@
 import mongoose from "mongoose";
 const { Schema } = mongoose;
 
+// Force clear model cache for ESM hot reload on Windows
+if (mongoose.models.FinancialAccount) {
+  delete mongoose.models.FinancialAccount;
+}
+
 // ========================================
 // FINANCIAL ACCOUNT SCHEMA
 // ========================================
-
 const financialAccountSchema = new Schema(
   {
     owner_type: {
@@ -109,28 +113,27 @@ financialAccountSchema.index({ owner_type: 1, owner_id: 1, account_type: 1 });
 financialAccountSchema.index({ owner_type: 1, owner_id: 1, is_system_account: 1 });
 
 // ========================================
-// VALIDATION
+// VALIDATION - NO NEXT PARAM TO AVOID "next is not a function"
 // ========================================
-financialAccountSchema.pre('validate', function (next) {
+financialAccountSchema.pre('validate', function () {
   const debitNormalTypes = ['asset', 'expense'];
   const creditNormalTypes = ['liability', 'equity', 'income'];
 
-  if (debitNormalTypes.includes(this.account_type) && this.normal_balance !== 'debit') {
-    return next(new Error(`Account type "${this.account_type}" must have a debit normal balance`));
+  if (debitNormalTypes.includes(this.account_type) && this.normal_balance!== 'debit') {
+    throw new Error(`Account type "${this.account_type}" must have a debit normal balance`);
   }
-  if (creditNormalTypes.includes(this.account_type) && this.normal_balance !== 'credit') {
-    return next(new Error(`Account type "${this.account_type}" must have a credit normal balance`));
+  if (creditNormalTypes.includes(this.account_type) && this.normal_balance!== 'credit') {
+    throw new Error(`Account type "${this.account_type}" must have a credit normal balance`);
   }
   if (!this.is_system_account && this.system_key) {
-    return next(new Error('Only system accounts can have a system_key'));
+    throw new Error('Only system accounts can have a system_key');
   }
-  if (this.status === 'closed' && !this.closed_at) {
+  if (this.status === 'closed' &&!this.closed_at) {
     this.closed_at = new Date();
   }
-  if (this.status !== 'closed') {
+  if (this.status!== 'closed') {
     this.closed_at = null;
   }
-  next();
 });
 
 // ========================================
@@ -142,6 +145,7 @@ financialAccountSchema.statics.bootstrapSystemAccounts = async function({ owner_
     { owner_type, owner_id, name: 'Bank', account_code: 'BANK', system_key: 'bank', account_type: 'asset', normal_balance: 'debit', account_category: 'bank', is_system_account: true, description: 'Bank account', created_by },
     { owner_type, owner_id, name: 'M-Pesa Clearing', account_code: 'MPESA_CLEARING', system_key: 'mpesa', account_type: 'asset', normal_balance: 'debit', account_category: 'mpesa', is_system_account: true, description: 'M-Pesa wallet clearing account', created_by },
     { owner_type, owner_id, name: 'Member Contributions', account_code: 'MEMBER_CONTRIBUTIONS', system_key: 'member_contributions', account_type: 'equity', normal_balance: 'credit', account_category: 'contribution', is_system_account: true, description: 'Member savings and contributions', created_by },
+    { owner_type, owner_id, name: 'Member Savings', account_code: 'MEMBER_SAVINGS', system_key: 'member_savings', account_type: 'equity', normal_balance: 'credit', account_category: 'savings', is_system_account: true, description: 'Member savings wallet', created_by }, // <-- ADDED
     { owner_type, owner_id, name: 'Payout Clearing', account_code: 'PAYOUT_CLEARING', system_key: 'payout_clearing', account_type: 'liability', normal_balance: 'credit', account_category: 'clearing', is_system_account: true, description: 'Pending member payouts', created_by }
   ];
 
@@ -160,15 +164,9 @@ financialAccountSchema.statics.bootstrapSystemAccounts = async function({ owner_
 // ========================================
 // JSON TRANSFORM
 // ========================================
-// Mongoose Decimal128 fields serialize by default as
-// { $numberDecimal: "1000" } — an object, not a number. Frontend code
-// doing Number(account.current_balance) on that gets NaN. Convert to a
-// plain string here, matching the pattern already used on
-// FinancialTransaction/ContributionPayment, so every consumer of this
-// model gets a value that Number()/parseFloat() actually understands.
 financialAccountSchema.set('toJSON', {
   transform: (_doc, ret) => {
-    if (ret.current_balance !== undefined && ret.current_balance !== null) {
+    if (ret.current_balance!== undefined && ret.current_balance!== null) {
       ret.current_balance = ret.current_balance.toString();
     }
     return ret;
@@ -178,4 +176,4 @@ financialAccountSchema.set('toJSON', {
 // ========================================
 // EXPORT MODEL
 // ========================================
-export default mongoose.models.FinancialAccount || mongoose.model("FinancialAccount", financialAccountSchema);
+export default mongoose.model("FinancialAccount", financialAccountSchema);

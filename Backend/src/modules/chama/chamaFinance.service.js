@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import AppError from "../../utils/AppError.js";
 import ContributionPlan from "../../models/ContributionPlan.js";
 import ContributionObligation from "../../models/ContributionObligation.js";
+import ContributionPayment from "../../models/ContributionPayment.js";
 import PaymentIntent from "../../models/PaymentIntent.js";
 import MpesaAttempt from "../../models/MpesaAttempt.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
@@ -12,6 +13,13 @@ import MgrReminder from "../../models/MgrReminder.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import paymentService from "../../payment/payment.service.js"; // NEW: single entry point
 import { startPayout } from "../payout/payout.service.js";
+import contributionObligationService from "../contributionPlan/contributionObligation.service.js";
+import { getContributionEquityAccount, getContributionPaymentAssetAccount } from "../finance/financeAccount.service.js";
+import { postFinanceOperation } from "../finance/financeOperation.service.js";
+import { toDecimal, isMoneyPositive } from "../../shared/decimal.js";
+
+// Manual (non-M-Pesa) recording methods a treasurer can use for "Mark Paid".
+const MANUAL_MGR_METHODS = ["cash", "bank", "other"];
 
 // ---------------------------------------------------------
 // Helpers
@@ -353,7 +361,16 @@ export const getMgrOverview = async (chamaId) => {
   ]) : [];
   
   const reminderByObligation = new Map(reminders.map((item) => [String(item._id), { channel: item.channel, sent_at: item.createdAt }]));
-  
+
+  // Count every past/current MGR round this member has NOT fully paid, so the
+  // UI can surface something like "owes 2 months" instead of just Paid/Pending
+  // for the current round.
+  const outstandingCounts = plan ? await ContributionObligation.aggregate([
+    { $match: { plan_id: plan._id, participant_id: { $in: members.map(({ _id }) => _id) }, status: { $ne: "paid" } } },
+    { $group: { _id: "$participant_id", count: { $sum: 1 } } },
+  ]) : [];
+  const outstandingByMember = new Map(outstandingCounts.map((item) => [String(item._id), item.count]));
+
   const Payout = (await import("../../models/Payout.js")).default;
   const currentPayout = await Payout.findOne({ chama_id: chamaId, contribution_plan_id: plan?._id, status: "pending" }).populate("member_id", "payout_position user_id");
   
@@ -372,6 +389,7 @@ export const getMgrOverview = async (chamaId) => {
         payout_position: member.payout_position, 
         obligation: memberObligation || null, 
         last_reminder: reminder || null,
+        owed_periods: outstandingByMember.get(String(member._id)) || 0,
       };
     }),
   };
@@ -385,6 +403,109 @@ export const recordMgrReminder = async ({ chamaId, obligationId, channel, userId
   const plan = await ContributionPlan.findOne({ _id: obligation.plan_id, contribution_type: "merry_go_round" });
   if (!plan) throw new AppError("Reminder is only available for an MGR obligation", 400);
   return MgrReminder.create({ chama_id: chamaId, obligation_id: obligation._id, participant_id: obligation.participant_id, channel, created_by: userId, message });
+};
+
+// ---------------------------------------------------------
+// Manual "Mark Paid" (cash / bank / other) — treasurer records that a
+// member paid outside M-Pesa. This intentionally does NOT go through
+// PaymentIntent/STK; it posts straight to the finance ledger.
+// ---------------------------------------------------------
+
+
+export const recordManualMgrPayment = async ({ chamaId, obligationId, method, externalReference, notes, userId, idempotencyKey }) => {
+  const normalizedMethod = MANUAL_MGR_METHODS.includes(method) ? method : "cash";
+
+  const obligation = await ContributionObligation.findOne({ _id: obligationId, owner_type: "Chama", owner_id: chamaId });
+  if (!obligation) throw new AppError("MGR contribution obligation not found", 404);
+  if (obligation.status === "paid") throw new AppError("This member has already paid the current MGR round", 409);
+
+  const plan = await ContributionPlan.findOne({ _id: obligation.plan_id, contribution_type: "merry_go_round" });
+  if (!plan) throw new AppError("This is not an MGR obligation", 400);
+
+  const outstanding = toDecimal(obligation.expected_amount).minus(toDecimal(obligation.paid_amount || 0));
+  if (!isMoneyPositive(outstanding)) throw new AppError("This obligation has no outstanding balance", 409);
+
+  // FIX 1: Always generate idempotency_key for manual payments
+  const key = idempotencyKey || `MANUAL-MGR-${obligationId}-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+  const reference = generateUniqueReference("MGR-MANUAL");
+  const channelType = normalizedMethod === "bank" ? "bank_transfer" : normalizedMethod === "other" ? "other" : "cash";
+
+  // REMOVED: session code for standalone
+
+  const [payment] = await ContributionPayment.create([{
+    plan_id: obligation.plan_id,
+    owner_type: obligation.owner_type,
+    owner_id: obligation.owner_id,
+    participant_type: obligation.participant_type,
+    participant_id: obligation.participant_id,
+    obligation_id: obligation._id,
+    amount: outstanding.toString(),
+    currency: obligation.currency || "KES",
+    payment_method: normalizedMethod === "other" ? "other" : normalizedMethod,
+    channel_type: channelType,
+    processing_mode: "manual",
+    payment_provider: normalizedMethod,
+    idempotency_key: key, // <-- FIX 2: PREVENTS 409
+    ...(externalReference?.trim() ? { external_reference: externalReference.trim() } : {}),
+    reference,
+    status: "pending",
+    paid_at: new Date(),
+    created_by: userId,
+    recorded_by: userId,
+    notes: notes?.trim() || "",
+  }]); // <-- REMOVED { session }
+
+  const equityAccount = await getContributionEquityAccount({ owner_type: obligation.owner_type, owner_id: obligation.owner_id });
+  const assetAccount = await getContributionPaymentAssetAccount({
+    owner_type: obligation.owner_type,
+    owner_id: obligation.owner_id,
+    payment_method: normalizedMethod === "other" ? "cash" : normalizedMethod,
+  });
+
+  if (!equityAccount || !assetAccount) {
+    throw new AppError("Finance accounts for member contributions are not set up for this chama yet.", 400);
+  }
+
+  const { transaction } = await postFinanceOperation({
+    ownerType: obligation.owner_type,
+    ownerId: obligation.owner_id,
+    userId,
+    operation: "deposit",
+    sourceAccountId: equityAccount._id,
+    destinationAccountId: assetAccount._id,
+    amount: outstanding.toString(),
+    description: `MGR contribution (${normalizedMethod}) — ${payment.reference}`,
+    // REMOVED: session
+  });
+
+  payment.status = "completed";
+  payment.financial_transaction_id = transaction._id;
+  payment.completed_at = new Date();
+  await payment.save(); // <-- REMOVED { session }
+
+  await contributionObligationService.recordPayment(obligation._id, Number(outstanding.toString())); // <-- REMOVED { session }
+  await maybeCreateMgrPayoutForChama(String(chamaId), userId).catch(() => null);
+
+  return { payment, transaction };
+};
+// ---------------------------------------------------------
+// MGR payment / obligation history across all rounds
+// ---------------------------------------------------------
+
+export const getMgrHistory = async ({ chamaId, limit = 200 }) => {
+  const plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chamaId, contribution_type: "merry_go_round" });
+  if (!plan) return { plan: null, payments: [] };
+
+  const payments = await ContributionPayment.find({ plan_id: plan._id })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .populate({
+      path: "participant_id",
+      select: "user_id payout_position",
+      populate: { path: "user_id", select: "name phone" },
+    });
+
+  return { plan, payments };
 };
 
 export const maybeCreateMgrPayoutForChama = async (chamaId, userId) => {

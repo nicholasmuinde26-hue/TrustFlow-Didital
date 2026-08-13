@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import {
   createChama,
   getChamaById,
@@ -6,7 +8,7 @@ import {
   deleteChama
 } from './chama.service.js';
 import PaymentIntent from '../../models/PaymentIntent.js';
-import { getMgrOverview, initiateSavingsDeposit, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
+import { getMgrOverview, getMgrHistory, initiateSavingsDeposit, reconcileSavingsIntent, recordManualMgrPayment, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
 
 
 // ========================================
@@ -449,5 +451,33 @@ export const recordMgrReminderController = async (req, res, next) => {
       userId: req.user._id,
     });
     res.status(201).json({ success: true, data: { reminder } });
+  } catch (error) { next(error); }
+};
+
+
+
+export const markMgrPaidController = async (req, res, next) => {
+  try {
+    // FIX: generate unique idempotency key for manual payments
+    const idempotencyKey = `MANUAL-MGR-${req.params.obligationId}-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+    const { payment, transaction } = await recordManualMgrPayment({
+      chamaId: req.chama._id,
+      obligationId: req.params.obligationId,
+      method: req.body.method,
+      externalReference: req.body.reference,
+      notes: req.body.notes,
+      userId: req.user._id,
+      idempotencyKey, // <-- ADD THIS
+    });
+
+    res.status(200).json({ success: true, message: 'Payment recorded', data: { payment, transaction } });
+  } catch (error) { next(error); }
+};
+
+export const getMgrHistoryController = async (req, res, next) => {
+  try {
+    const history = await getMgrHistory({ chamaId: req.chama._id });
+    res.json({ success: true, data: history });
   } catch (error) { next(error); }
 };

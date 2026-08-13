@@ -37,6 +37,16 @@ const membersService = {
     );
     return data.data.member || data.data.membership;
   },
+
+  async updateStatus(type, workspaceId, memberId, status) {
+    const { data } = await membersApi.updateStatus(type, workspaceId, memberId, status);
+    return data.data.member || data.data.membership;
+  },
+
+  async transferTreasurer(type, workspaceId, newTreasurerMemberId) {
+    const { data } = await membersApi.transferTreasurer(type, workspaceId, newTreasurerMemberId);
+    return data.data;
+  },
 };
 
 export default membersService;

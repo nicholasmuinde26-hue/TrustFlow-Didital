@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronDown,
   User,
-  Settings,
   LogOut,
 } from "lucide-react";
 
@@ -14,16 +13,41 @@ export default function UserMenu() {
   const navigate = useNavigate();
 
   const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close the dropdown on outside click + touch
+  useEffect(() => {
+    if (!open) return;
+
+    function handleClickOutside(event) {
+      if (menuRef.current &&!menuRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [open]);
+
+  function goToProfile() {
+    setOpen(false);
+    navigate("/account/settings");
+  }
 
   const name = user?.name || "Account";
   const email = user?.email || "";
+  const photo = user?.photoURL || user?.avatar || null; // check both common fields
 
   const initials = name
-    .split(" ")
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+   .split(" ")
+   .map((part) => part[0])
+   .slice(0, 2)
+   .join("")
+   .toUpperCase();
 
   async function handleSignOut() {
     setOpen(false);
@@ -32,134 +56,89 @@ export default function UserMenu() {
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={menuRef}>
       <button
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => setOpen((prev) =>!prev)}
         className="
-        flex
-        items-center
-        gap-3
-        rounded-xl
-        border
-        border-slate-200
-        bg-white
-        px-3
-        py-2
-        transition-all
-
-        hover:bg-slate-50
-
-        dark:border-slate-700
-        dark:bg-slate-800
-        dark:hover:bg-slate-700
+        flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2
+        transition-all hover:bg-slate-50
+        dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700
         "
       >
+        {/* AVATAR: Photo or Initials */}
         <div
           className="
-          flex
-          h-10
-          w-10
-          items-center
-          justify-center
-          rounded-full
-          bg-primary
-          font-semibold
-          text-white
+          flex h-10 w-10 items-center justify-center overflow-hidden rounded-full
+          bg-primary font-semibold text-white
           "
         >
-          {initials || <User size={18} />}
+          {photo? (
+            <img
+              src={photo}
+              alt={name}
+              className="h-full w-full object-cover"
+              referrerPolicy="no-referrer" // fixes google avatar CORS
+            />
+          ) : (
+            initials || <User size={18} />
+          )}
         </div>
 
         <div className="hidden text-left lg:block">
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">
-            {name}
-          </p>
-
-          {email && (
-            <p className="text-xs text-slate-500">{email}</p>
-          )}
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">{name}</p>
+          {email && <p className="text-xs text-slate-500">{email}</p>}
         </div>
 
         <ChevronDown
           size={18}
-          className="text-slate-500"
+          className={`text-slate-500 transition-transform ${open? "rotate-180" : ""}`}
         />
       </button>
 
       {open && (
         <div
           className="
-          absolute
-          right-0
-          mt-3
-          w-64
-          overflow-hidden
-          rounded-2xl
-          border
-          border-slate-200
-          bg-white
-          shadow-xl
-          dark:border-slate-700
-          dark:bg-slate-900
-          z-50
+          absolute right-0 mt-3 w-64 overflow-hidden rounded-2xl border border-slate-200
+          bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 z-50
           "
         >
-          <div className="border-b border-slate-200 p-4 dark:border-slate-700">
-            <p className="font-semibold">{name}</p>
-
-            {email && (
-              <p className="text-sm text-slate-500">{email}</p>
-            )}
+          {/* Header with photo */}
+          <div className="flex items-center gap-3 border-b border-slate-200 p-4 dark:border-slate-700">
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-primary font-semibold text-white">
+              {photo? (
+                <img
+                  src={photo}
+                  alt={name}
+                  className="h-full w-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                initials || <User size={20} />
+              )}
+            </div>
+            <div>
+              <p className="font-semibold">{name}</p>
+              {email && <p className="text-sm text-slate-500">{email}</p>}
+            </div>
           </div>
 
           <button
+            onClick={goToProfile}
             className="
-            flex
-            w-full
-            items-center
-            gap-3
-            px-4
-            py-3
-            transition-colors
-            hover:bg-slate-100
-            dark:hover:bg-slate-800
+            flex w-full items-center gap-3 px-4 py-3 transition-colors
+            hover:bg-slate-100 dark:hover:bg-slate-800
             "
           >
             <User size={18} />
-            Profile
-          </button>
-
-          <button
-            className="
-            flex
-            w-full
-            items-center
-            gap-3
-            px-4
-            py-3
-            transition-colors
-            hover:bg-slate-100
-            dark:hover:bg-slate-800
-            "
-          >
-            <Settings size={18} />
-            Settings
+            Profile & Settings
           </button>
 
           <div className="border-t border-slate-200 dark:border-slate-700">
             <button
               onClick={handleSignOut}
               className="
-              flex
-              w-full
-              items-center
-              gap-3
-              px-4
-              py-3
-              text-red-500
-              transition-colors
-              hover:bg-red-50
-              dark:hover:bg-red-950/30
+              flex w-full items-center gap-3 px-4 py-3 text-red-500 transition-colors
+              hover:bg-red-50 dark:hover:bg-red-950/30
               "
             >
               <LogOut size={18} />

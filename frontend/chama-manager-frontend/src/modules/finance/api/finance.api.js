@@ -31,6 +31,12 @@ const financeApi = {
     );
   },
 
+  recentPayments(workspaceId) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/payments/recent`
+    );
+  },
+
   createOperation(workspaceId, payload) {
     return api.post(`/workspaces/${workspaceId}/finance/operations`, payload);
   },

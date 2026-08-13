@@ -79,27 +79,45 @@ const financeService = {
 
   async getAccounts(workspaceId) {
     const res = await financeApi.accounts(workspaceId);
-    const accounts = safeData(res).accounts || [];
+    const data = safeData(res);
+    // Same bare-array trap as getTransactions/getLedger: backend returns
+    // the accounts list directly, not wrapped in { accounts: [...] }.
+    const accounts = Array.isArray(data)
+      ? data
+      : Array.isArray(data.accounts)
+        ? data.accounts
+        : [];
     // Add formatted balance to each account
     return accounts.map(acc => ({
       ...acc,
-      balance: safeNumber(acc.balance),
-      formatted_balance: formatCurrency(acc.balance)
+      balance: safeNumber(acc.balance ?? acc.current_balance),
+      formatted_balance: formatCurrency(acc.balance ?? acc.current_balance)
     }));
   },
 
   async getTransactions(workspaceId, params = {}) {
     const res = await financeApi.transactions(workspaceId, params);
     const data = safeData(res);
-    const items = (data.items || data.transactions || []).map(tx => ({
+    // Backend currently returns transactions as a bare array (not wrapped
+    // in { items: [...] }). Same trap as getLedger: a plain array's
+    // `.items`/`.transactions` are just undefined, so this used to always
+    // fall through to []. Accept either shape defensively.
+    const rawItems = Array.isArray(data)
+      ? data
+      : Array.isArray(data.items)
+        ? data.items
+        : Array.isArray(data.transactions)
+          ? data.transactions
+          : [];
+    const items = rawItems.map(tx => ({
       ...tx,
       amount: safeNumber(tx.amount),
       formatted_amount: formatCurrency(tx.amount)
     }));
     return {
       items,
-      total: safeNumber(data.total),
-      page: safeNumber(data.page || 1),
+      total: safeNumber(Array.isArray(data) ? items.length : data.total),
+      page: safeNumber(Array.isArray(data) ? 1 : data.page || 1),
     };
   },
 
@@ -116,13 +134,39 @@ const financeService = {
       : Array.isArray(data.entries)
         ? data.entries
         : [];
-    const entries = rawEntries.map(e => ({
-      ...e,
-      debit: safeNumber(e.debit),
-      credit: safeNumber(e.credit),
-      formatted_debit: formatCurrency(e.debit),
-      formatted_credit: formatCurrency(e.credit),
-    }));
+    const entries = rawEntries.map(e => {
+      // Backend LedgerEntry rows are single-sided: one `entry_type`
+      // ('debit'|'credit') + one `amount`, not separate debit/credit
+      // fields. Split that into the flat shape LedgerTable/LedgerPage
+      // expect. `account_id` also arrives populated as the full
+      // FinancialAccount object (via .populate("account_id")), not a
+      // pre-flattened `account_name` string.
+      const entryType = String(e.entry_type || e.type || "").toLowerCase();
+      const amount = safeNumber(e.amount);
+      const debit = entryType === "debit" ? amount : 0;
+      const credit = entryType === "credit" ? amount : 0;
+
+      const account =
+        e.account_id && typeof e.account_id === "object"
+          ? e.account_id
+          : null;
+
+      const accountName =
+        account?.name ||
+        account?.account_code ||
+        e.account_name ||
+        e.account ||
+        "Unknown Account";
+
+      return {
+        ...e,
+        account_name: accountName,
+        debit,
+        credit,
+        formatted_debit: formatCurrency(debit),
+        formatted_credit: formatCurrency(credit),
+      };
+    });
     return {
       entries,
       total: safeNumber(Array.isArray(data) ? entries.length : data.total),
@@ -132,6 +176,16 @@ const financeService = {
   async createOperation(workspaceId, payload) {
     const res = await financeApi.createOperation(workspaceId, payload);
     return safeData(res);
+  },
+
+  async getRecentPayments(workspaceId) {
+    const res = await financeApi.recentPayments(workspaceId);
+    const data = safeData(res);
+    const items = Array.isArray(data) ? data : data.items || [];
+    return items.map((p) => ({
+      ...p,
+      amount: safeNumber(p.amount),
+    }));
   },
 
   async recordContribution(payload) {
