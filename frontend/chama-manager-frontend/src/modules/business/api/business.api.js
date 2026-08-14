@@ -73,6 +73,9 @@ export const businessApi = {
   // M-Pesa Payment STK Push
   initiateMpesaStkPush: (workspaceId, payload) =>
     api.post(`/businesses/${workspaceId}/mpesa/stkpush`, payload),
+
+  queryMpesaStkPushStatus: (workspaceId, transactionId) =>
+    api.get(`/businesses/${workspaceId}/mpesa/stkpush/query/${transactionId}`),
 };
 
 export default businessApi;

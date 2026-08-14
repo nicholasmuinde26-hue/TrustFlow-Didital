@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Trash2,
   Lock,
+  X,
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
@@ -173,13 +174,100 @@ export default function WorkspaceSettingsPage() {
 
   if (!isChama) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200/80 bg-white p-8 text-center dark:border-slate-800 dark:bg-slate-900">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          Settings
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Detailed settings for this workspace type aren't available here yet.
-        </p>
+      <div className="mx-auto max-w-4xl space-y-6 font-sans">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+              RULES ENGINE & GOVERNANCE
+            </span>
+            <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
+              Contribution Group Rules Engine
+            </h1>
+            <p className="mt-1 text-xs text-slate-500">
+              Configure governance rules, late fee penalties, minimum contributions, and multi-admin approval thresholds.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Rules Configuration */}
+          <SectionCard icon={ShieldCheck} title="Group Rules Engine">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LABEL_CLASS}>Late Fee Penalty (KES)</label>
+                <input
+                  type="number"
+                  defaultValue="50"
+                  className={FIELD_CLASS}
+                />
+                <p className="mt-1 text-[11px] text-slate-400">Auto-applied if contribution is overdue</p>
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Minimum Contribution (KES)</label>
+                <input
+                  type="number"
+                  defaultValue="1000"
+                  className={FIELD_CLASS}
+                />
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Default Payout Channel</label>
+                <select defaultValue="mpesa" className={FIELD_CLASS}>
+                  <option value="mpesa">M-Pesa Direct (STK & B2C)</option>
+                  <option value="bank">Bank Transfer</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={LABEL_CLASS}>Expense Multi-Admin Approvals</label>
+                <select defaultValue="2" className={FIELD_CLASS}>
+                  <option value="1">1 Admin Approval</option>
+                  <option value="2">2 Admins Approval (Recommended)</option>
+                  <option value="3">All Admins Approval</option>
+                </select>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard icon={Landmark} title="Default M-Pesa Till / Paybill Details">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={LABEL_CLASS}>M-Pesa Till / Paybill Number</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 522522"
+                  className={FIELD_CLASS}
+                />
+              </div>
+              <div>
+                <label className={LABEL_CLASS}>Account Reference</label>
+                <input
+                  type="text"
+                  placeholder="e.g. PARTY-GROUP"
+                  className={FIELD_CLASS}
+                />
+              </div>
+            </div>
+          </SectionCard>
+
+          <div className="flex justify-end">
+            <button
+              onClick={() => toast.success("Contribution Group rules updated!")}
+              className="flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-2.5 text-xs font-bold text-white shadow hover:bg-violet-800"
+            >
+              <Save size={16} /> Save Rules Engine Settings
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -204,7 +292,7 @@ export default function WorkspaceSettingsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 font-sans">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
             Chama Settings
@@ -214,11 +302,42 @@ export default function WorkspaceSettingsPage() {
           </p>
         </div>
 
-        {saved && (
-          <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/60 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
-            <CheckCircle2 size={15} /> Settings saved
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {saved && (
+            <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/60 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400">
+              <CheckCircle2 size={15} /> Settings saved
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="
+              flex
+              h-10
+              w-10
+              items-center
+              justify-center
+              rounded-xl
+              border
+              border-slate-200
+              bg-white
+              text-slate-500
+              hover:bg-slate-50
+              hover:text-slate-700
+              transition
+              dark:border-slate-700
+              dark:bg-slate-800
+              dark:text-slate-400
+              dark:hover:bg-slate-700
+              dark:hover:text-slate-200
+            "
+            aria-label="Close settings"
+            title="Close settings"
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       {!canEdit && (

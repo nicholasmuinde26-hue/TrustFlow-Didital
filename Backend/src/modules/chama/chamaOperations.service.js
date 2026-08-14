@@ -20,7 +20,18 @@ export async function dashboard(chamaId, membership) {
   ]);
   return { profile, goals, loans, kyc, meetings, officials, members, membership };
 }
-export async function getProfile(chamaId) { return ChamaProfile.findOne({ chama_id: chamaId }); }
+export async function getProfile(chamaId) {
+  let profile = await ChamaProfile.findOne({ chama_id: chamaId });
+  if (!profile) {
+    profile = await ChamaProfile.findOneAndUpdate(
+      { chama_id: chamaId },
+      { $setOnInsert: { chama_id: chamaId, contribution_cycle: "monthly", fine_amount: 0 } },
+      { upsert: true, new: true }
+    );
+  }
+  return profile;
+}
+
 export async function updateProfile(chamaId, data) { return ChamaProfile.findOneAndUpdate({ chama_id: chamaId }, { $set: { ...data, chama_id: chamaId } }, { new: true, upsert: true, runValidators: true }); }
 export async function assignOfficial(chamaId, membershipId, role) { if (!officialRoles.includes(role)) throw new AppError("Role must be chairperson, treasurer, or secretary", 400); const member = await ChamaMembership.findOneAndUpdate({ _id: membershipId, chama_id: chamaId, status: "active" }, { role }, { new: true }); if (!member) throw new AppError("Active member not found", 404); return member; }
 export async function createGoal(chamaId, userId, data) { if (!data.name || Number(data.target_amount) <= 0) throw new AppError("Goal name and target amount are required", 400); return ChamaGoal.create({ chama_id: chamaId, name: data.name, target_amount: data.target_amount, target_date: data.target_date || null, created_by: userId }); }

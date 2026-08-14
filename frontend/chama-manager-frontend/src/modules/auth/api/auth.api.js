@@ -26,6 +26,11 @@ const authApi = {
     return api.post("/auth/send-otp", payload);
   },
 
+  // GET /auth/otp-channels?phone=... -> { availableChannels: [{channel,label}] }
+  getOtpChannels(phone) {
+    return api.get("/auth/otp-channels", { params: { phone } });
+  },
+
   refresh(refreshToken) {
     return api.post("/auth/refresh", { refreshToken });
   },

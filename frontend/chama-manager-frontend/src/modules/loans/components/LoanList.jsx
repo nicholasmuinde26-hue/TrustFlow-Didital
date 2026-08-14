@@ -1,3 +1,72 @@
-import LoanStatusBadge from './LoanStatusBadge';
-const money=(n)=>`KES ${Number(n||0).toLocaleString()}`;
-export default function LoanList({ loans, onSelect }) { return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><div><h2 className="font-bold">My applications</h2><p className="text-sm text-slate-500">Your current and past borrowing.</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold dark:bg-slate-800">{loans.length} total</span></div><div className="mt-4 overflow-x-auto"><table className="w-full text-sm"><thead className="border-b text-left text-xs uppercase tracking-wider text-slate-500"><tr><th className="pb-3">Loan</th><th className="pb-3">Amount</th><th className="pb-3">Status</th><th /></tr></thead><tbody>{loans.map(loan=><tr key={loan._id} className="border-b border-slate-100 last:border-0 dark:border-slate-800"><td className="py-3 font-medium">{loan.reference || 'Processing application'}<p className="font-normal text-xs text-slate-500">{loan.purpose}</p></td><td>{money(loan.amount)}</td><td><LoanStatusBadge status={loan.status}/></td><td className="text-right"><button onClick={()=>onSelect(loan)} className="font-semibold text-emerald-700 hover:underline dark:text-emerald-400">Details</button></td></tr>)}{!loans.length&&<tr><td colSpan="4" className="py-10 text-center text-slate-500">No loans yet. Your completed applications will appear here.</td></tr>}</tbody></table></div></section>; }
+import { motion } from "framer-motion";
+import { CreditCard, FileText, ArrowUpRight } from "lucide-react";
+import LoanStatusBadge from "./LoanStatusBadge";
+
+const money = (n) => `KES ${Number(n || 0).toLocaleString()}`;
+
+export default function LoanList({ loans, onSelect }) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-4 font-sans">
+      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+        <div>
+          <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <FileText className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            My Personal Borrowing History
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Track your individual credit requests, approval status, and repayments.
+          </p>
+        </div>
+        <span className="rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300">
+          {loans.length} {loans.length === 1 ? "Loan" : "Loans"}
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {loans && loans.length > 0 ? (
+          loans.map((loan) => (
+            <motion.div
+              key={loan._id}
+              whileHover={{ scale: 1.01 }}
+              onClick={() => onSelect(loan)}
+              className="cursor-pointer flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition-all hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-3">
+                  <span className="font-extrabold text-slate-900 dark:text-white text-base">
+                    {loan.reference || "Credit Application"}
+                  </span>
+                  <LoanStatusBadge status={loan.status} />
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{loan.purpose}</p>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Principal</span>
+                  <span className="font-black text-slate-900 dark:text-white text-base">{money(loan.amount)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(loan);
+                  }}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:border-emerald-500 hover:text-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 transition"
+                >
+                  <ArrowUpRight className="h-4 w-4" />
+                </button>
+              </div>
+            </motion.div>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-10 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-800/40">
+            <CreditCard className="mx-auto h-8 w-8 text-slate-400 mb-2" />
+            <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">No Personal Loans Found</p>
+            <p className="text-xs text-slate-500 mt-1">Your credit applications and active loans will appear here.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

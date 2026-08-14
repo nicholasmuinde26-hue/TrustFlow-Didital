@@ -6,24 +6,49 @@ import {
   loginUser,
   getCurrentUser,
   updateCurrentUser,
+  getOtpChannelsForPhone,
 } from './auth.service.js';
 
 import AppError from '../../utils/AppError.js';
 import { PROFILE_UPDATE_FIELDS } from '../../utils/userProfile.js';
 
 // ========================================
-// REQUEST OTP (SMS / AUTHENTICATION)
+// REQUEST OTP (USER-CHOSEN CHANNEL: SMS / EMAIL / WHATSAPP)
 // ========================================
 
 export const sendOtpController = async (req, res, next) => {
   try {
-    const { phone } = req.body;
+    const { phone, channel } = req.body;
 
-    const result = await sendOtp({ phone });
+    const result = await sendOtp({ phone, channel });
 
     res.status(200).json({
       success: true,
       message: result.message,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========================================
+// LIST AVAILABLE OTP CHANNELS FOR A PHONE NUMBER
+// ========================================
+//
+// Frontend calls this before showing the channel picker so it only
+// offers Email when the account actually has one on file.
+//
+// ========================================
+
+export const getOtpChannelsController = async (req, res, next) => {
+  try {
+    const { phone } = req.query;
+
+    const result = await getOtpChannelsForPhone({ phone });
+
+    res.status(200).json({
+      success: true,
       data: result,
     });
   } catch (error) {
@@ -80,20 +105,22 @@ export const registerController = async (req, res, next) => {
     // ----------------------------------------
     // Only accept public registration fields
     // ----------------------------------------
-    const { name, phone, password } = req.body;
+    const { name, phone, password, email, channel } = req.body;
 
     // ----------------------------------------
-    // Register User (Creates unverified user & sends OTP)
+    // Register User (Creates unverified user & sends OTP via chosen channel)
     // ----------------------------------------
     const result = await registerUser({
       name,
       phone,
       password,
+      email,
+      channel,
     });
 
     res.status(201).json({
       success: true,
-      message: result.message || 'Registration initiated. OTP code sent via SMS.',
+      message: result.message || 'Registration initiated. OTP code sent.',
       data: result,
     });
   } catch (error) {
@@ -107,19 +134,20 @@ export const registerController = async (req, res, next) => {
 
 export const loginController = async (req, res, next) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, password, channel } = req.body;
 
     // ----------------------------------------
-    // Verify Password & Trigger OTP
+    // Verify Password & Trigger OTP via chosen channel
     // ----------------------------------------
     const result = await loginUser({
       phone,
       password,
+      channel,
     });
 
     res.status(200).json({
       success: true,
-      message: result.message || 'Password verified. Security OTP code sent via SMS.',
+      message: result.message || 'Password verified. Security OTP code sent.',
       data: result,
     });
   } catch (error) {

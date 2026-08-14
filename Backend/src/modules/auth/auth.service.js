@@ -11,6 +11,11 @@ import AppError from '../../utils/AppError.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
 import { buildUserProfileUpdates } from '../../utils/userProfile.js';
 import env from '../../config/env.js';
+import {
+  getAvailableOtpChannels,
+  resolveOtpChannel,
+  deliverOtp,
+} from '../../services/notifications/otpDelivery.service.js';
 
 // ========================================
 // INTERNAL HELPERS
@@ -28,32 +33,29 @@ const issueTokens = async (user) => {
   return { accessToken, refreshToken };
 };
 
-// Generate 6-digit OTP, attach to user document, save, and log/send SMS
-const generateAndSendOtp = async (user, formattedPhone) => {
+// Generate 6-digit OTP, attach to user document, save, and dispatch via the
+// user's chosen delivery channel (sms | email | whatsapp)
+const generateAndSendOtp = async (user, requestedChannel) => {
+  const channel = resolveOtpChannel(requestedChannel, user);
+
   const otpCode = generateOtpCode(6);
   const expiryMinutes = env?.otpExpiresInMinutes || 5;
 
   user.otpCode = otpCode;
   user.otpExpiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
+  user.otpChannel = channel;
   await user.save();
 
-  if (process.env.NODE_ENV === 'development' || env?.nodeEnv === 'development') {
-    console.log('\n========================================');
-    console.log(`[DEMO OTP] Sent to: ${formattedPhone}`);
-    console.log(`[DEMO OTP] Code: ${otpCode}`);
-    console.log(`========================================\n`);
-  } else {
-    // Integration point for Twilio or Africa's Talking SMS API
-  }
+  await deliverOtp({ channel, user, otpCode, expiryMinutes });
 
-  return expiryMinutes;
+  return { expiryMinutes, channel };
 };
 
 // ========================================
 // SEND STANDALONE OTP
 // ========================================
 
-export const sendOtp = async ({ phone }) => {
+export const sendOtp = async ({ phone, channel }) => {
   if (!phone || !phone.trim()) {
     throw new AppError('Phone number is required', 400);
   }
@@ -79,21 +81,58 @@ export const sendOtp = async ({ phone }) => {
     });
   }
 
-  const expiryMinutes = await generateAndSendOtp(user, formattedPhone);
+  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
 
   return {
     otpRequired: true,
-    message: `OTP sent successfully to ${formattedPhone}`,
+    message: `OTP sent successfully via ${usedChannel} to ${
+      usedChannel === 'email' ? user.email : formattedPhone
+    }`,
     phone: formattedPhone,
+    channel: usedChannel,
+    availableChannels: getAvailableOtpChannels(user),
     expiresInMinutes: expiryMinutes,
   };
+};
+
+// ========================================
+// LIST OTP CHANNELS AVAILABLE FOR A PHONE NUMBER
+// ========================================
+//
+// Lets the frontend render channel choices (SMS / Email / WhatsApp)
+// before the user commits to requesting a code - Email only shows up
+// once the account has an email on file.
+//
+// ========================================
+
+export const getOtpChannelsForPhone = async ({ phone }) => {
+  if (!phone || !phone.trim()) {
+    throw new AppError('Phone number is required', 400);
+  }
+
+  const formattedPhone = formatPhone(phone);
+
+  if (!isValidKenyanPhone(formattedPhone)) {
+    throw new AppError(
+      'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX',
+      400
+    );
+  }
+
+  const user = await User.findOne({ phone: formattedPhone });
+
+  // Even for a not-yet-registered phone, SMS/WhatsApp are still viable
+  // (a fresh user record gets created when the OTP is actually sent).
+  const channels = getAvailableOtpChannels(user || { phone: formattedPhone });
+
+  return { phone: formattedPhone, availableChannels: channels };
 };
 
 // ========================================
 // REGISTER USER (Password + Mandatory OTP)
 // ========================================
 
-export const registerUser = async ({ name, phone, password }) => {
+export const registerUser = async ({ name, phone, password, email, channel }) => {
   // 1. Input validations
   if (!name || !name.trim()) {
     throw new AppError('Name is required', 400);
@@ -132,28 +171,38 @@ export const registerUser = async ({ name, phone, password }) => {
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // 5. Create/Update user in 'unverified' status
+  // Email is optional at registration, but needs to be on file up front
+  // if the person wants to receive their OTP by email.
+  const trimmedEmail = email && email.trim() ? email.trim() : undefined;
+
   let user;
   if (existingUser && existingUser.status === 'unverified') {
     existingUser.name = name.trim();
     existingUser.password = hashedPassword;
+    if (trimmedEmail) existingUser.email = trimmedEmail;
     user = await existingUser.save();
   } else {
     user = await User.create({
       name: name.trim(),
       phone: formattedPhone,
       password: hashedPassword,
+      email: trimmedEmail,
       status: 'unverified',
       isPhoneVerified: false,
     });
   }
 
-  // 6. Generate & send OTP (DO NOT issue tokens here)
-  const expiryMinutes = await generateAndSendOtp(user, formattedPhone);
+  // 6. Generate & send OTP via the chosen channel (DO NOT issue tokens here)
+  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
 
   return {
     otpRequired: true,
     phone: formattedPhone,
-    message: `Account created. Security OTP code sent to ${formattedPhone}`,
+    channel: usedChannel,
+    availableChannels: getAvailableOtpChannels(user),
+    message: `Account created. Security OTP code sent via ${usedChannel} to ${
+      usedChannel === 'email' ? user.email : formattedPhone
+    }`,
     expiresInMinutes: expiryMinutes,
   };
 };
@@ -162,7 +211,7 @@ export const registerUser = async ({ name, phone, password }) => {
 // LOGIN USER (Password + Mandatory OTP)
 // ========================================
 
-export const loginUser = async ({ phone, password }) => {
+export const loginUser = async ({ phone, password, channel }) => {
   // 1. Input validations
   if (!phone || !phone.trim()) {
     throw new AppError('Phone number is required', 400);
@@ -207,13 +256,17 @@ export const loginUser = async ({ phone, password }) => {
     throw new AppError('Invalid phone number or password', 401);
   }
 
-  // 6. Password verified -> Send Security OTP (DO NOT issue tokens here)
-  const expiryMinutes = await generateAndSendOtp(user, formattedPhone);
+  // 6. Password verified -> Send Security OTP via chosen channel (DO NOT issue tokens here)
+  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
 
   return {
     otpRequired: true,
     phone: formattedPhone,
-    message: `Password verified. Security OTP code sent to ${formattedPhone}`,
+    channel: usedChannel,
+    availableChannels: getAvailableOtpChannels(user),
+    message: `Password verified. Security OTP code sent via ${usedChannel} to ${
+      usedChannel === 'email' ? user.email : formattedPhone
+    }`,
     expiresInMinutes: expiryMinutes,
   };
 };
@@ -255,6 +308,7 @@ export const verifyOtp = async ({ phone, otpCode }) => {
   // Clear OTP fields & activate status
   user.otpCode = undefined;
   user.otpExpiresAt = undefined;
+  user.otpChannel = undefined;
   user.isPhoneVerified = true;
 
   if (user.status === 'unverified') {

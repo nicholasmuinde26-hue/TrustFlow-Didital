@@ -6,6 +6,8 @@ import ContributionPlan from '../../models/ContributionPlan.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
 import Meeting from '../../models/Meeting.js';
+import Business from '../../models/Business.js';
+import { getSummary } from '../business/business.service.js';
 import AppError from '../../utils/AppError.js';
 import mongoose from 'mongoose';
 
@@ -13,10 +15,44 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
   if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
     throw new AppError('Invalid workspace ID', 400);
   }
-  const [chamaMembership, groupMembership] = await Promise.all([
+
+  // 1. Check if workspaceId is a Business
+  const business = await Business.findOne({ _id: workspaceId, created_by: userId }).lean();
+  if (business) {
+    const summary = await getSummary(workspaceId, { _id: userId });
+    return {
+      type: 'business',
+      workspace: {
+        id: String(business._id),
+        name: business.name,
+        status: 'active',
+        role: 'owner',
+        category: business.category,
+        currency: business.currency,
+      },
+      stats: {
+        cashIn: summary?.dashboard?.cashIn || "0",
+        cashOut: summary?.dashboard?.cashOut || "0",
+        netCash: summary?.dashboard?.netCash || "0",
+        totalContributed: summary?.dashboard?.cashIn || "0",
+      },
+      upcoming: [],
+    };
+  }
+
+  // 2. Check Chama & Contribution Group memberships & owner fallbacks
+  let [chamaMembership, groupMembership] = await Promise.all([
     ChamaMembership.findOne({ chama_id: workspaceId, user_id: userId, status: 'active' }).lean(),
     ContributionGroupMember.findOne({ contribution_group_id: workspaceId, user_id: userId, status: 'active' }).lean(),
   ]);
+
+  if (!chamaMembership && !groupMembership) {
+    const chamaCreated = await Chama.findOne({ _id: workspaceId, created_by: userId }).lean();
+    if (chamaCreated) {
+      chamaMembership = { chama_id: workspaceId, user_id: userId, role: 'admin', status: 'active' };
+    }
+  }
+
   const type = chamaMembership ? 'chama' : groupMembership ? 'contribution-group' : null;
   if (!type) throw new AppError('You do not have access to this workspace', 403);
 
@@ -46,7 +82,7 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
   return {
     type,
     workspace: {
-      id: String(workspace._id), name: workspace.name, status: workspace.status, role: membership.role,
+      id: String(workspace._id), name: workspace.name, status: workspace.status, role: membership.role || 'member',
       monthlySavings: workspace.monthly_savings ?? null, eventDate: workspace.event_date ?? null,
       location: workspace.location ?? null, description: workspace.description ?? null,
     },

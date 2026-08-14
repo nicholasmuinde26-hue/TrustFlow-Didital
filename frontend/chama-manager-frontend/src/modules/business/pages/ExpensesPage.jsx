@@ -6,6 +6,7 @@ import { useBusinessExpenses } from "../hooks/useBusiness";
 export default function ExpensesPage() {
   const { workspaceId } = useWorkspace();
   const { expenses, isLoading, isRefetching, refetch } = useBusinessExpenses(workspaceId);
+  const expensesList = Array.isArray(expenses) ? expenses : [];
 
   if (isLoading) {
     return (
@@ -38,7 +39,7 @@ export default function ExpensesPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        {expenses.length === 0 ? (
+        {expensesList.length === 0 ? (
           <div className="py-12 text-center text-slate-500 dark:text-slate-400">
             <Receipt className="mx-auto h-10 w-10 text-slate-400 mb-2 opacity-50" />
             <p className="text-sm font-medium">No expenses recorded yet.</p>
@@ -46,10 +47,10 @@ export default function ExpensesPage() {
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {expenses.map((exp) => {
+            {expensesList.map((exp) => {
               const id = exp._id || exp.id;
-              const category = exp.category || exp.title || "General Expense";
-              const supplier = exp.supplier || exp.payee || exp.vendor || "N/A";
+              const category = exp.description || exp.category || exp.title || "General Expense";
+              const supplier = exp.customer_name || exp.supplier || exp.payee || exp.vendor || "N/A";
               const dateStr = exp.date || (exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : "N/A");
               const amount = Number(exp.amount || 0);
 
@@ -77,4 +78,4 @@ export default function ExpensesPage() {
       </div>
     </div>
   );
-}
+}

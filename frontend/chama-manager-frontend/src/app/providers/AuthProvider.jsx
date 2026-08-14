@@ -75,6 +75,12 @@ export default function AuthProvider({ children }) {
 
   //-----------------------------------------------------
 
+  async function getOtpChannels(phone) {
+    return authService.getOtpChannels(phone);
+  }
+
+  //-----------------------------------------------------
+
   async function logout() {
     try {
       await authService.logout();
@@ -95,6 +101,7 @@ export default function AuthProvider({ children }) {
       register,
       verifyOtp,
       sendOtp,
+      getOtpChannels,
       logout,
       refresh: loadUser,
     }),

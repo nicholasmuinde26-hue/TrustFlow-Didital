@@ -3,6 +3,7 @@ import {
   getCurrentPayout,
   getPayoutById,
   startPayout,
+  approvePayout,
   markPayoutPaid,
   cancelPayout
 } from './payout.service.js';
@@ -159,6 +160,56 @@ export const startPayoutController = async (
 
 
 // ========================================
+// APPROVE PAYOUT
+// CHAIRPERSON ONLY
+// ========================================
+//
+// The Chairperson signs off on a pending
+// payout before the Treasurer is allowed to
+// disburse it. This does not move money —
+// it only unlocks markPayoutPaidController
+// below.
+//
+// ========================================
+
+export const approvePayoutController = async (
+  req,
+  res,
+  next
+) => {
+
+  try {
+
+    const payout =
+      await approvePayout({
+        chamaId: req.params.id,
+        payoutId: req.params.payoutId,
+        approved_by: req.membership._id
+      });
+
+    res.status(200).json({
+
+      success: true,
+
+      message:
+        'Payout approved successfully',
+
+      data: {
+        payout
+      }
+
+    });
+
+  } catch (error) {
+
+    next(error);
+
+  }
+
+};
+
+
+// ========================================
 // MARK PAYOUT AS PAID
 // TREASURER ONLY
 // ========================================
@@ -223,7 +274,15 @@ export const markPayoutPaidController = async (
 
 // ========================================
 // CANCEL PAYOUT
-// TREASURER ONLY
+// TREASURER OR CHAIRPERSON
+// ========================================
+//
+// Withdraws a payout before it's disbursed
+// — whether it's still awaiting Chairperson
+// approval ('pending') or already approved
+// ('approved'). Once it's 'paid' it can no
+// longer be cancelled.
+//
 // ========================================
 
 export const cancelPayoutController = async (

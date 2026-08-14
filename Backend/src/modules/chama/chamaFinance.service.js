@@ -4,26 +4,17 @@ import mongoose from "mongoose";
 import AppError from "../../utils/AppError.js";
 import ContributionPlan from "../../models/ContributionPlan.js";
 import ContributionObligation from "../../models/ContributionObligation.js";
-import ContributionPayment from "../../models/ContributionPayment.js";
+
 import PaymentIntent from "../../models/PaymentIntent.js";
 import MpesaAttempt from "../../models/MpesaAttempt.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import MgrReminder from "../../models/MgrReminder.js";
+import paymentService from "../../payment/payment.service.js";
 
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
-import paymentService from "../../payment/payment.service.js"; // NEW: single entry point
 import { startPayout } from "../payout/payout.service.js";
-import contributionObligationService from "../contributionPlan/contributionObligation.service.js";
-import { getContributionEquityAccount, getContributionPaymentAssetAccount } from "../finance/financeAccount.service.js";
-import { postFinanceOperation } from "../finance/financeOperation.service.js";
-import { toDecimal, isMoneyPositive } from "../../shared/decimal.js";
-
-// Manual (non-M-Pesa) recording methods a treasurer can use for "Mark Paid".
-const MANUAL_MGR_METHODS = ["cash", "bank", "other"];
-
-// ---------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------
+import { PAYMENT_PROVIDER, PAYMENT_STATUS } from "../../payment/payment.constants.js";
+import { toDecimal } from "../../shared/decimal.js";
 
 const generateUniqueReference = (displayRef) => {
   const ts = Date.now();
@@ -36,18 +27,10 @@ const canUseTransactions = () => {
   const topologyType = topology?.description?.type;
   return topologyType === "ReplicaSetWithPrimary" || topologyType === "Sharded";
 };
-
-const getOpts = (session) => {
-  return canUseTransactions() && session ? { session } : {};
-};
-
-// ---------------------------------------------------------
-// Contribution periods
-// ---------------------------------------------------------
+const getOpts = (session) => canUseTransactions() && session ? { session } : {};
 
 const periodFor = (frequency, customDays = null, from = new Date()) => {
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
+  const start = new Date(from); start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   if (frequency === "daily") end.setDate(end.getDate() + 1);
   else if (frequency === "weekly") end.setDate(end.getDate() + 7);
@@ -59,20 +42,25 @@ const periodFor = (frequency, customDays = null, from = new Date()) => {
   return { start, end };
 };
 
-const currentMgrPeriod = (plan, now = new Date()) => {
+// Every period boundary from the plan's start_date up to and including the
+// one "now" currently falls in. Unlike currentMgrPeriod (which jumps
+// straight to the open period and silently skips anything a member missed
+// along the way), this is what makes MGR debt accumulate: a period that
+// already ended is still returned, so ensureMgrRounds() below keeps its
+// obligation around instead of never creating (or forgetting about) it.
+const periodsSinceStart = (plan, now = new Date()) => {
+  const periods = [];
   let period = periodFor(plan.merry_go_round.payout_interval, plan.merry_go_round.payout_interval_days, plan.start_date);
-  while (period.end <= now) {
+  let guard = 0;
+  while (guard < 1000) {
+    periods.push(period);
+    if (period.end > now) break; // this is the open/current period - stop here
     period = periodFor(plan.merry_go_round.payout_interval, plan.merry_go_round.payout_interval_days, period.end);
+    guard += 1;
   }
-  return period;
+  return periods;
 };
-
-const activeMembers = (chamaId) =>
-  ChamaMembership.find({ chama_id: chamaId, status: "active" }).sort({ payout_position: 1, joined_at: 1 });
-
-// ---------------------------------------------------------
-// Savings plan
-// ---------------------------------------------------------
+const activeMembers = (chamaId) => ChamaMembership.find({ chama_id: chamaId, status: "active" }).sort({ payout_position: 1, joined_at: 1 });
 
 export const getOrCreateSavingsPlan = async ({ chama, userId }) => {
   let plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chama._id, contribution_type: "fixed", name: "Savings" });
@@ -85,10 +73,6 @@ export const getOrCreateSavingsPlan = async ({ chama, userId }) => {
   }
   return plan;
 };
-
-// ---------------------------------------------------------
-// Contribution obligation
-// ---------------------------------------------------------
 
 const getOrCreateObligation = async ({ plan, membership, amount, period, notes }) => {
   const filter = { plan_id: plan._id, participant_id: membership._id, period_start: period.start, period_end: period.end };
@@ -105,7 +89,6 @@ const getOrCreateObligation = async ({ plan, membership, amount, period, notes }
 // ---------------------------------------------------------
 // Initiate savings M-Pesa payment
 // ---------------------------------------------------------
-
 export const initiateSavingsDeposit = async ({ chama, membership, userId, amount, phoneNumber, idempotencyKey }) => {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) throw new AppError("Amount must be a positive whole number of KES", 400);
@@ -115,195 +98,101 @@ export const initiateSavingsDeposit = async ({ chama, membership, userId, amount
   const obligation = await getOrCreateObligation({ plan, membership, amount: Math.max(value, Number(plan.amount.toString())), period: periodFor("monthly"), notes: "Savings deposit" });
 
   const key = idempotencyKey || crypto.randomUUID();
-  const existing = await PaymentIntent.findOne({ idempotency_key: key });
-  if (existing) return { intent: existing, reused: true };
-
-  const temporaryRequestId = `pending_${crypto.randomUUID()}`;
-  const normalizedPhone = mpesaService.normalizePhoneNumber(phoneNumber);
   const displayRef = "CHAMA-SAVE".slice(0, 20);
   const uniqueRef = generateUniqueReference(displayRef);
 
-  const intent = await PaymentIntent.create({
-    obligation_id: obligation._id, plan_id: plan._id, owner_type: "Chama", owner_id: chama._id,
-    participant_type: "ChamaMembership", participant_id: membership._id, amount: value, currency: "KES",
-    payment_method: "mpesa", phone_number: normalizedPhone, reference: uniqueRef, display_reference: displayRef,
-    idempotency_key: key, provider: "mpesa", provider_request_id: temporaryRequestId, status: "pending", created_by: userId,
-    metadata: { // ADD THIS: needed by finance engine
-      productType: 'SAVINGS',
+  console.log('[initiateSavingsDeposit] payload keys:', { key, displayRef, uniqueRef }); // DEBUG
+
+  const payload = {
+    amount: value,
+    currency: "KES",
+    type: 'savings',
+    chamaId: chama._id,
+    obligationId: obligation._id,
+    planId: plan._id,
+    participantId: membership._id,
+    participantType: "ChamaMembership",
+    phoneNumber,
+    actorId: userId,
+    provider: PAYMENT_PROVIDER.MPESA,
+    reference: uniqueRef,
+    displayReference: displayRef,
+    display_reference: displayRef, // FIX: send both
+    description: "Chama savings deposit",
+    idempotencyKey: key, // FIX: send both
+    idempotency_key: key,
+    metadata: {
+      productType: 'savings',
       chamaId: chama._id,
       obligationId: obligation._id
     }
+  };
+
+  // Delegate to PaymentService. It creates Intent + Payment + STK
+  const result = await paymentService.initiate(payload);
+
+  // Still create MpesaAttempt for tracking
+  await MpesaAttempt.create({
+    obligation_id: obligation._id, 
+    payment_intent_id: result.paymentIntentId, 
+    amount: value, 
+    phone_number: result.phoneNumber,
+    initiated_by: userId, 
+    checkout_request_id: result.checkoutRequestId,
   });
 
-  try {
-    const result = await mpesaService.initiateStkPush({
-      amount: value, phoneNumber: normalizedPhone, accountReference: intent.reference,
-      displayReference: intent.display_reference, transactionDescription: "Chama savings deposit",
-    });
-
-    intent.provider_request_id = result.checkoutRequestId;
-    intent.provider_response_id = result.merchantRequestId;
-    intent.provider_response = result.rawResponse;
-    intent.status = "processing";
-    await intent.save();
-
-    await MpesaAttempt.create({
-      obligation_id: obligation._id, payment_intent_id: intent._id, amount: value, phone_number: intent.phone_number,
-      initiated_by: userId, checkout_request_id: result.checkoutRequestId, merchant_request_id: result.merchantRequestId,
-    });
-
-    return { intent, stk: result };
-  } catch (error) {
-    intent.status = "failed"; intent.failure_reason = error.message; intent.failed_at = new Date();
-    await intent.save();
-    throw error;
-  }
+  return { 
+    intent: { _id: result.paymentIntentId, status: PAYMENT_STATUS.PROCESSING },
+    stk: result.providerResponse 
+  };
 };
 
 // ---------------------------------------------------------
-// Reconcile savings callback - FIXED TO USE paymentService
+// Reconcile savings callback - DELEGATE TO PAYMENT SERVICE
 // ---------------------------------------------------------
-
 export const reconcileSavingsCallback = async (callback) => {
-  // 1. Idempotency check
   if (callback.mpesaReceiptNumber) {
     const alreadyProcessed = await PaymentIntent.findOne({ external_reference: callback.mpesaReceiptNumber });
-    if (alreadyProcessed?.status === 'completed') {
+    if (alreadyProcessed?.status === PAYMENT_STATUS.COMPLETED) {
       console.log(`Duplicate callback ignored. Receipt: ${callback.mpesaReceiptNumber}`);
       return true;
     }
   }
 
-  const attempt = await MpesaAttempt.findOneAndUpdate(
-    { checkout_request_id: callback.checkoutRequestId, payment_intent_id: { $ne: null } },
-    { $set: { status: callback.success ? "processing" : "failed" } },
-    { returnDocument: "after" }
-  );
-
+  const attempt = await MpesaAttempt.findOne({ checkout_request_id: callback.checkoutRequestId });
   if (!attempt) {
     console.warn(`Callback for unknown CheckoutRequestID: ${callback.checkoutRequestId}`);
     return false;
   }
 
-  const intent = await PaymentIntent.findById(attempt.payment_intent_id);
-  if (!intent) throw new AppError("Payment intent missing for M-Pesa attempt", 500);
-
-  if (intent.status === 'completed') {
-    console.log(`Intent ${intent._id} already completed. Ignoring duplicate callback.`);
-    return true;
-  }
-
-  const amountMismatch = Number(callback.amount) !== Number(attempt.amount.toString());
-  const phoneMismatch = callback.phoneNumber && callback.phoneNumber !== attempt.phone_number;
-
-  if (!callback.success || amountMismatch || phoneMismatch) {
-    attempt.status = "failed"; 
-    await attempt.save();
-    const status = Number(callback.resultCode) === 1032 ? "cancelled" : "failed";
-    await PaymentIntent.findByIdAndUpdate(intent._id, {
-      status, 
-      failure_code: callback.resultCode !== undefined ? String(callback.resultCode) : undefined,
-      failure_reason: callback.resultDescription, 
-      failed_at: new Date(), 
-      provider_response: callback.rawCallback,
-    });
-    return true;
-  }
-
-  const useTransaction = canUseTransactions();
-  const session = useTransaction ? await mongoose.startSession() : null;
-  
-  try {
-    if (session) session.startTransaction();
-
-    // 2. CRITICAL FIX: Use paymentService instead of contributionPaymentService
-    const result = await paymentService.processCallback({
-      provider: 'mpesa',
-      paymentId: intent._id,
-      success: true,
-      status: 'COMPLETED',
-      amount: callback.amount,
-      currency: 'KES',
-      providerData: {
-        CheckoutRequestID: callback.checkoutRequestId,
-        MpesaReceiptNumber: callback.mpesaReceiptNumber,
-        PhoneNumber: callback.phoneNumber,
-        Amount: callback.amount,
-        rawCallback: callback.rawCallback
-      },
-      metadata: {
-        productType: 'SAVINGS', // tells finance engine which rule to run
-        chamaId: intent.owner_id,
-        obligationId: attempt.obligation_id,
-        paymentIntentId: intent._id,
-        memberId: intent.participant_id
-      }
-    }, session);
-
-    if (session) await session.commitTransaction();
-
-    attempt.status = "completed";
-    attempt.mpesa_receipt_number = callback.mpesaReceiptNumber;
-    await attempt.save();
-
-    // 3. Update PaymentIntent with GL refs
-    await PaymentIntent.findByIdAndUpdate(intent._id, {
-      status: "completed",
-      external_reference: callback.mpesaReceiptNumber,
-      financial_transaction_id: result?.payment?.financialTransactionId || null,
-      journal_id: result?.payment?.journalId || null,
-      completed_at: new Date(),
-      provider_response: callback.rawCallback,
-    });
-
-    await maybeCreateMgrPayoutForChama(intent.owner_id, attempt.initiated_by);
-    return true;
-  } catch (error) {
-    if (session && session.inTransaction()) await session.abortTransaction();
-    
-    if (error.name === 'DuplicatePaymentError' || error.message?.includes('duplicate')) {
-      console.warn(`Duplicate payment caught and ignored: ${callback.mpesaReceiptNumber}`);
-      return true;
-    }
-    throw error;
-  } finally {
-    if (session) session.endSession();
-  }
+  await paymentService.handleCallback(callback.rawCallback);
+  return true;
 };
 
 // ---------------------------------------------------------
 // Reconcile payment intent - RATE LIMIT SAFE
 // ---------------------------------------------------------
-
 export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
   const intent = await PaymentIntent.findOne({ _id: intentId, owner_type: "Chama", owner_id: chamaId });
-  if (!intent || ["completed", "failed", "cancelled"].includes(intent.status)) return intent;
+  if (!intent || [PAYMENT_STATUS.COMPLETED, PAYMENT_STATUS.FAILED, PAYMENT_STATUS.CANCELLED].includes(intent.status)) return intent;
 
   const attempt = await MpesaAttempt.findOne({ payment_intent_id: intent._id });
   if (!attempt?.checkout_request_id) return intent;
 
   const ageSeconds = (Date.now() - attempt.createdAt.getTime()) / 1000;
-  if (ageSeconds < 30) {
-    console.log(`Skipping STK query. Too soon. Age: ${ageSeconds}s`);
-    return intent;
-  }
+  if (ageSeconds < 30) return intent;
 
   try {
     const query = await mpesaService.queryStkPush({ checkoutRequestId: attempt.checkout_request_id });
     if (query.resultCode === null || query.resultCode === undefined) return intent;
 
-    const successful = Number(query.resultCode) === 0;
-    const mpesaReceipt = query.rawResponse?.MpesaReceiptNumber || null;
-
-    await reconcileSavingsCallback({
-      checkoutRequestId: attempt.checkout_request_id,
-      resultCode: Number(query.resultCode),
-      resultDescription: query.resultDescription || "M-Pesa STK status received",
-      success: successful,
-      amount: successful ? Number(attempt.amount.toString()) : null,
-      phoneNumber: successful ? attempt.phone_number : null,
-      mpesaReceiptNumber: mpesaReceipt,
-      rawCallback: query.rawResponse,
+    await paymentService.processCallback({
+      provider: PAYMENT_PROVIDER.MPESA,
+      paymentId: intent._id,
+      success: query.resultCode === 0,
+      status: query.resultCode === 0 ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED,
+      providerData: query,
+      metadata: { productType: 'savings', chamaId }
     });
   } catch (e) {
     if (e.statusCode === 429 || e.statusCode === 500) {
@@ -312,14 +201,10 @@ export const reconcileSavingsIntent = async ({ intentId, chamaId }) => {
     }
     throw e;
   }
-
   return PaymentIntent.findById(intent._id);
 };
 
-// ---------------------------------------------------------
-// MGR settings - unchanged
-// ---------------------------------------------------------
-
+// MGR functions unchanged...
 export const upsertMgrSettings = async ({ chama, userId, amount, frequency, payoutInterval, payoutIntervalDays }) => {
   const validIntervals = ["weekly", "monthly", "quarterly", "yearly", "custom"];
   if (!validIntervals.includes(payoutInterval)) throw new AppError("Invalid payout interval", 400);
@@ -333,65 +218,216 @@ export const upsertMgrSettings = async ({ chama, userId, amount, frequency, payo
   await plan.save(); await ensureMgrRound(plan); return plan;
 };
 
-export const ensureMgrRound = async (plan) => {
-  const period = currentMgrPeriod(plan);
+export const ensureMgrRounds = async (plan) => {
+  const now = new Date();
+  const periods = periodsSinceStart(plan, now);
   const members = await activeMembers(plan.owner_id);
-  await Promise.all(members.map(member => getOrCreateObligation({ plan, membership: member, amount: plan.amount, period, notes: `MGR round starting ${period.start.toISOString().slice(0, 10)}` })));
-  return { period, members };
+
+  for (const period of periods) {
+    await Promise.all(members.map(member =>
+      getOrCreateObligation({ plan, membership: member, amount: plan.amount, period, notes: `MGR round starting ${period.start.toISOString().slice(0, 10)}` })
+    ));
+  }
+
+  // Any period before the current (open) one that's still pending or
+  // partially paid was missed - flag it overdue so it shows as debt that
+  // accumulates, rather than quietly rolling over once the interval ends.
+  const pastPeriodEnds = periods.slice(0, -1).map(p => p.end);
+  if (pastPeriodEnds.length) {
+    await ContributionObligation.updateMany(
+      {
+        plan_id: plan._id,
+        period_end: { $in: pastPeriodEnds },
+        status: { $in: ["pending", "partially_paid"] },
+      },
+      { $set: { status: "overdue" } }
+    );
+  }
+
+  return { period: periods[periods.length - 1], periods, members };
 };
 
+// Backward-compatible alias - same call shape used elsewhere in this file.
+export const ensureMgrRound = ensureMgrRounds;
+
 export const getMgrOverview = async (chamaId) => {
-  const plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chamaId, contribution_type: "merry_go_round" });
-  const members = await activeMembers(chamaId).populate("user_id", "name phone");
-  const round = plan ? await ensureMgrRound(plan) : null;
-  
-  const obligations = plan && round ? await ContributionObligation.find({ 
-    plan_id: plan._id, 
-    participant_id: { $in: members.map(({ _id }) => _id) }, 
-    period_start: round.period.start, 
-    period_end: round.period.end 
-  }) : [];
-  
-  const obligationByMember = new Map(obligations.map((item) => [String(item.participant_id), item]));
-  
-  const reminders = obligations.length ? await MgrReminder.aggregate([
-    { $match: { obligation_id: { $in: obligations.map(({ _id }) => _id) } } }, 
-    { $sort: { createdAt: -1 } }, 
-    { $group: { _id: "$obligation_id", channel: { $first: "$channel" }, createdAt: { $first: "$createdAt" } } }
-  ]) : [];
-  
-  const reminderByObligation = new Map(reminders.map((item) => [String(item._id), { channel: item.channel, sent_at: item.createdAt }]));
+  const plan = await ContributionPlan.findOne({
+    owner_type: "Chama",
+    owner_id: chamaId,
+    contribution_type: "merry_go_round",
+  });
 
-  // Count every past/current MGR round this member has NOT fully paid, so the
-  // UI can surface something like "owes 2 months" instead of just Paid/Pending
-  // for the current round.
-  const outstandingCounts = plan ? await ContributionObligation.aggregate([
-    { $match: { plan_id: plan._id, participant_id: { $in: members.map(({ _id }) => _id) }, status: { $ne: "paid" } } },
-    { $group: { _id: "$participant_id", count: { $sum: 1 } } },
-  ]) : [];
-  const outstandingByMember = new Map(outstandingCounts.map((item) => [String(item._id), item.count]));
+  const members = await activeMembers(chamaId).populate(
+    "user_id",
+    "name phone"
+  );
 
-  const Payout = (await import("../../models/Payout.js")).default;
-  const currentPayout = await Payout.findOne({ chama_id: chamaId, contribution_plan_id: plan?._id, status: "pending" }).populate("member_id", "payout_position user_id");
-  
+  const round = plan
+    ? await ensureMgrRounds(plan)
+    : null;
+
+  // Every period's obligations (not just the current one) - this is what
+  // lets the dashboard show accumulated debt and the per-month history.
+  const obligations =
+    plan && round
+      ? await ContributionObligation.find({
+          plan_id: plan._id,
+          participant_id: {
+            $in: members.map(({ _id }) => _id),
+          },
+        }).sort({ period_start: 1 })
+      : [];
+
+  const obligationsByMember = new Map();
+  for (const obligation of obligations) {
+    const key = String(obligation.participant_id);
+    if (!obligationsByMember.has(key)) obligationsByMember.set(key, []);
+    obligationsByMember.get(key).push(obligation);
+  }
+
+  const currentPeriod = round?.period;
+  const currentObligationIds = currentPeriod
+    ? obligations
+        .filter((ob) => ob.period_start.getTime() === currentPeriod.start.getTime())
+        .map((ob) => ob._id)
+    : [];
+
+  // Get the latest reminder for every obligation in the current round
+  const reminders = currentObligationIds.length
+    ? await MgrReminder.aggregate([
+        {
+          $match: {
+            obligation_id: {
+              $in: currentObligationIds,
+            },
+          },
+        },
+        {
+          $sort: {
+            createdAt: -1,
+          },
+        },
+        {
+          $group: {
+            _id: "$obligation_id",
+            channel: {
+              $first: "$channel",
+            },
+            createdAt: {
+              $first: "$createdAt",
+            },
+          },
+        },
+      ])
+    : [];
+
+  const reminderByObligation = new Map(
+    reminders.map((item) => [
+      String(item._id),
+      {
+        channel: item.channel,
+        sent_at: item.createdAt,
+      },
+    ])
+  );
+
+  const Payout = (
+    await import("../../models/Payout.js")
+  ).default;
+
+  const currentPayout = await Payout.findOne({
+    chama_id: chamaId,
+    contribution_plan_id: plan?._id,
+    status: { $in: ["pending", "approved"] },
+  }).populate(
+    "member_id",
+    "payout_position user_id"
+  );
+
+  const memberSummaries = members.map((member) => {
+    const key = String(member._id);
+    const memberObligations = obligationsByMember.get(key) || [];
+
+    const current = currentPeriod
+      ? memberObligations.find((ob) => ob.period_start.getTime() === currentPeriod.start.getTime())
+      : null;
+
+    // Oldest-first: whatever "Mark Paid" settles next, and what a member
+    // must clear before the current period even counts toward the round.
+    const outstanding = memberObligations
+      .filter((ob) => ob.status !== "paid")
+      .sort((a, b) => a.period_start - b.period_start);
+
+    const outstandingTotal = outstanding
+      .reduce((sum, ob) => sum.add(toDecimal(ob.expected_amount).minus(toDecimal(ob.paid_amount || 0))), toDecimal(0))
+      .toString();
+
+    const reminder = current
+      ? reminderByObligation.get(String(current._id))
+      : null;
+
+    return {
+      member_id: member._id,
+      member_name: member.user_id?.name || "Member",
+      phone: member.user_id?.phone || null,
+      payout_position: member.payout_position,
+      obligation: current || null,
+      outstanding_count: outstanding.length,
+      outstanding_total: outstandingTotal,
+      next_due: outstanding[0] || null,
+      last_reminder: reminder || null,
+    };
+  });
+
+  // One row per period, each with every member's status for that period -
+  // the "record of each month" view.
+  const memberNameById = new Map(
+    members.map((member) => [String(member._id), member.user_id?.name || "Member"])
+  );
+
+  const historyByPeriod = new Map();
+  for (const obligation of obligations) {
+    const key = obligation.period_start.toISOString();
+    if (!historyByPeriod.has(key)) {
+      historyByPeriod.set(key, {
+        period_start: obligation.period_start,
+        period_end: obligation.period_end,
+        members: [],
+      });
+    }
+    historyByPeriod.get(key).members.push({
+      member_id: obligation.participant_id,
+      member_name: memberNameById.get(String(obligation.participant_id)) || "Member",
+      status: obligation.status,
+      expected_amount: obligation.expected_amount,
+      paid_amount: obligation.paid_amount,
+      paid_at: obligation.paid_at || null,
+    });
+  }
+
+  const history = [...historyByPeriod.values()]
+    .sort((a, b) => b.period_start - a.period_start)
+    .map((row) => ({
+      ...row,
+      paid_count: row.members.filter((m) => m.status === "paid").length,
+      total_members: row.members.length,
+    }));
+
   return {
-    plan, 
-    members, 
+    plan,
+    members,
     currentPayout,
-    round: round ? { start: round.period?.start, end: round.period?.end } : null,
-    obligations: members.map((member) => {
-      const memberObligation = obligationByMember.get(String(member._id));
-      const reminder = memberObligation ? reminderByObligation.get(String(memberObligation._id)) : null;
-      return {
-        member_id: member._id, 
-        member_name: member.user_id?.name || "Member", 
-        phone: member.user_id?.phone || null,
-        payout_position: member.payout_position, 
-        obligation: memberObligation || null, 
-        last_reminder: reminder || null,
-        owed_periods: outstandingByMember.get(String(member._id)) || 0,
-      };
-    }),
+
+    round: round
+      ? {
+          start: round.period?.start,
+          end: round.period?.end,
+        }
+      : null,
+
+    obligations: memberSummaries,
+
+    history,
   };
 };
 
@@ -406,114 +442,85 @@ export const recordMgrReminder = async ({ chamaId, obligationId, channel, userId
 };
 
 // ---------------------------------------------------------
-// Manual "Mark Paid" (cash / bank / other) — treasurer records that a
-// member paid outside M-Pesa. This intentionally does NOT go through
-// PaymentIntent/STK; it posts straight to the finance ledger.
+// Treasurer records a payment on a member's behalf (cash, bank deposit,
+// etc). Settles the OLDEST unpaid/overdue period first - a member has to
+// catch up on a missed interval before this ever touches the current one.
+// Posts through the same Payment Engine as M-Pesa (cash provider settles
+// synchronously), so the ledger and the obligation update together.
 // ---------------------------------------------------------
+export const markMgrObligationPaid = async ({ chamaId, memberId, userId }) => {
+  const plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chamaId, contribution_type: "merry_go_round", status: "active" });
+  if (!plan) throw new AppError("Merry-Go-Round is not set up for this chama", 404);
 
+  // Make sure every period up to now (including ones this member missed)
+  // actually has an obligation before we look for the oldest unpaid one.
+  await ensureMgrRounds(plan);
 
-export const recordManualMgrPayment = async ({ chamaId, obligationId, method, externalReference, notes, userId, idempotencyKey }) => {
-  const normalizedMethod = MANUAL_MGR_METHODS.includes(method) ? method : "cash";
+  const membership = await ChamaMembership.findOne({ _id: memberId, chama_id: chamaId, status: "active" });
+  if (!membership) throw new AppError("Active member not found in this chama", 404);
 
-  const obligation = await ContributionObligation.findOne({ _id: obligationId, owner_type: "Chama", owner_id: chamaId });
-  if (!obligation) throw new AppError("MGR contribution obligation not found", 404);
-  if (obligation.status === "paid") throw new AppError("This member has already paid the current MGR round", 409);
+  const obligation = await ContributionObligation.findOne({
+    plan_id: plan._id,
+    participant_id: membership._id,
+    status: { $in: ["pending", "partially_paid", "overdue"] },
+  }).sort({ period_start: 1 });
 
-  const plan = await ContributionPlan.findOne({ _id: obligation.plan_id, contribution_type: "merry_go_round" });
-  if (!plan) throw new AppError("This is not an MGR obligation", 400);
+  if (!obligation) throw new AppError("This member has no outstanding Merry-Go-Round contribution", 409);
 
-  const outstanding = toDecimal(obligation.expected_amount).minus(toDecimal(obligation.paid_amount || 0));
-  if (!isMoneyPositive(outstanding)) throw new AppError("This obligation has no outstanding balance", 409);
+  const outstandingAmount = toDecimal(obligation.expected_amount).minus(toDecimal(obligation.paid_amount || 0));
+  if (!outstandingAmount.greaterThan(0)) throw new AppError("This member has no outstanding Merry-Go-Round contribution", 409);
 
-  // FIX 1: Always generate idempotency_key for manual payments
-  const key = idempotencyKey || `MANUAL-MGR-${obligationId}-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-  const reference = generateUniqueReference("MGR-MANUAL");
-  const channelType = normalizedMethod === "bank" ? "bank_transfer" : normalizedMethod === "other" ? "other" : "cash";
+  const reference = generateUniqueReference("CHAMA-MGR");
 
-  // REMOVED: session code for standalone
-
-  const [payment] = await ContributionPayment.create([{
-    plan_id: obligation.plan_id,
-    owner_type: obligation.owner_type,
-    owner_id: obligation.owner_id,
-    participant_type: obligation.participant_type,
-    participant_id: obligation.participant_id,
-    obligation_id: obligation._id,
-    amount: outstanding.toString(),
-    currency: obligation.currency || "KES",
-    payment_method: normalizedMethod === "other" ? "other" : normalizedMethod,
-    channel_type: channelType,
-    processing_mode: "manual",
-    payment_provider: normalizedMethod,
-    idempotency_key: key, // <-- FIX 2: PREVENTS 409
-    ...(externalReference?.trim() ? { external_reference: externalReference.trim() } : {}),
+  const result = await paymentService.initiate({
+    amount: Number(outstandingAmount.toString()),
+    currency: "KES",
+    type: "mgr",
+    chamaId,
+    obligationId: obligation._id,
+    planId: plan._id,
+    participantId: membership._id,
+    participantType: "ChamaMembership",
+    actorId: userId,
+    provider: PAYMENT_PROVIDER.CASH,
     reference,
-    status: "pending",
-    paid_at: new Date(),
-    created_by: userId,
-    recorded_by: userId,
-    notes: notes?.trim() || "",
-  }]); // <-- REMOVED { session }
-
-  const equityAccount = await getContributionEquityAccount({ owner_type: obligation.owner_type, owner_id: obligation.owner_id });
-  const assetAccount = await getContributionPaymentAssetAccount({
-    owner_type: obligation.owner_type,
-    owner_id: obligation.owner_id,
-    payment_method: normalizedMethod === "other" ? "cash" : normalizedMethod,
+    displayReference: "CHAMA-MGR",
+    metadata: {
+      productType: "mgr",
+      chamaId,
+      obligationId: obligation._id,
+      payment_method: "cash",
+      recordedBy: userId,
+    },
   });
 
-  if (!equityAccount || !assetAccount) {
-    throw new AppError("Finance accounts for member contributions are not set up for this chama yet.", 400);
-  }
+  // paymentService.initiate() now awaits the finance/obligation-closing
+  // listener (emitAsync), so by the time it resolves the obligation below
+  // already reflects the payment that was just recorded.
+  const updatedObligation = await ContributionObligation.findById(obligation._id);
 
-  const { transaction } = await postFinanceOperation({
-    ownerType: obligation.owner_type,
-    ownerId: obligation.owner_id,
-    userId,
-    operation: "deposit",
-    sourceAccountId: equityAccount._id,
-    destinationAccountId: assetAccount._id,
-    amount: outstanding.toString(),
-    description: `MGR contribution (${normalizedMethod}) — ${payment.reference}`,
-    // REMOVED: session
-  });
-
-  payment.status = "completed";
-  payment.financial_transaction_id = transaction._id;
-  payment.completed_at = new Date();
-  await payment.save(); // <-- REMOVED { session }
-
-  await contributionObligationService.recordPayment(obligation._id, Number(outstanding.toString())); // <-- REMOVED { session }
-  await maybeCreateMgrPayoutForChama(String(chamaId), userId).catch(() => null);
-
-  return { payment, transaction };
-};
-// ---------------------------------------------------------
-// MGR payment / obligation history across all rounds
-// ---------------------------------------------------------
-
-export const getMgrHistory = async ({ chamaId, limit = 200 }) => {
-  const plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chamaId, contribution_type: "merry_go_round" });
-  if (!plan) return { plan: null, payments: [] };
-
-  const payments = await ContributionPayment.find({ plan_id: plan._id })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .populate({
-      path: "participant_id",
-      select: "user_id payout_position",
-      populate: { path: "user_id", select: "name phone" },
-    });
-
-  return { plan, payments };
+  return {
+    payment: result,
+    obligation: updatedObligation,
+    period: { start: obligation.period_start, end: obligation.period_end },
+  };
 };
 
 export const maybeCreateMgrPayoutForChama = async (chamaId, userId) => {
   const plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chamaId, contribution_type: "merry_go_round", status: "active" });
   if (!plan) return null;
-  const { period, members } = await ensureMgrRound(plan);
+  const { period, members } = await ensureMgrRounds(plan);
   if (!members.length) return null;
-  const obligations = await ContributionObligation.find({ plan_id: plan._id, participant_id: { $in: members.map(({ _id }) => _id) }, period_start: period.start, period_end: period.end });
-  if (obligations.length !== members.length || obligations.some(({ status }) => status !== "paid")) return null;
+
+  // Gate the payout on the round being COMPLETELY caught up - not just the
+  // current period. A member sitting on an older overdue obligation still
+  // blocks the round, same as the current one being unpaid.
+  const outstandingCount = await ContributionObligation.countDocuments({
+    plan_id: plan._id,
+    participant_id: { $in: members.map(({ _id }) => _id) },
+    status: { $in: ["pending", "partially_paid", "overdue"] },
+  });
+  if (outstandingCount > 0) return null;
+
   return startPayout({ chamaId, created_by: userId, contributionPlanId: plan._id, amount: Number(plan.amount.toString()) * members.length, roundStart: period.start });
 };

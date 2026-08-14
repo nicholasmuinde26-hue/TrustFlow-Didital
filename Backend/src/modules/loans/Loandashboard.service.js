@@ -100,7 +100,8 @@ export async function getPortfolio({ chama }) {
     interestEarned = round2(interestEarned + interestPaid);
   }
 
-  const awaitingDecision = loans.filter((l) => ['submitted', 'pending_approval'].includes(l.status));
+  const awaitingDecision = loans.filter((l) => ['submitted', 'pending_approval', 'eligible', 'draft'].includes(l.status));
+
 
   return {
     summary: {

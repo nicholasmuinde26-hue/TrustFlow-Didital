@@ -104,7 +104,9 @@ const ledgerEntrySchema =
 
           'Chama',
 
-          'ContributionGroup'
+          'ContributionGroup',
+
+          'Business'
 
         ],
 

@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { CheckCircle2, Plus, XCircle } from "lucide-react";
 import payoutService from "../services/payout.service";
 import Button from "@/shared/components/ui/Button";
 import useWorkspace from "@/app/hooks/useWorkspace";
+
+const STATUS_LABELS = {
+  pending: "Awaiting chairperson approval",
+  approved: "Approved · ready to pay",
+  paid: "Paid",
+  cancelled: "Cancelled",
+};
 
 export default function PayoutsPage() {
   const { workspaceId } = useParams();
@@ -11,8 +18,12 @@ export default function PayoutsPage() {
   const [payouts, setPayouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busyPayoutId, setBusyPayoutId] = useState(null);
   const role = (currentWorkspace?.role || currentWorkspace?.membership?.role || "").toLowerCase();
-  const canSettlePayout = ["treasurer", "admin", "owner"].includes(role);
+  const isTreasurer = ["treasurer", "admin", "owner"].includes(role);
+  const isChairperson = role === "chairperson";
+  const canCancel = isTreasurer || isChairperson;
+  const canSettlePayout = isTreasurer;
 
   async function loadPayouts() {
     try {
@@ -34,9 +45,26 @@ export default function PayoutsPage() {
     }
   }, [workspaceId]);
 
+  async function approvePayout(payoutId) {
+    setBusyPayoutId(payoutId);
+    setError("");
+    try {
+      await payoutService.approve(workspaceId, payoutId);
+      await loadPayouts();
+    } catch (requestError) {
+      setError(
+        requestError?.response?.data?.message || "Unable to approve this payout."
+      );
+    } finally {
+      setBusyPayoutId(null);
+    }
+  }
+
   async function markPaid(payoutId) {
     const external_reference =
       window.prompt("M-Pesa or bank reference (optional):") || undefined;
+    setBusyPayoutId(payoutId);
+    setError("");
     try {
       await payoutService.pay(workspaceId, payoutId, {
         disbursement_method: "mpesa",
@@ -47,6 +75,26 @@ export default function PayoutsPage() {
       setError(
         requestError?.response?.data?.message || "Unable to mark payout as paid."
       );
+    } finally {
+      setBusyPayoutId(null);
+    }
+  }
+
+  async function cancelPayout(payoutId) {
+    if (!window.confirm("Cancel this payout? This cannot be undone.")) return;
+
+    const reason = window.prompt("Reason for cancelling (optional):") || undefined;
+    setBusyPayoutId(payoutId);
+    setError("");
+    try {
+      await payoutService.cancel(workspaceId, payoutId, { reason });
+      await loadPayouts();
+    } catch (requestError) {
+      setError(
+        requestError?.response?.data?.message || "Unable to cancel this payout."
+      );
+    } finally {
+      setBusyPayoutId(null);
     }
   }
 
@@ -56,7 +104,8 @@ export default function PayoutsPage() {
         <div>
           <h1 className="text-3xl font-bold">Payouts</h1>
           <p className="mt-2 text-slate-500">
-            Manage all payouts processed by the Finance Engine.
+            Manage all payouts processed by the Finance Engine. Every payout needs
+            chairperson approval before the treasurer can mark it paid.
           </p>
         </div>
 
@@ -79,28 +128,66 @@ export default function PayoutsPage() {
         <p className="text-slate-500">Loading payouts...</p>
       ) : payouts.length ? (
         <div className="space-y-3">
-          {payouts.map((payout) => (
-            <div
-              key={payout._id}
-              className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 shadow-sm"
-            >
-              <div>
-                <p className="text-lg font-bold text-slate-900">
-                  KES {Number(payout.amount || 0).toLocaleString()}
-                </p>
-                <p className="text-sm text-slate-500">
-                  {payout.member_id?.user_id?.name || "Member"} ·{" "}
-                  <span className="capitalize font-medium text-slate-700">
-                    {payout.status}
-                  </span>
-                </p>
-              </div>
+          {payouts.map((payout) => {
+            const busy = busyPayoutId === payout._id;
+            const statusColor = {
+              pending: "text-amber-600",
+              approved: "text-blue-600",
+              paid: "text-emerald-600",
+              cancelled: "text-slate-400",
+            }[payout.status] || "text-slate-700";
 
-              {canSettlePayout && payout.status === "pending" && (
-                <Button onClick={() => markPaid(payout._id)}>Mark paid</Button>
-              )}
-            </div>
-          ))}
+            return (
+              <div
+                key={payout._id}
+                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 shadow-sm"
+              >
+                <div>
+                  <p className="text-lg font-bold text-slate-900">
+                    KES {Number(payout.amount || 0).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {payout.member_id?.user_id?.name || "Member"} ·{" "}
+                    <span className={`font-medium ${statusColor}`}>
+                      {STATUS_LABELS[payout.status] || payout.status}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {isChairperson && payout.status === "pending" && (
+                    <Button
+                      onClick={() => approvePayout(payout._id)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-2"
+                    >
+                      <CheckCircle2 size={16} />
+                      {busy ? "Approving..." : "Approve"}
+                    </Button>
+                  )}
+
+                  {canSettlePayout && payout.status === "approved" && (
+                    <Button onClick={() => markPaid(payout._id)} disabled={busy}>
+                      {busy ? "Recording..." : "Mark paid"}
+                    </Button>
+                  )}
+
+                  {canCancel &&
+                    ["pending", "approved"].includes(payout.status) && (
+                      <button
+                        type="button"
+                        onClick={() => cancelPayout(payout._id)}
+                        disabled={busy}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
+                      >
+                        <XCircle size={16} />
+                        Cancel
+                      </button>
+                    )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-2xl border bg-white p-10 text-center shadow-sm">

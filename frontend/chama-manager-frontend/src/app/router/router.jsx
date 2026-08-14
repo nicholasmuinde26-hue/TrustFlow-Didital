@@ -95,6 +95,7 @@ import MemberDashboardPage from "@/modules/chama/pages/MemberDashboardPage";
 import ContributionsPage from "@/modules/contribution-group/pages/ContributionsPage";
 import SchedulePage from "@/modules/contribution-group/pages/SchedulePage";
 import ActivityPage from "@/modules/contribution-group/pages/ActivityPage";
+import UpdatesPage from "@/modules/contribution-group/pages/UpdatesPage";
 
 // ======================================================
 // Finance Engine
@@ -263,6 +264,10 @@ const router = createBrowserRouter([
           {
             path: "activity",
             element: <ActivityPage />,
+          },
+          {
+            path: "updates",
+            element: <UpdatesPage />,
           },
 
           // ----------------------------------------------

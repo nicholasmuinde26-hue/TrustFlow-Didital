@@ -39,7 +39,7 @@ export function useBusinessSales(workspaceId, params = {}) {
   });
 
   return {
-    sales: salesQuery.data || [],
+    sales: Array.isArray(salesQuery.data) ? salesQuery.data : [],
     isLoading: salesQuery.isLoading,
     isError: salesQuery.isError,
     refetch: salesQuery.refetch,
@@ -67,7 +67,7 @@ export function useBusinessExpenses(workspaceId, params = {}) {
   });
 
   return {
-    expenses: expensesQuery.data || [],
+    expenses: Array.isArray(expensesQuery.data) ? expensesQuery.data : [],
     isLoading: expensesQuery.isLoading,
     refetch: expensesQuery.refetch,
     createExpense: createExpenseMutation.mutateAsync,
@@ -93,7 +93,7 @@ export function useBusinessInventory(workspaceId, params = {}) {
   });
 
   return {
-    inventory: inventoryQuery.data || [],
+    inventory: Array.isArray(inventoryQuery.data) ? inventoryQuery.data : [],
     isLoading: inventoryQuery.isLoading,
     refetch: inventoryQuery.refetch,
     addInventoryItem: addInventoryMutation.mutateAsync,
@@ -119,7 +119,7 @@ export function useBusinessCustomers(workspaceId, params = {}) {
   });
 
   return {
-    customers: customersQuery.data || [],
+    customers: Array.isArray(customersQuery.data) ? customersQuery.data : [],
     isLoading: customersQuery.isLoading,
     refetch: customersQuery.refetch,
     createCustomer: createCustomerMutation.mutateAsync,
@@ -145,7 +145,7 @@ export function useBusinessSuppliers(workspaceId, params = {}) {
   });
 
   return {
-    suppliers: suppliersQuery.data || [],
+    suppliers: Array.isArray(suppliersQuery.data) ? suppliersQuery.data : [],
     isLoading: suppliersQuery.isLoading,
     refetch: suppliersQuery.refetch,
     createSupplier: createSupplierMutation.mutateAsync,
@@ -162,11 +162,12 @@ export function useBusinessAccounts(workspaceId) {
   });
 
   return {
-    accounts: accountsQuery.data || [],
+    accounts: Array.isArray(accountsQuery.data) ? accountsQuery.data : [],
     isLoading: accountsQuery.isLoading,
     refetch: accountsQuery.refetch,
   };
 }
+
 
 // Settings Hooks
 export function useBusinessSettings(workspaceId) {
@@ -192,3 +193,17 @@ export function useBusinessSettings(workspaceId) {
     isUpdating: updateMutation.isPending,
   };
 }
+
+// Business M-Pesa STK Push Collection Hook
+export function useInitiateBusinessStkPush() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ workspaceId, ...payload }) => businessService.initiateMpesaStkPush(workspaceId, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["business", "sales", variables.workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["business", "summary", variables.workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["business", "accounts", variables.workspaceId] });
+    },
+  });
+}

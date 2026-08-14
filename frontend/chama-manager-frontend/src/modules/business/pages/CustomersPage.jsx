@@ -6,6 +6,7 @@ import { useBusinessCustomers } from "../hooks/useBusiness";
 export default function CustomersPage() {
   const { workspaceId } = useWorkspace();
   const { customers, isLoading, isRefetching, refetch } = useBusinessCustomers(workspaceId);
+  const customerList = Array.isArray(customers) ? customers : [];
 
   if (isLoading) {
     return (
@@ -37,37 +38,50 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {customers.length === 0 ? (
+      {customerList.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
           <Users className="mx-auto h-10 w-10 text-slate-400 mb-2 opacity-50" />
-          <p className="text-sm font-medium">No customers found.</p>
-          <p className="text-xs text-slate-400 mt-1">Customer profiles and order histories will show up here.</p>
+          <p className="text-sm font-medium">No customers recorded yet.</p>
+          <p className="text-xs text-slate-400 mt-1">Customers paying via business till/accounts 3+ times will automatically appear here.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {customers.map((c) => {
+          {customerList.map((c) => {
+
             const id = c._id || c.id;
             const name = c.name || "Unnamed Customer";
             const phone = c.phone || c.phoneNumber || "N/A";
-            const totalSpent = Number(c.totalSpent || c.amountSpent || 0);
+            const email = c.email || null;
+            const txCount = c.transaction_count || c.orderCount || 0;
+            const totalSpent = Number(c.total_spent || c.totalSpent || c.amountSpent || 0);
+            const isVerified3Plus = txCount >= 3 || c.is_auto_registered;
 
             return (
               <div
                 key={id}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900"
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3"
               >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
-                    <Users size={18} />
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
+                      <Users size={18} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-slate-900 dark:text-white">{name}</p>
+                      <p className="text-xs text-slate-400 font-mono">{phone}</p>
+                      {email && <p className="text-[11px] text-slate-400">{email}</p>}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-sm text-slate-900 dark:text-white">{name}</p>
-                    <p className="text-xs text-slate-400 font-mono">{phone}</p>
-                  </div>
+                  {isVerified3Plus && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      Verified (3+ Purchases)
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-slate-400">Total Spent:</span>
-                  <span className="font-bold font-mono text-slate-900 dark:text-white">
+
+                <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400">Purchases: <strong className="text-slate-900 dark:text-white">{txCount}</strong></span>
+                  <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
                     KES {totalSpent.toLocaleString()}
                   </span>
                 </div>
@@ -78,4 +92,4 @@ export default function CustomersPage() {
       )}
     </div>
   );
-}
+}

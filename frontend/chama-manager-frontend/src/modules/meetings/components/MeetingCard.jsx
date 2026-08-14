@@ -35,16 +35,26 @@ export default function MeetingCard({ meeting, canManage, onDelete }) {
           {formatWhen(meeting.startsAt)}
         </p>
 
-        {meeting.link && (
+        {meeting.agenda && (
+          <div className="mt-2 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 font-medium">
+            <span className="font-bold text-violet-700 dark:text-violet-300">Agenda: </span>
+            {meeting.agenda}
+          </div>
+        )}
+
+        {meeting.link ? (
           <a
             href={meeting.link}
             target="_blank"
             rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-violet-700 bg-violet-50 px-3 py-1.5 rounded-xl hover:underline dark:bg-violet-950 dark:text-violet-300"
           >
-            <Link2 size={14} />
-            Join meeting
+            <Link2 size={14} /> Join Virtual Meeting (Zoom/Google Meet)
           </a>
+        ) : (
+          <p className="mt-2 text-xs font-medium text-slate-500">
+            📍 Physical Venue: {meeting.location || "Community Hall / Venue"}
+          </p>
         )}
       </div>
 

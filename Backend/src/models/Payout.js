@@ -21,6 +21,9 @@ import mongoose from 'mongoose';
 //       ├── DR 3000 Member Contributions
 //       └── CR 2000 Payouts Payable
 //
+//       │  chairperson approves
+//       │  status: approved
+//       ▼
 //       │  treasurer confirms disbursement
 //       │  status: paid
 //       ▼
@@ -140,12 +143,20 @@ const payoutSchema = new mongoose.Schema(
     // ========================================
     // STATUS
     // ========================================
+    //
+    // pending    → created, awaiting Chairperson approval
+    // approved   → Chairperson signed off; Treasurer may now disburse
+    // paid       → Treasurer has disbursed and confirmed it
+    // cancelled  → withdrawn before disbursement (from pending OR approved)
+    //
+    // ========================================
 
     status: {
       type: String,
 
       enum: [
         'pending',
+        'approved',
         'paid',
         'cancelled'
       ],
@@ -153,6 +164,31 @@ const payoutSchema = new mongoose.Schema(
       default: 'pending',
 
       index: true
+    },
+
+
+    // ========================================
+    // APPROVAL
+    // ========================================
+    //
+    // The Chairperson must approve a payout
+    // before the Treasurer can mark it paid.
+    // References ChamaMembership (not User),
+    // same reasoning as member_id above —
+    // approver identity is scoped to the role
+    // held in THIS Chama.
+    //
+    // ========================================
+
+    approved_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ChamaMembership',
+      default: null
+    },
+
+    approved_at: {
+      type: Date,
+      default: null
     },
 
 

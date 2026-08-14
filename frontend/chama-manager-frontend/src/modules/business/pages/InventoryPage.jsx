@@ -7,6 +7,7 @@ import Spinner from "../../../shared/components/ui/Spinner";
 export default function InventoryPage() {
   const { workspaceId } = useWorkspace();
   const { inventory, isLoading, refetch } = useBusinessInventory(workspaceId);
+  const inventoryList = Array.isArray(inventory) ? inventory : [];
 
   if (isLoading) {
     return (
@@ -25,12 +26,12 @@ export default function InventoryPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {inventory.length === 0 ? (
+        {inventoryList.length === 0 ? (
           <div className="col-span-full rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500">
             No inventory items found.
           </div>
         ) : (
-          inventory.map((item) => (
+          inventoryList.map((item) => (
             <div
               key={item._id || item.id}
               className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800"
@@ -56,4 +57,4 @@ export default function InventoryPage() {
       </div>
     </div>
   );
-}
+}

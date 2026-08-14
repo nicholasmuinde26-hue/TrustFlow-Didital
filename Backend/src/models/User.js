@@ -138,6 +138,14 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
+    // Which channel the currently pending OTP was sent through
+    // ('sms' | 'email' | 'whatsapp') - cleared once verified.
+    otpChannel: {
+      type: String,
+      enum: ['sms', 'email', 'whatsapp'],
+      select: false,
+    },
+
     // ========================================
     // REFRESH TOKEN (FOR 7-DAY ROTATION & REVOCATION)
     // ========================================
@@ -171,6 +179,7 @@ userSchema.set('toJSON', {
     delete ret.password;
     delete ret.otpCode;
     delete ret.otpExpiresAt;
+    delete ret.otpChannel;
     delete ret.refreshToken;
     delete ret.__v;
 

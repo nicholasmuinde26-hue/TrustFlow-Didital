@@ -37,9 +37,17 @@ const financeApi = {
     );
   },
 
+  reports(workspaceId, params = {}) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/reports`,
+      { params }
+    );
+  },
+
   createOperation(workspaceId, payload) {
     return api.post(`/workspaces/${workspaceId}/finance/operations`, payload);
   },
+
 
   // ========================================
   // FINANCE OPERATIONS

@@ -203,9 +203,14 @@ const financeService = {
     return safeData(res).obligations || [];
   },
 
-  async initiateMpesaStkPush(payload) {
-    const res = await financeApi.initiateMpesaStkPush(payload);
-    return safeData(res);
+  async getReport(workspaceId, reportType, mode = "CHAMA", asAtDate) {
+    try {
+      const res = await financeApi.reports(workspaceId, { reportType, mode, asAtDate });
+      return safeData(res);
+    } catch (err) {
+      console.error("getReport failed:", err);
+      return {};
+    }
   },
 
   // Export helpers in case you need them in components
@@ -213,4 +218,4 @@ const financeService = {
   formatCurrency,
 };
 
-export default financeService;
+export default financeService;

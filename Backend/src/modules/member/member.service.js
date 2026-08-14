@@ -1841,3 +1841,351 @@ export const updateMemberProfile = async ({
   return targetMembership;
 
 };
+
+
+// ========================================
+// REORDER PAYOUT POSITIONS
+// (MGR ROTATION ARRANGEMENT)
+// ========================================
+//
+// This is how a real Chama decides "who
+// receives the merry-go-round payout, and
+// in what order" — the Treasurer or
+// Chairperson lays out the full rotation
+// once, and every later payout follows it
+// automatically.
+//
+// The submitted `order` is the complete
+// list of active ChamaMembership IDs,
+// arranged from first payout to last.
+// order[0] becomes payout_position 1,
+// order[1] becomes payout_position 2, etc.
+//
+// Nothing else needs to change to make the
+// rotation "live": payout.service.js's
+// startPayout() already reads
+// payout_position ascending to pick the
+// next recipient, and already wraps back to
+// position 1 once the round completes.
+// markPayoutPaid() already posts the ledger
+// settlement automatically. Setting the
+// order here is the one missing piece that
+// lets the whole rotation run.
+//
+// ========================================
+
+export const reorderPayoutPositions = async ({
+  chamaId,
+  actorUserId,
+  order
+}) => {
+
+  // --------------------------------------
+  // 1. Validate IDs
+  // --------------------------------------
+
+  validateObjectId(
+    chamaId,
+    'Chama ID'
+  );
+
+  validateObjectId(
+    actorUserId,
+    'actor user ID'
+  );
+
+  if (
+    !Array.isArray(order) ||
+    order.length === 0
+  ) {
+
+    throw new AppError(
+      'Order must be a non-empty array of member IDs',
+      400
+    );
+
+  }
+
+  order.forEach(
+    (memberId, index) => {
+
+      validateObjectId(
+        memberId,
+        `member ID at position ${index + 1}`
+      );
+
+    }
+  );
+
+  const submittedIds =
+    order.map(String);
+
+  const uniqueSubmittedIds =
+    new Set(submittedIds);
+
+  if (
+    uniqueSubmittedIds.size !==
+    order.length
+  ) {
+
+    throw new AppError(
+      'Order cannot contain duplicate members',
+      400
+    );
+
+  }
+
+
+  // --------------------------------------
+  // 2. Verify Treasurer or Chairperson
+  // --------------------------------------
+
+  await requireChamaRole({
+
+    chamaId,
+
+    actorUserId,
+
+    requiredRole:
+      ['treasurer', 'chairperson']
+
+  });
+
+
+  // --------------------------------------
+  // 3. Load Active Memberships
+  // --------------------------------------
+
+  const activeMemberships =
+    await ChamaMembership.find({
+
+      chama_id:
+        chamaId,
+
+      status:
+        'active'
+
+    });
+
+  if (!activeMemberships.length) {
+
+    throw new AppError(
+      'This Chama has no active members to arrange',
+      400
+    );
+
+  }
+
+  const activeIds =
+    new Set(
+      activeMemberships.map(
+        (membership) =>
+          membership._id.toString()
+      )
+    );
+
+
+  // --------------------------------------
+  // 4. Cross-Check Order Against
+  //    Active Membership
+  // --------------------------------------
+  //
+  // Every active member must appear exactly
+  // once, and nothing else may appear —
+  // otherwise a member could be silently
+  // dropped from the rotation, or an
+  // inactive/foreign ID could be smuggled
+  // into payout_position.
+  //
+  // --------------------------------------
+
+  const missingMembers =
+    activeMemberships.filter(
+      (membership) =>
+        !uniqueSubmittedIds.has(
+          membership._id.toString()
+        )
+    );
+
+  if (missingMembers.length > 0) {
+
+    throw new AppError(
+      'Order must include every active member exactly once',
+      400
+    );
+
+  }
+
+  const unknownIds =
+    submittedIds.filter(
+      (id) => !activeIds.has(id)
+    );
+
+  if (unknownIds.length > 0) {
+
+    throw new AppError(
+      'Order contains a member who is not an active member of this Chama',
+      400
+    );
+
+  }
+
+
+  // --------------------------------------
+  // 5. Block Reorder Mid-Round
+  // --------------------------------------
+  //
+  // Changing who's "next" while a payout is
+  // already pending disbursement would let
+  // the arrangement disagree with a payout
+  // record that already names a recipient
+  // and amount. Settle or cancel it first.
+  //
+  // --------------------------------------
+
+  const pendingPayout =
+    await Payout.findOne({
+
+      chama_id:
+        chamaId,
+
+      status:
+        'pending'
+
+    });
+
+  if (pendingPayout) {
+
+    throw new AppError(
+      'Cannot rearrange the payout order while a payout is pending. Settle or cancel it first.',
+      409
+    );
+
+  }
+
+
+  // --------------------------------------
+  // 6. Capture BEFORE State
+  // --------------------------------------
+
+  const before =
+    activeMemberships
+
+      .map((membership) => ({
+
+        member_id:
+          membership._id,
+
+        payout_position:
+          membership.payout_position
+
+      }))
+
+      .sort(
+        (a, b) =>
+          (a.payout_position ?? Number.MAX_SAFE_INTEGER) -
+          (b.payout_position ?? Number.MAX_SAFE_INTEGER)
+      );
+
+
+  // --------------------------------------
+  // 7. Apply New Positions
+  // --------------------------------------
+
+  const membershipById =
+    new Map(
+      activeMemberships.map(
+        (membership) =>
+          [membership._id.toString(), membership]
+      )
+    );
+
+  await Promise.all(
+    order.map(
+      (memberId, index) => {
+
+        const membership =
+          membershipById.get(
+            String(memberId)
+          );
+
+        membership.payout_position =
+          index + 1;
+
+        return membership.save();
+
+      }
+    )
+  );
+
+
+  // --------------------------------------
+  // 8. Create Audit Log
+  // --------------------------------------
+
+  await createAuditLog({
+
+    actorUserId,
+
+    chamaId,
+
+    action:
+      AUDIT_ACTIONS.ROTATION_UPDATED,
+
+    resourceType:
+      'Chama',
+
+    resourceId:
+      chamaId,
+
+    before: {
+      payout_order: before
+    },
+
+    after: {
+
+      payout_order:
+        order.map(
+          (memberId, index) => ({
+
+            member_id:
+              memberId,
+
+            payout_position:
+              index + 1
+
+          })
+        )
+
+    }
+
+  });
+
+
+  // --------------------------------------
+  // 9. Return Updated, Ordered Memberships
+  // --------------------------------------
+
+  const updatedMemberships =
+    await ChamaMembership.find({
+
+      chama_id:
+        chamaId,
+
+      status:
+        'active'
+
+    })
+
+    .sort({
+      payout_position: 1
+    })
+
+    .populate(
+      'user_id',
+      'name phone email id_number avatar_url status'
+    );
+
+  return updatedMemberships;
+
+};

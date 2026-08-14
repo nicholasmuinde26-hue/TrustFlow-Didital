@@ -6,6 +6,7 @@ import { useBusinessSuppliers } from "../hooks/useBusiness";
 export default function SuppliersPage() {
   const { workspaceId } = useWorkspace();
   const { suppliers, isLoading, isRefetching, refetch } = useBusinessSuppliers(workspaceId);
+  const supplierList = Array.isArray(suppliers) ? suppliers : [];
 
   if (isLoading) {
     return (
@@ -37,35 +38,53 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      {suppliers.length === 0 ? (
+      {supplierList.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
           <Truck className="mx-auto h-10 w-10 text-slate-400 mb-2 opacity-50" />
           <p className="text-sm font-medium">No suppliers recorded yet.</p>
-          <p className="text-xs text-slate-400 mt-1">Vendor profiles will appear here once added.</p>
+          <p className="text-xs text-slate-400 mt-1">Vendors receiving payouts 3+ times will automatically appear here.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {suppliers.map((s) => {
+          {supplierList.map((s) => {
+
             const id = s._id || s.id;
             const name = s.name || "Unnamed Supplier";
-            const contact = s.contact || s.contactPerson || "N/A";
+            const contact = s.contact_person || s.contact || "N/A";
             const phone = s.phone || s.phoneNumber || "N/A";
+            const payoutCount = s.payout_count || 0;
+            const totalPaidOut = Number(s.total_paid_out || s.totalPaidOut || 0);
+            const isVerified3Plus = payoutCount >= 3 || s.is_auto_registered;
 
             return (
               <div
                 key={id}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900"
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3"
               >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    <Truck size={18} />
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      <Truck size={18} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-slate-900 dark:text-white">{name}</p>
+                      <p className="text-xs text-slate-400 font-mono">
+                        {contact !== "N/A" ? `${contact} • ` : ""}{phone}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-sm text-slate-900 dark:text-white">{name}</p>
-                    <p className="text-xs text-slate-400">
-                      {contact} • {phone}
-                    </p>
-                  </div>
+                  {isVerified3Plus && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                      Verified (3+ Payouts)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500 dark:text-slate-400">Total Payouts: <strong className="text-slate-900 dark:text-white">{payoutCount}</strong></span>
+                  <span className="font-bold font-mono text-slate-900 dark:text-white">
+                    KES {totalPaidOut.toLocaleString()}
+                  </span>
                 </div>
               </div>
             );
@@ -74,4 +93,4 @@ export default function SuppliersPage() {
       )}
     </div>
   );
-}
+}

@@ -37,6 +37,9 @@ import chatRoutes from "./modules/chat/chat.routes.js";
 // Meetings
 import meetingRoutes from "./modules/meetings/meetings.routes.js";
 
+// Announcements
+import announcementRoutes from "./modules/announcements/announcement.routes.js";
+
 // Audit
 import auditRoutes from "./modules/audit/audit.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
@@ -218,6 +221,11 @@ app.use(
 app.use(
     "/api/v1/workspaces",
     meetingRoutes
+);
+
+app.use(
+    "/api/v1/workspaces",
+    announcementRoutes
 );
 
 // ============================================================================

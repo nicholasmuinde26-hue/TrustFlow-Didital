@@ -51,6 +51,12 @@ const authService = {
     return data.data || data;
   },
 
+  // Which channels (sms/email/whatsapp) can this phone number receive an OTP on
+  async getOtpChannels(phone) {
+    const { data } = await authApi.getOtpChannels(phone);
+    return data.data || data;
+  },
+
   // Rotate Access Token using Refresh Token
   async refresh(refreshToken) {
     const { data } = await authApi.refresh(refreshToken);

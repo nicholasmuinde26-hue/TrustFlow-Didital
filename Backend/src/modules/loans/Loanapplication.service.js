@@ -84,19 +84,17 @@ export async function applyForLoan({ chama, membership, userId, data }) {
     return loan;
   }
 
-  loan.status = LOAN_STATUS.SUBMITTED;
+  loan.status = LOAN_STATUS.PENDING_APPROVAL;
+  loan.submitted_at = new Date();
+  if (!loan.reference) loan.reference = loanReference();
+  loan.required_approval_roles = resolveApprovalRoles(policy, loan.amount);
 
   if (Array.isArray(data.guarantors) && data.guarantors.length) {
-    if (Number(policy.min_guarantors_required || 0) > data.guarantors.length) {
-      throw new AppError(`This Chama requires at least ${policy.min_guarantors_required} guarantor(s) for this loan`, 400);
-    }
-    await requestGuarantors({ chama, policy, loan, guarantors: data.guarantors });
-  } else if (Number(policy.min_guarantors_required || 0) > 0) {
-    throw new AppError(`This Chama requires at least ${policy.min_guarantors_required} guarantor(s) for this loan`, 400);
+    await requestGuarantors({ chama, policy, loan, guarantors: data.guarantors }).catch(() => null);
   }
 
-  await maybeAutoSubmit(loan, policy);
   await loan.save();
+
 
   await createAuditLog({
     actorUserId: userId,

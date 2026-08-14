@@ -50,7 +50,8 @@ import mongoose from 'mongoose';
 
 const OWNER_TYPES = [
   'Chama',
-  'ContributionGroup'
+  'ContributionGroup',
+  'Business'
 ];
 
 
@@ -70,8 +71,12 @@ const TRANSACTION_TYPES = [
   'transfer',
   'fee',
   'penalty',
-  'adjustment'
+  'adjustment',
+  'sale',
+  'expense',
+  'customer_payout'
 ];
+
 
 
 const TRANSACTION_STATUSES = [

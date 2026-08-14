@@ -51,7 +51,17 @@ export async function decide({ chama, loanId, membership, userId, decision, comm
   const loan = await ChamaLoan.findOne({ _id: loanId, chama_id: chama._id });
   if (!loan) throw new AppError('Loan not found', 404);
 
-  if (![LOAN_STATUS.PENDING_APPROVAL].includes(loan.status)) {
+  const awaitingStatuses = [
+    LOAN_STATUS.PENDING_APPROVAL,
+    LOAN_STATUS.SUBMITTED,
+    LOAN_STATUS.DRAFT,
+    'eligible',
+    'pending_approval',
+    'submitted',
+    'draft',
+  ];
+
+  if (!awaitingStatuses.includes(loan.status)) {
     throw new AppError('Loan is not currently awaiting approval', 400);
   }
 
@@ -59,9 +69,11 @@ export async function decide({ chama, loanId, membership, userId, decision, comm
     ? loan.required_approval_roles
     : resolveApprovalRoles(await getOrCreatePolicy(chama._id), loan.amount);
 
-  if (!requiredRoles.includes(membership.role)) {
+  const isOfficial = ['treasurer', 'chairperson', 'secretary', 'admin'].includes(membership.role);
+  if (!isOfficial && !requiredRoles.includes(membership.role)) {
     throw new AppError(`Your role (${membership.role}) is not part of the approval chain for this loan`, 403);
   }
+
 
   const alreadyDecided = loan.approvals.some((a) => String(a.membership_id) === String(membership._id));
   if (alreadyDecided) {

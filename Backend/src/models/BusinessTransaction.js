@@ -12,10 +12,20 @@ const businessTransactionSchema = new mongoose.Schema({
   customer_name: { type: String, default: null, trim: true },
   customer_phone: { type: String, default: null, trim: true },
   external_reference: { type: String, default: null, trim: true, index: true },
-  checkout_request_id: { type: String, default: null, sparse: true, unique: true },
-  mpesa_receipt_number: { type: String, default: null, sparse: true, unique: true },
+  checkout_request_id: { type: String, sparse: true, unique: true },
+  mpesa_receipt_number: { type: String, sparse: true, unique: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 }, { timestamps: true });
+
+// Pre-save hook to ensure null or empty values are converted to undefined, preventing sparse index duplicate key errors in MongoDB
+businessTransactionSchema.pre("save", function () {
+  if (this.checkout_request_id === null || this.checkout_request_id === "") {
+    this.checkout_request_id = undefined;
+  }
+  if (this.mpesa_receipt_number === null || this.mpesa_receipt_number === "") {
+    this.mpesa_receipt_number = undefined;
+  }
+});
 
 businessTransactionSchema.index({ business_id: 1, createdAt: -1 });
 businessTransactionSchema.set("toJSON", { transform: (_doc, value) => {
@@ -23,4 +33,12 @@ businessTransactionSchema.set("toJSON", { transform: (_doc, value) => {
   return value;
 } });
 
-export default mongoose.models.BusinessTransaction || mongoose.model("BusinessTransaction", businessTransactionSchema);
+const BusinessTransaction = mongoose.models.BusinessTransaction || mongoose.model("BusinessTransaction", businessTransactionSchema);
+
+// Safely drop index if legacy MongoDB collection has conflicting non-sparse null index entries
+if (BusinessTransaction.collection) {
+  BusinessTransaction.collection.dropIndex("mpesa_receipt_number_1").catch(() => {});
+  BusinessTransaction.collection.dropIndex("checkout_request_id_1").catch(() => {});
+}
+
+export default BusinessTransaction;

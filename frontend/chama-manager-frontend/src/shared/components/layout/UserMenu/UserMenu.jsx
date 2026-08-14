@@ -40,7 +40,7 @@ export default function UserMenu() {
 
   const name = user?.name || "Account";
   const email = user?.email || "";
-  const photo = user?.photoURL || user?.avatar || null; // check both common fields
+  const photo = user?.avatar_url || user?.photoURL || user?.avatar || null; // check both common fields
 
   const initials = name
    .split(" ")

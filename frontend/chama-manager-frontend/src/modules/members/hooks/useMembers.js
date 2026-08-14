@@ -93,3 +93,18 @@ export function useTransferTreasurer(type, workspaceId) {
     },
   });
 }
+
+// Arranges the Merry-Go-Round payout rotation. `order` is the full list of
+// active member IDs, first payout to last — position 1 goes to order[0].
+export function useReorderPayoutPositions(type, workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (order) =>
+      membersService.reorderPayoutPositions(type, workspaceId, order),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membersKey(workspaceId) });
+    },
+  });
+}

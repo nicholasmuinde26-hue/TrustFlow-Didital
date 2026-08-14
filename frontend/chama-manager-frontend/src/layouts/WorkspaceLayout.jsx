@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useParams } from "react-router-dom";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
@@ -6,12 +6,14 @@ import { getWorkspaceNavigation } from "@/modules/workspaces/config/workspaceNav
 
 import Sidebar from "@/shared/components/layout/sidebar";
 import Topbar from "@/shared/components/layout/Topbar";
+import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import Spinner from "@/shared/components/ui/Spinner";
 import ContributionGroupLayout from "./ContributionGroupLayout";
 
 export default function WorkspaceLayout() {
   const { workspaceId } = useParams();
   const { workspaces, activeWorkspace, loading, selectWorkspace } = useWorkspace();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const matchesId = (w) => (w?.id ?? w?._id) === workspaceId;
 
@@ -53,18 +55,21 @@ export default function WorkspaceLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      {/* Sidebar */}
-      <aside className="h-screen flex-shrink-0 overflow-y-auto">
-        <Sidebar sections={sections} />
-      </aside>
+      {/* Sidebar Overlay (Mobile) & Persistent Sidebar (Desktop) */}
+      <Sidebar
+        sections={sections}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* Main Area */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="sticky top-0 z-30">
-          <Topbar />
+          <Topbar onMenuToggle={() => setSidebarOpen(true)} />
         </div>
 
         <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+          <Breadcrumbs />
           <Outlet />
         </main>
       </div>

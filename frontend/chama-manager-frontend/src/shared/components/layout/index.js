@@ -1,5 +1,6 @@
 export { default as Sidebar } from "./sidebar";
 export { default as Topbar } from "./Topbar";
+export { default as Breadcrumbs } from "./Breadcrumbs";
 
 export { default as Logo } from "./Logo";
 

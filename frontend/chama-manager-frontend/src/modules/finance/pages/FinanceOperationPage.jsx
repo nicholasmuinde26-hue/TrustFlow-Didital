@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import financeService from "../services/finance.service";
 import Button from "@/shared/components/ui/Button";
+import { X } from "lucide-react";
 
 const labels = { deposit: "Record Deposit", withdrawal: "Record Withdrawal", transfer: "Record Transfer" };
 
@@ -68,10 +69,41 @@ export default function FinanceOperationPage({ operation }) {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 rounded-2xl border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-      <div>
-        <h1 className="text-2xl font-black text-slate-900 dark:text-white">{labels[operation]}</h1>
-        <p className="mt-1 text-sm text-slate-500">Creates a balanced journal entry and updates account balances immediately.</p>
+    <div className="mx-auto max-w-2xl space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">{labels[operation]}</h1>
+          <p className="mt-1 text-xs text-slate-500">Creates a balanced journal entry and updates account balances immediately.</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="
+            flex
+            h-10
+            w-10
+            items-center
+            justify-center
+            rounded-xl
+            border
+            border-slate-200
+            bg-white
+            text-slate-500
+            hover:bg-slate-50
+            hover:text-slate-700
+            transition
+            dark:border-slate-700
+            dark:bg-slate-800
+            dark:text-slate-400
+            dark:hover:bg-slate-700
+            dark:hover:text-slate-200
+          "
+          aria-label="Close"
+          title="Close form"
+        >
+          <X size={20} />
+        </button>
       </div>
       <form onSubmit={submit} className="space-y-4">
         <AccountSelect

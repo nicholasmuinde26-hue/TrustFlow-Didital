@@ -48,6 +48,19 @@ export default function ChatPage() {
       </div>
 
       <div className={`flex flex-1 flex-col overflow-y-auto p-5 ${isContributionGroup ? "bg-[radial-gradient(circle_at_top_right,_#f5f3ff,_transparent_35%),linear-gradient(#fdfcff,#f8f7ff)] dark:bg-slate-950" : "bg-slate-50 dark:bg-slate-950"}`}>
+        {/* Pinned Official Announcement Banner */}
+        <div className="mb-4 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 p-3.5 text-white shadow-md flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-black text-amber-950 uppercase tracking-wide shrink-0">
+              📌 Pinned Announcement
+            </span>
+            <p className="font-semibold text-white truncate">
+              Reminder: Contributions due on 5th. Auto M-Pesa STK prompts scheduled 3 days prior.
+            </p>
+          </div>
+          <span className="text-[10px] font-mono text-violet-200 shrink-0 hidden sm:inline">Official</span>
+        </div>
+
         {isContributionGroup && <div className="mx-auto mb-5 flex w-fit items-center gap-2 rounded-full bg-violet-100/80 px-3 py-1.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"><Sparkles size={13} /> Keep messages kind, useful, and on-topic.</div>}
         <div className="mt-auto space-y-3">
         {isLoading && (

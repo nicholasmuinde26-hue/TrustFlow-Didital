@@ -76,6 +76,20 @@ const membersApi = {
 
     throw new Error("Treasurer transfer is only supported for Chamas");
   },
+
+  // Chama-only: arranges the Merry-Go-Round rotation — who receives the
+  // payout, and in what order. `order` is the full list of active
+  // ChamaMembership IDs, first payout to last. No Contribution Group
+  // equivalent exists on the backend.
+  reorderPayoutPositions(type, workspaceId, order) {
+    if (type === "chama") {
+      return api.patch(`/chamas/${workspaceId}/members/payout-order`, {
+        order,
+      });
+    }
+
+    throw new Error("Payout order is only supported for Chamas");
+  },
 };
 
 export default membersApi;

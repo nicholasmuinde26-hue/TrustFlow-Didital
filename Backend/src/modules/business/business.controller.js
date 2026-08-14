@@ -38,3 +38,51 @@ export const customerPayout = async (request, response, next) => {
     response.status(202).json({ success: true, message: "M-Pesa B2C payout submitted", data: { transaction: result.transaction, ...result.payout } });
   } catch (error) { sendError(error, response, next); }
 };
+
+export const initiateStkPush = async (request, response, next) => {
+  try {
+    const result = await businessService.initiateStkPush(request.params.businessId, request.user, request.body);
+    response.status(202).json({ success: true, message: "M-Pesa STK Push sent", data: { transaction: result.transaction, ...result.stk } });
+  } catch (error) { sendError(error, response, next); }
+};
+
+export const queryStkStatus = async (request, response, next) => {
+  try {
+    const result = await businessService.checkStkStatus(request.params.businessId, request.params.transactionId, request.user);
+    response.json({ success: true, data: result });
+  } catch (error) { sendError(error, response, next); }
+};
+
+export const forceCompleteTransaction = async (request, response, next) => {
+  try {
+    const result = await businessService.forceCompleteTransaction(request.params.businessId, request.params.transactionId, request.user);
+    response.json({ success: true, data: result });
+  } catch (error) { sendError(error, response, next); }
+};
+
+
+export const listCustomers = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listCustomers(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const createCustomer = async (request, response, next) => {
+  try { response.status(201).json({ success: true, data: await businessService.createCustomer(request.params.businessId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const listSuppliers = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listSuppliers(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const createSupplier = async (request, response, next) => {
+  try { response.status(201).json({ success: true, data: await businessService.createSupplier(request.params.businessId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const getBusinessAccounts = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.getBusinessAccounts(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   Activity,
@@ -7,81 +8,144 @@ import {
   MessageCircle,
   Users,
   Video,
+  Menu,
+  X,
+  Settings,
+  Coins,
 } from "lucide-react";
 
 import WorkspaceSwitcher from "@/shared/components/layout/WorkspaceSwitcher";
 import ThemeToggle from "@/shared/components/layout/ThemeToggle";
 import NotificationButton from "@/shared/components/layout/NotificationButton";
 import UserMenu from "@/shared/components/layout/UserMenu";
+import Logo from "@/shared/components/layout/Logo";
 
 const navigation = [
   { label: "Overview", icon: LayoutDashboard, to: "" },
-  { label: "Contributions", icon: Users, to: "contributions" },
+  { label: "Contributions", icon: Coins, to: "contributions" },
   { label: "Schedule", icon: CalendarDays, to: "schedule" },
   { label: "Activity", icon: Activity, to: "activity" },
   { label: "Members", icon: Users, to: "members" },
   { label: "Chat", icon: MessageCircle, to: "chat" },
   { label: "Updates", icon: Megaphone, to: "announcements" },
   { label: "Meetings", icon: Video, to: "meetings" },
+  { label: "Settings", icon: Settings, to: "settings" },
 ];
 
 export default function ContributionGroupLayout({ workspace, workspaceId }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const base = `/workspace/${workspaceId}`;
   const name = workspace?.name || "Contribution group";
 
   return (
-    <div className="min-h-screen bg-[#fcfaff] text-slate-900 dark:bg-slate-950 dark:text-white">
-      <header className="sticky top-0 z-30 border-b border-violet-100 bg-white/85 px-5 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/85 lg:px-8">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4">
-          <WorkspaceSwitcher />
-          <div className="flex items-center gap-2 sm:gap-3">
-            <ThemeToggle />
-            <NotificationButton />
-            <UserMenu />
-          </div>
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
+      {/* Mobile Sidebar Backdrop */}
+      <div
+        className={`
+          fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden
+          ${sidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}
+        `}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      {/* Sidebar navigation panel */}
+      <aside
+        className={`
+          fixed top-0 bottom-0 left-0 z-40 flex w-72 shrink-0 flex-col border-r border-violet-100 bg-white transition-transform duration-300 dark:border-slate-800 dark:bg-slate-900
+          lg:static lg:z-0 lg:translate-x-0 lg:flex
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        `}
+      >
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between border-b border-violet-50 p-6 dark:border-slate-800">
+          <Logo />
+          
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 lg:hidden"
+            aria-label="Close sidebar"
+          >
+            <X size={20} />
+          </button>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-[1500px] px-5 py-6 lg:px-8 lg:py-8">
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-700 via-purple-700 to-fuchsia-600 px-6 py-7 text-white shadow-xl shadow-violet-200/60 dark:shadow-none lg:px-9">
-          <div className="absolute -right-10 -top-14 h-48 w-48 rounded-full bg-white/10" />
-          <div className="absolute bottom-0 right-28 h-24 w-24 rounded-full bg-pink-300/20" />
-          <div className="relative">
-            <p className="text-sm font-medium text-violet-100">CONTRIBUTION GROUP</p>
-            <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">{name}</h1>
-                <p className="mt-1 text-sm text-violet-100">Plan together, contribute together, celebrate together.</p>
-              </div>
-              {workspace?.role && (
-                <span className="rounded-full border border-white/25 bg-white/15 px-3 py-1.5 text-xs font-semibold capitalize">
-                  {workspace.role.replaceAll("_", " ")}
-                </span>
-              )}
-            </div>
-          </div>
-        </section>
+        {/* Sidebar Group info badge */}
+        <div className="p-4 border-b border-violet-50 dark:border-slate-800 bg-gradient-to-r from-violet-50/50 to-purple-50/50 dark:from-slate-800/10 dark:to-purple-900/10">
+          <p className="text-[10px] font-bold text-violet-600 dark:text-violet-400 tracking-wider uppercase">Contribution Group</p>
+          <p className="font-semibold text-slate-900 dark:text-white truncate mt-0.5 text-sm">{name}</p>
+          {workspace?.role && (
+            <span className="inline-block mt-2 rounded-full bg-violet-100 dark:bg-violet-950 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300 capitalize">
+              {workspace.role.replaceAll("_", " ")}
+            </span>
+          )}
+        </div>
 
-        <nav className="mt-5 flex gap-2 overflow-x-auto pb-1" aria-label="Contribution group navigation">
+        {/* Navigation list */}
+        <nav
+          onClick={() => setSidebarOpen(false)}
+          className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 scrollbar-thin"
+        >
           {navigation.map(({ label, icon: Icon, to }) => (
             <NavLink
               key={label}
               to={to ? `${base}/${to}` : base}
               end={!to}
-              className={({ isActive }) => `flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
-                isActive
-                  ? "bg-violet-700 text-white shadow-md shadow-violet-200 dark:shadow-none"
-                  : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-violet-50 hover:text-violet-700 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800"
-              }`}
+              className={({ isActive }) => `
+                flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200
+                ${
+                  isActive
+                    ? "bg-violet-600 text-white shadow-md shadow-violet-200 dark:shadow-none"
+                    : "text-slate-600 hover:bg-violet-50 hover:text-violet-700 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-violet-400"
+                }
+              `}
             >
-              <Icon size={16} />
+              <Icon size={18} />
               {label}
             </NavLink>
           ))}
         </nav>
 
-        <div className="mt-7"><Outlet /></div>
-      </main>
+        {/* Sidebar Footer Banner */}
+        <div className="border-t border-violet-50 p-4 dark:border-slate-800">
+          <div className="rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 p-4 text-white shadow-md">
+            <p className="text-xs font-semibold uppercase tracking-wider opacity-90">Accountability First</p>
+            <p className="mt-1 text-[11px] text-violet-100 leading-relaxed">
+              Clarity, compliance and zero excuses. Plan together, build trust.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Area */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Topbar */}
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900 shrink-0">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 lg:hidden"
+              aria-label="Open menu"
+            >
+              <Menu size={20} />
+            </button>
+            <WorkspaceSwitcher />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <NotificationButton />
+            <UserMenu />
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+          <div className="mx-auto max-w-5xl">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

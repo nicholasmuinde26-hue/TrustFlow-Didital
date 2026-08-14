@@ -3,17 +3,13 @@ import express from "express";
 import { protect } from "../../middleware/auth.middleware.js";
 
 import {
-
     getFinanceSummary,
-
     getFinanceAccounts,
-
     getFinanceTransactions,
-
     getGeneralLedger,
     getRecentPayments,
-    createFinanceOperation
-
+    createFinanceOperation,
+    getFinanceReport
 } from "./finance.controller.js";
 
 const router = express.Router();
@@ -47,4 +43,9 @@ router.get(
     getRecentPayments
 );
 
-export default router;
+router.get(
+    "/:workspaceId/finance/reports",
+    getFinanceReport
+);
+
+export default router;

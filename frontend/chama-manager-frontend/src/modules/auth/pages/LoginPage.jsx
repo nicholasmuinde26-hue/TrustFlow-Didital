@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import useAuth from "@/app/hooks/useAuth";
 import AuthLayout from "@/layouts/AuthLayout";
 import AuthCard from "@/modules/auth/components/AuthCard";
 import PasswordInput from "@/modules/auth/components/PasswordInput";
+import OtpChannelSelect from "@/modules/auth/components/OtpChannelSelect";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
 
 export default function LoginPage() {
-  const { login, verifyOtp } = useAuth();
+  const { login, verifyOtp, getOtpChannels } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -18,12 +19,43 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [channel, setChannel] = useState("sms");
+  const [availableChannels, setAvailableChannels] = useState([
+    { channel: "sms", label: "SMS" },
+    { channel: "whatsapp", label: "WhatsApp" },
+  ]);
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const redirectTo = location.state?.from?.pathname || "/home";
+
+  // Look up which channels this phone number can actually receive an
+  // OTP on (Email only appears once the account has one on file) -
+  // debounced so we're not firing a request on every keystroke.
+  useEffect(() => {
+    const trimmed = phone.trim();
+    if (trimmed.length < 9) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await getOtpChannels(trimmed);
+        if (res?.availableChannels?.length) {
+          setAvailableChannels(res.availableChannels);
+          if (!res.availableChannels.some((c) => c.channel === channel)) {
+            setChannel(res.availableChannels[0].channel);
+          }
+        }
+      } catch {
+        // Silently keep the default sms/whatsapp options - the phone
+        // may just not be fully typed yet, or the lookup failed.
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone]);
 
   // ------------------------------------------------------------------
   // STEP 1: Verify Phone + Password (Triggers SMS OTP)
@@ -35,15 +67,16 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const res = await login({ phone, password });
+      const res = await login({ phone, password, channel });
 
       if (res?.otpRequired) {
         // Crucial: Sync state with the exact formatted phone returned by backend
         const activePhone = res.phone || phone;
         setPhone(activePhone);
+        if (res.channel) setChannel(res.channel);
 
         setNotice(
-          res?.message || `Password verified! Security OTP sent via SMS to ${activePhone}`
+          res?.message || `Password verified! Security OTP sent to ${activePhone}`
         );
         setStep("otp");
       } else {
@@ -85,7 +118,7 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const res = await login({ phone, password });
+      const res = await login({ phone, password, channel });
       if (res?.phone) setPhone(res.phone);
       setNotice(res?.message || `A new OTP code has been sent to ${res?.phone || phone}`);
     } catch (err) {
@@ -148,6 +181,13 @@ export default function LoginPage() {
                 required
               />
             </div>
+
+            <OtpChannelSelect
+              channels={availableChannels}
+              value={channel}
+              onChange={setChannel}
+              disabled={submitting}
+            />
 
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Verifying Credentials..." : "Continue to Verification"}

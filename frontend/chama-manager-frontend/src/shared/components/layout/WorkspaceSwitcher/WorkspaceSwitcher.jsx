@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, Building2, Wallet, Plus } from "lucide-react";
+import { ChevronDown, Building2, Wallet, Plus, Store } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 
@@ -9,6 +9,22 @@ export default function WorkspaceSwitcher() {
   const { workspaces, activeWorkspace, selectWorkspace } = useWorkspace();
 
   const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open]);
 
   function handleSelect(workspace) {
     selectWorkspace(workspace);
@@ -21,43 +37,49 @@ export default function WorkspaceSwitcher() {
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
         onClick={() => setOpen((prev) => !prev)}
         className="
           flex
           items-center
-          gap-3
+          gap-2.5
           rounded-xl
           border
           border-slate-200
           bg-white
-          px-4
-          py-2.5
+          px-2.5
+          py-1.5
+          sm:px-4
+          sm:py-2.5
           transition-all
           hover:bg-slate-50
           dark:border-slate-700
           dark:bg-slate-800
           dark:hover:bg-slate-700
+          max-w-[200px]
+          sm:max-w-xs
         "
       >
         {activeWorkspace.type === "chama" ? (
-          <Building2 size={18} className="text-primary" />
+          <Building2 size={18} className="text-primary shrink-0" />
+        ) : activeWorkspace.type === "business" ? (
+          <Store size={18} className="text-primary shrink-0" />
         ) : (
-          <Wallet size={18} className="text-primary" />
+          <Wallet size={18} className="text-primary shrink-0" />
         )}
 
-        <div className="text-left">
-          <p className="text-xs text-slate-500">Workspace</p>
+        <div className="text-left min-w-0">
+          <p className="text-[10px] text-slate-500 leading-none mb-0.5 hidden sm:block">Workspace</p>
 
-          <p className="font-medium text-slate-900 dark:text-white">
+          <p className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
             {activeWorkspace.name}
           </p>
         </div>
 
         <ChevronDown
-          size={18}
-          className={`transition-transform ${open ? "rotate-180" : ""}`}
+          size={16}
+          className={`transition-transform shrink-0 ${open ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -101,10 +123,12 @@ export default function WorkspaceSwitcher() {
                   dark:hover:bg-slate-800
                 "
               >
-                {workspace.type === "chama" ? (
-                  <Building2 size={18} className="text-primary" />
+                 {workspace.type === "chama" ? (
+                  <Building2 size={18} className="text-primary shrink-0" />
+                ) : workspace.type === "business" ? (
+                  <Store size={18} className="text-primary shrink-0" />
                 ) : (
-                  <Wallet size={18} className="text-primary" />
+                  <Wallet size={18} className="text-primary shrink-0" />
                 )}
 
                 <span className="flex-1">{workspace.name}</span>

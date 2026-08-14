@@ -5,6 +5,7 @@ import {
   getCurrentPayoutController,
   getPayoutController,
   startPayoutController,
+  approvePayoutController,
   markPayoutPaidController,
   cancelPayoutController
 } from './payout.controller.js';
@@ -15,7 +16,9 @@ import {
 
 import {
   requireChamaMember,
-  requireChamaTreasurer
+  requireChamaTreasurer,
+  requireChamaChairperson,
+  requireChamaTreasurerOrChairperson
 } from '../../middleware/chama.middleware.js';
 
 
@@ -78,6 +81,25 @@ router.post(
 
 
 // ========================================
+// APPROVE PAYOUT
+// CHAIRPERSON ONLY
+// ========================================
+//
+// Must happen before /pay below will accept
+// this payout — markPayoutPaid rejects any
+// payout that isn't already 'approved'.
+//
+// ========================================
+
+router.patch(
+  '/:id/payouts/:payoutId/approve',
+  requireChamaMember,
+  requireChamaChairperson,
+  approvePayoutController
+);
+
+
+// ========================================
 // MARK PAYOUT AS PAID
 // TREASURER ONLY
 // ========================================
@@ -92,13 +114,13 @@ router.patch(
 
 // ========================================
 // CANCEL PAYOUT
-// TREASURER ONLY
+// TREASURER OR CHAIRPERSON
 // ========================================
 
 router.patch(
   '/:id/payouts/:payoutId/cancel',
   requireChamaMember,
-  requireChamaTreasurer,
+  requireChamaTreasurerOrChairperson,
   cancelPayoutController
 );
 

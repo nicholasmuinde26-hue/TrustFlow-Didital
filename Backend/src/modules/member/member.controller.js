@@ -5,7 +5,8 @@ import {
   updateMemberStatus,
   removeMemberFromChama,
   transferTreasurerRole,
-  updateMemberProfile
+  updateMemberProfile,
+  reorderPayoutPositions
 } from './member.service.js';
 
 import AppError from '../../utils/AppError.js';
@@ -519,36 +520,105 @@ export const transferTreasurerController = async (
   }
 };
 
+
 // ========================================
-// REARRANGE PAYOUT ORDER
-// TREASURER/CHAIR ONLY
+// REORDER PAYOUT POSITIONS
+// (MGR ROTATION ARRANGEMENT)
 // ========================================
-export const rearrangePayoutOrderController = async (req, res, next) => {
+//
+// PATCH
+// /api/v1/chamas/:chamaId/members/payout-order
+//
+// Requirements:
+//
+// 1. User must be authenticated
+// 2. User must be an active Chama member
+// 3. User must be the Treasurer or Chairperson
+//
+// Body:
+//
+// {
+//   "order": [
+//     "MEMBERSHIP_ID_FOR_POSITION_1",
+//     "MEMBERSHIP_ID_FOR_POSITION_2",
+//     ...
+//   ]
+// }
+//
+// IMPORTANT:
+//
+// order[] holds ChamaMembership document IDs,
+// NOT User IDs, and must include every
+// currently active member exactly once.
+//
+// ========================================
+
+export const reorderPayoutPositionsController = async (
+  req,
+  res,
+  next
+) => {
   try {
-    const { chamaId } = req.params;
-    const actorUserId = req.user._id;
-    const { order } = req.body; // [{ memberId: 'id', position: 1 }]
+    const {
+      chamaId
+    } = req.params;
 
-    // Verify actor
-    const actor = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
-    if(!actor ||!['treasurer', 'chairperson'].includes(actor.role)){
-      throw new AppError("Only Treasurer or Chairperson can rearrange", 403);
+    const actorUserId =
+      req.user._id;
+
+    if (
+      !req.body ||
+      typeof req.body !== 'object' ||
+      Array.isArray(req.body)
+    ) {
+      throw new AppError(
+        'Request body is required',
+        400
+      );
     }
 
-    // Validate no duplicate positions
-    const positions = order.map(o => o.position);
-    if(new Set(positions).size!== positions.length){
-      throw new AppError("Duplicate positions not allowed", 400);
+    const {
+      order
+    } = req.body;
+
+    const allowedFields = [
+      'order'
+    ];
+
+    const receivedFields =
+      Object.keys(req.body);
+
+    const unexpectedFields =
+      receivedFields.filter(
+        (field) =>
+          !allowedFields.includes(field)
+      );
+
+    if (
+      unexpectedFields.length > 0
+    ) {
+      throw new AppError(
+        `Unexpected field(s): ${unexpectedFields.join(', ')}`,
+        400
+      );
     }
 
-    await Promise.all(order.map(o =>
-      ChamaMembership.updateOne(
-        { _id: o.memberId, chama_id: chamaId },
-        { payout_position: o.position }
-      )
-    ));
+    const members =
+      await reorderPayoutPositions({
+        chamaId,
+        actorUserId,
+        order
+      });
 
-    res.status(200).json({ success: true, message: 'Payout order updated' });
+    res.status(200).json({
+      success: true,
+      message:
+        'Payout order updated successfully',
+      data: {
+        members
+      }
+    });
+
   } catch (error) {
     next(error);
   }

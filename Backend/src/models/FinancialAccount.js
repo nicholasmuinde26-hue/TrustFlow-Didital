@@ -13,7 +13,7 @@ const financialAccountSchema = new Schema(
   {
     owner_type: {
       type: String,
-      enum: ['Chama', 'ContributionGroup'],
+      enum: ['Chama', 'ContributionGroup', 'Business'],
       required: true,
       index: true
     },

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Settings, Building2, Receipt, Save, CheckCircle2, ShieldCheck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Settings, Building2, Receipt, Save, CheckCircle2, ShieldCheck, X } from "lucide-react";
 import { useBusinessSummary } from "../hooks/useBusiness";
 import Spinner from "@/shared/components/ui/Spinner";
 
 export default function BusinessSettingsPage() {
+  const navigate = useNavigate();
   const { data, isLoading } = useBusinessSummary();
 
   const [formData, setFormData] = useState({
@@ -61,7 +63,7 @@ export default function BusinessSettingsPage() {
 
   return (
     <div className="p-4 sm:p-8 space-y-6 max-w-5xl mx-auto font-sans">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
             Business Settings
@@ -71,11 +73,42 @@ export default function BusinessSettingsPage() {
           </p>
         </div>
 
-        {saved && (
-          <div className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800">
-            <CheckCircle2 size={15} /> Settings Saved
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {saved && (
+            <div className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800">
+              <CheckCircle2 size={15} /> Settings Saved
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="
+              flex
+              h-10
+              w-10
+              items-center
+              justify-center
+              rounded-xl
+              border
+              border-slate-200
+              bg-white
+              text-slate-500
+              hover:bg-slate-50
+              hover:text-slate-700
+              transition
+              dark:border-slate-700
+              dark:bg-slate-800
+              dark:text-slate-400
+              dark:hover:bg-slate-700
+              dark:hover:text-slate-200
+            "
+            aria-label="Close settings"
+            title="Close settings"
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">

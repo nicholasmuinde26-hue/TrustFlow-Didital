@@ -17,3 +17,4 @@ export { default as Input } from "./Input/Input";
 export { default as Spinner } from "./Spinner";
 
 export { default as DataTable } from "./DataTable";
+export { default as CautionModal } from "./CautionModal";

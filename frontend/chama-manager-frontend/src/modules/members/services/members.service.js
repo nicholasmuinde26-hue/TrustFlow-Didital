@@ -47,6 +47,11 @@ const membersService = {
     const { data } = await membersApi.transferTreasurer(type, workspaceId, newTreasurerMemberId);
     return data.data;
   },
+
+  async reorderPayoutPositions(type, workspaceId, order) {
+    const { data } = await membersApi.reorderPayoutPositions(type, workspaceId, order);
+    return data.data.members || [];
+  },
 };
 
 export default membersService;

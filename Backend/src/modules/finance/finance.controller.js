@@ -1,4 +1,5 @@
 import financeService from "./finance.service.js";
+import financeReportsService from "./financeReports.service.js";
 import Chama from "../../models/Chama.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import Business from "../../models/Business.js";
@@ -115,3 +116,26 @@ export async function createFinanceOperation(req, res, next) {
     res.status(201).json({ success: true, message: "Finance operation recorded", data: result });
   } catch (error) { next(error); }
 }
+
+export async function getFinanceReport(req, res, next) {
+  try {
+    const { ownerType, workspaceId } = await resolveWorkspace(req);
+    const { reportType, mode = "CHAMA", asAtDate } = req.query;
+
+    if (!reportType) {
+      throw new AppError("reportType parameter is required", 400);
+    }
+
+    const reportData = await financeReportsService.getReport(
+      ownerType,
+      workspaceId,
+      reportType.toUpperCase(),
+      mode.toUpperCase(),
+      asAtDate
+    );
+
+    res.json({ success: true, data: reportData });
+  } catch (error) {
+    next(error);
+  }
+}

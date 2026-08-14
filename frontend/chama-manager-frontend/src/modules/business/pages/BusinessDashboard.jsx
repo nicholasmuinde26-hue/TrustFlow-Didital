@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Smartphone, RefreshCw, CheckCircle2 } from "lucide-react";
 
-import { useBusinessSummary } from "../hooks/useBusiness";
+import { useBusinessSummary, useInitiateBusinessStkPush } from "../hooks/useBusiness";
 import { BusinessHeader } from "../components/BusinessHeader";
 import { BusinessStatCards } from "../components/BusinessStatCards";
 import { CashAccountsCard } from "../components/CashAccountsCard";
@@ -10,8 +10,7 @@ import { RecentSales } from "../components/RecentSales";
 import { SalesChart } from "../components/SalesChart";
 import { QuickActions } from "../components/QuickActions";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
-import { useInitiateMpesaStkPush } from "../../finance/hooks/useInitiateMpesaStkPush";
-import MpesaStkModal from "../../finance/components/MpesaStkModal";
+import BusinessMpesaModal from "../components/BusinessMpesaModal";
 
 export default function BusinessDashboard() {
   const { workspaceId: paramId } = useParams();
@@ -23,10 +22,8 @@ export default function BusinessDashboard() {
     workspaceCtx?.currentWorkspace?.id;
 
   const { data, isLoading, refetch, isRefetching } = useBusinessSummary(workspaceId);
-  const stkPush = useInitiateMpesaStkPush();
-
-  const initiateStkPush = stkPush?.initiateStkPush || stkPush?.mutateAsync;
-  const isMpesaLoading = stkPush?.isPending || stkPush?.isLoading;
+  const stkPush = useInitiateBusinessStkPush();
+  const isMpesaLoading = stkPush.isPending;
 
   const [isMpesaModalOpen, setIsMpesaModalOpen] = useState(false);
   const [toastNotice, setToastNotice] = useState(null);
@@ -55,22 +52,29 @@ export default function BusinessDashboard() {
   };
 
   const handleMpesaSubmit = async (payload) => {
-    if (!initiateStkPush) {
-      throw new Error("STK Push service function is unavailable.");
-    }
-
-    const response = await initiateStkPush({
+    const response = await stkPush.mutateAsync({
       workspaceId,
-      ...payload,
+      amount: payload.amount,
+      phoneNumber: payload.phoneNumber,
+      customerName: payload.customerName || "Customer",
+      description: payload.description || `Payment to ${profile?.name || "Business"}`,
     });
 
-    setToastNotice(`STK prompt sent to ${payload.phoneNumber} for KES ${payload.amount.toLocaleString()}.`);
-    setTimeout(() => setToastNotice(null), 5000);
+    setToastNotice(`STK prompt sent to ${payload.phoneNumber} for KES ${payload.amount.toLocaleString()}. Verified receipt with VeriCircle- guarantee queued!`);
+    setTimeout(() => setToastNotice(null), 6000);
 
     // Refresh dashboard stats and sales to show newly pending transaction
     refetch();
 
     return response;
+  };
+
+
+
+  const handlePaymentSuccess = () => {
+    refetch();
+    setToastNotice(`Payment completed and posted to ledger! Dashboard sales & cash accounts updated.`);
+    setTimeout(() => setToastNotice(null), 7000);
   };
 
   return (
@@ -141,11 +145,13 @@ export default function BusinessDashboard() {
 
       <RecentSales sales={recentSales} />
 
-      {/* Operational M-Pesa STK Modal */}
-      <MpesaStkModal
+      {/* Operational Business M-Pesa STK Modal */}
+      <BusinessMpesaModal
         isOpen={isMpesaModalOpen}
         onClose={() => setIsMpesaModalOpen(false)}
         onSubmit={handleMpesaSubmit}
+        onSuccess={handlePaymentSuccess}
+        workspaceId={workspaceId}
         loading={Boolean(isMpesaLoading)}
         title="Business M-Pesa STK Collection"
       />

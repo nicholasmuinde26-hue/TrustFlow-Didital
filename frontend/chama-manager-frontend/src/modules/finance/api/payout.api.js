@@ -11,9 +11,22 @@ const payoutApi = {
     return api.post(`/chamas/${workspaceId}/payouts/start`);
   },
 
+  approve(workspaceId, payoutId) {
+    return api.patch(
+      `/chamas/${workspaceId}/payouts/${payoutId}/approve`
+    );
+  },
+
   pay(workspaceId, payoutId, payload) {
     return api.patch(
       `/chamas/${workspaceId}/payouts/${payoutId}/pay`,
+      payload
+    );
+  },
+
+  cancel(workspaceId, payoutId, payload) {
+    return api.patch(
+      `/chamas/${workspaceId}/payouts/${payoutId}/cancel`,
       payload
     );
   },

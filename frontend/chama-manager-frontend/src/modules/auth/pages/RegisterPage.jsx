@@ -5,6 +5,7 @@ import useAuth from "@/app/hooks/useAuth";
 import AuthLayout from "@/layouts/AuthLayout";
 import AuthCard from "@/modules/auth/components/AuthCard";
 import PasswordInput from "@/modules/auth/components/PasswordInput";
+import OtpChannelSelect from "@/modules/auth/components/OtpChannelSelect";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
 
@@ -19,10 +20,12 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     name: "",
     phone: "",
+    email: "",
     password: "",
     confirmPassword: "",
   });
   const [otpCode, setOtpCode] = useState("");
+  const [channel, setChannel] = useState("sms");
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -30,9 +33,23 @@ export default function RegisterPage() {
 
   const redirectTo = location.state?.from?.pathname || "/home";
 
+  // SMS & WhatsApp ride on the phone number (always offered once one's
+  // entered); Email only shows up once the user has typed one in.
+  const availableChannels = [
+    { channel: "sms", label: "SMS" },
+    { channel: "whatsapp", label: "WhatsApp" },
+    ...(form.email.trim() ? [{ channel: "email", label: "Email" }] : []),
+  ];
+
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+
+    // If the user clears the email field while "email" is selected,
+    // fall back to SMS rather than submitting with a dead channel.
+    if (name === "email" && !value.trim() && channel === "email") {
+      setChannel("sms");
+    }
   }
 
   // ------------------------------------------------------------------
@@ -59,13 +76,16 @@ export default function RegisterPage() {
       const res = await register({
         name: form.name,
         phone: form.phone,
+        email: form.email.trim() || undefined,
         password: form.password,
+        channel,
       });
 
       if (res?.otpRequired) {
         if (res.phone) {
           setForm((prev) => ({ ...prev, phone: res.phone }));
         }
+        if (res.channel) setChannel(res.channel);
         setNotice(
           res?.message || `Account created! OTP security code sent to ${res?.phone || form.phone}`
         );
@@ -109,7 +129,7 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      const res = await sendOtp({ phone: form.phone });
+      const res = await sendOtp({ phone: form.phone, channel });
       setNotice(res?.message || `A new OTP code has been sent to ${form.phone}`);
     } catch (err) {
       setError(
@@ -170,6 +190,16 @@ export default function RegisterPage() {
               required
             />
 
+            <Input
+              label="Email (optional — needed for email OTP delivery)"
+              type="email"
+              name="email"
+              value={form.email}
+              onChange={handleChange}
+              placeholder="jane@example.com"
+              autoComplete="email"
+            />
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Password</label>
               <PasswordInput
@@ -193,6 +223,13 @@ export default function RegisterPage() {
                 required
               />
             </div>
+
+            <OtpChannelSelect
+              channels={availableChannels}
+              value={channel}
+              onChange={setChannel}
+              disabled={submitting}
+            />
 
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Creating account..." : "Create Account & Send OTP"}

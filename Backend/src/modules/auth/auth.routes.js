@@ -8,6 +8,7 @@ import {
   loginController,
   getMeController,
   updateMeController,
+  getOtpChannelsController,
 } from './auth.controller.js';
 
 import { protect } from '../../middleware/auth.middleware.js';
@@ -19,8 +20,18 @@ const router = express.Router();
 // ========================================
 
 /**
+ * @route   GET /api/auth/otp-channels?phone=07XXXXXXXX
+ * @desc    List which OTP delivery channels (sms/email/whatsapp) are
+ *          available for a given phone number, for the channel picker UI
+ * @access  Public
+ */
+router.get('/otp-channels', getOtpChannelsController);
+
+/**
  * @route   POST /api/auth/send-otp
- * @desc    Request a standalone SMS OTP for phone authentication
+ * @desc    Request a standalone OTP for phone authentication, delivered
+ *          via the caller's chosen channel: { phone, channel? }
+ *          channel: 'sms' | 'email' | 'whatsapp' (defaults to 'sms')
  * @access  Public
  */
 router.post('/send-otp', sendOtpController);

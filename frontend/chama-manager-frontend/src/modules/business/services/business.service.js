@@ -1,89 +1,104 @@
 import businessApi from "../api/business.api";
 
+const extractArray = (res, key) => {
+  if (!res) return [];
+  const payload = res.data?.data ?? res.data ?? res;
+  if (Array.isArray(payload)) return payload;
+  if (key && Array.isArray(payload[key])) return payload[key];
+  if (Array.isArray(payload.items)) return payload.items;
+  if (Array.isArray(payload.transactions)) return payload.transactions;
+  return [];
+};
+
 export const businessService = {
   async createBusiness(payload) {
-    const { data } = await businessApi.createBusiness(payload);
-    return data.data || data;
+    const res = await businessApi.createBusiness(payload);
+    return res.data?.data || res.data;
   },
 
   async getSummary(workspaceId) {
-    const { data } = await businessApi.getSummary(workspaceId);
-    return data.data || data;
+    const res = await businessApi.getSummary(workspaceId);
+    return res.data?.data || res.data;
   },
 
   async getSales(workspaceId, params) {
-    const { data } = await businessApi.getSales(workspaceId, params);
-    return data.data?.sales || data.sales || data;
+    const res = await businessApi.getSales(workspaceId, params);
+    return extractArray(res, "sales");
   },
 
   async createSale(workspaceId, payload) {
-    const { data } = await businessApi.createSale(workspaceId, payload);
-    return data.data || data;
+    const res = await businessApi.createSale(workspaceId, payload);
+    return res.data?.data || res.data;
   },
 
   async getExpenses(workspaceId, params) {
-    const { data } = await businessApi.getExpenses(workspaceId, params);
-    return data.data?.expenses || data.expenses || data;
+    const res = await businessApi.getExpenses(workspaceId, params);
+    return extractArray(res, "expenses");
   },
 
   async createExpense(workspaceId, payload) {
-    const { data } = await businessApi.createExpense(workspaceId, payload);
-    return data.data || data;
+    const res = await businessApi.createExpense(workspaceId, payload);
+    return res.data?.data || res.data;
   },
 
   async getInventory(workspaceId, params) {
-    const { data } = await businessApi.getInventory(workspaceId, params);
-    return data.data?.inventory || data.inventory || data;
+    const res = await businessApi.getInventory(workspaceId, params);
+    return extractArray(res, "inventory");
   },
 
   async addInventoryItem(workspaceId, payload) {
-    const { data } = await businessApi.addInventoryItem(workspaceId, payload);
-    return data.data || data;
+    const res = await businessApi.addInventoryItem(workspaceId, payload);
+    return res.data?.data || res.data;
   },
 
   async getCustomers(workspaceId, params) {
-    const { data } = await businessApi.getCustomers(workspaceId, params);
-    return data.data?.customers || data.customers || data;
+    const res = await businessApi.getCustomers(workspaceId, params);
+    return extractArray(res, "customers");
   },
 
   async createCustomer(workspaceId, payload) {
-    const { data } = await businessApi.createCustomer(workspaceId, payload);
-    return data.data || data;
+    const res = await businessApi.createCustomer(workspaceId, payload);
+    return res.data?.data || res.data;
   },
 
   async getSuppliers(workspaceId, params) {
-    const { data } = await businessApi.getSuppliers(workspaceId, params);
-    return data.data?.suppliers || data.suppliers || data;
+    const res = await businessApi.getSuppliers(workspaceId, params);
+    return extractArray(res, "suppliers");
   },
 
   async createSupplier(workspaceId, payload) {
-    const { data } = await businessApi.createSupplier(workspaceId, payload);
-    return data.data || data;
+    const res = await businessApi.createSupplier(workspaceId, payload);
+    return res.data?.data || res.data;
   },
 
   async getAccounts(workspaceId) {
-    const { data } = await businessApi.getAccounts(workspaceId);
-    return data.data?.accounts || data.accounts || data;
+    const res = await businessApi.getAccounts(workspaceId);
+    return extractArray(res, "accounts");
   },
 
   async getReports(workspaceId, type, params) {
-    const { data } = await businessApi.getReports(workspaceId, type, params);
-    return data.data || data;
+    const res = await businessApi.getReports(workspaceId, type, params);
+    return res.data?.data || res.data;
   },
 
   async getSettings(workspaceId) {
-    const { data } = await businessApi.getSettings(workspaceId);
-    return data.data || data;
+    const res = await businessApi.getSettings(workspaceId);
+    return res.data?.data || res.data;
   },
 
   async updateSettings(workspaceId, payload) {
-    const { data } = await businessApi.updateSettings(workspaceId, payload);
-    return data.data || data;
+    const res = await businessApi.updateSettings(workspaceId, payload);
+    return res.data?.data || res.data;
   },
 
   async initiateMpesaStkPush(workspaceId, payload) {
-    const { data } = await businessApi.initiateMpesaStkPush(workspaceId, payload);
-    return data;
+    const res = await businessApi.initiateMpesaStkPush(workspaceId, payload);
+    return res.data;
+  },
+
+  async queryMpesaStkPushStatus(workspaceId, transactionId) {
+    const res = await businessApi.queryMpesaStkPushStatus(workspaceId, transactionId);
+    return res.data?.data || res.data;
   },
 };
 
