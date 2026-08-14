@@ -9,7 +9,7 @@ import {
 } from '../../utils/jwt.js';
 import AppError from '../../utils/AppError.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
-import { buildUserProfileUpdates } from '../../utils/userProfile.js';
+import { buildUserProfileUpdates } from '../../utils/Userprofile';
 import env from '../../config/env.js';
 import {
   getAvailableOtpChannels,
