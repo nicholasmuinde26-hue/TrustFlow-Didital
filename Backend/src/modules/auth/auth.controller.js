@@ -10,7 +10,7 @@ import {
 } from './auth.service.js';
 
 import AppError from '../../utils/AppError.js';
-import { PROFILE_UPDATE_FIELDS } from '../../utils/userProfile.js';
+import { PROFILE_UPDATE_FIELDS } from '../../utils/Userprofile.js';
 
 // ========================================
 // REQUEST OTP (USER-CHOSEN CHANNEL: SMS / EMAIL / WHATSAPP)
