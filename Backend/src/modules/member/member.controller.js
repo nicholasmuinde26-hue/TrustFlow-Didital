@@ -10,7 +10,7 @@ import {
 } from './member.service.js';
 
 import AppError from '../../utils/AppError.js';
-import { PROFILE_UPDATE_FIELDS } from '../../utils/userProfile.js';
+import { PROFILE_UPDATE_FIELDS } from '../../utils/Userprofile.js';
 
 
 // ========================================

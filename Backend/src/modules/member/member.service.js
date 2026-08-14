@@ -18,7 +18,7 @@ import {
 
 import {
   buildUserProfileUpdates
-} from '../../utils/userProfile.js';
+} from '../../utils/Userprofile.js';
 
 
 // ========================================
