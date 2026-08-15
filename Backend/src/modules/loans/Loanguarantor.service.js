@@ -2,7 +2,7 @@ import ChamaMembership from '../../models/ChamaMembership.js';
 import ChamaLoan from '../../models/ChamaLoan.js';
 import AppError from '../../utils/AppError.js';
 import { getMemberSavings, getGuaranteeExposure } from './loanSavings.service.js';
-import { GUARANTOR_STATUS } from './loan.constants.js';
+import { GUARANTOR_STATUS } from './Loan.constants.js';
 import { getOrCreatePolicy } from './Loanpolicy.service.js';
 import { maybeAutoSubmit } from './Loanapplication.service.js';
 

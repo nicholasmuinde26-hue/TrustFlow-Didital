@@ -1,8 +1,8 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import AppError from '../../utils/AppError.js';
 import mpesaService from '../../payment/providers/mpesa/mpesa.service.js';
-import loanAccounting from './loanaccounting.service.js';
-import { LOAN_STATUS } from './loan.constants.js';
+import loanAccounting from './Loanaccounting.service.js';
+import { LOAN_STATUS } from './Loan.constants.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 

@@ -1,6 +1,6 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import { getMemberSavings, getExistingOutstanding } from './loanSavings.service.js';
-import { OPEN_LOAN_STATUSES } from './loan.constants.js';
+import { OPEN_LOAN_STATUSES } from './Loan.constants.js';
 
 const monthsSince = (date) => {
   if (!date) return 0;
