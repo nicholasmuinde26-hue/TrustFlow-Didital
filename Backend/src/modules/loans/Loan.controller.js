@@ -1,12 +1,12 @@
 import AppError from '../../utils/AppError.js';
-import loanApplication from './loanApplication.service.js';
-import loanGuarantor from './loanGuarantor.service.js';
-import loanApproval from './loanApproval.service.js';
-import loanDisbursement from './loanDisbursement.service.js';
-import loanRepayment from './loanRepayment.service.js';
+import loanApplication from './loanapplication.service.js';
+import loanGuarantor from './loanguarantor.service.js';
+import loanApproval from './loanapproval.service.js';
+import loanDisbursement from './loandisbursement.service.js';
+import loanRepayment from './loanrepayment.service.js';
 import loanRecovery from './loanRecovery.service.js';
-import loanDashboard from './loanDashboard.service.js';
-import loanPolicy from './loanPolicy.service.js';
+import loanDashboard from './loandashboard.service.js';
+import loanPolicy from './loanpolicy.service.js';
 
 const OFFICIAL_ROLES = ['treasurer', 'chairperson', 'secretary', 'auditor'];
 
