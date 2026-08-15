@@ -1,9 +1,9 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import AppError from '../../utils/AppError.js';
-import { getOrCreatePolicy, resolveApprovalRoles } from './loanPolicy.service.js';
+import { getOrCreatePolicy, resolveApprovalRoles } from './loanpolicy.service.js';
 import { LOAN_STATUS } from './loan.constants.js';
-import { assessRisk } from './loanRisk.service.js';
+import { assessRisk } from './loanrisk.service.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 
