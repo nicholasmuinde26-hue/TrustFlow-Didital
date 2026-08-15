@@ -1,9 +1,9 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
-import { getOrCreatePolicy } from './loanpolicy.service.js';
-import { getMemberSavings, getExistingOutstanding } from './LoanSavings.service.js';
-import { OPEN_LOAN_STATUSES } from './loan.constants.js';
+import { getOrCreatePolicy } from './Loanpolicy.service.js';
+import { getMemberSavings, getExistingOutstanding } from './loanSavings.service.js';
+import { OPEN_LOAN_STATUSES } from './Loan.constants.js';
 
 const round2 = (n) => Math.round((n || 0) * 100) / 100;
 

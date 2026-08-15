@@ -1,9 +1,9 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import AppError from '../../utils/AppError.js';
-import { getOrCreatePolicy, resolveApprovalRoles } from './loanPolicy.service.js';
-import { checkEligibility } from './loanEligibility.service.js';
-import { requestGuarantors, allGuaranteesAccepted, anyGuaranteeDeclined, validateGuarantor } from './loanGuarantor.service.js';
-import { loanReference, LOAN_STATUS, LOAN_TYPE } from './loan.constants.js';
+import { getOrCreatePolicy, resolveApprovalRoles } from './Loanpolicy.service.js';
+import { checkEligibility } from './Loaneligibility.service.js';
+import { requestGuarantors, allGuaranteesAccepted, anyGuaranteeDeclined, validateGuarantor } from './Loanguarantor.service.js';
+import { loanReference, LOAN_STATUS, LOAN_TYPE } from './Loan.constants.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 
