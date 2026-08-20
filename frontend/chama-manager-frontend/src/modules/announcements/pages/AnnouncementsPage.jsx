@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { Megaphone } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { canManageAnnouncements } from "@/modules/workspaces/permissions/permissions";
+import { canManageAnnouncements } from "@/modules/workspaces/permissions/Permissions";
 
 import {
   useAnnouncements,
