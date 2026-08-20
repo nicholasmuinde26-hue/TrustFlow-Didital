@@ -1,5 +1,5 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
-import LoanPayment from '../../models/Loanpayment.js';
+import LoanPayment from '../../models/loanPayment.js';
 import AppError from '../../utils/AppError.js';
 import { getOrCreatePolicy } from './loanpolicy.service.js';
 import { recalculateSchedule } from './Loanpenalty.service.js';
