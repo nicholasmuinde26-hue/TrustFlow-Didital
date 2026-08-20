@@ -55,4 +55,4 @@ const loanPaymentSchema = new mongoose.Schema(
 
 loanPaymentSchema.index({ loan_id: 1, createdAt: -1 });
 
-export default mongoose.models.loanPaymentSchema || mongoose.model('LoanPayment', loanPaymentSchema);
+export default mongoose.models.LoanPayment || mongoose.model('LoanPayment', loanPaymentSchema);
