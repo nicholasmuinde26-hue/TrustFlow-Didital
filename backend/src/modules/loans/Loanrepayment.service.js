@@ -1,7 +1,7 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import LoanPayment from '../../models/loanPayment.js';
 import AppError from '../../utils/AppError.js';
-import { getOrCreatePolicy } from './loanpolicy.service.js';
+import { getOrCreatePolicy } from './Loanpolicy.service.js';
 import { recalculateSchedule } from './Loanpenalty.service.js';
 import loanAccounting from './Loanaccounting.service.js';
 import { LOAN_STATUS, paymentReference } from './Loan.constants.js';
