@@ -1,5 +1,6 @@
 import {
   getChamaAuditLogs,
+  getContributionGroupAuditLogs,
   getAuditLogById
 } from '../../services/audit.service.js';
 
@@ -169,3 +170,52 @@ export const getAuditLogController = async (
   }
 
 };
+
+
+// ========================================
+// GET CONTRIBUTION GROUP AUDIT LOGS
+// ========================================
+
+export const getContributionGroupAuditLogsController = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const { groupId, workspaceId } = req.params;
+    const targetGroupId = groupId || workspaceId;
+
+    const {
+      page,
+      limit,
+      action,
+      actorUserId,
+      resourceType,
+      resourceId,
+      startDate,
+      endDate
+    } = req.query;
+
+    const result = await getContributionGroupAuditLogs({
+      contributionGroupId: targetGroupId,
+      page,
+      limit,
+      action,
+      actorUserId,
+      resourceType,
+      resourceId,
+      startDate,
+      endDate
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        logs: result.logs,
+        pagination: result.pagination
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};

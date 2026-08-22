@@ -55,30 +55,52 @@ const generateAndSendOtp = async (user, requestedChannel) => {
 // SEND STANDALONE OTP
 // ========================================
 
-export const sendOtp = async ({ phone, channel }) => {
-  if (!phone || !phone.trim()) {
-    throw new AppError('Phone number is required', 400);
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isValidEmail = (email) => Boolean(email && EMAIL_REGEX.test(String(email).trim().toLowerCase()));
+
+// ========================================
+// SEND STANDALONE OTP
+// ========================================
+
+export const sendOtp = async ({ phone, email, identifier, channel }) => {
+  const term = (identifier || email || phone || '').trim();
+
+  if (!term) {
+    throw new AppError('Phone number or email address is required', 400);
   }
 
-  const formattedPhone = formatPhone(phone);
+  let user;
+  let formattedPhone;
 
-  if (!isValidKenyanPhone(formattedPhone)) {
-    throw new AppError(
-      'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX',
-      400
+  if (term.includes('@')) {
+    if (!isValidEmail(term)) {
+      throw new AppError('Invalid email address format', 400);
+    }
+    const cleanEmail = term.toLowerCase();
+    user = await User.findOne({ email: cleanEmail }).select('+otpCode +otpExpiresAt');
+    if (!user) {
+      throw new AppError('No account found with this email address', 404);
+    }
+  } else {
+    formattedPhone = formatPhone(term);
+    if (!isValidKenyanPhone(formattedPhone)) {
+      throw new AppError(
+        'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX',
+        400
+      );
+    }
+
+    user = await User.findOne({ phone: formattedPhone }).select(
+      '+otpCode +otpExpiresAt'
     );
-  }
 
-  let user = await User.findOne({ phone: formattedPhone }).select(
-    '+otpCode +otpExpiresAt'
-  );
-
-  if (!user) {
-    user = await User.create({
-      phone: formattedPhone,
-      status: 'unverified',
-      isPhoneVerified: false,
-    });
+    if (!user) {
+      user = await User.create({
+        phone: formattedPhone,
+        status: 'unverified',
+        isPhoneVerified: false,
+      });
+    }
   }
 
   const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
@@ -86,9 +108,11 @@ export const sendOtp = async ({ phone, channel }) => {
   return {
     otpRequired: true,
     message: `OTP sent successfully via ${usedChannel} to ${
-      usedChannel === 'email' ? user.email : formattedPhone
+      usedChannel === 'email' ? user.email : user.phone
     }`,
-    phone: formattedPhone,
+    phone: user.phone,
+    email: user.email,
+    identifier: usedChannel === 'email' ? user.email : user.phone,
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
     expiresInMinutes: expiryMinutes,
@@ -96,36 +120,40 @@ export const sendOtp = async ({ phone, channel }) => {
 };
 
 // ========================================
-// LIST OTP CHANNELS AVAILABLE FOR A PHONE NUMBER
-// ========================================
-//
-// Lets the frontend render channel choices (SMS / Email / WhatsApp)
-// before the user commits to requesting a code - Email only shows up
-// once the account has an email on file.
-//
+// LIST OTP CHANNELS AVAILABLE FOR AN IDENTIFIER (PHONE OR EMAIL)
 // ========================================
 
-export const getOtpChannelsForPhone = async ({ phone }) => {
-  if (!phone || !phone.trim()) {
-    throw new AppError('Phone number is required', 400);
+export const getOtpChannelsForPhone = async ({ phone, email, identifier }) => {
+  const term = (identifier || email || phone || '').trim();
+
+  if (!term) {
+    throw new AppError('Phone number or email address is required', 400);
   }
 
-  const formattedPhone = formatPhone(phone);
+  let user;
+  let identifierResult = term;
 
-  if (!isValidKenyanPhone(formattedPhone)) {
-    throw new AppError(
-      'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX',
-      400
-    );
+  if (term.includes('@')) {
+    if (isValidEmail(term)) {
+      const cleanEmail = term.toLowerCase();
+      user = await User.findOne({ email: cleanEmail });
+      identifierResult = cleanEmail;
+    }
+  } else {
+    try {
+      const formattedPhone = formatPhone(term);
+      if (isValidKenyanPhone(formattedPhone)) {
+        user = await User.findOne({ phone: formattedPhone });
+        identifierResult = formattedPhone;
+      }
+    } catch {
+      // Fallback
+    }
   }
 
-  const user = await User.findOne({ phone: formattedPhone });
+  const channels = getAvailableOtpChannels(user || (term.includes('@') ? { email: term.toLowerCase() } : { phone: term }));
 
-  // Even for a not-yet-registered phone, SMS/WhatsApp are still viable
-  // (a fresh user record gets created when the OTP is actually sent).
-  const channels = getAvailableOtpChannels(user || { phone: formattedPhone });
-
-  return { phone: formattedPhone, availableChannels: channels };
+  return { identifier: identifierResult, phone: user?.phone, email: user?.email, availableChannels: channels };
 };
 
 // ========================================
@@ -160,21 +188,35 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
     );
   }
 
-  // 3. Check duplicate user
+  // 3. Email validation & duplicate check
+  const trimmedEmail = email && email.trim() ? email.trim().toLowerCase() : undefined;
+
+  if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+    throw new AppError('Enter a valid email address', 400);
+  }
+
+  if (channel === 'email' && !trimmedEmail) {
+    throw new AppError('Email address is required for Email OTP delivery.', 400);
+  }
+
+  if (trimmedEmail) {
+    const existingEmailUser = await User.findOne({ email: trimmedEmail });
+    if (existingEmailUser && existingEmailUser.status !== 'unverified' && existingEmailUser.phone !== formattedPhone) {
+      throw new AppError('A user with this email address already exists', 409);
+    }
+  }
+
+  // 4. Check duplicate user by phone
   const existingUser = await User.findOne({ phone: formattedPhone });
 
   if (existingUser && existingUser.status !== 'unverified') {
     throw new AppError('A user with this phone number already exists', 409);
   }
 
-  // 4. Hash password
+  // 5. Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // 5. Create/Update user in 'unverified' status
-  // Email is optional at registration, but needs to be on file up front
-  // if the person wants to receive their OTP by email.
-  const trimmedEmail = email && email.trim() ? email.trim() : undefined;
-
+  // 6. Create/Update user in 'unverified' status
   let user;
   if (existingUser && existingUser.status === 'unverified') {
     existingUser.name = name.trim();
@@ -186,18 +228,20 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
       name: name.trim(),
       phone: formattedPhone,
       password: hashedPassword,
-      email: trimmedEmail,
+      email: trimmedEmail || null,
       status: 'unverified',
       isPhoneVerified: false,
     });
   }
 
-  // 6. Generate & send OTP via the chosen channel (DO NOT issue tokens here)
+  // 7. Generate & send OTP via the chosen channel (DO NOT issue tokens here)
   const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
 
   return {
     otpRequired: true,
     phone: formattedPhone,
+    email: user.email,
+    identifier: usedChannel === 'email' ? user.email : formattedPhone,
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
     message: `Account created. Security OTP code sent via ${usedChannel} to ${
@@ -211,36 +255,48 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
 // LOGIN USER (Password + Mandatory OTP)
 // ========================================
 
-export const loginUser = async ({ phone, password, channel }) => {
+export const loginUser = async ({ phone, email, identifier, password, channel }) => {
+  const term = (identifier || email || phone || '').trim();
+
   // 1. Input validations
-  if (!phone || !phone.trim()) {
-    throw new AppError('Phone number is required', 400);
+  if (!term) {
+    throw new AppError('Phone number or email address is required', 400);
   }
 
   if (!password) {
     throw new AppError('Password is required', 400);
   }
 
-  // 2. Phone format validation
-  const formattedPhone = formatPhone(phone);
+  let user;
+  let isEmailInput = term.includes('@');
 
-  if (!isValidKenyanPhone(formattedPhone)) {
-    throw new AppError(
-      'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX',
-      400
+  if (isEmailInput) {
+    if (!isValidEmail(term)) {
+      throw new AppError('Enter a valid email address', 400);
+    }
+    user = await User.findOne({ email: term.toLowerCase() }).select(
+      '+password +otpCode +otpExpiresAt'
+    );
+  } else {
+    const formattedPhone = formatPhone(term);
+
+    if (!isValidKenyanPhone(formattedPhone)) {
+      throw new AppError(
+        'Invalid phone number. Use 07XXXXXXXX or 2547XXXXXXXX',
+        400
+      );
+    }
+
+    user = await User.findOne({ phone: formattedPhone }).select(
+      '+password +otpCode +otpExpiresAt'
     );
   }
 
-  // 3. Find User with Password & OTP fields
-  const user = await User.findOne({ phone: formattedPhone }).select(
-    '+password +otpCode +otpExpiresAt'
-  );
-
   if (!user) {
-    throw new AppError('Invalid phone number or password', 401);
+    throw new AppError('Invalid login credentials', 401);
   }
 
-  // 4. Check account status
+  // Check account status
   if (user.status === 'inactive') {
     throw new AppError('This user account is inactive', 403);
   }
@@ -249,23 +305,28 @@ export const loginUser = async ({ phone, password, channel }) => {
     throw new AppError('This user account has been suspended', 403);
   }
 
-  // 5. Compare password
+  // Compare password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
   if (!isPasswordCorrect) {
-    throw new AppError('Invalid phone number or password', 401);
+    throw new AppError('Invalid login credentials', 401);
   }
 
-  // 6. Password verified -> Send Security OTP via chosen channel (DO NOT issue tokens here)
-  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
+  // If user entered email to log in, default channel to email if channel not explicitly set
+  const requestedChannel = channel || (isEmailInput ? 'email' : undefined);
+
+  // Send Security OTP via chosen channel
+  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, requestedChannel);
 
   return {
     otpRequired: true,
-    phone: formattedPhone,
+    phone: user.phone,
+    email: user.email,
+    identifier: usedChannel === 'email' ? user.email : user.phone,
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
     message: `Password verified. Security OTP code sent via ${usedChannel} to ${
-      usedChannel === 'email' ? user.email : formattedPhone
+      usedChannel === 'email' ? user.email : user.phone
     }`,
     expiresInMinutes: expiryMinutes,
   };
@@ -275,24 +336,32 @@ export const loginUser = async ({ phone, password, channel }) => {
 // VERIFY OTP AND ISSUE TOKENS (Gatekeeper)
 // ========================================
 
-export const verifyOtp = async ({ phone, otpCode }) => {
-  if (!phone || !phone.trim()) {
-    throw new AppError('Phone number is required', 400);
+export const verifyOtp = async ({ phone, email, identifier, otpCode }) => {
+  const term = (identifier || email || phone || '').trim();
+
+  if (!term) {
+    throw new AppError('Phone number or email address is required', 400);
   }
 
   if (!otpCode || !otpCode.trim()) {
     throw new AppError('OTP code is required', 400);
   }
 
-  const formattedPhone = formatPhone(phone);
+  let user;
 
-  // Find User with OTP fields
-  const user = await User.findOne({ phone: formattedPhone }).select(
-    '+otpCode +otpExpiresAt +refreshToken'
-  );
+  if (term.includes('@')) {
+    user = await User.findOne({ email: term.toLowerCase() }).select(
+      '+otpCode +otpExpiresAt +refreshToken'
+    );
+  } else {
+    const formattedPhone = formatPhone(term);
+    user = await User.findOne({ phone: formattedPhone }).select(
+      '+otpCode +otpExpiresAt +refreshToken'
+    );
+  }
 
   if (!user || !user.otpCode) {
-    throw new AppError('No pending OTP request found for this phone number', 400);
+    throw new AppError('No pending OTP request found for this account', 400);
   }
 
   // Check OTP expiration

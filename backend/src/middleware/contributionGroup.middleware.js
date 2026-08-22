@@ -1,8 +1,7 @@
 import mongoose from 'mongoose';
 
-import ContributionGroupMember
-  from '../models/ContributionGroupMember.js';
-
+import ContributionGroupMember from '../models/ContributionGroupMember.js';
+import ContributionGroup from '../models/ContributionGroup.js';
 
 // ========================================
 // VALIDATE OBJECT ID
@@ -58,12 +57,6 @@ async (
   res,
   next
 ) => {
-
-  console.log("========== GROUP MEMBER MIDDLEWARE ==========");
-  console.log("User:", req.user);
-  console.log("Params:", req.params);
-  console.log("Body:", req.body);
-  console.log("=============================================");
 
   try {
 
@@ -143,37 +136,25 @@ async (
     // ======================================
     // 5. CHECK MEMBERSHIP
     // ======================================
-    //
-    // IMPORTANT:
-    //
-    // Your schema uses:
-    //
-    // user_id
-    // contribution_group_id
-    //
-    // NOT:
-    //
-    // member_id
-    // group_id
-    //
-    // ======================================
 
-    const membership =
-
+    let membership =
       await ContributionGroupMember
         .findOne({
-
-          user_id:
-            req.user._id,
-
-          contribution_group_id:
-            groupId,
-
-          status:
-            'active'
-
+          user_id: req.user._id,
+          contribution_group_id: groupId,
+          status: 'active'
         });
 
+    if (!membership) {
+      const groupCreated = await ContributionGroup.findOne({ _id: groupId, created_by: req.user._id }).lean();
+      if (groupCreated) {
+        membership = await ContributionGroupMember.findOneAndUpdate(
+          { contribution_group_id: groupId, user_id: req.user._id },
+          { contribution_group_id: groupId, user_id: req.user._id, role: 'organizer', status: 'active' },
+          { upsert: true, new: true }
+        ).lean();
+      }
+    }
 
     // ======================================
     // 6. NOT A MEMBER
@@ -194,6 +175,7 @@ async (
       throw error;
 
     }
+
 
 
     // ======================================

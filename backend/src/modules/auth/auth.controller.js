@@ -18,9 +18,9 @@ import { PROFILE_UPDATE_FIELDS } from '../../utils/Userprofile.js';
 
 export const sendOtpController = async (req, res, next) => {
   try {
-    const { phone, channel } = req.body;
+    const { phone, email, identifier, channel } = req.body;
 
-    const result = await sendOtp({ phone, channel });
+    const result = await sendOtp({ phone, email, identifier, channel });
 
     res.status(200).json({
       success: true,
@@ -33,19 +33,14 @@ export const sendOtpController = async (req, res, next) => {
 };
 
 // ========================================
-// LIST AVAILABLE OTP CHANNELS FOR A PHONE NUMBER
-// ========================================
-//
-// Frontend calls this before showing the channel picker so it only
-// offers Email when the account actually has one on file.
-//
+// LIST AVAILABLE OTP CHANNELS FOR A PHONE / EMAIL IDENTIFIER
 // ========================================
 
 export const getOtpChannelsController = async (req, res, next) => {
   try {
-    const { phone } = req.query;
+    const { phone, email, identifier } = req.query;
 
-    const result = await getOtpChannelsForPhone({ phone });
+    const result = await getOtpChannelsForPhone({ phone, email, identifier });
 
     res.status(200).json({
       success: true,
@@ -62,9 +57,9 @@ export const getOtpChannelsController = async (req, res, next) => {
 
 export const verifyOtpController = async (req, res, next) => {
   try {
-    const { phone, otpCode } = req.body;
+    const { phone, email, identifier, otpCode } = req.body;
 
-    const result = await verifyOtp({ phone, otpCode });
+    const result = await verifyOtp({ phone, email, identifier, otpCode });
 
     res.status(200).json({
       success: true,
@@ -134,13 +129,15 @@ export const registerController = async (req, res, next) => {
 
 export const loginController = async (req, res, next) => {
   try {
-    const { phone, password, channel } = req.body;
+    const { phone, email, identifier, password, channel } = req.body;
 
     // ----------------------------------------
     // Verify Password & Trigger OTP via chosen channel
     // ----------------------------------------
     const result = await loginUser({
       phone,
+      email,
+      identifier,
       password,
       channel,
     });

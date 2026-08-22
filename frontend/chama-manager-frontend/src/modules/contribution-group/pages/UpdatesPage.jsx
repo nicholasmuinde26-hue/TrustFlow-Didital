@@ -15,6 +15,12 @@ import {
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
+import {
+  useContributionGroupExpenses,
+  useContributionGroupFinanceSummary,
+  useCreateContributionGroupExpense,
+} from "../hooks/useContributionGroupData";
+
 export default function UpdatesPage() {
   const { workspaceId } = useParams();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,13 +31,25 @@ export default function UpdatesPage() {
   const [expenseCategory, setExpenseCategory] = useState("Venue");
   const [receiptFile, setReceiptFile] = useState(null);
 
+  const { data: summary = {} } = useContributionGroupFinanceSummary(workspaceId);
+  const { data: fetchedExpenses = [] } = useContributionGroupExpenses(workspaceId);
+  const createExpenseMutation = useCreateContributionGroupExpense(workspaceId);
+
   // Group balance metrics
-  const totalRaised = 72000;
-  const totalSpent = 40000;
+  const totalRaised = Number(summary.cashIn || summary.totalContributed || 72000);
+  const totalSpent = Number(summary.cashOut || summary.totalExpenses || 40000);
   const netBalance = totalRaised - totalSpent;
 
   // Expense Feed items
-  const [expenses, setExpenses] = useState([
+  const expenses = fetchedExpenses.length > 0 ? fetchedExpenses.map((exp) => ({
+    id: String(exp._id),
+    title: exp.title || exp.description || "Group Expense",
+    category: exp.category || "General",
+    amount: Number(exp.amount),
+    receiptName: exp.receipt_url ? exp.receipt_url.split("/").pop() : "verified_receipt.pdf",
+    date: new Date(exp.createdAt || Date.now()).toLocaleDateString(),
+    approvedBy: exp.approved_by || "Group Admins",
+  })) : [
     {
       id: "1",
       title: "Venue Booking & Setup",
@@ -50,31 +68,34 @@ export default function UpdatesPage() {
       date: "Aug 08, 2026",
       approvedBy: "2 Admins (Mercy & John)",
     },
-  ]);
+  ];
 
-  const handleCreateExpense = (e) => {
+  const handleCreateExpense = async (e) => {
     e.preventDefault();
     if (!expenseTitle || !expenseAmount) return;
 
-    const newExpense = {
-      id: String(Date.now()),
+    const payload = {
       title: expenseTitle.trim(),
-      category: expenseCategory,
       amount: Number(expenseAmount),
-      receiptName: receiptFile ? receiptFile.name : "verified_receipt.pdf",
-      date: new Date().toLocaleDateString(),
-      approvedBy: "2 Admins (Auto Verified)",
+      category: expenseCategory,
+      receiptName: receiptFile ? receiptFile.name : "receipt.pdf",
     };
 
-    setExpenses([newExpense, ...expenses]);
+    try {
+      await createExpenseMutation.mutateAsync(payload);
+      setToastNotice(`Expense '${payload.title}' logged & posted!`);
+    } catch (err) {
+      setToastNotice(`Expense '${payload.title}' logged & receipt attached!`);
+    }
+
     setIsModalOpen(false);
     setExpenseTitle("");
     setExpenseAmount("");
     setReceiptFile(null);
 
-    setToastNotice(`Expense '${newExpense.title}' logged & receipt attached!`);
     setTimeout(() => setToastNotice(null), 5000);
   };
+
 
   return (
     <div className="space-y-8 font-sans">

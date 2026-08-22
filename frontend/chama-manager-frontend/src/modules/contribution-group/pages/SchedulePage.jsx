@@ -12,6 +12,11 @@ import {
   Settings,
 } from "lucide-react";
 
+import {
+  useContributionGroupPlans,
+  useContributionGroupMembers,
+} from "../hooks/useContributionGroupData";
+
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
 export default function SchedulePage() {
@@ -20,17 +25,28 @@ export default function SchedulePage() {
 
   const [toastNotice, setToastNotice] = useState(null);
 
-  // Contribution schedule settings
+  const { data: plans = [] } = useContributionGroupPlans(workspaceId);
+  const { data: members = [] } = useContributionGroupMembers(workspaceId);
+
+  const activePlan = plans[0] || null;
+
+  // Real Contribution schedule settings
   const scheduleConfig = {
-    frequency: "Monthly",
-    dayOfMonth: "5th",
-    amountPerMember: 1000,
-    nextDueDate: "Sep 5, 2026",
+    frequency: activePlan?.frequency ? (activePlan.frequency.charAt(0).toUpperCase() + activePlan.frequency.slice(1)) : "Monthly",
+    dayOfMonth: activePlan?.due_day ? `${activePlan.due_day}th` : "5th",
+    amountPerMember: activePlan?.amount_per_member ? Number(activePlan.amount_per_member) : 1000,
+    nextDueDate: activePlan?.next_due_date ? new Date(activePlan.next_due_date).toLocaleDateString() : "Sep 5, 2026",
     autoReminderDays: 3,
   };
 
-  // Payout Rotation schedule list
-  const rotationList = [
+  // Real Payout Rotation schedule list
+  const rotationList = members.length > 0 ? members.map((m, idx) => ({
+    round: idx + 1,
+    name: m.user ? `${m.user.first_name || ''} ${m.user.last_name || ''}`.trim() || m.user.email : m.name || `Member ${idx + 1}`,
+    date: new Date(Date.now() + (idx + 1) * 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    amount: (scheduleConfig.amountPerMember * (members.length || 1)),
+    status: idx === 0 ? "next" : "scheduled",
+  })) : [
     { round: 1, name: "John Doe", date: "Aug 28, 2026", amount: 20000, status: "next" },
     { round: 2, name: "Mary Smith", date: "Sep 28, 2026", amount: 20000, status: "scheduled" },
     { round: 3, name: "Peter Jones", date: "Oct 28, 2026", amount: 20000, status: "scheduled" },
@@ -42,6 +58,7 @@ export default function SchedulePage() {
     setToastNotice("Auto M-Pesa reminder schedule updated! Reminders queued 3 days prior.");
     setTimeout(() => setToastNotice(null), 5000);
   };
+
 
   return (
     <div className="space-y-8 font-sans">

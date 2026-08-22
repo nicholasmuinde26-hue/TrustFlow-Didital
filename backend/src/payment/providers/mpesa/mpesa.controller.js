@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import ContributionObligation from '../../../models/ContributionObligation.js';
 import ChamaMembership from '../../../models/ChamaMembership.js';
+import ContributionGroupMember from '../../../models/ContributionGroupMember.js';
+import ContributionGroup from '../../../models/ContributionGroup.js';
+import Business from '../../../models/Business.js';
 import PaymentIntent from '../../../models/PaymentIntent.js';
 import AppError from '../../../utils/AppError.js';
 
@@ -21,8 +24,10 @@ export const initiateStkPush = async (req, res, next) => {
     const {
       amount,
       phoneNumber,
-      productType, // 'savings' | 'contribution' | 'mgr'
+      productType = 'contribution', // 'savings' | 'contribution' | 'mgr'
       chamaId,
+      workspaceId,
+      groupId,
       obligationId,
       planId,
       accountReference,
@@ -32,49 +37,90 @@ export const initiateStkPush = async (req, res, next) => {
 
     if (!amount) throw new AppError("Payment amount is required", 400);
     if (!phoneNumber) throw new AppError("M-Pesa phone number is required", 400);
-    if (!['savings', 'contribution', 'mgr'].includes(productType)) throw new AppError("productType is required", 400);
 
     const userId = req.user?.id || req.user?._id;
     if (!userId) throw new AppError("Authenticated user is required", 401);
 
-    const membership = await ChamaMembership.findOne({ chama_id: chamaId, user_id: userId, status: 'active' }).lean();
-    if (!membership) throw new AppError('You are not a member of this chama', 403);
+    const targetWorkspaceId = chamaId || workspaceId || groupId;
+    if (!targetWorkspaceId) throw new AppError("Workspace ID is required", 400);
+
+    let ownerType = "Chama";
+    let ownerId = targetWorkspaceId;
+    let participantType = "ChamaMembership";
+    let participantId = null;
+
+    // 1. Try Chama membership
+    const chamaMembership = await ChamaMembership.findOne({ chama_id: targetWorkspaceId, user_id: userId, status: 'active' }).lean();
+    if (chamaMembership) {
+      ownerType = "Chama";
+      participantType = "ChamaMembership";
+      participantId = chamaMembership._id;
+    } else {
+      // 2. Try ContributionGroup membership or group creator
+      let groupMembership = await ContributionGroupMember.findOne({ contribution_group_id: targetWorkspaceId, user_id: userId, status: 'active' }).lean();
+      if (!groupMembership) {
+        const groupCreated = await ContributionGroup.findOne({ _id: targetWorkspaceId, created_by: userId }).lean();
+        if (groupCreated) {
+          groupMembership = await ContributionGroupMember.findOneAndUpdate(
+            { contribution_group_id: targetWorkspaceId, user_id: userId },
+            { contribution_group_id: targetWorkspaceId, user_id: userId, role: 'organizer', status: 'active' },
+            { upsert: true, new: true }
+          ).lean();
+        }
+      }
+
+      if (groupMembership) {
+        ownerType = "ContributionGroup";
+        participantType = "ContributionGroupMember";
+        participantId = groupMembership._id;
+      } else {
+        // 3. Try Business
+        const business = await Business.findOne({ _id: targetWorkspaceId, created_by: userId }).lean();
+        if (business) {
+          ownerType = "Business";
+          participantType = "User";
+          participantId = userId;
+        } else {
+          throw new AppError("You are not an active member of this workspace", 403);
+        }
+      }
+    }
 
     let resolvedPlanId = planId;
     if (!resolvedPlanId && obligationId) {
       const obligation = await ContributionObligation.findById(obligationId).select('plan_id').lean();
-      if (!obligation) throw new AppError('Contribution obligation not found', 404);
-      resolvedPlanId = obligation.plan_id;
-    }
-    if (['contribution', 'mgr'].includes(productType) && !resolvedPlanId) {
-      throw new AppError('planId is required for contribution payments', 400);
+      if (obligation) {
+        resolvedPlanId = obligation.plan_id;
+      }
     }
 
     const key = idempotencyKey || req.get('Idempotency-Key') || crypto.randomUUID();
     const normalizedPhone = phoneUtil.normalize(phoneNumber);
-    const displayRef = (accountReference || `CHAMA-${productType.toUpperCase()}`).slice(0, 20);
+    const displayRef = (accountReference || `${ownerType.toUpperCase().slice(0, 5)}-${productType.toUpperCase()}`).slice(0, 20);
     const uniqueRef = generateUniqueReference(displayRef);
 
     const result = await paymentService.initiate({
         amount,
         currency: 'KES',
-        type: productType, // CRITICAL: savings, contribution, mgr
-        chamaId,
-        obligationId,
-        planId: resolvedPlanId,
-        participantId: membership._id,
-        participantType: "ChamaMembership",
+        type: productType,
+        chamaId: targetWorkspaceId,
+        ownerId: targetWorkspaceId,
+        ownerType,
+        obligationId: obligationId || null,
+        planId: resolvedPlanId || null,
+        participantId,
+        participantType,
         phoneNumber: normalizedPhone,
         actorId: userId,
         provider: 'mpesa',
         reference: uniqueRef,
         displayReference: displayRef,
-        description: transactionDescription || `Chama ${productType} payment`,
+        description: transactionDescription || `${ownerType} ${productType} payment`,
         idempotencyKey: key
     });
 
     await MpesaAttempt.create({
-        obligation_id: obligationId,
+        obligation_id: obligationId || null,
         payment_intent_id: result.paymentIntentId,
         amount,
         phone_number: normalizedPhone,

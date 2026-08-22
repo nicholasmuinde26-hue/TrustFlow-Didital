@@ -11,11 +11,50 @@ import {
   Filter,
 } from "lucide-react";
 
+import { useContributionGroupAuditLogs } from "../hooks/useContributionGroupData";
+
 export default function ActivityPage() {
   const { workspaceId } = useParams();
   const [filterType, setFilterType] = useState("all");
 
-  const auditEvents = [
+  const { data: logs = [], isLoading } = useContributionGroupAuditLogs(workspaceId);
+
+  // Map real backend audit logs
+  const auditEvents = logs.length > 0 ? logs.map((log) => {
+    const actorName = log.actorUserId ? `${log.actorUserId.first_name || ''} ${log.actorUserId.last_name || ''}`.trim() || log.actorUserId.email : "System";
+    const act = (log.action || "").toLowerCase();
+    let type = "contribution";
+    let icon = CheckCircle2;
+    let color = "emerald";
+
+    if (act.includes("member") || act.includes("invite")) {
+      type = "member";
+      icon = UserPlus;
+      color = "blue";
+    } else if (act.includes("payout") || act.includes("withdraw")) {
+      type = "payout";
+      icon = TrendingUp;
+      color = "indigo";
+    } else if (act.includes("expense") || act.includes("payment")) {
+      type = "expense";
+      icon = Receipt;
+      color = "rose";
+    } else if (act.includes("reminder") || act.includes("notice")) {
+      type = "reminder";
+      icon = Bell;
+      color = "amber";
+    }
+
+    return {
+      id: String(log._id),
+      timestamp: new Date(log.createdAt).toLocaleString(),
+      title: `${actorName} - ${log.action}`,
+      details: log.metadata ? JSON.stringify(log.metadata) : `Resource: ${log.resourceType || "ContributionGroup"} (${log.resourceId || log._id})`,
+      type,
+      icon,
+      color,
+    };
+  }) : [
     {
       id: "1",
       timestamp: "Aug 14, 2026 • 14:30",
@@ -73,6 +112,7 @@ export default function ActivityPage() {
   ];
 
   const filteredEvents = auditEvents.filter((ev) =>
+
     filterType === "all" ? true : ev.type === filterType
   );
 

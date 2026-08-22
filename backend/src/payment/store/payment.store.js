@@ -34,10 +34,12 @@ class PaymentStore {
         const opts = getOpts(session);
         const providerName = context.provider.name;
         const idemKey = context.idempotencyKey || context.idempotency_key || crypto.randomUUID();
+        const ownerType = context.ownerType || context.owner_type || (context.chamaId ? "Chama" : "ContributionGroup");
+        const ownerId = context.ownerId || context.owner_id || context.chamaId;
 
         const intentDoc = {
-            owner_type: "Chama",
-            owner_id: context.chamaId,
+            owner_type: ownerType,
+            owner_id: ownerId,
             type: context.type,
             amount: toMongooseDecimal(context.amount),
             currency: context.currency,
@@ -49,16 +51,16 @@ class PaymentStore {
             idempotency_key: idemKey,
             participant_id: context.participantId,
             participant_type: context.participantType,
-            obligation_id: context.obligationId,
-            plan_id: context.planId,
+            obligation_id: context.obligationId || null,
+            plan_id: context.planId || null,
             created_by: context.actorId,
             metadata: context.metadata || {}
         };
         const [intent] = await PaymentIntent.create([intentDoc], opts);
 
         const paymentDoc = {
-            owner_type: "Chama",
-            owner_id: context.chamaId,
+            owner_type: ownerType,
+            owner_id: ownerId,
             type: context.type,
             amount: toMongooseDecimal(context.amount),
             currency: context.currency,
@@ -68,8 +70,8 @@ class PaymentStore {
             payment_intent_id: intent._id,
             participant_id: context.participantId,
             participant_type: context.participantType,
-            obligation_id: context.obligationId,
-            plan_id: context.planId,
+            obligation_id: context.obligationId || null,
+            plan_id: context.planId || null,
             payment_method: providerName,
             channel_type: providerName === 'mpesa'? 'mpesa' : 'card',
             payment_instrument: { phone_number: context.phoneNumber },

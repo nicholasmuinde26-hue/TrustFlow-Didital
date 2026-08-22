@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Building2,
   Wallet,
@@ -19,6 +19,14 @@ import {
   CircleDollarSign,
   BriefcaseBusiness,
   UserPlus,
+  Search,
+  SlidersHorizontal,
+  Zap,
+  Activity,
+  Compass,
+  CheckCircle2,
+  Lock,
+  ArrowRight,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -33,56 +41,44 @@ import InvitationCard from "@/modules/invitations/components/InvitationCard";
 import Spinner from "@/shared/components/ui/Spinner";
 
 // ============================================================
-// WORKSPACE CONFIG
+// WORKSPACE CONFIG (ADAPTIVE LIGHT / DARK TECH MATRIX)
 // ============================================================
 
 const workspaceConfig = {
   business: {
     icon: Store,
-    label: "Business",
-    description: "Sales, inventory & operations",
-    shortDescription: "Run your business operations",
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    accent: "bg-blue-600",
-    softAccent: "bg-blue-50",
-    badge: "border-blue-100 bg-blue-50 text-blue-700",
+    label: "Business Hub",
+    description: "Sales, inventory & operational ledger",
+    shortDescription: "Enterprise Operations",
+    iconBg: "bg-blue-50 border border-blue-200/60 text-blue-600 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-400",
+    iconGlow: "shadow-[0_4px_12px_rgba(37,99,235,0.12)] dark:shadow-[0_0_20px_rgba(59,130,246,0.25)]",
+    accent: "bg-gradient-to-r from-blue-600 to-cyan-500",
+    badge: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
+    cardGlow: "hover:border-blue-300 dark:hover:border-blue-500/40 hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]",
   },
 
   chama: {
     icon: Building2,
-    label: "Chama",
-    description: "Members, treasury & payouts",
-    shortDescription: "Manage your community treasury",
-    iconBg: "bg-violet-50",
-    iconColor: "text-violet-600",
-    accent: "bg-violet-600",
-    softAccent: "bg-violet-50",
-    badge: "border-violet-100 bg-violet-50 text-violet-700",
+    label: "Chama Circle",
+    description: "Members, treasury & rotational payouts",
+    shortDescription: "Community Treasury",
+    iconBg: "bg-violet-50 border border-violet-200/60 text-violet-600 dark:bg-violet-500/10 dark:border-violet-500/20 dark:text-violet-400",
+    iconGlow: "shadow-[0_4px_12px_rgba(124,58,237,0.12)] dark:shadow-[0_0_20px_rgba(139,92,246,0.25)]",
+    accent: "bg-gradient-to-r from-violet-600 to-fuchsia-500",
+    badge: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
+    cardGlow: "hover:border-violet-300 dark:hover:border-violet-500/40 hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(139,92,246,0.15)]",
   },
 
   contribution: {
     icon: Wallet,
     label: "Contribution Group",
-    description: "Savings, collections & obligations",
-    shortDescription: "Track structured contributions",
-    iconBg: "bg-emerald-50",
-    iconColor: "text-emerald-600",
-    accent: "bg-emerald-600",
-    softAccent: "bg-emerald-50",
-    badge: "border-emerald-100 bg-emerald-50 text-emerald-700",
-  },
-
-  contribution_group: {
-    icon: Wallet,
-    label: "Contribution Group",
-    description: "Savings, collections & obligations",
-    shortDescription: "Track structured contributions",
-    iconBg: "bg-emerald-50",
-    iconColor: "text-emerald-600",
-    accent: "bg-emerald-600",
-    softAccent: "bg-emerald-50",
-    badge: "border-emerald-100 bg-emerald-50 text-emerald-700",
+    description: "Structured savings, collections & obligations",
+    shortDescription: "Group Savings Ledger",
+    iconBg: "bg-emerald-50 border border-emerald-200/60 text-emerald-600 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400",
+    iconGlow: "shadow-[0_4px_12px_rgba(5,150,105,0.12)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)]",
+    accent: "bg-gradient-to-r from-emerald-600 to-teal-500",
+    badge: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+    cardGlow: "hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(16,185,129,0.15)]",
   },
 };
 
@@ -103,41 +99,32 @@ function normalizeWorkspaceType(type) {
     return "business";
   }
 
-  if (normalized === "chama") {
-    return "chama";
-  }
-
   return "chama";
 }
 
 function getWorkspaceMeta(type) {
   const normalizedType = normalizeWorkspaceType(type);
-
   return workspaceConfig[normalizedType] || workspaceConfig.chama;
 }
 
 function formatRole(role) {
-  if (!role) return "Workspace member";
-
+  if (!role) return "Member";
   return String(role)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 // ============================================================
-// PAGE
+// MAIN PAGE COMPONENT (THEME ADAPTIVE)
 // ============================================================
 
 export default function HomePage() {
   const { user } = useAuth();
-
-  const {
-    workspaces = [],
-    loading,
-    selectWorkspace,
-  } = useWorkspace();
-
+  const { workspaces = [], loading, selectWorkspace } = useWorkspace();
   const navigate = useNavigate();
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState("all");
 
   const {
     data: invitations = [],
@@ -148,35 +135,38 @@ export default function HomePage() {
 
   const acceptInvitation = useAcceptInvitation();
 
-  // ==========================================================
-  // COUNTS
-  // ==========================================================
+  // Counts
+  const businessCount = useMemo(
+    () => workspaces.filter((w) => normalizeWorkspaceType(w.type) === "business").length,
+    [workspaces]
+  );
+  const chamaCount = useMemo(
+    () => workspaces.filter((w) => normalizeWorkspaceType(w.type) === "chama").length,
+    [workspaces]
+  );
+  const contributionCount = useMemo(
+    () => workspaces.filter((w) => normalizeWorkspaceType(w.type) === "contribution").length,
+    [workspaces]
+  );
 
-  const businessCount = workspaces.filter(
-    (workspace) =>
-      normalizeWorkspaceType(workspace.type) === "business"
-  ).length;
+  // Filtered workspaces
+  const filteredWorkspaces = useMemo(() => {
+    return workspaces.filter((w) => {
+      const matchesSearch =
+        !searchQuery.trim() ||
+        w.name.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+        String(w.type || "").toLowerCase().includes(searchQuery.toLowerCase().trim());
 
-  const chamaCount = workspaces.filter(
-    (workspace) =>
-      normalizeWorkspaceType(workspace.type) === "chama"
-  ).length;
+      const normType = normalizeWorkspaceType(w.type);
+      const matchesTab = activeTab === "all" || normType === activeTab;
 
-  const contributionCount = workspaces.filter(
-    (workspace) =>
-      normalizeWorkspaceType(workspace.type) === "contribution"
-  ).length;
-
-  // ==========================================================
-  // OPEN WORKSPACE
-  // ==========================================================
+      return matchesSearch && matchesTab;
+    });
+  }, [workspaces, searchQuery, activeTab]);
 
   function openWorkspace(workspace) {
     selectWorkspace(workspace);
-
-    const workspaceId =
-      workspace.id ?? workspace._id;
-
+    const workspaceId = workspace.id ?? workspace._id;
     const type = normalizeWorkspaceType(workspace.type);
 
     if (type === "business") {
@@ -187,18 +177,9 @@ export default function HomePage() {
     navigate(`/workspace/${workspaceId}`);
   }
 
-  // ==========================================================
-  // ACCEPT INVITATION
-  // ==========================================================
-
   async function handleAccept(invitation) {
-    const result = await acceptInvitation.mutateAsync(
-      invitation._id
-    );
-
-    const groupId =
-      result?.group?._id ||
-      result?.membership?.contribution_group_id;
+    const result = await acceptInvitation.mutateAsync(invitation._id);
+    const groupId = result?.group?._id || result?.membership?.contribution_group_id;
 
     if (groupId) {
       navigate(`/workspace/${groupId}`);
@@ -206,504 +187,324 @@ export default function HomePage() {
   }
 
   return (
-    <div className="relative min-h-full overflow-hidden bg-[#f8fafc]">
+    <div className="relative min-h-screen bg-[#f8fafc] dark:bg-[#090d16] text-slate-900 dark:text-slate-100 font-sans selection:bg-violet-500 selection:text-white pb-16 overflow-hidden transition-colors duration-300">
       {/* ======================================================
-          BACKGROUND
+          AMBIENT BACKGROUND & MESH GRID
       ====================================================== */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
+        {/* Subtle Grid Pattern */}
+        <div className="absolute inset-0 opacity-[0.035] dark:opacity-[0.07] bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:36px_36px]" />
 
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className="
-            absolute inset-0
-            opacity-[0.35]
-            bg-[linear-gradient(to_right,rgba(15,23,42,0.025)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.025)_1px,transparent_1px)]
-            bg-[size:48px_48px]
-          "
-        />
-
-        <div
-          className="
-            absolute
-            -left-48
-            -top-48
-            h-[520px]
-            w-[520px]
-            rounded-full
-            bg-violet-200/20
-            blur-3xl
-          "
-        />
-
-        <div
-          className="
-            absolute
-            -right-48
-            top-[18%]
-            h-[520px]
-            w-[520px]
-            rounded-full
-            bg-blue-200/20
-            blur-3xl
-          "
-        />
-
-        <div
-          className="
-            absolute
-            bottom-[-300px]
-            left-[35%]
-            h-[500px]
-            w-[500px]
-            rounded-full
-            bg-emerald-200/10
-            blur-3xl
-          "
-        />
+        {/* Ambient Soft Light Orbs */}
+        <div className="absolute -top-32 -left-32 h-[550px] w-[550px] rounded-full bg-violet-200/35 dark:bg-violet-600/25 blur-[130px]" />
+        <div className="absolute top-[20%] -right-40 h-[550px] w-[550px] rounded-full bg-blue-200/35 dark:bg-cyan-600/15 blur-[130px]" />
+        <div className="absolute bottom-10 left-[30%] h-[450px] w-[450px] rounded-full bg-emerald-200/25 dark:bg-emerald-600/15 blur-[130px]" />
       </div>
 
       {/* ======================================================
-          MAIN
+          MAIN CONTENT CONTAINER
       ====================================================== */}
-
-      <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-
+      <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8 space-y-8">
+        
         {/* ====================================================
-            HEADER / HERO
+            HERO COMMAND SECTION
         ==================================================== */}
-
         <motion.section
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45 }}
-          className="
-            relative
-            overflow-hidden
-            rounded-[28px]
-            border
-            border-slate-200
-            bg-white
-            px-6
-            py-7
-            shadow-sm
-            sm:px-8
-            sm:py-8
-          "
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 dark:border-slate-800/80 dark:bg-slate-900/60 p-6 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-2xl sm:p-8 lg:p-10"
         >
-          <div
-            className="
-              pointer-events-none
-              absolute
-              right-[-80px]
-              top-[-100px]
-              h-[280px]
-              w-[280px]
-              rounded-full
-              bg-violet-100/70
-              blur-3xl
-            "
-          />
+          {/* Top Subtle Accent Line */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-violet-600 via-indigo-600 to-emerald-500" />
 
-          <div className="relative flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
-
-            <div className="max-w-2xl">
-
-              <div
-                className="
-                  mb-4
-                  inline-flex
-                  items-center
-                  gap-2
-                  rounded-full
-                  border
-                  border-violet-100
-                  bg-violet-50
-                  px-3
-                  py-1.5
-                  text-[10px]
-                  font-bold
-                  uppercase
-                  tracking-[0.14em]
-                  text-violet-700
-                "
-              >
-                <Sparkles size={12} />
-                Financial workspace
+          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl space-y-4">
+              
+              {/* Matrix Status Badge */}
+              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 dark:border-violet-500/30 dark:bg-violet-500/10 px-3.5 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 shadow-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <Sparkles size={13} className="text-violet-600 dark:text-violet-400" />
+                <span className="uppercase tracking-widest text-[10px] font-extrabold">FINANCIAL OS MATRIX</span>
               </div>
 
-              <h1
-                className="
-                  text-3xl
-                  font-black
-                  tracking-[-0.04em]
-                  text-slate-950
-                  sm:text-4xl
-                  lg:text-5xl
-                "
-              >
-                Welcome
-                {user?.name
-                  ? `, ${user.name.split(" ")[0]}`
-                  : ""}
-                <span className="text-violet-600">.</span>
+              {/* Dynamic Header Greeting */}
+              <h1 className="text-3xl font-black tracking-tight sm:text-5xl text-slate-950 dark:text-white">
+                Welcome back,{" "}
+                <span className="bg-gradient-to-r from-violet-600 via-indigo-600 to-emerald-600 dark:from-violet-400 dark:via-cyan-300 dark:to-emerald-400 bg-clip-text text-transparent">
+                  {user?.name ? user.name.split(" ")[0] : "Commander"}
+                </span>
               </h1>
 
-              <p
-                className="
-                  mt-3
-                  max-w-xl
-                  text-sm
-                  leading-6
-                  text-slate-500
-                  sm:text-[15px]
-                "
-              >
-                Everything you manage, collect and grow —
-                organized in one trusted workspace.
+              <p className="text-sm sm:text-base leading-relaxed text-slate-600 dark:text-slate-300 max-w-xl font-normal">
+                Everything you manage, collect, and grow — organized in your trusted financial operational workspace.
               </p>
 
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <StatusPill
-                  icon={ShieldCheck}
-                  label="Secure workspace"
-                />
-
-                <StatusPill
-                  icon={TrendingUp}
-                  label="Financial operations"
-                />
-
-                <StatusPill
-                  icon={Users}
-                  label={`${workspaces.length} active workspace${
-                    workspaces.length === 1 ? "" : "s"
-                  }`}
-                />
+              {/* Telemetry Status Pills */}
+              <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                <AdaptiveStatusPill icon={Lock} label="End-to-End Encrypted" color="emerald" />
+                <AdaptiveStatusPill icon={Activity} label="Real-Time Telemetry" color="blue" />
+                <AdaptiveStatusPill icon={Layers3} label={`${workspaces.length} Active Workspace${workspaces.length === 1 ? "" : "s"}`} color="violet" />
               </div>
             </div>
 
-            {/* PRIMARY ACTIONS */}
-
-            <div className="flex flex-wrap gap-2.5 lg:max-w-sm lg:justify-end">
-
-              <CreateButton
+            {/* Hero Quick Launcher Actions */}
+            <div className="flex flex-col sm:flex-row lg:flex-col gap-3 min-w-[220px]">
+              <HeroActionButton
                 to="/business/new"
                 icon={Store}
-                label="Business"
-                color="blue"
+                title="Launch Business"
+                sub="Sales & Operations"
+                gradient="from-blue-600 to-cyan-600"
+                shadow="shadow-blue-600/20"
               />
-
-              <CreateButton
+              <HeroActionButton
                 to="/chamas/new"
                 icon={Building2}
-                label="Chama"
-                color="violet"
+                title="Start Chama"
+                sub="Treasury & Payouts"
+                gradient="from-violet-600 to-fuchsia-600"
+                shadow="shadow-violet-600/20"
               />
-
-              <CreateButton
+              <HeroActionButton
                 to="/contribution-groups/new"
                 icon={Wallet}
-                label="Contribution Group"
-                color="emerald"
+                title="New Group"
+                sub="Savings & Obligations"
+                gradient="from-emerald-600 to-teal-600"
+                shadow="shadow-emerald-600/20"
               />
-
             </div>
           </div>
         </motion.section>
 
         {/* ====================================================
-            SUMMARY
+            TELEMETRY METRICS SUMMARY BAR
         ==================================================== */}
-
         <motion.section
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{
-            duration: 0.45,
-            delay: 0.08,
-          }}
-          className="
-            mt-5
-            grid
-            overflow-hidden
-            rounded-2xl
-            border
-            border-slate-200
-            bg-white
-            shadow-sm
-            sm:grid-cols-3
-          "
+          transition={{ duration: 0.45, delay: 0.08 }}
+          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
         >
-          <SummaryItem
-            icon={Store}
-            label="Businesses"
-            value={businessCount}
-            color="blue"
-            description="Business workspaces"
-          />
-
-          <SummaryItem
-            icon={Building2}
-            label="Chamas"
-            value={chamaCount}
+          <AdaptiveMetricCard
+            icon={Layers3}
+            title="Total Workspaces"
+            count={workspaces.length}
             color="violet"
-            description="Community workspaces"
+            label="Active Consoles"
           />
-
-          <SummaryItem
+          <AdaptiveMetricCard
+            icon={Store}
+            title="Business Hubs"
+            count={businessCount}
+            color="blue"
+            label="Operations"
+          />
+          <AdaptiveMetricCard
+            icon={Building2}
+            title="Chama Circles"
+            count={chamaCount}
+            color="fuchsia"
+            label="Treasuries"
+          />
+          <AdaptiveMetricCard
             icon={Wallet}
-            label="Contribution Groups"
-            value={contributionCount}
+            title="Savings Groups"
+            count={contributionCount}
             color="emerald"
-            description="Contribution workspaces"
+            label="Contributions"
           />
         </motion.section>
 
         {/* ====================================================
-            WORKSPACES
+            WORKSPACE EXPLORER SECTION (SEARCH & TABS)
         ==================================================== */}
+        <section className="space-y-5 pt-2">
+          
+          {/* Controls Bar: Title, Search & Filter Tabs */}
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-slate-950 dark:text-white flex items-center gap-2.5">
+                <Compass className="text-violet-600 dark:text-cyan-400" size={20} />
+                Your Workspaces
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select a workspace console to launch your management dashboard</p>
+            </div>
 
-        <section className="mt-10">
+            {/* Filter Tabs & Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              
+              {/* Search Bar */}
+              <div className="relative flex-1 sm:w-64">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search workspace..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/80 pl-10 pr-4 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 transition-all shadow-sm backdrop-blur-md"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
 
-          <SectionHeader
-            icon={Layers3}
-            title="Your workspaces"
-            description="Choose a workspace to continue where you left off."
-            count={workspaces.length}
-          />
+              {/* Type Category Tabs */}
+              <div className="flex items-center rounded-xl border border-slate-200/80 bg-slate-100 dark:border-slate-800 dark:bg-slate-900/80 p-1 shadow-inner backdrop-blur-md overflow-x-auto scrollbar-none">
+                <AdaptiveFilterTab
+                  active={activeTab === "all"}
+                  onClick={() => setActiveTab("all")}
+                  label="All"
+                  count={workspaces.length}
+                />
+                <AdaptiveFilterTab
+                  active={activeTab === "business"}
+                  onClick={() => setActiveTab("business")}
+                  label="Business"
+                  count={businessCount}
+                />
+                <AdaptiveFilterTab
+                  active={activeTab === "chama"}
+                  onClick={() => setActiveTab("chama")}
+                  label="Chama"
+                  count={chamaCount}
+                />
+                <AdaptiveFilterTab
+                  active={activeTab === "contribution"}
+                  onClick={() => setActiveTab("contribution")}
+                  label="Groups"
+                  count={contributionCount}
+                />
+              </div>
+            </div>
+          </div>
 
+          {/* Workspaces Grid */}
           {loading ? (
-            <LoadingWorkspace />
-          ) : workspaces.length === 0 ? (
-            <EmptyWorkspace />
+            <LoadingState />
+          ) : filteredWorkspaces.length === 0 ? (
+            <EmptyState searchQuery={searchQuery} activeTab={activeTab} />
           ) : (
-            <div
-              className="
-                grid
-                gap-4
-                sm:grid-cols-2
-                xl:grid-cols-3
-              "
-            >
-              {workspaces.map((workspace, index) => {
-                const id =
-                  workspace.id ??
-                  workspace._id;
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <AnimatePresence mode="popLayout">
+                {filteredWorkspaces.map((workspace, index) => {
+                  const id = workspace.id ?? workspace._id;
+                  const meta = getWorkspaceMeta(workspace.type);
+                  const Icon = meta.icon;
 
-                const meta =
-                  getWorkspaceMeta(workspace.type);
-
-                const Icon = meta.icon;
-
-                return (
-                  <WorkspaceCard
-                    key={id}
-                    workspace={workspace}
-                    meta={meta}
-                    Icon={Icon}
-                    index={index}
-                    onOpen={() =>
-                      openWorkspace(workspace)
-                    }
-                  />
-                );
-              })}
+                  return (
+                    <AdaptiveWorkspaceCard
+                      key={id}
+                      workspace={workspace}
+                      meta={meta}
+                      Icon={Icon}
+                      index={index}
+                      onOpen={() => openWorkspace(workspace)}
+                    />
+                  );
+                })}
+              </AnimatePresence>
             </div>
           )}
         </section>
 
         {/* ====================================================
-            QUICK ACTIONS
+            FEATURE LAUNCHPAD (CREATE NEW WORKSPACE)
         ==================================================== */}
+        <section className="space-y-4 pt-4">
+          <div className="flex items-center gap-2">
+            <Zap className="text-amber-500" size={18} />
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Create New Workspace</h2>
+          </div>
 
-        <section className="mt-11">
-
-          <SectionHeader
-            icon={Plus}
-            title="Create something new"
-            description="Start a workspace for the way you manage money."
-          />
-
-          <div
-            className="
-              grid
-              gap-4
-              md:grid-cols-3
-            "
-          >
-            <ActionCard
+          <div className="grid gap-4 md:grid-cols-3">
+            <AdaptiveActionCard
               to="/business/new"
               icon={Store}
-              title="Create a Business"
-              description="Sales, inventory, customers and daily operations."
+              title="New Business Workspace"
+              description="Inventory, POS sales, customer records & financial reports."
               color="blue"
+              badge="ENTERPRISE"
             />
-
-            <ActionCard
+            <AdaptiveActionCard
               to="/chamas/new"
               icon={Building2}
-              title="Create a Chama"
-              description="Members, treasury, contributions and payouts."
+              title="New Chama Workspace"
+              description="Member roster, rotational payouts, loan policy & treasury."
               color="violet"
+              badge="COMMUNITY"
             />
-
-            <ActionCard
+            <AdaptiveActionCard
               to="/contribution-groups/new"
               icon={Wallet}
-              title="Create a Contribution Group"
-              description="Structured contributions, collections and obligations."
+              title="New Contribution Group"
+              description="Scheduled savings, obligations & automated reminders."
               color="emerald"
+              badge="SAVINGS"
             />
           </div>
         </section>
 
         {/* ====================================================
-            INVITATIONS
+            PENDING INVITATIONS HUB
         ==================================================== */}
-
-        <section className="mt-11">
-
-          <div
-            className="
-              overflow-hidden
-              rounded-2xl
-              border
-              border-slate-200
-              bg-white
-              shadow-sm
-            "
-          >
-
-            <div
-              className="
-                flex
-                flex-col
-                gap-4
-                border-b
-                border-slate-100
-                px-5
-                py-5
-                sm:flex-row
-                sm:items-center
-                sm:justify-between
-              "
-            >
-
+        <section className="pt-2">
+          <div className="overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 backdrop-blur-xl shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800/80 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-
-                <div
-                  className="
-                    flex
-                    h-10
-                    w-10
-                    items-center
-                    justify-center
-                    rounded-xl
-                    bg-orange-50
-                    text-orange-600
-                  "
-                >
-                  <Mail size={17} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 border border-orange-200/60 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30">
+                  <Mail size={16} />
                 </div>
-
                 <div>
                   <div className="flex items-center gap-2">
-
-                    <h2
-                      className="
-                        text-sm
-                        font-black
-                        text-slate-950
-                      "
-                    >
-                      Invitations
-                    </h2>
-
+                    <h3 className="text-sm font-black text-slate-950 dark:text-white">Pending Invitations</h3>
                     {invitations.length > 0 && (
-                      <span
-                        className="
-                          rounded-full
-                          bg-orange-100
-                          px-2
-                          py-0.5
-                          text-[9px]
-                          font-bold
-                          text-orange-700
-                        "
-                      >
-                        {invitations.length}
+                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:bg-amber-500/10 dark:text-amber-300 animate-pulse">
+                        {invitations.length} NEW
                       </span>
                     )}
                   </div>
-
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    Workspace invitations waiting for you.
-                  </p>
+                  <p className="text-[11px] text-slate-400">Workspace invitations waiting for your response</p>
                 </div>
               </div>
 
               {invitations.length > 0 && (
                 <Link
                   to="/invitations"
-                  className="
-                    inline-flex
-                    items-center
-                    gap-1
-                    text-xs
-                    font-bold
-                    text-violet-600
-                    transition
-                    hover:text-violet-700
-                  "
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 transition-colors"
                 >
-                  View all
-                  <ArrowUpRight size={13} />
+                  View All Invitations
+                  <ArrowUpRight size={14} />
                 </Link>
               )}
             </div>
 
-            <div className="p-4">
-
+            <div className="p-5">
               {invitationsLoading && (
-                <div className="flex justify-center py-8">
+                <div className="flex justify-center py-6">
                   <Spinner />
                 </div>
               )}
 
               {invitationsError && (
-                <div
-                  className="
-                    flex
-                    flex-col
-                    gap-3
-                    rounded-xl
-                    border
-                    border-red-100
-                    bg-red-50
-                    p-4
-                    text-xs
-                    text-red-600
-                    sm:flex-row
-                    sm:items-center
-                    sm:justify-between
-                  "
-                >
+                <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/10 p-4 text-xs text-red-700 dark:text-red-300">
                   <span className="flex items-center gap-2">
-                    <AlertCircle size={14} />
-                    Unable to load invitations.
+                    <AlertCircle size={15} />
+                    Unable to load invitations right now.
                   </span>
-
                   <button
                     type="button"
-                    onClick={() =>
-                      refetchInvitations()
-                    }
-                    className="
-                      flex
-                      items-center
-                      gap-1
-                      font-bold
-                      hover:underline
-                    "
+                    onClick={() => refetchInvitations()}
+                    className="flex items-center gap-1 font-bold hover:underline"
                   >
                     <RotateCcw size={12} />
                     Retry
@@ -711,919 +512,316 @@ export default function HomePage() {
                 </div>
               )}
 
-              {!invitationsLoading &&
-                !invitationsError &&
-                invitations.length === 0 && (
-                  <div
-                    className="
-                      flex
-                      flex-col
-                      items-center
-                      justify-center
-                      py-8
-                      text-center
-                    "
-                  >
-                    <div
-                      className="
-                        flex
-                        h-11
-                        w-11
-                        items-center
-                        justify-center
-                        rounded-xl
-                        bg-slate-50
-                        text-slate-300
-                      "
-                    >
-                      <Mail size={18} />
-                    </div>
-
-                    <p
-                      className="
-                        mt-3
-                        text-xs
-                        font-bold
-                        text-slate-600
-                      "
-                    >
-                      No pending invitations
-                    </p>
-
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      You're all caught up.
-                    </p>
+              {!invitationsLoading && !invitationsError && invitations.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-6 text-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-400 dark:bg-slate-900 dark:text-slate-500 border border-slate-200 dark:border-slate-800">
+                    <Mail size={18} />
                   </div>
-                )}
+                  <p className="mt-2 text-xs font-bold text-slate-700 dark:text-slate-300">No pending invitations</p>
+                  <p className="text-[11px] text-slate-400">You're all caught up on invitations.</p>
+                </div>
+              )}
 
-              {!invitationsLoading &&
-                !invitationsError &&
-                invitations.length > 0 && (
-                  <div className="space-y-2">
-                    {invitations
-                      .slice(0, 3)
-                      .map((invitation) => (
-                        <InvitationCard
-                          key={invitation._id}
-                          invitation={invitation}
-                          accepting={
-                            acceptInvitation.isPending &&
-                            acceptInvitation.variables ===
-                              invitation._id
-                          }
-                          onAccept={handleAccept}
-                        />
-                      ))}
-                  </div>
-                )}
+              {!invitationsLoading && !invitationsError && invitations.length > 0 && (
+                <div className="space-y-3">
+                  {invitations.slice(0, 3).map((invitation) => (
+                    <InvitationCard
+                      key={invitation._id}
+                      invitation={invitation}
+                      accepting={
+                        acceptInvitation.isPending &&
+                        acceptInvitation.variables === invitation._id
+                      }
+                      onAccept={handleAccept}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>
 
         {/* ====================================================
-            JOIN CHAMA
+            JOIN CHAMA FOOTER BANNER
         ==================================================== */}
-
-        <motion.section
-          initial={{ opacity: 0, y: 10 }}
-          whileInView={{
-            opacity: 1,
-            y: 0,
-          }}
-          viewport={{ once: true }}
-          className="
-            relative
-            mt-6
-            overflow-hidden
-            rounded-2xl
-            bg-slate-950
-            px-5
-            py-6
-            shadow-xl
-            shadow-slate-900/10
-            sm:px-7
-          "
-        >
-
-          <div
-            className="
-              pointer-events-none
-              absolute
-              right-[-100px]
-              top-[-140px]
-              h-[320px]
-              w-[320px]
-              rounded-full
-              bg-violet-600/20
-              blur-3xl
-            "
-          />
-
-          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
+        <section className="relative overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 p-6 text-white shadow-xl">
+          <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-violet-600/20 blur-[60px]" />
+          <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-
-              <div
-                className="
-                  flex
-                  h-11
-                  w-11
-                  shrink-0
-                  items-center
-                  justify-center
-                  rounded-xl
-                  bg-white/10
-                  text-white
-                "
-              >
-                <UserPlus size={18} />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white border border-white/10">
+                <UserPlus size={20} />
               </div>
-
               <div>
-                <p
-                  className="
-                    text-sm
-                    font-black
-                    text-white
-                  "
-                >
-                  Already invited to a Chama?
-                </p>
-
-                <p
-                  className="
-                    mt-1
-                    text-[11px]
-                    text-slate-400
-                  "
-                >
-                  Join an existing community workspace.
-                </p>
+                <h3 className="text-base font-bold text-white">Have a Chama Invitation Code?</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Join an existing Chama or community group workspace directly.</p>
               </div>
             </div>
 
             <Link
               to="/chamas/join"
-              className="
-                inline-flex
-                items-center
-                justify-center
-                gap-2
-                rounded-xl
-                bg-white
-                px-5
-                py-2.5
-                text-xs
-                font-bold
-                text-slate-950
-                transition
-                hover:bg-violet-50
-                hover:text-violet-700
-              "
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-bold text-slate-950 transition-all hover:bg-violet-50 hover:text-violet-700 shadow-md"
             >
-              Join Chama
-              <ArrowUpRight size={13} />
+              Join Chama Workspace
+              <ArrowRight size={14} />
             </Link>
           </div>
-        </motion.section>
+        </section>
 
         {/* ====================================================
             FOOTER
         ==================================================== */}
-
-        <footer
-          className="
-            flex
-            flex-wrap
-            items-center
-            justify-center
-            gap-3
-            py-9
-            text-[10px]
-            font-medium
-            text-slate-400
-          "
-        >
-          <span className="flex items-center gap-1.5">
-            <ShieldCheck size={12} />
-            Secure workspace access
+        <footer className="flex flex-wrap items-center justify-center gap-4 pt-6 text-[11px] text-slate-400">
+          <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+            <ShieldCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+            Secure Multi-Tenant Infrastructure
           </span>
-
-          <span className="text-slate-300">•</span>
-
-          <span>VeriCircle Financial OS</span>
+          <span>•</span>
+          <span>VeriCircle Financial Operating System</span>
         </footer>
+
       </main>
     </div>
   );
 }
 
 // ============================================================
-// STATUS PILL
+// HELPER COMPONENTS
 // ============================================================
 
-function StatusPill({
-  icon: Icon,
-  label,
-}) {
-  return (
-    <div
-      className="
-        inline-flex
-        items-center
-        gap-1.5
-        rounded-full
-        border
-        border-slate-200
-        bg-slate-50
-        px-2.5
-        py-1.5
-        text-[10px]
-        font-semibold
-        text-slate-500
-      "
-    >
-      <Icon size={11} className="text-slate-400" />
-      {label}
-    </div>
-  );
-}
-
-// ============================================================
-// SECTION HEADER
-// ============================================================
-
-function SectionHeader({
-  icon: Icon,
-  title,
-  description,
-  count,
-}) {
-  return (
-    <div className="mb-5 flex items-end justify-between">
-
-      <div>
-        <div className="flex items-center gap-2">
-
-          <div
-            className="
-              flex
-              h-7
-              w-7
-              items-center
-              justify-center
-              rounded-lg
-              bg-slate-100
-              text-slate-500
-            "
-          >
-            <Icon size={14} />
-          </div>
-
-          <h2
-            className="
-              text-base
-              font-black
-              tracking-tight
-              text-slate-950
-            "
-          >
-            {title}
-          </h2>
-        </div>
-
-        <p className="mt-1.5 text-xs text-slate-400">
-          {description}
-        </p>
-      </div>
-
-      {typeof count === "number" && count > 0 && (
-        <span
-          className="
-            rounded-full
-            bg-white
-            px-2.5
-            py-1
-            text-[10px]
-            font-bold
-            text-slate-500
-            shadow-sm
-            ring-1
-            ring-slate-200
-          "
-        >
-          {count} active
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// SUMMARY ITEM
-// ============================================================
-
-function SummaryItem({
-  icon: Icon,
-  label,
-  value,
-  color,
-  description,
-}) {
+function AdaptiveStatusPill({ icon: Icon, label, color }) {
   const colors = {
-    blue: {
-      icon: "bg-blue-50 text-blue-600",
-      number: "text-blue-700",
-    },
-    violet: {
-      icon: "bg-violet-50 text-violet-600",
-      number: "text-violet-700",
-    },
-    emerald: {
-      icon: "bg-emerald-50 text-emerald-600",
-      number: "text-emerald-700",
-    },
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+    blue: "border-blue-200 bg-blue-50 text-blue-800 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-300",
+    violet: "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
   };
 
-  const style = colors[color];
+  return (
+    <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold backdrop-blur-md ${colors[color]}`}>
+      <Icon size={12} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function HeroActionButton({ to, icon: Icon, title, sub, gradient, shadow }) {
+  return (
+    <Link
+      to={to}
+      className={`group relative overflow-hidden rounded-2xl bg-gradient-to-r ${gradient} p-3.5 text-white shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl ${shadow}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 backdrop-blur-md">
+            <Icon size={18} />
+          </div>
+          <div>
+            <div className="text-xs font-bold">{title}</div>
+            <div className="text-[10px] text-white/80 font-normal">{sub}</div>
+          </div>
+        </div>
+        <ArrowUpRight size={16} className="text-white/80 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+      </div>
+    </Link>
+  );
+}
+
+function AdaptiveMetricCard({ icon: Icon, title, count, color, label }) {
+  const themes = {
+    violet: "bg-violet-50 text-violet-600 border-violet-100 dark:bg-violet-500/5 dark:text-violet-400 dark:border-violet-500/20",
+    blue: "bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/5 dark:text-blue-400 dark:border-blue-500/20",
+    fuchsia: "bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100 dark:bg-fuchsia-500/5 dark:text-fuchsia-400 dark:border-fuchsia-500/20",
+    emerald: "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/5 dark:text-emerald-400 dark:border-emerald-500/20",
+  };
 
   return (
-    <div
-      className="
-        flex
-        items-center
-        gap-3
-        border-b
-        border-slate-100
-        px-5
-        py-4
-        last:border-b-0
-        sm:border-b-0
-        sm:border-r
-        sm:last:border-r-0
-      "
-    >
-      <div
-        className={`
-          flex
-          h-10
-          w-10
-          shrink-0
-          items-center
-          justify-center
-          rounded-xl
-          ${style.icon}
-        `}
-      >
-        <Icon size={17} />
+    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-4 shadow-sm backdrop-blur-md transition-all hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700">
+      <div className="flex items-center justify-between text-slate-400 mb-2">
+        <div className={`flex h-8 w-8 items-center justify-center rounded-xl border ${themes[color]}`}>
+          <Icon size={15} />
+        </div>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</span>
       </div>
+      <div className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{count}</div>
+      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">{title}</div>
+    </div>
+  );
+}
 
-      <div className="min-w-0">
+function AdaptiveFilterTab({ active, onClick, label, count }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 ${
+        active
+          ? "bg-white text-slate-950 shadow-sm border border-slate-200/80 dark:bg-violet-600 dark:text-white dark:border-violet-500 dark:shadow-[0_0_12px_rgba(139,92,246,0.4)]"
+          : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60"
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${active ? "bg-slate-100 text-slate-900 dark:bg-white/20 dark:text-white" : "bg-slate-200/60 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
+        {count}
+      </span>
+    </button>
+  );
+}
 
-        <p
-          className="
-            text-[10px]
-            font-bold
-            uppercase
-            tracking-wider
-            text-slate-400
-          "
-        >
-          {label}
-        </p>
+function AdaptiveWorkspaceCard({ workspace, meta, Icon, index, onOpen }) {
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.3, delay: index * 0.04 }}
+      className="group relative cursor-pointer"
+      onClick={onOpen}
+    >
+      <div className={`relative overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-slate-900/70 p-5 shadow-sm backdrop-blur-xl transition-all duration-300 ${meta.cardGlow} hover:-translate-y-1`}>
+        
+        {/* Top Gradient Accent Line */}
+        <div className={`absolute top-0 left-0 right-0 h-1 ${meta.accent}`} />
 
-        <div className="mt-0.5 flex items-baseline gap-2">
-          <p
-            className={`
-              text-xl
-              font-black
-              tracking-tight
-              ${style.number}
-            `}
-          >
-            {value}
-          </p>
+        {/* Card Header */}
+        <div className="flex items-start justify-between">
+          <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${meta.iconBg} ${meta.iconGlow}`}>
+            <Icon size={20} />
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${meta.badge}`}>
+              {meta.label}
+            </span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-400 group-hover:border-violet-300 dark:group-hover:border-violet-500/50 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+              <ArrowUpRight size={14} />
+            </div>
+          </div>
+        </div>
 
-          <span className="hidden text-[9px] text-slate-400 sm:block">
-            {description}
+        {/* Workspace Identity */}
+        <div className="mt-4 space-y-1">
+          <h3 className="text-base font-black tracking-tight text-slate-950 dark:text-white group-hover:text-violet-600 dark:group-hover:text-cyan-300 transition-colors truncate">
+            {workspace.name}
+          </h3>
+          <p className="text-xs text-slate-400 font-normal truncate">{meta.description}</p>
+        </div>
+
+        {/* Footer info */}
+        <div className="mt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-3.5 text-xs text-slate-500">
+          <span className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+            <Users size={13} className="text-slate-400" />
+            {formatRole(workspace.role)}
+          </span>
+
+          <span className="flex items-center gap-1 text-[11px] font-bold text-violet-600 dark:text-violet-400 group-hover:text-violet-700 dark:group-hover:text-violet-300 transition-colors">
+            Open Console
+            <ChevronRight size={13} className="transition-transform group-hover:translate-x-1" />
           </span>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ============================================================
-// CREATE BUTTON
-// ============================================================
-
-function CreateButton({
-  to,
-  icon: Icon,
-  label,
-  color,
-}) {
-  const colors = {
-    blue: `
-      bg-blue-600
-      hover:bg-blue-700
-      shadow-blue-600/20
-    `,
-    violet: `
-      bg-violet-600
-      hover:bg-violet-700
-      shadow-violet-600/20
-    `,
-    emerald: `
-      bg-emerald-600
-      hover:bg-emerald-700
-      shadow-emerald-600/20
-    `,
-  };
-
-  return (
-    <Link
-      to={to}
-      className={`
-        inline-flex
-        items-center
-        gap-2
-        rounded-xl
-        px-3.5
-        py-2.5
-        text-[11px]
-        font-bold
-        text-white
-        shadow-lg
-        transition
-        hover:-translate-y-0.5
-        ${colors[color]}
-      `}
-    >
-      <Icon size={14} />
-      {label}
-    </Link>
-  );
-}
-
-// ============================================================
-// WORKSPACE CARD
-// ============================================================
-
-function WorkspaceCard({
-  workspace,
-  meta,
-  Icon,
-  index,
-  onOpen,
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onOpen}
-      initial={{
-        opacity: 0,
-        y: 15,
-      }}
-      animate={{
-        opacity: 1,
-        y: 0,
-      }}
-      transition={{
-        delay: index * 0.06,
-        duration: 0.35,
-      }}
-      whileHover={{
-        y: -4,
-      }}
-      className="
-        group
-        relative
-        overflow-hidden
-        rounded-2xl
-        border
-        border-slate-200
-        bg-white
-        p-5
-        text-left
-        shadow-sm
-        transition
-        hover:border-slate-300
-        hover:shadow-xl
-      "
-    >
-      {/* Left Accent */}
-
-      <div
-        className={`
-          absolute
-          left-0
-          top-0
-          h-full
-          w-1
-          ${meta.accent}
-        `}
-      />
-
-      {/* Top */}
-
-      <div className="flex items-start justify-between">
-
-        <div
-          className={`
-            flex
-            h-12
-            w-12
-            items-center
-            justify-center
-            rounded-2xl
-            ${meta.iconBg}
-            ${meta.iconColor}
-            transition
-            duration-300
-            group-hover:scale-105
-          `}
-        >
-          <Icon size={21} />
-        </div>
-
-        <div
-          className="
-            flex
-            h-8
-            w-8
-            items-center
-            justify-center
-            rounded-lg
-            text-slate-300
-            transition
-            group-hover:bg-slate-50
-            group-hover:text-slate-700
-          "
-        >
-          <ArrowUpRight size={16} />
-        </div>
-      </div>
-
-      {/* Identity */}
-
-      <div className="mt-5">
-
-        <span
-          className={`
-            inline-flex
-            rounded-full
-            border
-            px-2
-            py-1
-            text-[9px]
-            font-bold
-            uppercase
-            tracking-wider
-            ${meta.badge}
-          `}
-        >
-          {meta.label}
-        </span>
-
-        <h3
-          className="
-            mt-3
-            truncate
-            text-[17px]
-            font-black
-            tracking-tight
-            text-slate-950
-          "
-        >
-          {workspace.name}
-        </h3>
-
-        <p
-          className="
-            mt-1
-            truncate
-            text-xs
-            text-slate-400
-          "
-        >
-          {meta.description}
-        </p>
-      </div>
-
-      {/* Bottom */}
-
-      <div
-        className="
-          mt-6
-          flex
-          items-center
-          justify-between
-          border-t
-          border-slate-100
-          pt-4
-        "
-      >
-        <span
-          className="
-            flex
-            items-center
-            gap-1.5
-            text-[10px]
-            font-semibold
-            text-slate-400
-          "
-        >
-          <Users size={12} />
-          {formatRole(workspace.role)}
-        </span>
-
-        <span
-          className="
-            flex
-            items-center
-            gap-1
-            text-[10px]
-            font-bold
-            text-slate-400
-            transition
-            group-hover:text-slate-950
-          "
-        >
-          Open workspace
-          <ChevronRight
-            size={12}
-            className="transition group-hover:translate-x-0.5"
-          />
-        </span>
-      </div>
-    </motion.button>
-  );
-}
-
-// ============================================================
-// ACTION CARD
-// ============================================================
-
-function ActionCard({
-  to,
-  icon: Icon,
-  title,
-  description,
-  color,
-}) {
+function AdaptiveActionCard({ to, icon: Icon, title, description, color, badge }) {
   const styles = {
     blue: {
-      border: "hover:border-blue-200",
-      icon: "bg-blue-50 text-blue-600",
-      hover: "group-hover:bg-blue-600 group-hover:text-white",
-      arrow: "group-hover:text-blue-600",
+      border: "hover:border-blue-300 dark:hover:border-blue-500/40",
+      icon: "border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400",
+      badge: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
+      arrow: "group-hover:text-blue-600 dark:group-hover:text-blue-400",
     },
-
     violet: {
-      border: "hover:border-violet-200",
-      icon: "bg-violet-50 text-violet-600",
-      hover: "group-hover:bg-violet-600 group-hover:text-white",
-      arrow: "group-hover:text-violet-600",
+      border: "hover:border-violet-300 dark:hover:border-violet-500/40",
+      icon: "border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-400",
+      badge: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
+      arrow: "group-hover:text-violet-600 dark:group-hover:text-violet-400",
     },
-
     emerald: {
-      border: "hover:border-emerald-200",
-      icon: "bg-emerald-50 text-emerald-600",
-      hover: "group-hover:bg-emerald-600 group-hover:text-white",
-      arrow: "group-hover:text-emerald-600",
+      border: "hover:border-emerald-300 dark:hover:border-emerald-500/40",
+      icon: "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400",
+      badge: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+      arrow: "group-hover:text-emerald-600 dark:group-hover:text-emerald-400",
     },
   };
 
-  const style = styles[color];
+  const current = styles[color];
 
   return (
     <Link
       to={to}
-      className={`
-        group
-        relative
-        flex
-        items-center
-        gap-4
-        rounded-2xl
-        border
-        border-slate-200
-        bg-white
-        p-5
-        shadow-sm
-        transition
-        hover:-translate-y-1
-        hover:shadow-lg
-        ${style.border}
-      `}
+      className={`group relative flex flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-5 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${current.border}`}
     >
-      <div
-        className={`
-          flex
-          h-11
-          w-11
-          shrink-0
-          items-center
-          justify-center
-          rounded-xl
-          transition
-          ${style.icon}
-          ${style.hover}
-        `}
-      >
-        <Icon size={19} />
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${current.icon}`}>
+            <Icon size={18} />
+          </div>
+          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-extrabold tracking-wider ${current.badge}`}>
+            {badge}
+          </span>
+        </div>
+
+        <h3 className="text-sm font-black text-slate-950 dark:text-white group-hover:text-violet-600 dark:group-hover:text-cyan-300 transition-colors">{title}</h3>
+        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-normal">{description}</p>
       </div>
 
-      <div className="min-w-0 flex-1">
-
-        <h3
-          className="
-            text-xs
-            font-black
-            text-slate-900
-          "
-        >
-          {title}
-        </h3>
-
-        <p
-          className="
-            mt-1.5
-            text-[10px]
-            leading-5
-            text-slate-400
-          "
-        >
-          {description}
-        </p>
+      <div className="mt-4 flex items-center justify-end">
+        <ArrowUpRight size={16} className={`text-slate-300 dark:text-slate-500 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 ${current.arrow}`} />
       </div>
-
-      <ArrowUpRight
-        size={15}
-        className={`
-          shrink-0
-          text-slate-300
-          transition
-          group-hover:translate-x-0.5
-          ${style.arrow}
-        `}
-      />
     </Link>
   );
 }
 
-// ============================================================
-// LOADING
-// ============================================================
-
-function LoadingWorkspace() {
+function LoadingState() {
   return (
-    <div
-      className="
-        flex
-        min-h-[220px]
-        items-center
-        justify-center
-        rounded-2xl
-        border
-        border-slate-200
-        bg-white
-        shadow-sm
-      "
-    >
+    <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm backdrop-blur-xl">
       <Spinner />
     </div>
   );
 }
 
-// ============================================================
-// EMPTY WORKSPACE
-// ============================================================
-
-function EmptyWorkspace() {
+function EmptyState({ searchQuery, activeTab }) {
   return (
-    <div
-      className="
-        flex
-        min-h-[280px]
-        flex-col
-        items-center
-        justify-center
-        rounded-2xl
-        border
-        border-dashed
-        border-slate-300
-        bg-white
-        px-6
-        text-center
-        shadow-sm
-      "
-    >
-      <div
-        className="
-          flex
-          h-14
-          w-14
-          items-center
-          justify-center
-          rounded-2xl
-          bg-violet-50
-          text-violet-600
-        "
-      >
-        <Layers3 size={24} />
+    <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-8 text-center shadow-sm backdrop-blur-md">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-400">
+        <Layers3 size={22} />
       </div>
 
-      <h3
-        className="
-          mt-4
-          text-base
-          font-black
-          text-slate-950
-        "
-      >
-        Your workspace starts here
+      <h3 className="mt-3.5 text-base font-black text-slate-950 dark:text-white">
+        {searchQuery || activeTab !== "all" ? "No matching workspaces found" : "Your workspace starts here"}
       </h3>
 
-      <p
-        className="
-          mt-1.5
-          max-w-sm
-          text-xs
-          leading-5
-          text-slate-400
-        "
-      >
-        Create a Business, Chama, or Contribution Group
-        and manage everything from one place.
+      <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400">
+        {searchQuery || activeTab !== "all"
+          ? "Try adjusting your search query or category filter."
+          : "Create your first Business, Chama, or Contribution Group workspace."}
       </p>
 
-      <div className="mt-5 flex flex-wrap justify-center gap-2">
-
-        <Link
-          to="/business/new"
-          className="
-            inline-flex
-            items-center
-            gap-1.5
-            rounded-xl
-            bg-blue-600
-            px-4
-            py-2.5
-            text-[11px]
-            font-bold
-            text-white
-            transition
-            hover:bg-blue-700
-          "
-        >
-          <Store size={13} />
-          Business
-        </Link>
-
-        <Link
-          to="/chamas/new"
-          className="
-            inline-flex
-            items-center
-            gap-1.5
-            rounded-xl
-            bg-violet-600
-            px-4
-            py-2.5
-            text-[11px]
-            font-bold
-            text-white
-            transition
-            hover:bg-violet-700
-          "
-        >
-          <Building2 size={13} />
-          Chama
-        </Link>
-
-        <Link
-          to="/contribution-groups/new"
-          className="
-            inline-flex
-            items-center
-            gap-1.5
-            rounded-xl
-            bg-emerald-600
-            px-4
-            py-2.5
-            text-[11px]
-            font-bold
-            text-white
-            transition
-            hover:bg-emerald-700
-          "
-        >
-          <Wallet size={13} />
-          Contribution Group
-        </Link>
-      </div>
+      {!searchQuery && activeTab === "all" && (
+        <div className="mt-5 flex flex-wrap justify-center gap-2.5">
+          <Link
+            to="/business/new"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition-all shadow-md shadow-blue-600/20"
+          >
+            <Store size={14} />
+            Business
+          </Link>
+          <Link
+            to="/chamas/new"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 transition-all shadow-md shadow-violet-600/20"
+          >
+            <Building2 size={14} />
+            Chama
+          </Link>
+          <Link
+            to="/contribution-groups/new"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition-all shadow-md shadow-emerald-600/20"
+          >
+            <Wallet size={14} />
+            Contribution Group
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

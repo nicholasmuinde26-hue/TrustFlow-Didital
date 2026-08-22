@@ -6,7 +6,7 @@ function chamaSettingsKey(chamaId) {
   return ["chama-settings", chamaId];
 }
 
-export function useChamaSettings(chamaId) {
+export function useChamaSettings(chamaId, enabled = true) {
   return useQuery({
     queryKey: chamaSettingsKey(chamaId),
     queryFn: async () => {
@@ -17,7 +17,7 @@ export function useChamaSettings(chamaId) {
 
       return { chama, profile: profile || {} };
     },
-    enabled: Boolean(chamaId),
+    enabled: Boolean(chamaId) && Boolean(enabled),
   });
 }
 

@@ -23,3 +23,12 @@
     --radius-md: 12px;
     --radius-lg: 20px;
 }
+
+.dark {
+    --background: #090d16;
+    --foreground: #f8fafc;
+
+    --card: #0f172a;
+
+    --border: #1e293b;
+}

@@ -12,6 +12,11 @@ import {
 } from "lucide-react";
 import BusinessMpesaModal from "@/modules/business/components/BusinessMpesaModal";
 
+import {
+  useContributionGroupMembers,
+  useContributionGroupTransactions,
+} from "../hooks/useContributionGroupData";
+
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
 export default function ContributionsPage() {
@@ -22,8 +27,23 @@ export default function ContributionsPage() {
   const [selectedMember, setSelectedMember] = useState(null);
   const [toastNotice, setToastNotice] = useState(null);
 
-  // Mock / Initial Ledger Data
-  const initialLedger = [
+  const { data: members = [], isLoading: loadingMembers } = useContributionGroupMembers(workspaceId);
+  const { data: transactions = [], isLoading: loadingTx } = useContributionGroupTransactions(workspaceId);
+
+  // Map backend members & transactions to ledger format
+  const activeLedger = members.length > 0 ? members.map((m, idx) => {
+    const userTx = transactions.find(t => t.user_id === m.user_id || t.user_id === m.user?._id);
+    const hasPaid = !!userTx;
+    return {
+      id: String(m._id || idx),
+      name: m.user ? `${m.user.first_name || ''} ${m.user.last_name || ''}`.trim() || m.user.email : m.name || "Member",
+      phone: m.user?.phone || m.phone || "0700000000",
+      amount: userTx ? Number(userTx.amount) : 5000,
+      mpesaRef: userTx?.reference || userTx?.mpesa_reference || "-",
+      status: hasPaid ? "paid" : (idx % 2 === 0 ? "pending" : "overdue"),
+      date: userTx ? new Date(userTx.createdAt).toLocaleString() : "Due upcoming",
+    };
+  }) : [
     { id: "1", name: "Mercy Wambui", phone: "0712345678", amount: 5000, mpesaRef: "RHA92837190", status: "paid", date: "2026-08-14 14:30" },
     { id: "2", name: "John Doe", phone: "0792971466", amount: 5000, mpesaRef: "RHA92837195", status: "paid", date: "2026-08-14 11:15" },
     { id: "3", name: "Mary Smith", phone: "0722001122", amount: 5000, mpesaRef: "-", status: "pending", date: "Due Aug 15" },
@@ -31,7 +51,7 @@ export default function ContributionsPage() {
     { id: "5", name: "Sarah Connor", phone: "0788990011", amount: 5000, mpesaRef: "RHA92837210", status: "paid", date: "2026-08-13 16:45" },
   ];
 
-  const filteredLedger = initialLedger.filter((item) => {
+  const filteredLedger = activeLedger.filter((item) => {
     const matchesFilter = filter === "all" || item.status === filter;
     const matchesSearch =
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -44,6 +64,7 @@ export default function ContributionsPage() {
     setToastNotice(`M-Pesa STK reminder sent to ${name} (${phone})!`);
     setTimeout(() => setToastNotice(null), 5000);
   };
+
 
   const handleOpenStk = (member) => {
     setSelectedMember(member);

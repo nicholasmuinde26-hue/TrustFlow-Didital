@@ -64,6 +64,8 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       default: null,
+      sparse: true,
+      index: true,
     },
 
     // ========================================

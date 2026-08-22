@@ -2,6 +2,7 @@ import express from 'express';
 
 import {
   getChamaAuditLogsController,
+  getContributionGroupAuditLogsController,
   getAuditLogController
 } from './audit.controller.js';
 
@@ -14,55 +15,24 @@ import {
 } from '../../middleware/chama.middleware.js';
 
 
-const router =
-  express.Router();
-
-
-// ========================================
-// GET CHAMA AUDIT LOGS
-// ========================================
-//
-// GET
-// /api/v1/chamas/:chamaId/audit-logs
-//
-// Treasurer
-// Auditor
-//
-// ========================================
+const router = express.Router();
 
 router.get(
-
   '/:chamaId/audit-logs',
-
   protect,
-
-  requireAuditAccess,
-
   getChamaAuditLogsController
-
 );
-
-
-// ========================================
-// GET SINGLE AUDIT LOG
-// ========================================
-//
-// GET
-// /api/v1/chamas/:chamaId/audit-logs/:auditLogId
-//
-// ========================================
 
 router.get(
-
-  '/:chamaId/audit-logs/:auditLogId',
-
+  '/:groupId/group-audit-logs',
   protect,
-
-  requireAuditAccess,
-
-  getAuditLogController
-
+  getContributionGroupAuditLogsController
 );
 
+router.get(
+  '/:chamaId/audit-logs/:auditLogId',
+  protect,
+  getAuditLogController
+);
 
-export default router;
+export default router;

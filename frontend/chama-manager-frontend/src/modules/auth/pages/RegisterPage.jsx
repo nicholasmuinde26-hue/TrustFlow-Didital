@@ -53,7 +53,7 @@ export default function RegisterPage() {
   }
 
   // ------------------------------------------------------------------
-  // STEP 1: Submit Registration Form (Triggers SMS OTP)
+  // STEP 1: Submit Registration Form (Triggers OTP)
   // ------------------------------------------------------------------
   async function handleRegisterSubmit(event) {
     event.preventDefault();
@@ -68,6 +68,19 @@ export default function RegisterPage() {
     if (form.password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
+    }
+
+    if (channel === "email" && !form.email.trim()) {
+      setError("Please provide an email address to receive your security code via Email.");
+      return;
+    }
+
+    if (form.email.trim()) {
+      const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!EMAIL_REGEX.test(form.email.trim())) {
+        setError("Please enter a valid email address.");
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -86,8 +99,10 @@ export default function RegisterPage() {
           setForm((prev) => ({ ...prev, phone: res.phone }));
         }
         if (res.channel) setChannel(res.channel);
+
+        const dest = res.channel === "email" ? (res.email || form.email) : (res.phone || form.phone);
         setNotice(
-          res?.message || `Account created! OTP security code sent to ${res?.phone || form.phone}`
+          res?.message || `Account created! Security OTP code sent to ${dest}`
         );
         setStep("otp");
       } else {
@@ -103,7 +118,7 @@ export default function RegisterPage() {
   }
 
   // ------------------------------------------------------------------
-  // STEP 2: Verify 6-Digit SMS OTP & Activate Account
+  // STEP 2: Verify 6-Digit OTP & Activate Account
   // ------------------------------------------------------------------
   async function handleOtpSubmit(event) {
     event.preventDefault();
@@ -111,7 +126,8 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      await verifyOtp({ phone: form.phone, otpCode });
+      const identifier = channel === "email" && form.email.trim() ? form.email.trim() : form.phone;
+      await verifyOtp({ identifier, phone: form.phone, email: form.email, otpCode });
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(
@@ -129,8 +145,10 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      const res = await sendOtp({ phone: form.phone, channel });
-      setNotice(res?.message || `A new OTP code has been sent to ${form.phone}`);
+      const identifier = channel === "email" && form.email.trim() ? form.email.trim() : form.phone;
+      const res = await sendOtp({ identifier, phone: form.phone, email: form.email, channel });
+      const dest = channel === "email" ? form.email : form.phone;
+      setNotice(res?.message || `A new OTP code has been sent to ${dest}`);
     } catch (err) {
       setError(
         err?.response?.data?.message || "Failed to resend OTP code."
@@ -144,13 +162,13 @@ export default function RegisterPage() {
     <AuthLayout>
       <AuthCard>
         <h2 className="text-2xl font-bold">
-          {step === "register" ? "Create Account" : "Phone Verification"}
+          {step === "register" ? "Create Account" : channel === "email" ? "Email Verification" : "Phone Verification"}
         </h2>
 
         <p className="mt-1 text-slate-500">
           {step === "register"
             ? "Start managing your Chama today"
-            : `Enter the 6-digit security code sent to ${form.phone}`}
+            : `Enter the 6-digit security code sent to ${channel === "email" ? form.email : form.phone}`}
         </p>
 
         {/* Status Alerts & Notifications */}
@@ -191,13 +209,14 @@ export default function RegisterPage() {
             />
 
             <Input
-              label="Email (optional — needed for email OTP delivery)"
+              label="Email Address"
               type="email"
               name="email"
               value={form.email}
               onChange={handleChange}
               placeholder="jane@example.com"
               autoComplete="email"
+              required={channel === "email"}
             />
 
             <div className="space-y-2">
@@ -237,11 +256,11 @@ export default function RegisterPage() {
           </form>
         )}
 
-        {/* STEP 2 FORM: Mandatory 6-Digit SMS OTP Verification */}
+        {/* STEP 2 FORM: Mandatory 6-Digit Security OTP Verification */}
         {step === "otp" && (
           <form onSubmit={handleOtpSubmit} className="mt-6 space-y-4">
             <Input
-              label="6-Digit SMS Security Code"
+              label={`6-Digit Security Code (${channel === "email" ? "Email" : "SMS/WhatsApp"})`}
               type="text"
               name="otpCode"
               value={otpCode}

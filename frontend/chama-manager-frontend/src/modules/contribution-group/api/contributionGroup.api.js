@@ -18,6 +18,34 @@ const contributionGroupApi = {
   updateStatus(groupId, status) {
     return api.patch(`/contribution-groups/${groupId}/status`, { status });
   },
+
+  getMembers(groupId) {
+    return api.get(`/contribution-groups/${groupId}/members`);
+  },
+
+  getPlans(groupId) {
+    return api.get(`/contribution-groups/${groupId}/plans`);
+  },
+
+  getAuditLogs(groupId) {
+    return api.get(`/contribution-groups/${groupId}/group-audit-logs`);
+  },
+
+  getFinanceSummary(groupId) {
+    return api.get(`/workspaces/${groupId}/finance/summary`);
+  },
+
+  getTransactions(groupId) {
+    return api.get(`/workspaces/${groupId}/finance/transactions`);
+  },
+
+  getExpenses(groupId) {
+    return api.get(`/workspaces/${groupId}/finance/expenses`);
+  },
+
+  createExpense(groupId, payload) {
+    return api.post(`/workspaces/${groupId}/finance/expenses`, payload);
+  },
 };
 
-export default contributionGroupApi;
+export default contributionGroupApi;

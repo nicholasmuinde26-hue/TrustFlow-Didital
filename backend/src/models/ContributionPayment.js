@@ -4,8 +4,8 @@ import crypto from "node:crypto"; // not needed here but keep imports clean
 // ========================================
 // CONSTANTS
 // ========================================
-const OWNER_TYPES = ['Chama', 'ContributionGroup'];
-const PARTICIPANT_TYPES = ['ChamaMembership', 'ContributionGroupMember'];
+const OWNER_TYPES = ['Chama', 'ContributionGroup', 'Business'];
+const PARTICIPANT_TYPES = ['ChamaMembership', 'ContributionGroupMember', 'User'];
 const PAYMENT_METHODS = ['cash', 'bank', 'mpesa', 'mobile_money', 'card', 'transfer', 'other'];
 const PAYMENT_STATUSES = ['pending', 'processing', 'completed', 'failed', 'reversed', 'cancelled', 'refunded']; // FIX: added processing + refunded
 const CHANNEL_TYPES = ['cash', 'mpesa', 'mobile_money', 'bank_account', 'bank_transfer', 'card', 'internal_transfer', 'other'];
@@ -24,7 +24,8 @@ const contributionPaymentSchema = new mongoose.Schema(
     obligation_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ContributionObligation',
-      required: true,
+      required: false,
+      default: null,
       index: true
     },
     payment_intent_id: {
@@ -36,7 +37,8 @@ const contributionPaymentSchema = new mongoose.Schema(
     plan_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ContributionPlan',
-      required: true,
+      required: false,
+      default: null,
       index: true
     },
     owner_type: {

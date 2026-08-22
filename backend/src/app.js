@@ -45,6 +45,9 @@ import auditRoutes from "./modules/audit/audit.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
 import loanRoutes from "./modules/loans/loan.routes.js";
 
+// Notifications
+import notificationRoutes from "./modules/notifications/notifications.routes.js";
+
 import "./modules/finance/financeEngine.service.js";
 
 // ============================================================================
@@ -254,6 +257,19 @@ app.use(
 app.use(
     "/api/v1/chamas",
     auditRoutes
+);
+app.use(
+    "/api/v1/contribution-groups",
+    auditRoutes
+);
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+app.use(
+    "/api/v1/notifications",
+    notificationRoutes
 );
 
 // ============================================================================

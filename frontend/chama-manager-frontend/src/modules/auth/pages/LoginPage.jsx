@@ -16,7 +16,8 @@ export default function LoginPage() {
 
   const [step, setStep] = useState("credentials");
 
-  const [phone, setPhone] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [activeIdentifier, setActiveIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [channel, setChannel] = useState("sms");
@@ -31,12 +32,21 @@ export default function LoginPage() {
 
   const redirectTo = location.state?.from?.pathname || "/home";
 
-  // Look up which channels this phone number can actually receive an
-  // OTP on (Email only appears once the account has one on file) -
-  // debounced so we're not firing a request on every keystroke.
+  // Look up which channels this phone or email can receive an OTP on
   useEffect(() => {
-    const trimmed = phone.trim();
-    if (trimmed.length < 9) return;
+    const trimmed = identifier.trim();
+    if (trimmed.length < 5) return;
+
+    // If typing an email, default channel option to email
+    if (trimmed.includes("@")) {
+      setAvailableChannels((prev) => {
+        if (!prev.some((c) => c.channel === "email")) {
+          return [{ channel: "email", label: "Email" }, ...prev];
+        }
+        return prev;
+      });
+      setChannel("email");
+    }
 
     const timer = setTimeout(async () => {
       try {
@@ -48,35 +58,39 @@ export default function LoginPage() {
           }
         }
       } catch {
-        // Silently keep the default sms/whatsapp options - the phone
-        // may just not be fully typed yet, or the lookup failed.
+        // Silently keep current options if lookup fails
       }
     }, 500);
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phone]);
+  }, [identifier]);
 
   // ------------------------------------------------------------------
-  // STEP 1: Verify Phone + Password (Triggers SMS OTP)
+  // STEP 1: Verify Identifier (Phone or Email) + Password (Triggers OTP)
   // ------------------------------------------------------------------
   async function handleCredentialsSubmit(event) {
     event.preventDefault();
     setError("");
     setNotice("");
+
+    if (!identifier.trim()) {
+      setError("Please enter your phone number or email address.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const res = await login({ phone, password, channel });
+      const res = await login({ identifier: identifier.trim(), password, channel });
 
       if (res?.otpRequired) {
-        // Crucial: Sync state with the exact formatted phone returned by backend
-        const activePhone = res.phone || phone;
-        setPhone(activePhone);
+        const usedIdentifier = res.channel === "email" ? (res.email || identifier) : (res.phone || res.identifier || identifier);
+        setActiveIdentifier(usedIdentifier);
         if (res.channel) setChannel(res.channel);
 
         setNotice(
-          res?.message || `Password verified! Security OTP sent to ${activePhone}`
+          res?.message || `Password verified! Security OTP sent to ${usedIdentifier}`
         );
         setStep("otp");
       } else {
@@ -84,7 +98,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError(
-        err?.response?.data?.message || "Invalid phone number or password."
+        err?.response?.data?.message || "Invalid credentials or password."
       );
     } finally {
       setSubmitting(false);
@@ -92,7 +106,7 @@ export default function LoginPage() {
   }
 
   // ------------------------------------------------------------------
-  // STEP 2: Verify 6-Digit SMS OTP & Finalize Login
+  // STEP 2: Verify 6-Digit Security OTP & Finalize Login
   // ------------------------------------------------------------------
   async function handleOtpSubmit(event) {
     event.preventDefault();
@@ -100,7 +114,7 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      await verifyOtp({ phone, otpCode: otpCode.trim() });
+      await verifyOtp({ identifier: activeIdentifier || identifier, otpCode: otpCode.trim() });
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(
@@ -118,9 +132,9 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const res = await login({ phone, password, channel });
-      if (res?.phone) setPhone(res.phone);
-      setNotice(res?.message || `A new OTP code has been sent to ${res?.phone || phone}`);
+      const res = await login({ identifier: activeIdentifier || identifier, password, channel });
+      const usedDest = channel === "email" ? (res.email || activeIdentifier) : (res.phone || activeIdentifier);
+      setNotice(res?.message || `A new OTP code has been sent to ${usedDest}`);
     } catch (err) {
       setError(
         err?.response?.data?.message || "Failed to resend OTP code."
@@ -134,13 +148,17 @@ export default function LoginPage() {
     <AuthLayout>
       <AuthCard>
         <h2 className="text-2xl font-bold">
-          {step === "credentials" ? "Welcome Back" : "Security Verification"}
+          {step === "credentials"
+            ? "Welcome Back"
+            : channel === "email"
+            ? "Email Verification"
+            : "Security Verification"}
         </h2>
         
         <p className="mt-1 text-slate-500">
           {step === "credentials"
-            ? "Sign in with your phone number and password"
-            : `Enter the 6-digit security code sent to ${phone}`}
+            ? "Sign in with your phone number or email address"
+            : `Enter the 6-digit security code sent to ${activeIdentifier || identifier}`}
         </p>
 
         {/* Status Alerts */}
@@ -156,17 +174,17 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* STEP 1 FORM: Phone Number + Password */}
+        {/* STEP 1 FORM: Phone Number or Email + Password */}
         {step === "credentials" && (
           <form onSubmit={handleCredentialsSubmit} className="mt-6 space-y-4">
             <Input
-              label="Phone Number"
-              type="tel"
-              name="phone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="0712345678"
-              autoComplete="tel"
+              label="Phone Number or Email Address"
+              type="text"
+              name="identifier"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="0712345678 or user@example.com"
+              autoComplete="username"
               required
             />
 
@@ -195,11 +213,11 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* STEP 2 FORM: Mandatory 6-Digit SMS OTP Code */}
+        {/* STEP 2 FORM: Mandatory 6-Digit Security OTP Code */}
         {step === "otp" && (
           <form onSubmit={handleOtpSubmit} className="mt-6 space-y-4">
             <Input
-              label="6-Digit Security OTP"
+              label={`6-Digit Security Code (${channel === "email" ? "Email" : "SMS/WhatsApp"})`}
               type="text"
               name="otpCode"
               value={otpCode}
@@ -233,7 +251,7 @@ export default function LoginPage() {
                 }}
                 className="font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
               >
-                Change Phone or Password
+                Change Login Details
               </button>
             </div>
           </form>

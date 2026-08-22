@@ -51,14 +51,16 @@ export function validateInitiatePayment(context) {
 
     const participantType = context.participantType || context.participant_type || "ChamaMembership";
     const participantId = context.participantId || context.participant_id;
-    const obligationId = context.obligationId || context.obligation_id;
-    const planId = context.planId || context.plan_id;
-    const chamaId = context.chamaId || context.chama_id;
+    const obligationId = context.obligationId || context.obligation_id || null;
+    const planId = context.planId || context.plan_id || null;
+    const chamaId = context.chamaId || context.chama_id || context.ownerId || context.owner_id;
+    const ownerId = context.ownerId || context.owner_id || chamaId;
+    const ownerType = context.ownerType || context.owner_type || (context.chamaId ? "Chama" : "ContributionGroup");
 
     // Required fields for PaymentIntent schema
     if (!actorId) throw new PaymentValidationError("actorId is required.");
     if (!participantId) throw new PaymentValidationError("participantId is required.");
-    if (!chamaId) throw new PaymentValidationError("chamaId is required.");
+    if (!ownerId) throw new PaymentValidationError("workspaceId/ownerId is required.");
 
     // DO NOT MUTATE. Return new normalized context
     return {
@@ -76,7 +78,9 @@ export function validateInitiatePayment(context) {
         reference: context.reference || `TXN-${Date.now()}`,
         obligationId,
         planId,
-        chamaId,
+        chamaId: ownerId,
+        ownerId,
+        ownerType,
         participant: {...(context.participant || {}), phoneNumber: phone }
     };
 }

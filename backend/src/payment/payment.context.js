@@ -18,9 +18,11 @@ export default class PaymentContext {
         currency = "KES",
         type = "contribution",
         
-        // OWNER / OBLIGATION - these were missing
+        // OWNER / OBLIGATION
         chamaId,
-        obligationId,
+        ownerType,
+        ownerId,
+        obligationId = null,
         planId = null,
         
         // PARTICIPANT
@@ -45,10 +47,12 @@ export default class PaymentContext {
         session = null
     }) {
 
+        const resolvedOwnerId = ownerId || chamaId;
+        const resolvedOwnerType = ownerType || (chamaId ? "Chama" : "ContributionGroup");
+
         // VALIDATION - fail fast
         if (!amount) throw new Error("PaymentContext: amount is required");
-        if (!chamaId) throw new Error("PaymentContext: chamaId is required");
-        if (!obligationId) throw new Error("PaymentContext: obligationId is required");
+        if (!resolvedOwnerId) throw new Error("PaymentContext: ownerId or chamaId is required");
         if (!participantId) throw new Error("PaymentContext: participantId is required");
         if (!actorId) throw new Error("PaymentContext: actorId is required");
 
@@ -64,7 +68,9 @@ export default class PaymentContext {
         this.correlationId = correlationId;
 
         // OWNER / OBLIGATION - Flat fields so Mapper can access easily
-        this.chamaId = chamaId;
+        this.chamaId = resolvedOwnerId;
+        this.ownerId = resolvedOwnerId;
+        this.ownerType = resolvedOwnerType;
         this.obligationId = obligationId;
         this.planId = planId;
 
@@ -78,7 +84,7 @@ export default class PaymentContext {
         this.provider = provider;
 
         // TECHNICAL
-        this.metadata = Object.freeze({ ...metadata });
+        this.metadata = Object.freeze({ ...metadata, owner_type: resolvedOwnerType, owner_id: resolvedOwnerId });
         this.session = session;
         this.createdAt = new Date();
 

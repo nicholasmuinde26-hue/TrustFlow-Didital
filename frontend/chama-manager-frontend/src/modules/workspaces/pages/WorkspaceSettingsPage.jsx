@@ -55,7 +55,7 @@ export default function WorkspaceSettingsPage() {
   const canEdit = ["treasurer", "chairperson"].includes(activeWorkspace?.role);
   const canDelete = activeWorkspace?.role === "treasurer";
 
-  const { data, isLoading, isError } = useChamaSettings(workspaceId);
+  const { data, isLoading, isError } = useChamaSettings(workspaceId, isChama);
   const updateSettings = useUpdateChamaSettings(workspaceId);
   const deleteChama = useDeleteChama(workspaceId);
 

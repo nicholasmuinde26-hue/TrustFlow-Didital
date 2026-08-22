@@ -30,23 +30,24 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
   const [isMpesaModalOpen, setIsMpesaModalOpen] = useState(false);
   const [toastNotice, setToastNotice] = useState(null);
 
-  // Group Health Dashboard mock / fallback data metrics
-  const targetGoal = workspace.targetGoal || 100000;
-  const collected = stats.totalContributed || 72000;
-  const daysLeft = workspace.daysLeft || 24;
-  const progressPercent = Math.min(100, Math.round((collected / targetGoal) * 100));
+  // Real Group Health Dashboard data metrics with computed fallbacks
+  const targetGoal = workspace.targetGoal ?? 100000;
+  const collected = stats.totalContributed ?? 0;
+  const daysLeft = workspace.daysLeft ?? (workspace.eventDate ? Math.max(0, Math.ceil((new Date(workspace.eventDate) - new Date()) / (1000 * 60 * 60 * 24))) : 30);
+  const progressPercent = targetGoal > 0 ? Math.min(100, Math.round((collected / targetGoal) * 100)) : 0;
 
-  const totalMembers = stats.memberCount || 20;
-  const paidMembersCount = stats.paidCount || 18;
-  const pendingMembersCount = totalMembers - paidMembersCount;
+  const totalMembers = stats.memberCount ?? 0;
+  const paidMembersCount = stats.paidCount ?? (collected > 0 ? 1 : 0);
+  const pendingMembersCount = Math.max(0, totalMembers - paidMembersCount);
 
-  const topContributor = workspace.topContributor || { name: "Mercy Wambui", amount: 10000 };
-  const nextPayout = workspace.nextPayout || { date: "28th Aug", recipient: "John Doe", amount: 20000 };
+  const topContributor = workspace.topContributor || { name: "Pending contributions", amount: 0 };
+  const nextPayout = workspace.nextPayout || { date: "Upcoming", recipient: "Rotation queued", amount: targetGoal / (totalMembers || 1) };
 
   const handleReminderSent = () => {
     setToastNotice("Auto M-Pesa reminders dispatched to pending members!");
     setTimeout(() => setToastNotice(null), 5000);
   };
+
 
   return (
     <div className="space-y-8 font-sans">

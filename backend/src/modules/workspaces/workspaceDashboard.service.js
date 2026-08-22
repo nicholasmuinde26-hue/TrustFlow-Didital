@@ -68,7 +68,7 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
     : { contribution_group_id: workspaceId, status: 'active' };
   const ownerFilter = { owner_type: ownerType, owner_id: workspaceId };
   const now = new Date();
-  const [memberCount, activePlans, overdueCount, payments, meetings] = await Promise.all([
+  const [memberCount, activePlans, overdueCount, payments, meetings, topContributorAgg, paidMembersCountAgg, activePlanObj] = await Promise.all([
     type === 'chama' ? ChamaMembership.countDocuments(memberFilter) : ContributionGroupMember.countDocuments(memberFilter),
     ContributionPlan.countDocuments({ ...ownerFilter, status: 'active' }),
     ContributionObligation.countDocuments({ ...ownerFilter, status: { $in: ['pending', 'partially_paid', 'overdue'] }, due_date: { $lt: now } }),
@@ -77,7 +77,43 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
       { $group: { _id: null, total: { $sum: { $toDouble: '$amount' } } } },
     ]),
     Meeting.find({ workspace_id: workspaceId, cancelled_at: null, starts_at: { $gte: now } }).sort({ starts_at: 1 }).limit(3).lean(),
+    ContributionPayment.aggregate([
+      { $match: { ...ownerFilter, status: 'completed' } },
+      { $group: { _id: '$user_id', total: { $sum: { $toDouble: '$amount' } } } },
+      { $sort: { total: -1 } },
+      { $limit: 1 },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    ]),
+    ContributionPayment.aggregate([
+      { $match: { ...ownerFilter, status: 'completed' } },
+      { $group: { _id: '$user_id' } },
+      { $count: 'paidCount' },
+    ]),
+    ContributionPlan.findOne({ ...ownerFilter, status: 'active' }).lean(),
   ]);
+
+  let topContributor = null;
+  if (topContributorAgg && topContributorAgg.length > 0) {
+    const top = topContributorAgg[0];
+    topContributor = {
+      name: top.user ? `${top.user.first_name || ''} ${top.user.last_name || ''}`.trim() || top.user.email : 'Member',
+      amount: top.total || 0,
+    };
+  }
+
+  const totalContributed = payments[0]?.total ?? 0;
+  const paidCount = paidMembersCountAgg[0]?.paidCount ?? (totalContributed > 0 ? 1 : 0);
+
+  // Calculate daysLeft if eventDate exists
+  let daysLeft = null;
+  if (workspace.event_date) {
+    const diff = new Date(workspace.event_date).getTime() - now.getTime();
+    daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  }
+
+  // Calculate target goal
+  const targetGoal = activePlanObj?.target_amount || activePlanObj?.amount_per_member * (memberCount || 1) || 100000;
 
   return {
     type,
@@ -85,8 +121,10 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
       id: String(workspace._id), name: workspace.name, status: workspace.status, role: membership.role || 'member',
       monthlySavings: workspace.monthly_savings ?? null, eventDate: workspace.event_date ?? null,
       location: workspace.location ?? null, description: workspace.description ?? null,
+      targetGoal, daysLeft, topContributor,
     },
-    stats: { memberCount, activePlans, overdueCount, totalContributed: payments[0]?.total ?? 0 },
+    stats: { memberCount, activePlans, overdueCount, totalContributed, paidCount },
     upcoming: meetings.map((meeting) => ({ id: String(meeting._id), title: meeting.title, startsAt: meeting.starts_at })),
   };
 }
+

@@ -8,7 +8,8 @@ const paymentIntentSchema = new mongoose.Schema(
     obligation_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ContributionObligation',
-      required: true,
+      required: false,
+      default: null,
       index: true
     },
     plan_id: {
@@ -18,7 +19,7 @@ const paymentIntentSchema = new mongoose.Schema(
     },
     owner_type: {
       type: String,
-      enum: ['Chama', 'ContributionGroup'],
+      enum: ['Chama', 'ContributionGroup', 'Business'],
       required: true,
       index: true
     },
