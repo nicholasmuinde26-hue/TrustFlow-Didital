@@ -2,7 +2,6 @@ import { useParams } from "react-router-dom";
 import { Megaphone } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { canManageAnnouncements } from "@/modules/workspaces/permissions/Permissions";
 
 import {
   useAnnouncements,
@@ -23,7 +22,7 @@ export default function AnnouncementsPage() {
     (w) => (w.id ?? w._id) === workspaceId
   );
 
-  const manage = canManageAnnouncements(workspace?.role);
+  const manage = false;
 
   const { data: announcements = [], isLoading, isError } =
     useAnnouncements(workspaceId);
