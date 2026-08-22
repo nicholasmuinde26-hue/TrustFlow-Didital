@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { CalendarClock } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { canManageMeetings } from "@/modules/workspaces/permissions/permissions";
+import { canManageMeetings } from "@/modules/workspaces/permissions/Permissions";
 
 import {
   useMeetings,
