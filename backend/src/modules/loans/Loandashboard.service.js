@@ -115,14 +115,24 @@ export async function getPortfolio({ chama }) {
     },
     loans: loans.map((loan) => ({
       id: loan._id,
+      _id: loan._id,
       reference: loan.reference,
       member_name: loan.membership_id?.user_id?.name || 'Unknown',
+      member_phone: loan.membership_id?.user_id?.phone || loan.phone_number || '',
       principal: loan.amount,
+      amount: loan.amount,
+      purpose: loan.purpose,
+      repayment_period_months: loan.repayment_period_months,
+      repayment_frequency: loan.repayment_frequency,
+      disbursement_method: loan.disbursement_method,
+      required_approval_roles: loan.required_approval_roles,
+      approvals: loan.approvals || [],
       outstanding: round2(
         loan.balances.principal_outstanding + loan.balances.interest_outstanding + loan.balances.penalty_outstanding
       ),
       days_late: loan.default_info?.days_late || 0,
       status: loan.status,
+      createdAt: loan.createdAt,
     })),
   };
 }

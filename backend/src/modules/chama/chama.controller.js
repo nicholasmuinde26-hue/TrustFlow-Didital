@@ -3,27 +3,27 @@ import {
   getChamaById,
   getChamaMembers,
   updateChama,
-  deleteChama
+  deleteChama,
+  verifyTreasurerUser,
 } from './chama.service.js';
 import PaymentIntent from '../../models/PaymentIntent.js';
 import { getMgrOverview, initiateSavingsDeposit, markMgrObligationPaid, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
 
+export const verifyTreasurerController = async (req, res, next) => {
+  try {
+    const query = req.query.query || req.query.phone || req.query.email;
+    const actorUserId = req.user._id;
 
-// ========================================
-// CREATE CHAMA
-// ========================================
-//
-// POST /api/chamas
-//
-// Requires:
-// - Authentication
-//
-// The authenticated User becomes:
-// - Chama creator
-// - Treasurer
-// - Active member
-//
-// ========================================
+    const user = await verifyTreasurerUser(query, actorUserId);
+    return res.status(200).json({
+      success: true,
+      message: 'Treasurer user verified successfully',
+      data: { user },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const createChamaController = async (
   req,
@@ -47,7 +47,11 @@ export const createChamaController = async (
 
     const {
       name,
-      monthlySavings
+      monthlySavings,
+      treasurerPhone,
+      treasurerEmail,
+      treasurerUserId,
+      treasurerInput,
     } = req.body;
 
 
@@ -59,7 +63,11 @@ export const createChamaController = async (
       await createChama({
         name,
         monthlySavings,
-        userId
+        userId,
+        treasurerPhone,
+        treasurerEmail,
+        treasurerUserId,
+        treasurerInput,
       });
 
 

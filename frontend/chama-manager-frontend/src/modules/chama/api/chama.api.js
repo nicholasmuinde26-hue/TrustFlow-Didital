@@ -5,6 +5,10 @@ const chamaApi = {
     return api.post("/chamas", payload);
   },
 
+  verifyTreasurer(query) {
+    return api.get("/chamas/verify-treasurer", { params: { query } });
+  },
+
   get(chamaId) {
     return api.get(`/chamas/${chamaId}`);
   },

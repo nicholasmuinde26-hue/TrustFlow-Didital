@@ -56,14 +56,16 @@ export async function updatePolicy(chamaId, updates, userId) {
 
 /** Resolve the approval matrix tier (list of required roles) for an amount. */
 export function resolveApprovalRoles(policy, amount) {
-  const tiers = [...(policy.approval_matrix || [])].sort((a, b) => {
+  const tiers = [...(policy?.approval_matrix || [])].sort((a, b) => {
     const aMax = a.max_amount ?? Infinity;
     const bMax = b.max_amount ?? Infinity;
     return aMax - bMax;
   });
 
   const tier = tiers.find((t) => amount <= (t.max_amount ?? Infinity));
-  return tier ? tier.required_roles : ['treasurer'];
+  return (tier?.required_roles && tier.required_roles.length > 0)
+    ? tier.required_roles
+    : ['chairperson', 'treasurer'];
 }
 
 export default { getOrCreatePolicy, updatePolicy, resolveApprovalRoles };

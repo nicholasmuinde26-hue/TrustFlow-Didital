@@ -35,10 +35,10 @@ export default function BusinessReportTemplate({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-black">
-                {(data.items || defaultBusinessTrialBalance).map((item, idx) => (
+                {(data.items || []).map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-200 print:text-black">
-                      {item.account}
+                      {item.account || item.name}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 print:text-black">
                       {item.debit > 0 ? money(item.debit) : "—"}
@@ -48,15 +48,22 @@ export default function BusinessReportTemplate({
                     </td>
                   </tr>
                 ))}
+                {(!data.items || data.items.length === 0) && (
+                  <tr>
+                    <td colSpan="3" className="py-6 text-center text-xs text-slate-400">
+                      No trial balance items found for this period.
+                    </td>
+                  </tr>
+                )}
               </tbody>
               <tfoot className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-black text-base print:border-black print:bg-white">
                 <tr>
                   <td className="py-4 px-4 uppercase text-slate-900 dark:text-white print:text-black">TOTAL BALANCES</td>
                   <td className="py-4 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 print:text-black">
-                    {money(data.totalDebit || 1500000)}
+                    {money(data.totalDebit || 0)}
                   </td>
                   <td className="py-4 px-4 text-right font-mono text-sky-600 dark:text-sky-400 print:text-black">
-                    {money(data.totalCredit || 1500000)}
+                    {money(data.totalCredit || 0)}
                   </td>
                 </tr>
               </tfoot>
@@ -78,19 +85,19 @@ export default function BusinessReportTemplate({
             {/* Revenue */}
             <div className="flex justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
               <span className="font-bold text-slate-900 dark:text-white">Gross Revenue / Sales</span>
-              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{money(data.revenue ?? 500000)}</span>
+              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{money(data.revenue || 0)}</span>
             </div>
 
             {/* COGS */}
             <div className="flex justify-between border-b border-slate-200 dark:border-slate-800 pb-2 text-slate-600 dark:text-slate-300">
               <span>Cost of Goods Sold (COGS)</span>
-              <span className="font-mono text-rose-600 dark:text-rose-400">({money(data.cogs ?? 50000)})</span>
+              <span className="font-mono text-rose-600 dark:text-rose-400">({money(data.cogs || 0)})</span>
             </div>
 
             {/* Gross Profit */}
             <div className="flex justify-between bg-slate-50 dark:bg-slate-800/80 p-3 rounded-xl font-black text-emerald-700 dark:text-emerald-400 border border-slate-200 dark:border-slate-700">
               <span>GROSS PROFIT</span>
-              <span className="font-mono">{money(data.grossProfit ?? ((data.revenue ?? 500000) - (data.cogs ?? 50000)))}</span>
+              <span className="font-mono">{money(data.grossProfit || (Number(data.revenue || 0) - Number(data.cogs || 0)))}</span>
             </div>
 
             {/* Operating Expenses */}
@@ -100,15 +107,15 @@ export default function BusinessReportTemplate({
               </span>
               <div className="flex justify-between text-xs text-slate-600 dark:text-slate-300 pl-4">
                 <span>Salaries & Wages</span>
-                <span className="font-mono">{money(data.salaries ?? 200000)}</span>
+                <span className="font-mono">{money(data.salaries || 0)}</span>
               </div>
               <div className="flex justify-between text-xs text-slate-600 dark:text-slate-300 pl-4">
                 <span>Software Licensing & Hosting</span>
-                <span className="font-mono">{money(data.licensing ?? 50000)}</span>
+                <span className="font-mono">{money(data.licensing || 0)}</span>
               </div>
               <div className="flex justify-between border-t border-slate-200 dark:border-slate-800 pt-2 font-semibold text-rose-600 dark:text-rose-400">
                 <span>Total Operating Expenses</span>
-                <span className="font-mono">({money(data.totalOpex ?? 250000)})</span>
+                <span className="font-mono">({money(data.totalOpex || 0)})</span>
               </div>
             </div>
 
@@ -121,7 +128,7 @@ export default function BusinessReportTemplate({
                 <p className="text-xs text-slate-500 dark:text-slate-400">Net operating margin performance.</p>
               </div>
               <strong className="text-2xl font-black font-mono text-sky-700 dark:text-sky-400 print:text-black">
-                {money(data.netProfit ?? 200000)}
+                {money(data.netProfit || 0)}
               </strong>
             </div>
           </div>
@@ -143,16 +150,16 @@ export default function BusinessReportTemplate({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Cash & Cash Equivalents</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.cashEquivalents ?? 500000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.cashEquivalents || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Accounts Receivable</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.accountsReceivable ?? 100000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.accountsReceivable || 0)}</span>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-sky-700 dark:text-sky-400">
                 <span>TOTAL ASSETS</span>
-                <span className="font-mono">{money(data.totalAssets ?? 600000)}</span>
+                <span className="font-mono">{money(data.totalAssets || 0)}</span>
               </div>
             </div>
 
@@ -161,12 +168,12 @@ export default function BusinessReportTemplate({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Accounts Payable</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.accountsPayable ?? 100000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.accountsPayable || 0)}</span>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-amber-700 dark:text-amber-400">
                 <span>TOTAL LIABILITIES</span>
-                <span className="font-mono">{money(data.totalLiabilities ?? 100000)}</span>
+                <span className="font-mono">{money(data.totalLiabilities || 0)}</span>
               </div>
             </div>
 
@@ -175,16 +182,16 @@ export default function BusinessReportTemplate({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Share Capital</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.shareCapital ?? 300000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.shareCapital || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Retained Earnings</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.retainedEarnings ?? 200000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.retainedEarnings || 0)}</span>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-emerald-700 dark:text-emerald-400">
                 <span>TOTAL EQUITY</span>
-                <span className="font-mono">{money(data.totalEquity ?? 500000)}</span>
+                <span className="font-mono">{money(data.totalEquity || 0)}</span>
               </div>
             </div>
           </div>
@@ -205,15 +212,15 @@ export default function BusinessReportTemplate({
               <h3 className="font-bold text-emerald-700 dark:text-emerald-400 uppercase">1. Cash Flow from Operating Activities</h3>
               <div className="flex justify-between text-slate-600 dark:text-slate-300">
                 <span>Cash Receipts from Customers</span>
-                <span className="font-mono">{money(data.operatingReceipts ?? 450000)}</span>
+                <span className="font-mono">{money(data.operatingReceipts || 0)}</span>
               </div>
               <div className="flex justify-between text-slate-600 dark:text-slate-300">
                 <span>Cash Payments to Suppliers & Employees</span>
-                <span className="font-mono">({money(data.operatingPayments ?? 250000)})</span>
+                <span className="font-mono">({money(data.operatingPayments || 0)})</span>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold text-slate-900 dark:text-white">
                 <span>Net Cash from Operating Activities</span>
-                <span className="font-mono text-emerald-700 dark:text-emerald-400">{money(data.netOperating ?? 200000)}</span>
+                <span className="font-mono text-emerald-700 dark:text-emerald-400">{money(data.netOperating || 0)}</span>
               </div>
             </div>
 
@@ -221,11 +228,11 @@ export default function BusinessReportTemplate({
               <h3 className="font-bold text-sky-700 dark:text-sky-400 uppercase">2. Cash Flow from Investing Activities</h3>
               <div className="flex justify-between text-slate-600 dark:text-slate-300">
                 <span>Purchase of Equipment</span>
-                <span className="font-mono">({money(data.investingOut ?? 50000)})</span>
+                <span className="font-mono">({money(data.investingOut || 0)})</span>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold text-slate-900 dark:text-white">
                 <span>Net Cash Used in Investing Activities</span>
-                <span className="font-mono text-rose-600 dark:text-rose-400">({money(data.netInvesting ? Math.abs(data.netInvesting) : 50000)})</span>
+                <span className="font-mono text-rose-600 dark:text-rose-400">({money(data.netInvesting ? Math.abs(data.netInvesting) : 0)})</span>
               </div>
             </div>
 
@@ -233,11 +240,11 @@ export default function BusinessReportTemplate({
               <h3 className="font-bold text-purple-700 dark:text-purple-400 uppercase">3. Cash Flow from Financing Activities</h3>
               <div className="flex justify-between text-slate-600 dark:text-slate-300">
                 <span>Issuance of Share Capital</span>
-                <span className="font-mono">{money(data.financingIn ?? 100000)}</span>
+                <span className="font-mono">{money(data.financingIn || 0)}</span>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between font-bold text-slate-900 dark:text-white">
                 <span>Net Cash from Financing Activities</span>
-                <span className="font-mono text-purple-700 dark:text-purple-400">{money(data.netFinancing ?? 100000)}</span>
+                <span className="font-mono text-purple-700 dark:text-purple-400">{money(data.netFinancing || 0)}</span>
               </div>
             </div>
           </div>

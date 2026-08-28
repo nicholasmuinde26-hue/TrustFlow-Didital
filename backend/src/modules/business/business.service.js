@@ -552,61 +552,400 @@ export async function forceCompleteTransaction(businessId, transactionId, user) 
  * CUSTOMERS DIRECTORY
  * ============================================================
  */
-export async function listCustomers(businessId, user) {
+import BusinessItem from "../../models/BusinessItem.js";
+import Storefront from "../../models/Storefront.js";
+import StorefrontOrder from "../../models/StorefrontOrder.js";
+
+/**
+ * ============================================================
+ * INVENTORY & STOCK MANAGEMENT ("One inventory, two faces")
+ * ============================================================
+ */
+const DEFAULT_INVENTORY_SEED = [
+  { name: "Dish Soap 750ml", sku: "SKU-1042", category: "Household", description: "Lemon scent, cuts grease fast.", price: 260, online_price: 260, quantity: 42, visible_online: true, icon: "🧴" },
+  { name: "Instant Coffee 200g", sku: "SKU-2210", category: "Beverages", description: "Rich roast, resealable tin.", price: 890, online_price: 890, quantity: 6, visible_online: true, icon: "☕" },
+  { name: "Wireless Earbuds", sku: "SKU-5581", category: "Electronics", description: "Bluetooth 5.0, 20hr battery.", price: 3200, online_price: 3200, quantity: 0, visible_online: true, icon: "🎧" },
+  { name: "Boiled Sweets 1kg", sku: "SKU-0087", category: "Snacks", description: "Assorted fruit flavours.", price: 340, online_price: 340, quantity: 118, visible_online: true, icon: "🍬" },
+  { name: "Tissue Pack (6)", sku: "SKU-3305", category: "Household", description: "Soft 2-ply, 200 sheets each.", price: 450, online_price: 450, quantity: 27, visible_online: true, icon: "🧻" },
+  { name: "Extension Cable 3m", sku: "SKU-7712", category: "Electronics", description: "3-socket, surge protected.", price: 780, online_price: 780, quantity: 4, visible_online: true, icon: "🔌" },
+];
+
+export async function listInventoryItems(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
-  return BusinessCustomer.find({ business_id: business._id }).sort({ last_transaction_at: -1 });
+  let items = await BusinessItem.find({ business_id: business._id, status: "active" }).sort({ createdAt: -1 });
+  
+  // Lazy-seed initial inventory items if empty
+  if (items.length === 0) {
+    const seeded = DEFAULT_INVENTORY_SEED.map((item) => ({
+      ...item,
+      business_id: business._id,
+    }));
+    items = await BusinessItem.insertMany(seeded);
+  }
+  return items;
 }
 
-export async function createCustomer(businessId, user, data) {
+export async function createInventoryItem(businessId, user, data) {
   const business = await getOwnedBusiness(businessId, user);
   if (!data.name?.trim()) {
-    const error = new Error("Customer name is required");
+    const error = new Error("Item name is required");
     error.statusCode = 400;
     throw error;
   }
-  return BusinessCustomer.create({
+  return BusinessItem.create({
     business_id: business._id,
-    name: data.name,
-    phone: data.phone || null,
-    email: data.email || null,
-    is_auto_registered: true,
+    name: data.name.trim(),
+    sku: data.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+    category: data.category || "General",
+    description: data.description || "",
+    price: Number(data.price || 0),
+    online_price: data.online_price !== undefined && data.online_price !== null ? Number(data.online_price) : Number(data.price || 0),
+    cost_price: Number(data.cost_price || 0),
+    quantity: Number(data.quantity || 0),
+    visible_online: data.visible_online !== undefined ? Boolean(data.visible_online) : true,
+    icon: data.icon || "📦",
+    image_url: data.image_url || "",
   });
+}
+
+export async function updateInventoryItem(businessId, itemId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
+  if (!item) {
+    const error = new Error("Item not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (data.name !== undefined) item.name = data.name.trim();
+  if (data.sku !== undefined) item.sku = data.sku;
+  if (data.category !== undefined) item.category = data.category;
+  if (data.description !== undefined) item.description = data.description;
+  if (data.price !== undefined) item.price = Number(data.price);
+  if (data.online_price !== undefined) item.online_price = data.online_price !== null ? Number(data.online_price) : null;
+  if (data.cost_price !== undefined) item.cost_price = Number(data.cost_price);
+  if (data.quantity !== undefined) item.quantity = Number(data.quantity);
+  if (data.visible_online !== undefined) item.visible_online = Boolean(data.visible_online);
+  if (data.icon !== undefined) item.icon = data.icon;
+  if (data.image_url !== undefined) item.image_url = data.image_url;
+  if (data.status !== undefined) item.status = data.status;
+
+  await item.save();
+  return item;
+}
+
+export async function deleteInventoryItem(businessId, itemId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  await BusinessItem.deleteOne({ _id: itemId, business_id: business._id });
+  return { success: true };
 }
 
 /**
  * ============================================================
- * SUPPLIERS DIRECTORY
+ * STOREFRONT CONFIGURATION & PUBLIC E-COMMERCE ENDPOINTS
  * ============================================================
  */
-export async function listSuppliers(businessId, user) {
-  const business = await getOwnedBusiness(businessId, user);
-  return BusinessSupplier.find({ business_id: business._id }).sort({ last_payout_at: -1 });
+function slugify(text) {
+  return String(text || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
-export async function createSupplier(businessId, user, data) {
+export async function getOrCreateStorefront(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
-  if (!data.name?.trim()) {
-    const error = new Error("Supplier name is required");
+  let storefront = await Storefront.findOne({ business_id: business._id });
+  if (!storefront) {
+    const baseSlug = slugify(business.name) || `store-${String(business._id).slice(-6)}`;
+    storefront = await Storefront.create({
+      business_id: business._id,
+      slug: baseSlug,
+      name: business.name || "Jane's Wholesale Mart",
+    });
+  }
+  return storefront;
+}
+
+export async function updateStorefront(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  let storefront = await Storefront.findOne({ business_id: business._id });
+  if (!storefront) {
+    storefront = new Storefront({ business_id: business._id });
+  }
+
+  if (data.slug?.trim()) {
+    const newSlug = slugify(data.slug);
+    const existing = await Storefront.findOne({ slug: newSlug, business_id: { $ne: business._id } });
+    if (existing) {
+      const error = new Error("Storefront URL slug is already taken by another business");
+      error.statusCode = 400;
+      throw error;
+    }
+    storefront.slug = newSlug;
+  }
+
+  if (data.name !== undefined) storefront.name = data.name.trim();
+  if (data.location_text !== undefined) storefront.location_text = data.location_text.trim();
+  if (data.headline !== undefined) storefront.headline = data.headline.trim();
+  if (data.subtitle !== undefined) storefront.subtitle = data.subtitle.trim();
+  if (data.status !== undefined) storefront.status = data.status;
+  if (data.theme !== undefined) storefront.theme = { ...storefront.theme, ...data.theme };
+  if (data.badges !== undefined && Array.isArray(data.badges)) storefront.badges = data.badges;
+
+  await storefront.save();
+  return storefront;
+}
+
+/** PUBLIC storefront view by slug (No authentication required) */
+export async function getPublicStorefrontBySlug(slug) {
+  const cleanSlug = slugify(slug);
+  const storefront = await Storefront.findOne({ slug: cleanSlug });
+  if (!storefront || storefront.status === "paused") {
+    const error = new Error("Storefront not found or currently offline");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const business = await Business.findById(storefront.business_id);
+  if (!business) {
+    const error = new Error("Business not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Ensure inventory items exist
+  let rawItems = await BusinessItem.find({
+    business_id: business._id,
+    status: "active",
+    visible_online: true,
+  }).sort({ createdAt: -1 });
+
+  if (rawItems.length === 0) {
+    const seeded = DEFAULT_INVENTORY_SEED.map((item) => ({
+      ...item,
+      business_id: business._id,
+    }));
+    rawItems = await BusinessItem.insertMany(seeded);
+  }
+
+  const publicItems = rawItems.map((item) => ({
+    _id: item._id,
+    id: item._id,
+    name: item.name,
+    sku: item.sku,
+    category: item.category,
+    description: item.description,
+    price: item.online_price !== null && item.online_price !== undefined ? item.online_price : item.price,
+    in_store_price: item.price,
+    quantity: item.quantity,
+    in_stock: item.quantity > 0,
+    low_stock: item.quantity > 0 && item.quantity <= 10,
+    icon: item.icon,
+    image_url: item.image_url,
+  }));
+
+  return {
+    storefront,
+    business: {
+      _id: business._id,
+      name: business.name,
+      category: business.category,
+      currency: business.currency,
+    },
+    items: publicItems,
+  };
+}
+
+/** PUBLIC Order Placement (No account required, deducts live stock, registers customer) */
+export async function createStorefrontOrder(slug, data) {
+  const cleanSlug = slugify(slug);
+  const storefront = await Storefront.findOne({ slug: cleanSlug });
+  if (!storefront || storefront.status === "paused") {
+    const error = new Error("Storefront not found or unavailable");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const business = await Business.findById(storefront.business_id);
+  if (!business) {
+    const error = new Error("Business not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!data.customer_name?.trim() || !data.customer_phone?.trim()) {
+    const error = new Error("Customer name and phone number are required to place an order");
     error.statusCode = 400;
     throw error;
   }
-  return BusinessSupplier.create({
+
+  if (!Array.isArray(data.items) || data.items.length === 0) {
+    const error = new Error("Order must contain at least one item");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Validate stock and compute totals
+  const orderItems = [];
+  let calculatedSubtotal = 0;
+
+  for (const requestedItem of data.items) {
+    const item = await BusinessItem.findOne({
+      _id: requestedItem.item_id || requestedItem.id,
+      business_id: business._id,
+    });
+
+    if (!item) {
+      const error = new Error(`Item not found in business inventory`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const qty = Math.max(1, Number(requestedItem.qty || 1));
+    if (item.quantity < qty) {
+      const error = new Error(`Sorry, "${item.name}" only has ${item.quantity} units remaining in stock.`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const price = item.online_price !== null && item.online_price !== undefined ? item.online_price : item.price;
+    const lineTotal = price * qty;
+    calculatedSubtotal += lineTotal;
+
+    orderItems.push({
+      item_id: item._id,
+      name: item.name,
+      qty,
+      price,
+      total: lineTotal,
+      dbItem: item,
+    });
+  }
+
+  // Generate short order code e.g. ORD-9823
+  const orderCode = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+  const deliveryFee = data.fulfillment_type === "delivery" ? Number(data.delivery_fee || 0) : 0;
+  const totalAmount = calculatedSubtotal + deliveryFee;
+
+  // Create Order
+  const order = await StorefrontOrder.create({
     business_id: business._id,
-    name: data.name,
-    phone: data.phone || null,
-    email: data.email || null,
-    contact_person: data.contactPerson || null,
-    is_auto_registered: true,
+    storefront_id: storefront._id,
+    order_code: orderCode,
+    channel: "online",
+    customer_name: data.customer_name.trim(),
+    customer_phone: data.customer_phone.trim(),
+    customer_email: data.customer_email || "",
+    delivery_address: data.delivery_address || "Store Pickup",
+    fulfillment_type: data.fulfillment_type || "delivery",
+    fulfillment_status: "pending",
+    items: orderItems.map((i) => ({
+      item_id: i.item_id,
+      name: i.name,
+      qty: i.qty,
+      price: i.price,
+      total: i.total,
+    })),
+    subtotal: calculatedSubtotal,
+    delivery_fee: deliveryFee,
+    total_amount: totalAmount,
+    payment_method: data.payment_method || "mpesa",
+    payment_status: data.payment_method === "cash_on_delivery" ? "pending" : "pending",
   });
+
+  // Deduct live stock levels!
+  for (const oItem of orderItems) {
+    oItem.dbItem.quantity = Math.max(0, oItem.dbItem.quantity - oItem.qty);
+    await oItem.dbItem.save();
+  }
+
+  // Create internal BusinessTransaction sale record & post to double-entry ledger!
+  const transaction = await BusinessTransaction.create({
+    business_id: business._id,
+    type: "sale",
+    direction: "cash_in",
+    amount: totalAmount,
+    currency: business.currency,
+    payment_channel: data.payment_method === "cash_on_delivery" ? "cash" : "mpesa",
+    status: "completed",
+    description: `Online Order #${orderCode} - ${data.customer_name}`,
+    customer_name: data.customer_name,
+    customer_phone: data.customer_phone,
+    external_reference: orderCode,
+    created_by: business.created_by,
+  });
+
+  await onTransactionCompleted(transaction, business);
+
+  // If M-Pesa STK Push requested, initiate STK
+  let stk = null;
+  if (data.payment_method === "mpesa" && data.customer_phone) {
+    try {
+      stk = await mpesaService.initiateStkPush({
+        amount: totalAmount,
+        phoneNumber: data.customer_phone,
+        accountReference: orderCode,
+        transactionDescription: `Order ${orderCode} at ${business.name}`,
+      });
+      order.checkout_request_id = stk.checkoutRequestId;
+      await order.save();
+    } catch (e) {
+      console.warn("[Storefront M-Pesa STK Error]", e.message);
+    }
+  }
+
+  return { order, order_code: orderCode, stk };
 }
 
-/**
- * ============================================================
- * FINANCIAL ACCOUNTS DIRECTORY
- * ============================================================
- */
-export async function getBusinessAccounts(businessId, user) {
+/** PUBLIC Order Tracking (by order code & phone number) */
+export async function trackStorefrontOrder(orderCode, phone) {
+  if (!orderCode?.trim()) {
+    const error = new Error("Order code is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const query = { order_code: orderCode.trim().toUpperCase() };
+  if (phone?.trim()) {
+    const cleanPhone = phone.trim();
+    query.customer_phone = { $regex: cleanPhone.slice(-8), $options: "i" };
+  }
+
+  const order = await StorefrontOrder.findOne(query);
+  if (!order) {
+    const error = new Error("Order not found. Please verify your order code and phone number.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const storefront = await Storefront.findById(order.storefront_id).select("name location_text headline");
+  return { order, storefront };
+}
+
+/** Staff: List Storefront Orders for Fulfillment */
+export async function listStorefrontOrders(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
-  await ensureBusinessAccounts(business._id, getUserId(user));
-  return FinancialAccount.find({ owner_type: "Business", owner_id: business._id, status: "active" }).sort({ account_code: 1 });
+  return StorefrontOrder.find({ business_id: business._id }).sort({ createdAt: -1 });
+}
+
+/** Staff: Update Order Fulfillment Status */
+export async function updateOrderFulfillmentStatus(businessId, orderId, user, status) {
+  const business = await getOwnedBusiness(businessId, user);
+  const order = await StorefrontOrder.findOne({ _id: orderId, business_id: business._id });
+  if (!order) {
+    const error = new Error("Order not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (["pending", "processing", "fulfilled", "cancelled"].includes(status)) {
+    order.fulfillment_status = status;
+    if (status === "fulfilled") {
+      order.payment_status = "paid";
+    }
+    await order.save();
+  }
+
+  return order;
 }

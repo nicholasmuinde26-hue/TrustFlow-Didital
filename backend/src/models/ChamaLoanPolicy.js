@@ -81,9 +81,7 @@ const chamaLoanPolicySchema = new mongoose.Schema(
     approval_matrix: {
       type: [approvalTierSchema],
       default: [
-        { max_amount: 10000, required_roles: ['treasurer'] },
-        { max_amount: 50000, required_roles: ['treasurer', 'chairperson'] },
-        { max_amount: null, required_roles: ['treasurer', 'chairperson', 'auditor'] },
+        { max_amount: null, required_roles: ['chairperson', 'treasurer'] },
       ],
     },
 

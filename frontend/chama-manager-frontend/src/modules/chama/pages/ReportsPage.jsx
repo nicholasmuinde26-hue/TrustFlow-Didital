@@ -1,107 +1,161 @@
-import React from "react";
+import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   FileText,
   PieChart,
   Scale,
   TrendingUp,
-  ShieldCheck,
-  Printer,
+  Plus,
+  Clock,
   ChevronRight,
+  Download,
 } from "lucide-react";
 
 export default function ChamaReportsPage() {
   const { workspaceId } = useParams();
   const basePath = `/workspace/${workspaceId}/finance`;
+  const [activeTab, setActiveTab] = useState("all");
 
-  const reportCards = [
+  const reports = [
     {
-      title: "Trial Balance (Kugawanya Akaunti)",
-      desc: "Equal debit & credit ledger balance of member contributions, MGR payouts, fines & reserves.",
-      icon: Scale,
-      path: `${basePath}/trial-balance`,
-      tag: "CHAMA & BUSINESS MODE",
-    },
-    {
-      title: "Mapato na Matumizi (Income Statement)",
-      desc: "Non-accountant summary showing Mapato (Income) - Matumizi (Expenses) = ZILIZOSALIA / SURPLUS.",
-      icon: TrendingUp,
+      id: "financial-summary",
+      title: "Financial Summary",
+      desc: "Complete financial overview and key financial ratios.",
+      category: "financial",
       path: `${basePath}/income-statement`,
-      tag: "MEMBERS TRANSPARENCY",
     },
     {
-      title: "Taarifa ya Fedha (Balance Sheet)",
-      desc: "Mali (Bank & Till Assets) vs Madeni (Liabilities) & Mtaji (Members Funds).",
-      icon: PieChart,
+      id: "contribution-report",
+      title: "Contribution Report",
+      desc: "Member contributions analysis, collection rate and arrears.",
+      category: "financial",
+      path: `/workspace/${workspaceId}/contributions`,
+    },
+    {
+      id: "loan-portfolio",
+      title: "Loan Portfolio Report",
+      desc: "Loans performance, risk metrics, interest earned and aging.",
+      category: "loans",
+      path: `/workspace/${workspaceId}/loans`,
+    },
+    {
+      id: "mgr-report",
+      title: "MGR Report",
+      desc: "Merry-Go-Round performance, round rotation payouts and history.",
+      category: "mgr",
+      path: `/workspace/${workspaceId}/mgr`,
+    },
+    {
+      id: "member-activity",
+      title: "Member Activity Report",
+      desc: "Member participation, meeting attendance and transaction trends.",
+      category: "members",
+      path: `/workspace/${workspaceId}/contributions`,
+    },
+    {
+      id: "balance-sheet",
+      title: "Balance Sheet",
+      desc: "Statement of financial position: Assets, Liabilities and Equity.",
+      category: "financial",
       path: `${basePath}/balance-sheet`,
-      tag: "MEMBERS FUNDS FOCUS",
     },
     {
-      title: "Harakati za Fedha (Cash Flow)",
-      desc: "Super simple 3-line cash movement: M-Pesa & Bank Cash In vs Cash Out + Opening/Closing balances.",
-      icon: FileText,
+      id: "trial-balance",
+      title: "Trial Balance",
+      desc: "Account balances summary, debit and credit ledger verification.",
+      category: "financial",
+      path: `${basePath}/trial-balance`,
+    },
+    {
+      id: "cash-flow",
+      title: "Cash Flow Statement",
+      desc: "Cash movement analysis: Operating, Investing and Financing flows.",
+      category: "financial",
       path: `${basePath}/cash-flow`,
-      tag: "M-PESA & BANK FLOW",
     },
   ];
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-12 font-sans text-slate-900 dark:text-slate-100">
-      {/* Header Banner */}
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 p-6 sm:p-8 text-white shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 border border-white/30 px-3 py-1 text-xs font-semibold text-white">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                POWERED BY TRUSTFLOW
-              </span>
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-              Chama Governance & Financial Audit Hub
-            </h1>
-            <p className="max-w-2xl text-sm text-emerald-100">
-              Generate 100% transparent member financial statements in Swahili & English. No complicated accounting jargon.
-            </p>
-          </div>
+  const filteredReports = reports.filter(r => activeTab === "all" || r.category === activeTab);
 
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-emerald-900 shadow-sm hover:bg-emerald-50 transition"
-          >
-            <Printer className="h-4 w-4" />
-            <span>Print Complete Audit Package</span>
+  return (
+    <div className="space-y-6 font-sans text-slate-900 dark:text-slate-100 pb-12">
+      {/* Header Bar */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            Reports
+          </h1>
+          <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+            Generate insights for better decisions
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 transition">
+            <Clock size={16} className="text-slate-400" /> Schedule Report
+          </button>
+          <button className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition">
+            <Plus size={16} /> Custom Report
           </button>
         </div>
-      </header>
+      </div>
 
-      {/* Financial Statement Hub Grid */}
-      <div className="grid md:grid-cols-2 gap-5">
-        {reportCards.map((card, idx) => {
-          const Icon = card.icon;
-          return (
-            <Link
-              key={idx}
-              to={card.path}
-              className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-emerald-500 hover:shadow-md"
+      {/* Category Pills Filter Bar */}
+      <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {[
+            { id: "all", label: "All Reports" },
+            { id: "financial", label: "Financial" },
+            { id: "members", label: "Members" },
+            { id: "loans", label: "Loans" },
+            { id: "mgr", label: "MGR" },
+            { id: "compliance", label: "Compliance" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition whitespace-nowrap ${
+                activeTab === tab.id
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
+              }`}
             >
-              <div className="flex justify-between items-start mb-4">
-                <span className="inline-block rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 tracking-wider">
-                  {card.tag}
-                </span>
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 group-hover:scale-110 transition">
-                  <Icon className="h-5 w-5" />
-                </div>
-              </div>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition flex items-center justify-between">
-                <span>{card.title}</span>
-                <ChevronRight className="h-5 w-5 opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition text-slate-400" />
+      {/* Reports Grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {filteredReports.map((card) => (
+          <div
+            key={card.id}
+            className="group rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="h-3 w-3 rounded-full bg-indigo-500" />
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{card.category}</span>
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
+                {card.title}
               </h3>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{card.desc}</p>
-            </Link>
-          );
-        })}
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                {card.desc}
+              </p>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <Link
+                to={card.path}
+                className="w-full rounded-2xl bg-indigo-600 px-4 py-2 text-center text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition"
+              >
+                Generate
+              </Link>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

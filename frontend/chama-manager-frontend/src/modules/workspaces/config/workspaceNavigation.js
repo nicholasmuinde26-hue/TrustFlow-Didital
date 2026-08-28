@@ -199,6 +199,11 @@ export function getWorkspaceNavigation(workspaceId, type) {
           to: `${base}/contributions`,
         },
         {
+          title: "Record Contribution",
+          icon: PlusCircle,
+          to: `${base}/finance/record-contribution`,
+        },
+        {
           title: "Meetings",
           icon: Video,
           to: `${base}/meetings`,
@@ -283,6 +288,11 @@ export function getWorkspaceNavigation(workspaceId, type) {
         },
         {
           title: "Contributions",
+          icon: Coins,
+          to: `${base}/contributions`,
+        },
+        {
+          title: "Record Contribution",
           icon: PlusCircle,
           to: `${base}/finance/record-contribution`,
         },

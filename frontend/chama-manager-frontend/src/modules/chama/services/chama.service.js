@@ -1,11 +1,14 @@
 import chamaApi from "../api/chama.api";
 
 const chamaService = {
-  // Backend only accepts { name, monthlySavings } — no description field
-  // exists on the Chama model.
-  async create({ name, monthlySavings }) {
-    const { data } = await chamaApi.create({ name, monthlySavings });
+  async create(payload) {
+    const { data } = await chamaApi.create(payload);
     return data.data.chama;
+  },
+
+  async verifyTreasurer(query) {
+    const { data } = await chamaApi.verifyTreasurer(query);
+    return data.data.user;
   },
 
   async get(chamaId) {

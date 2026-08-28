@@ -34,7 +34,11 @@ import AppError from '../../utils/AppError.js';
 export const createChama = async ({
   name,
   monthlySavings,
-  userId
+  userId,
+  treasurerPhone,
+  treasurerEmail,
+  treasurerUserId,
+  treasurerInput,
 }) => {
 
   // ----------------------------------------
@@ -104,7 +108,7 @@ export const createChama = async ({
 
 
   // ----------------------------------------
-  // 4. Find authenticated User
+  // 4. Find authenticated User (Chairperson)
   // ----------------------------------------
 
   const user =
@@ -121,16 +125,54 @@ export const createChama = async ({
   }
 
 
-  // ----------------------------------------
-  // 5. Check User account status
-  // ----------------------------------------
-
   if (
     user.status !== 'active'
   ) {
     throw new AppError(
       'Your user account is not active',
       403
+    );
+  }
+
+
+  // ----------------------------------------
+  // 5. Verify & Find Treasurer User
+  // ----------------------------------------
+
+  const searchInput = (treasurerInput || treasurerPhone || treasurerEmail || '').trim();
+  let treasurerUser = null;
+
+  if (treasurerUserId && mongoose.Types.ObjectId.isValid(treasurerUserId)) {
+    treasurerUser = await User.findById(treasurerUserId);
+  } else if (searchInput) {
+    const formattedPhone = searchInput.replace(/\s+/g, '');
+    treasurerUser = await User.findOne({
+      $or: [
+        { phone: searchInput },
+        { phone: formattedPhone },
+        { email: searchInput.toLowerCase() },
+      ],
+    });
+  }
+
+  if (!treasurerUser) {
+    throw new AppError(
+      'A valid registered treasurer user is required to create a Chama. Please specify a registered user by phone or email.',
+      400
+    );
+  }
+
+  if (treasurerUser._id.toString() === user._id.toString()) {
+    throw new AppError(
+      'The chairperson cannot be the same user as the treasurer.',
+      400
+    );
+  }
+
+  if (treasurerUser.status !== 'active') {
+    throw new AppError(
+      'The specified treasurer user account is not active.',
+      400
     );
   }
 
@@ -155,19 +197,17 @@ export const createChama = async ({
 
 
   // ----------------------------------------
-  // 7. Create Chama Membership
+  // 7. Create Chama Memberships
   // ----------------------------------------
   //
-  // The creator automatically becomes
-  // the Treasurer of this Chama.
-  //
-  // The role belongs to ChamaMembership,
-  // NOT the User document.
+  // Creator becomes Chairperson (payout position 1).
+  // Added User becomes Treasurer (payout position 2).
   //
   // ----------------------------------------
 
   try {
 
+    // 1. Creator = Chairperson
     await ChamaMembership.create({
       user_id:
         user._id,
@@ -185,20 +225,34 @@ export const createChama = async ({
         1
     });
 
-  } catch (error) {
+    // 2. Verified User = Treasurer
+    await ChamaMembership.create({
+      user_id:
+        treasurerUser._id,
 
-    // --------------------------------------
-    // IMPORTANT:
-    //
-    // Because transactions are disabled,
-    // if membership creation fails after
-    // Chama creation, we manually remove
-    // the Chama to avoid leaving orphan data.
-    // --------------------------------------
+      chama_id:
+        chama._id,
+
+      role:
+        'treasurer',
+
+      status:
+        'active',
+
+      payout_position:
+        2
+    });
+
+  } catch (error) {
 
     await Chama.findByIdAndDelete(
       chama._id
     );
+
+    await ChamaMembership.deleteMany({
+      chama_id:
+        chama._id
+    });
 
     throw error;
 
@@ -221,6 +275,44 @@ export const createChama = async ({
 
   return populatedChama;
 
+};
+
+export const verifyTreasurerUser = async (query, actorUserId) => {
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    throw new AppError('Search query (phone or email) is required', 400);
+  }
+
+  const cleanQuery = query.trim();
+  const formattedPhone = cleanQuery.replace(/\s+/g, '');
+
+  const user = await User.findOne({
+    $or: [
+      { phone: cleanQuery },
+      { phone: formattedPhone },
+      { email: cleanQuery.toLowerCase() },
+    ],
+  }).select('name first_name last_name phone email status');
+
+  if (!user) {
+    throw new AppError('No registered user found with that phone or email. The treasurer must have an account on the platform.', 404);
+  }
+
+  if (actorUserId && user._id.toString() === actorUserId.toString()) {
+    throw new AppError('The treasurer cannot be yourself. You are the chairperson, please select another registered member as treasurer.', 400);
+  }
+
+  if (user.status !== 'active') {
+    throw new AppError('The user account is not active.', 400);
+  }
+
+  const displayName = user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
+
+  return {
+    _id: user._id,
+    name: displayName,
+    phone: user.phone,
+    email: user.email,
+  };
 };
 
 

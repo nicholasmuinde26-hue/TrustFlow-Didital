@@ -13,7 +13,8 @@ import {
   getMgrOverviewController,
   getMgrHistoryController,
   recordMgrReminderController,
-  markMgrPaidController
+  markMgrPaidController,
+  verifyTreasurerController,
 } from './chama.controller.js';
 
 import {
@@ -30,6 +31,8 @@ import {
 const router =
   express.Router();
 
+
+router.get('/verify-treasurer', protect, verifyTreasurerController);
 
 // ========================================
 // CREATE CHAMA

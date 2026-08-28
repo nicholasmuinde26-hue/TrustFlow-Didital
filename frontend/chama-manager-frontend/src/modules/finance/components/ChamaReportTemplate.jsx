@@ -36,10 +36,10 @@ export default function ChamaReportTemplate({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 print:divide-black">
-                {(data.items || defaultChamaTrialBalance).map((item, idx) => (
+                {(data.items || []).map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-200 print:text-black">
-                      {item.account}
+                      {item.account || item.name}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 print:text-black">
                       {item.debit > 0 ? money(item.debit) : "—"}
@@ -49,15 +49,22 @@ export default function ChamaReportTemplate({
                     </td>
                   </tr>
                 ))}
+                {(!data.items || data.items.length === 0) && (
+                  <tr>
+                    <td colSpan="3" className="py-6 text-center text-xs text-slate-400">
+                      No trial balance records found for this period.
+                    </td>
+                  </tr>
+                )}
               </tbody>
               <tfoot className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-black text-base print:border-black print:bg-white">
                 <tr>
                   <td className="py-4 px-4 uppercase text-slate-900 dark:text-white print:text-black">TOTAL (JUMLA)</td>
                   <td className="py-4 px-4 text-right font-mono text-emerald-600 dark:text-emerald-400 print:text-black">
-                    {money(data.totalDebit || 105000)}
+                    {money(data.totalDebit || 0)}
                   </td>
                   <td className="py-4 px-4 text-right font-mono text-sky-600 dark:text-sky-400 print:text-black">
-                    {money(data.totalCredit || 105000)}
+                    {money(data.totalCredit || 0)}
                   </td>
                 </tr>
               </tfoot>
@@ -84,16 +91,16 @@ export default function ChamaReportTemplate({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-700 dark:text-slate-300">Mchango ya Wanachama</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.contributions ?? 120000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.contributions || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-700 dark:text-slate-300">Faini na Penalties</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.fines ?? 5000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.fines || 0)}</span>
                 </div>
               </div>
               <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-3 font-bold text-sm text-emerald-700 dark:text-emerald-400">
                 <span>JUMLA MAPATO (Total Income)</span>
-                <span className="font-mono">{money(data.totalIncome ?? ((data.contributions ?? 120000) + (data.fines ?? 5000)))}</span>
+                <span className="font-mono">{money(data.totalIncome || (Number(data.contributions || 0) + Number(data.fines || 0)))}</span>
               </div>
             </div>
 
@@ -105,16 +112,16 @@ export default function ChamaReportTemplate({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-700 dark:text-slate-300">MGR Payouts</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.mgrPayouts ?? 90000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.mgrPayouts || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-700 dark:text-slate-300">Admin & Mkutano Costs</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.adminCosts ?? 3000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.adminCosts || 0)}</span>
                 </div>
               </div>
               <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-3 font-bold text-sm text-rose-600 dark:text-rose-400">
                 <span>JUMLA MATUMIZI (Total Expenses)</span>
-                <span className="font-mono">{money(data.totalExpenses ?? ((data.mgrPayouts ?? 90000) + (data.adminCosts ?? 3000)))}</span>
+                <span className="font-mono">{money(data.totalExpenses || (Number(data.mgrPayouts || 0) + Number(data.adminCosts || 0)))}</span>
               </div>
             </div>
 
@@ -127,7 +134,7 @@ export default function ChamaReportTemplate({
                 <p className="text-xs text-slate-500 dark:text-slate-400">Available reserve balance for members.</p>
               </div>
               <strong className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400 print:text-black">
-                {money(data.surplus ?? 32000)}
+                {money(data.surplus || 0)}
               </strong>
             </div>
           </div>
@@ -150,16 +157,16 @@ export default function ChamaReportTemplate({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Bank + M-Pesa Till</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.cashBank ?? 75000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.cashBank || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Madeni ya Mikopo (Loans)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.loansReceivable ?? 20000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.loansReceivable || 0)}</span>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-sky-700 dark:text-sky-400">
                 <span>JUMLA MALI</span>
-                <span className="font-mono">{money(data.totalAssets ?? 95000)}</span>
+                <span className="font-mono">{money(data.totalAssets || 0)}</span>
               </div>
             </div>
 
@@ -169,12 +176,12 @@ export default function ChamaReportTemplate({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">MGR Inayokuja (Payouts Due)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.payoutsDue ?? 30000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.payoutsDue || 0)}</span>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-amber-700 dark:text-amber-400">
                 <span>JUMLA MADENI</span>
-                <span className="font-mono">{money(data.totalLiabilities ?? 30000)}</span>
+                <span className="font-mono">{money(data.totalLiabilities || 0)}</span>
               </div>
             </div>
 
@@ -186,12 +193,12 @@ export default function ChamaReportTemplate({
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-600 dark:text-slate-300">Mchango + Cumulative Surplus</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.membersFunds ?? 65000)}</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.membersFunds || 0)}</span>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-emerald-700 dark:text-emerald-400">
                 <span>JUMLA MTAJI</span>
-                <span className="font-mono">{money(data.membersFunds ?? 65000)}</span>
+                <span className="font-mono">{money(data.membersFunds || 0)}</span>
               </div>
             </div>
           </div>
@@ -211,23 +218,23 @@ export default function ChamaReportTemplate({
             <div className="grid sm:grid-cols-3 gap-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
                 <span className="text-xs text-slate-500 dark:text-slate-400 block">Cash In (Mchango)</span>
-                <strong className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">{money(data.cashIn ?? 120000)}</strong>
+                <strong className="text-xl font-black font-mono text-emerald-600 dark:text-emerald-400">{money(data.cashIn || 0)}</strong>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
                 <span className="text-xs text-slate-500 dark:text-slate-400 block">Cash Out (MGR + Admin)</span>
-                <strong className="text-xl font-black font-mono text-rose-600 dark:text-rose-400">{money(data.cashOut ?? 93000)}</strong>
+                <strong className="text-xl font-black font-mono text-rose-600 dark:text-rose-400">{money(data.cashOut || 0)}</strong>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
                 <span className="text-xs text-slate-500 dark:text-slate-400 block">Net Cash Movement</span>
                 <strong className="text-xl font-black font-mono text-sky-600 dark:text-sky-400">
-                  {data.netCashMovement >= 0 ? `+ KES ${Number(data.netCashMovement ?? 27000).toLocaleString()}` : `- KES ${Math.abs(data.netCashMovement).toLocaleString()}`}
+                  {Number(data.netCashMovement || 0) >= 0 ? `+ KES ${Number(data.netCashMovement || 0).toLocaleString()}` : `- KES ${Math.abs(Number(data.netCashMovement || 0)).toLocaleString()}`}
                 </strong>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/80 flex justify-between text-sm">
-              <span className="text-slate-700 dark:text-slate-300 font-medium">Opening Balance: {money(data.openingBalance ?? 48000)}</span>
-              <strong className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">Closing Balance: {money(data.closingBalance ?? 75000)}</strong>
+              <span className="text-slate-700 dark:text-slate-300 font-medium">Opening Balance: {money(data.openingBalance || 0)}</span>
+              <strong className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">Closing Balance: {money(data.closingBalance || 0)}</strong>
             </div>
           </div>
         </div>
