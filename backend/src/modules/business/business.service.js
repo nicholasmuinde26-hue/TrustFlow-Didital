@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import Business from "../../models/Business.js";
+import Business, { BUSINESS_CATEGORIES } from "../../models/Business.js";
 import BusinessTransaction from "../../models/BusinessTransaction.js";
 import BusinessCustomer from "../../models/BusinessCustomer.js";
 import BusinessSupplier from "../../models/BusinessSupplier.js";
@@ -258,9 +258,13 @@ export async function createBusiness(data, user) {
     error.statusCode = 400;
     throw error;
   }
+
+  const category = BUSINESS_CATEGORIES.includes(data.category) ? data.category : "other";
+
   const business = await Business.create({
     name: data.name,
-    category: data.category,
+    category,
+    category_label: data.category_label || data.categoryLabel || "",
     currency: data.currency,
     mpesa_till: data.mPesaTill || null,
     mpesa_paybill: data.mPesaPaybill || null,
@@ -268,6 +272,13 @@ export async function createBusiness(data, user) {
   });
 
   await ensureBusinessAccounts(business._id, getUserId(user));
+
+  // Rental businesses manage rooms/plots, not a product catalogue — set up
+  // their storefront right away so the landlord can start posting listings.
+  if (category === "rental") {
+    await getOrCreateStorefront(business._id, user);
+  }
+
   return business;
 }
 
@@ -555,6 +566,8 @@ export async function forceCompleteTransaction(businessId, transactionId, user) 
 import BusinessItem from "../../models/BusinessItem.js";
 import Storefront from "../../models/Storefront.js";
 import StorefrontOrder from "../../models/StorefrontOrder.js";
+import RentalListing from "../../models/RentalListing.js";
+import RentalInquiry from "../../models/RentalInquiry.js";
 
 /**
  * ============================================================
@@ -573,9 +586,10 @@ const DEFAULT_INVENTORY_SEED = [
 export async function listInventoryItems(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
   let items = await BusinessItem.find({ business_id: business._id, status: "active" }).sort({ createdAt: -1 });
-  
-  // Lazy-seed initial inventory items if empty
-  if (items.length === 0) {
+
+  // Lazy-seed initial inventory items if empty (rentals don't use a product
+  // catalogue at all — they manage rooms/plots via RentalListing instead)
+  if (items.length === 0 && business.category !== "rental") {
     const seeded = DEFAULT_INVENTORY_SEED.map((item) => ({
       ...item,
       business_id: business._id,
@@ -602,6 +616,7 @@ export async function createInventoryItem(businessId, user, data) {
     online_price: data.online_price !== undefined && data.online_price !== null ? Number(data.online_price) : Number(data.price || 0),
     cost_price: Number(data.cost_price || 0),
     quantity: Number(data.quantity || 0),
+    track_stock: data.track_stock !== undefined ? Boolean(data.track_stock) : true,
     visible_online: data.visible_online !== undefined ? Boolean(data.visible_online) : true,
     icon: data.icon || "📦",
     image_url: data.image_url || "",
@@ -625,6 +640,7 @@ export async function updateInventoryItem(businessId, itemId, user, data) {
   if (data.online_price !== undefined) item.online_price = data.online_price !== null ? Number(data.online_price) : null;
   if (data.cost_price !== undefined) item.cost_price = Number(data.cost_price);
   if (data.quantity !== undefined) item.quantity = Number(data.quantity);
+  if (data.track_stock !== undefined) item.track_stock = Boolean(data.track_stock);
   if (data.visible_online !== undefined) item.visible_online = Boolean(data.visible_online);
   if (data.icon !== undefined) item.icon = data.icon;
   if (data.image_url !== undefined) item.image_url = data.image_url;
@@ -638,6 +654,35 @@ export async function deleteInventoryItem(businessId, itemId, user) {
   const business = await getOwnedBusiness(businessId, user);
   await BusinessItem.deleteOne({ _id: itemId, business_id: business._id });
   return { success: true };
+}
+
+/** Restock — add (or set) stock quantity without touching any other field */
+export async function restockInventoryItem(businessId, itemId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
+  if (!item) {
+    const error = new Error("Item not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const addQty = Number(data.add_quantity ?? data.addQuantity ?? 0);
+  const setQty = data.set_quantity ?? data.setQuantity;
+
+  if (setQty !== undefined && setQty !== null) {
+    item.quantity = Math.max(0, Number(setQty));
+  } else {
+    if (!Number.isFinite(addQty) || addQty <= 0) {
+      const error = new Error("Provide a positive quantity to restock");
+      error.statusCode = 400;
+      throw error;
+    }
+    item.quantity = Math.max(0, item.quantity + addQty);
+  }
+
+  if (data.cost_price !== undefined) item.cost_price = Number(data.cost_price);
+  await item.save();
+  return item;
 }
 
 /**
@@ -676,7 +721,7 @@ export async function createPosSale(businessId, user, data) {
     }
 
     const qty = Math.max(1, Number(requested.qty || requested.quantity || 1));
-    if (item.quantity < qty) {
+    if (item.track_stock !== false && item.quantity < qty) {
       const error = new Error(`"${item.name}" only has ${item.quantity} unit(s) left in stock`);
       error.statusCode = 400;
       throw error;
@@ -698,6 +743,7 @@ export async function createPosSale(businessId, user, data) {
   // Deduct live stock now — same moment the sale is recorded, so the
   // POS grid and Inventory & Stock page never disagree on what's left.
   for (const l of lineItems) {
+    if (l.item.track_stock === false) continue;
     l.item.quantity = Math.max(0, l.item.quantity - l.qty);
     await l.item.save();
   }
@@ -826,6 +872,43 @@ export async function getPublicStorefrontBySlug(slug) {
     throw error;
   }
 
+  // Rental businesses show vacant rooms/plots, not a product catalogue
+  if (business.category === "rental") {
+    const listings = await RentalListing.find({
+      business_id: business._id,
+      archived: false,
+      visible_online: true,
+    }).sort({ createdAt: -1 });
+
+    return {
+      storefront,
+      business: {
+        _id: business._id,
+        name: business.name,
+        category: business.category,
+        currency: business.currency,
+      },
+      listings: listings.map((listing) => ({
+        _id: listing._id,
+        id: listing._id,
+        listing_type: listing.listing_type,
+        title: listing.title,
+        description: listing.description,
+        location_text: listing.location_text,
+        bedrooms: listing.bedrooms,
+        bathrooms: listing.bathrooms,
+        size_text: listing.size_text,
+        rent_amount: listing.rent_amount,
+        rent_period: listing.rent_period,
+        deposit_amount: listing.deposit_amount,
+        amenities: listing.amenities,
+        images: listing.images,
+        status: listing.status,
+      })),
+      items: [],
+    };
+  }
+
   // Ensure inventory items exist
   let rawItems = await BusinessItem.find({
     business_id: business._id,
@@ -851,8 +934,9 @@ export async function getPublicStorefrontBySlug(slug) {
     price: item.online_price !== null && item.online_price !== undefined ? item.online_price : item.price,
     in_store_price: item.price,
     quantity: item.quantity,
-    in_stock: item.quantity > 0,
-    low_stock: item.quantity > 0 && item.quantity <= 10,
+    track_stock: item.track_stock !== false,
+    in_stock: item.track_stock === false ? true : item.quantity > 0,
+    low_stock: item.track_stock !== false && item.quantity > 0 && item.quantity <= 10,
     icon: item.icon,
     image_url: item.image_url,
   }));
@@ -886,6 +970,12 @@ export async function createStorefrontOrder(slug, data) {
     throw error;
   }
 
+  if (business.category === "rental") {
+    const error = new Error("This is a rental listing — send an inquiry instead of placing an order");
+    error.statusCode = 400;
+    throw error;
+  }
+
   if (!data.customer_name?.trim() || !data.customer_phone?.trim()) {
     const error = new Error("Customer name and phone number are required to place an order");
     error.statusCode = 400;
@@ -915,7 +1005,7 @@ export async function createStorefrontOrder(slug, data) {
     }
 
     const qty = Math.max(1, Number(requestedItem.qty || 1));
-    if (item.quantity < qty) {
+    if (item.track_stock !== false && item.quantity < qty) {
       const error = new Error(`Sorry, "${item.name}" only has ${item.quantity} units remaining in stock.`);
       error.statusCode = 400;
       throw error;
@@ -966,8 +1056,9 @@ export async function createStorefrontOrder(slug, data) {
     payment_status: data.payment_method === "cash_on_delivery" ? "pending" : "pending",
   });
 
-  // Deduct live stock levels!
+  // Deduct live stock levels! (skip for services/menu items that don't track stock)
   for (const oItem of orderItems) {
+    if (oItem.dbItem.track_stock === false) continue;
     oItem.dbItem.quantity = Math.max(0, oItem.dbItem.quantity - oItem.qty);
     await oItem.dbItem.save();
   }
@@ -1039,6 +1130,158 @@ export async function trackStorefrontOrder(orderCode, phone) {
 export async function listStorefrontOrders(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
   return StorefrontOrder.find({ business_id: business._id }).sort({ createdAt: -1 });
+}
+
+/**
+ * ============================================================
+ * RENTAL LISTINGS (rooms & plots for rental-category businesses)
+ * "One listing catalogue, two faces" — same pattern as inventory:
+ * the owner manages it here, the public storefront reads from it.
+ * ============================================================
+ */
+export async function listRentalListings(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  return RentalListing.find({ business_id: business._id, archived: false }).sort({ createdAt: -1 });
+}
+
+export async function createRentalListing(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  if (!data.title?.trim()) {
+    const error = new Error("Listing title is required");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(Number(data.rent_amount)) || Number(data.rent_amount) <= 0) {
+    const error = new Error("A positive rent amount is required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return RentalListing.create({
+    business_id: business._id,
+    listing_type: ["room", "plot"].includes(data.listing_type) ? data.listing_type : "room",
+    title: data.title.trim(),
+    description: data.description || "",
+    location_text: data.location_text || "",
+    bedrooms: data.bedrooms !== undefined && data.bedrooms !== null && data.bedrooms !== "" ? Number(data.bedrooms) : null,
+    bathrooms: data.bathrooms !== undefined && data.bathrooms !== null && data.bathrooms !== "" ? Number(data.bathrooms) : null,
+    size_text: data.size_text || "",
+    rent_amount: Number(data.rent_amount),
+    rent_period: ["month", "year", "one_time"].includes(data.rent_period) ? data.rent_period : "month",
+    deposit_amount: Number(data.deposit_amount || 0),
+    amenities: Array.isArray(data.amenities) ? data.amenities : [],
+    images: Array.isArray(data.images) ? data.images.slice(0, 8) : [],
+    status: data.status === "occupied" ? "occupied" : "vacant",
+    visible_online: data.visible_online !== undefined ? Boolean(data.visible_online) : true,
+  });
+}
+
+export async function updateRentalListing(businessId, listingId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  const listing = await RentalListing.findOne({ _id: listingId, business_id: business._id });
+  if (!listing) {
+    const error = new Error("Listing not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (data.listing_type !== undefined && ["room", "plot"].includes(data.listing_type)) listing.listing_type = data.listing_type;
+  if (data.title !== undefined) listing.title = data.title.trim();
+  if (data.description !== undefined) listing.description = data.description;
+  if (data.location_text !== undefined) listing.location_text = data.location_text;
+  if (data.bedrooms !== undefined) listing.bedrooms = data.bedrooms === "" || data.bedrooms === null ? null : Number(data.bedrooms);
+  if (data.bathrooms !== undefined) listing.bathrooms = data.bathrooms === "" || data.bathrooms === null ? null : Number(data.bathrooms);
+  if (data.size_text !== undefined) listing.size_text = data.size_text;
+  if (data.rent_amount !== undefined) listing.rent_amount = Number(data.rent_amount);
+  if (data.rent_period !== undefined && ["month", "year", "one_time"].includes(data.rent_period)) listing.rent_period = data.rent_period;
+  if (data.deposit_amount !== undefined) listing.deposit_amount = Number(data.deposit_amount);
+  if (data.amenities !== undefined && Array.isArray(data.amenities)) listing.amenities = data.amenities;
+  if (data.images !== undefined && Array.isArray(data.images)) listing.images = data.images.slice(0, 8);
+  if (data.status !== undefined && ["vacant", "occupied"].includes(data.status)) listing.status = data.status;
+  if (data.visible_online !== undefined) listing.visible_online = Boolean(data.visible_online);
+
+  await listing.save();
+  return listing;
+}
+
+/** Quick vacant/occupied toggle — the rental equivalent of "restock" */
+export async function updateRentalListingStatus(businessId, listingId, user, status) {
+  if (!["vacant", "occupied"].includes(status)) {
+    const error = new Error("Status must be 'vacant' or 'occupied'");
+    error.statusCode = 400;
+    throw error;
+  }
+  const business = await getOwnedBusiness(businessId, user);
+  const listing = await RentalListing.findOne({ _id: listingId, business_id: business._id });
+  if (!listing) {
+    const error = new Error("Listing not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  listing.status = status;
+  await listing.save();
+  return listing;
+}
+
+export async function deleteRentalListing(businessId, listingId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  await RentalListing.deleteOne({ _id: listingId, business_id: business._id });
+  return { success: true };
+}
+
+/** Staff: leads generated from the public storefront */
+export async function listRentalInquiries(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  return RentalInquiry.find({ business_id: business._id })
+    .populate("listing_id", "title listing_type")
+    .sort({ createdAt: -1 });
+}
+
+export async function updateRentalInquiryStatus(businessId, inquiryId, user, status) {
+  const business = await getOwnedBusiness(businessId, user);
+  const inquiry = await RentalInquiry.findOne({ _id: inquiryId, business_id: business._id });
+  if (!inquiry) {
+    const error = new Error("Inquiry not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (["new", "contacted", "closed"].includes(status)) {
+    inquiry.status = status;
+    await inquiry.save();
+  }
+  return inquiry;
+}
+
+/** PUBLIC: buyer submits an inquiry on a specific listing — no account required */
+export async function createRentalInquiry(slug, listingId, data) {
+  const cleanSlug = slugify(slug);
+  const storefront = await Storefront.findOne({ slug: cleanSlug });
+  if (!storefront || storefront.status === "paused") {
+    const error = new Error("Storefront not found or unavailable");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const listing = await RentalListing.findOne({ _id: listingId, business_id: storefront.business_id });
+  if (!listing) {
+    const error = new Error("Listing not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!data.name?.trim() || !data.phone?.trim()) {
+    const error = new Error("Name and phone number are required");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return RentalInquiry.create({
+    business_id: storefront.business_id,
+    listing_id: listing._id,
+    name: data.name.trim(),
+    phone: data.phone.trim(),
+    message: data.message || "",
+  });
 }
 
 /** Staff: Update Order Fulfillment Status */

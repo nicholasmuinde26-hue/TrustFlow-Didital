@@ -12,6 +12,7 @@ import {
   X,
   Settings,
   Coins,
+  Vote,
 } from "lucide-react";
 
 import WorkspaceSwitcher from "@/shared/components/layout/WorkspaceSwitcher";
@@ -30,6 +31,7 @@ const navigation = [
   { label: "Chat", icon: MessageCircle, to: "chat" },
   { label: "Updates", icon: Megaphone, to: "announcements" },
   { label: "Meetings", icon: Video, to: "meetings" },
+  { label: "Polls & Voting", icon: Vote, to: "polls" },
   // "Settings" is filtered out below for non-managers — see canViewAdministration.
   { label: "Settings", icon: Settings, to: "settings", administration: true },
 ];

@@ -61,6 +61,46 @@ export const businessService = {
     return res.data?.data || res.data;
   },
 
+  async restockInventoryItem(workspaceId, itemId, payload) {
+    const res = await businessApi.restockInventoryItem(workspaceId, itemId, payload);
+    return res.data?.data || res.data;
+  },
+
+  async getRentalListings(workspaceId) {
+    const res = await businessApi.getRentalListings(workspaceId);
+    return extractArray(res, "listings");
+  },
+
+  async addRentalListing(workspaceId, payload) {
+    const res = await businessApi.addRentalListing(workspaceId, payload);
+    return res.data?.data || res.data;
+  },
+
+  async updateRentalListing(workspaceId, listingId, payload) {
+    const res = await businessApi.updateRentalListing(workspaceId, listingId, payload);
+    return res.data?.data || res.data;
+  },
+
+  async setRentalListingStatus(workspaceId, listingId, status) {
+    const res = await businessApi.setRentalListingStatus(workspaceId, listingId, status);
+    return res.data?.data || res.data;
+  },
+
+  async deleteRentalListing(workspaceId, listingId) {
+    const res = await businessApi.deleteRentalListing(workspaceId, listingId);
+    return res.data?.data || res.data;
+  },
+
+  async getRentalInquiries(workspaceId) {
+    const res = await businessApi.getRentalInquiries(workspaceId);
+    return extractArray(res, "inquiries");
+  },
+
+  async setRentalInquiryStatus(workspaceId, inquiryId, status) {
+    const res = await businessApi.setRentalInquiryStatus(workspaceId, inquiryId, status);
+    return res.data?.data || res.data;
+  },
+
   async createPosSale(workspaceId, payload) {
     const res = await businessApi.createPosSale(workspaceId, payload);
     return res.data?.data || res.data;

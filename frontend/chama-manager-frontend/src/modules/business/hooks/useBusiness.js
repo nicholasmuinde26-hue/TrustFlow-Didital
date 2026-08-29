@@ -108,6 +108,14 @@ export function useBusinessInventory(workspaceId, params = {}) {
     },
   });
 
+  const restockInventoryMutation = useMutation({
+    mutationFn: ({ itemId, ...payload }) => businessService.restockInventoryItem(workspaceId, itemId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["business", "storefront", workspaceId] });
+    },
+  });
+
   return {
     inventory: Array.isArray(inventoryQuery.data) ? inventoryQuery.data : [],
     isLoading: inventoryQuery.isLoading,
@@ -118,6 +126,83 @@ export function useBusinessInventory(workspaceId, params = {}) {
     isUpdating: updateInventoryMutation.isPending,
     deleteInventoryItem: deleteInventoryMutation.mutateAsync,
     isDeleting: deleteInventoryMutation.isPending,
+    restockInventoryItem: restockInventoryMutation.mutateAsync,
+    isRestocking: restockInventoryMutation.isPending,
+  };
+}
+
+/**
+ * ============================================================
+ * RENTAL LISTINGS (rooms & plots) — for category: "rental" businesses
+ * ============================================================
+ */
+export function useRentalListings(workspaceId) {
+  const queryClient = useQueryClient();
+
+  const listingsQuery = useQuery({
+    queryKey: ["business", "rental-listings", workspaceId],
+    queryFn: () => businessService.getRentalListings(workspaceId),
+    enabled: Boolean(workspaceId),
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["business", "rental-listings", workspaceId] });
+
+  const addListingMutation = useMutation({
+    mutationFn: (payload) => businessService.addRentalListing(workspaceId, payload),
+    onSuccess: invalidate,
+  });
+
+  const updateListingMutation = useMutation({
+    mutationFn: ({ listingId, ...payload }) => businessService.updateRentalListing(workspaceId, listingId, payload),
+    onSuccess: invalidate,
+  });
+
+  const setStatusMutation = useMutation({
+    mutationFn: ({ listingId, status }) => businessService.setRentalListingStatus(workspaceId, listingId, status),
+    onSuccess: invalidate,
+  });
+
+  const deleteListingMutation = useMutation({
+    mutationFn: (listingId) => businessService.deleteRentalListing(workspaceId, listingId),
+    onSuccess: invalidate,
+  });
+
+  return {
+    listings: Array.isArray(listingsQuery.data) ? listingsQuery.data : [],
+    isLoading: listingsQuery.isLoading,
+    refetch: listingsQuery.refetch,
+    addListing: addListingMutation.mutateAsync,
+    isAdding: addListingMutation.isPending,
+    updateListing: updateListingMutation.mutateAsync,
+    isUpdating: updateListingMutation.isPending,
+    setListingStatus: setStatusMutation.mutateAsync,
+    isSettingStatus: setStatusMutation.isPending,
+    deleteListing: deleteListingMutation.mutateAsync,
+    isDeleting: deleteListingMutation.isPending,
+  };
+}
+
+export function useRentalInquiries(workspaceId) {
+  const queryClient = useQueryClient();
+
+  const inquiriesQuery = useQuery({
+    queryKey: ["business", "rental-inquiries", workspaceId],
+    queryFn: () => businessService.getRentalInquiries(workspaceId),
+    enabled: Boolean(workspaceId),
+    refetchInterval: 20000,
+  });
+
+  const setStatusMutation = useMutation({
+    mutationFn: ({ inquiryId, status }) => businessService.setRentalInquiryStatus(workspaceId, inquiryId, status),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["business", "rental-inquiries", workspaceId] }),
+  });
+
+  return {
+    inquiries: Array.isArray(inquiriesQuery.data) ? inquiriesQuery.data : [],
+    isLoading: inquiriesQuery.isLoading,
+    refetch: inquiriesQuery.refetch,
+    updateInquiryStatus: setStatusMutation.mutateAsync,
+    isUpdatingStatus: setStatusMutation.isPending,
   };
 }
 
@@ -344,6 +429,7 @@ export function usePublicStorefront(slug) {
     storefront: query.data?.storefront,
     business: query.data?.business,
     items: Array.isArray(query.data?.items) ? query.data.items : [],
+    listings: Array.isArray(query.data?.listings) ? query.data.listings : [],
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,
@@ -354,6 +440,12 @@ export function usePublicStorefront(slug) {
 export function usePlaceStorefrontOrder(slug) {
   return useMutation({
     mutationFn: (payload) => storefrontPublicService.placeOrder(slug, payload),
+  });
+}
+
+export function useSubmitRentalInquiry(slug) {
+  return useMutation({
+    mutationFn: ({ listingId, ...payload }) => storefrontPublicService.submitInquiry(slug, listingId, payload),
   });
 }
 

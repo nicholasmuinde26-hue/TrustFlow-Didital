@@ -11,6 +11,11 @@ export const storefrontPublicService = {
     return res.data?.data || res.data;
   },
 
+  async submitInquiry(slug, listingId, payload) {
+    const res = await storefrontPublicApi.submitInquiry(slug, listingId, payload);
+    return res.data?.data || res.data;
+  },
+
   async trackOrder(orderCode, phone) {
     const res = await storefrontPublicApi.trackOrder(orderCode, phone);
     return res.data?.data || res.data;

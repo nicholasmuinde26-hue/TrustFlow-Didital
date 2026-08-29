@@ -62,6 +62,8 @@ import AccountsPage from "@/modules/business/pages/AccountsPage";
 import CustomersPage from "@/modules/business/pages/CustomersPage";
 import SuppliersPage from "@/modules/business/pages/SuppliersPage";
 import InventoryPage from "@/modules/business/pages/InventoryPage";
+import RentalListingsPage from "@/modules/business/pages/RentalListingsPage";
+import RentalInquiriesPage from "@/modules/business/pages/RentalInquiriesPage";
 import BusinessReportsPage from "@/modules/business/pages/ReportsPage";
 import BusinessSettingsPage from "@/modules/business/pages/BusinessSettingsPage";
 import PosPage from "@/modules/business/pages/PosPage";
@@ -87,6 +89,7 @@ import MembersPage from "@/modules/members/pages/MembersPage";
 import AnnouncementsPage from "@/modules/announcements/pages/AnnouncementsPage";
 import ChatPage from "@/modules/chat/pages/ChatPage";
 import MeetingsPage from "@/modules/meetings/pages/MeetingsPage";
+import PollsPage from "@/modules/polls/pages/PollsPage";
 
 // ======================================================
 // Chama Module
@@ -260,6 +263,14 @@ const router = createBrowserRouter([
           {
             path: "business/inventory",
             element: <InventoryPage />,
+          },
+          {
+            path: "business/rental-listings",
+            element: <RentalListingsPage />,
+          },
+          {
+            path: "business/rental-inquiries",
+            element: <RentalInquiriesPage />,
           },
           {
             path: "business/pos",
@@ -444,6 +455,10 @@ const router = createBrowserRouter([
           {
             path: "meetings",
             element: <MeetingsPage />,
+          },
+          {
+            path: "polls",
+            element: <PollsPage />,
           },
 
           // ----------------------------------------------

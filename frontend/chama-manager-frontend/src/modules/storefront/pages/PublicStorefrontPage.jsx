@@ -13,6 +13,7 @@ import CartTab from "../components/CartTab";
 import AccountTab from "../components/AccountTab";
 import ProductQuickView from "../components/ProductQuickView";
 import OrderSuccess from "../components/OrderSuccess";
+import RentalStorefrontView from "../components/RentalStorefrontView";
 
 import { getItemId, getCategories, computeCartLines } from "../utils/storefront.utils";
 
@@ -27,7 +28,7 @@ const EMPTY_FORM = {
 export default function PublicStorefrontPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { storefront, business, items, isLoading, isError, refetch } = usePublicStorefront(slug);
+  const { storefront, business, items, listings, isLoading, isError, refetch } = usePublicStorefront(slug);
   const placeOrderMutation = usePlaceStorefrontOrder(slug);
 
   // Shell navigation
@@ -127,6 +128,19 @@ export default function PublicStorefrontPage() {
           Try again
         </button>
       </div>
+    );
+  }
+
+  // Rental businesses show vacant rooms/plots with an "Inquire" form,
+  // not a product cart — a different browsing experience entirely.
+  if (business?.category === "rental") {
+    return (
+      <RentalStorefrontView
+        slug={slug}
+        storefront={storefront}
+        business={business}
+        listings={listings}
+      />
     );
   }
 

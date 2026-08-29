@@ -32,13 +32,28 @@ import {
   Store,
   ShoppingBag,
   Globe,
+  Home,
+  ClipboardList,
 } from "lucide-react";
 
 import { canViewCommandCenter, canViewAdministration } from "../permissions/Permissions";
 
-export function getWorkspaceNavigation(workspaceId, type, role) {
+export function getWorkspaceNavigation(workspaceId, type, role, category) {
   const base = `/workspace/${workspaceId}`;
   const normalizedType = type?.toLowerCase().replace(/[-_]/g, "");
+  const isRental = category === "rental";
+
+  // Catalogue nav item changes shape by business category: a rental
+  // landlord manages rooms/plots, everyone else manages a product/menu/
+  // service catalogue that still shares the same Inventory & Stock page.
+  const catalogueItem = isRental
+    ? { title: "Rooms & Plots", icon: Home, to: `${base}/business/rental-listings` }
+    : {
+        title:
+          category === "restaurant" ? "Menu Items" : category === "service" ? "Services" : "Inventory & Stock",
+        icon: Package,
+        to: `${base}/business/inventory`,
+      };
 
   // =====================================================
   // 1. BUSINESS WORKSPACE NAVIGATION
@@ -62,31 +77,40 @@ export function getWorkspaceNavigation(workspaceId, type, role) {
           icon: Store,
           to: `${base}/business`,
         },
-        {
-          title: "Point of Sale",
-          icon: ShoppingBag,
-          to: `${base}/business/pos`,
-        },
-        {
-          title: "Sales & Invoicing",
-          icon: ShoppingCart,
-          to: `${base}/business/sales`,
-        },
-        {
-          title: "Expenses",
-          icon: BadgeDollarSign,
-          to: `${base}/business/expenses`,
-        },
-        {
-          title: "Inventory & Stock",
-          icon: Package,
-          to: `${base}/business/inventory`,
-        },
+        ...(isRental
+          ? []
+          : [
+              {
+                title: "Point of Sale",
+                icon: ShoppingBag,
+                to: `${base}/business/pos`,
+              },
+              {
+                title: "Sales & Invoicing",
+                icon: ShoppingCart,
+                to: `${base}/business/sales`,
+              },
+              {
+                title: "Expenses",
+                icon: BadgeDollarSign,
+                to: `${base}/business/expenses`,
+              },
+            ]),
+        catalogueItem,
         {
           title: "Online Storefront",
           icon: Globe,
           to: `${base}/business/storefront`,
         },
+        ...(isRental
+          ? [
+              {
+                title: "Tenant Inquiries",
+                icon: ClipboardList,
+                to: `${base}/business/rental-inquiries`,
+              },
+            ]
+          : []),
       ],
     },
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import Spinner from "@/shared/components/ui/Spinner";
 import useLedger from "../hooks/useLedger";

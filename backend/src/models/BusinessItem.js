@@ -16,6 +16,9 @@ const businessItemSchema = new mongoose.Schema(
     online_price: { type: Number, default: null, min: 0 },
     cost_price: { type: Number, default: 0, min: 0 },
     quantity: { type: Number, required: true, default: 0, min: 0 },
+    // false for things like services/menu items that aren't counted as
+    // physical stock — quantity is ignored and they're always orderable
+    track_stock: { type: Boolean, default: true },
     visible_online: { type: Boolean, default: true, index: true },
     icon: { type: String, default: "📦" },
     image_url: { type: String, default: "" },

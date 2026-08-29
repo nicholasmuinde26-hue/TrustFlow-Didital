@@ -36,6 +36,32 @@ export const businessApi = {
   deleteInventoryItem: (workspaceId, itemId) =>
     api.delete(`/businesses/${workspaceId}/inventory/${itemId}`),
 
+  restockInventoryItem: (workspaceId, itemId, payload) =>
+    api.post(`/businesses/${workspaceId}/inventory/${itemId}/restock`, payload),
+
+  // Rental Listings (rooms & plots)
+  getRentalListings: (workspaceId) =>
+    api.get(`/businesses/${workspaceId}/rental-listings`),
+
+  addRentalListing: (workspaceId, payload) =>
+    api.post(`/businesses/${workspaceId}/rental-listings`, payload),
+
+  updateRentalListing: (workspaceId, listingId, payload) =>
+    api.put(`/businesses/${workspaceId}/rental-listings/${listingId}`, payload),
+
+  setRentalListingStatus: (workspaceId, listingId, status) =>
+    api.patch(`/businesses/${workspaceId}/rental-listings/${listingId}/status`, { status }),
+
+  deleteRentalListing: (workspaceId, listingId) =>
+    api.delete(`/businesses/${workspaceId}/rental-listings/${listingId}`),
+
+  // Rental Inquiries (leads from the public storefront)
+  getRentalInquiries: (workspaceId) =>
+    api.get(`/businesses/${workspaceId}/rental-inquiries`),
+
+  setRentalInquiryStatus: (workspaceId, inquiryId, status) =>
+    api.patch(`/businesses/${workspaceId}/rental-inquiries/${inquiryId}/status`, { status }),
+
   // Point of Sale
   createPosSale: (workspaceId, payload) =>
     api.post(`/businesses/${workspaceId}/pos/sale`, payload),

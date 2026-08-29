@@ -30,6 +30,17 @@ export const placeStorefrontOrder = async (request, response, next) => {
 };
 
 /**
+ * POST /api/v1/storefront/:slug/listings/:listingId/inquiries
+ * Public inquiry submission on a rental listing — no account required.
+ */
+export const submitRentalInquiry = async (request, response, next) => {
+  try {
+    const result = await businessService.createRentalInquiry(request.params.slug, request.params.listingId, request.body);
+    response.status(201).json({ success: true, message: "Inquiry sent", data: result });
+  } catch (error) { sendError(error, response, next); }
+};
+
+/**
  * GET /api/v1/storefront/track/:orderCode?phone=...
  * Public order lookup by order code (+ optional phone confirmation).
  * No login — buyers track by code, the same way they'd track any

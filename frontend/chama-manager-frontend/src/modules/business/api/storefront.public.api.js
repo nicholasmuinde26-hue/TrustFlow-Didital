@@ -8,6 +8,9 @@ export const storefrontPublicApi = {
 
   placeOrder: (slug, payload) => api.post(`/storefront/${slug}/orders`, payload),
 
+  submitInquiry: (slug, listingId, payload) =>
+    api.post(`/storefront/${slug}/listings/${listingId}/inquiries`, payload),
+
   trackOrder: (orderCode, phone) =>
     api.get(`/storefront/track/${orderCode}`, { params: phone ? { phone } : {} }),
 };

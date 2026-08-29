@@ -20,7 +20,6 @@ import memberRoutes from "./modules/member/member.routes.js";
 
 // Contribution Groups
 import contributionGroupRoutes from "./modules/contributionGroups/contributionGroup.routes.js";
-import contributionFundRoutes from "./modules/contributionGroups/contributionFund.routes.js";
 import contributionGroupPlanRoutes from "./modules/contributionPlan/contributionGroupPlan.routes.js";
 import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
 import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
@@ -40,6 +39,9 @@ import meetingRoutes from "./modules/meetings/meetings.routes.js";
 
 // Announcements
 import announcementRoutes from "./modules/announcements/announcement.routes.js";
+
+// Polls & Voting
+import pollRoutes from "./modules/polls/poll.routes.js";
 
 // Audit
 import auditRoutes from "./modules/audit/audit.routes.js";
@@ -160,11 +162,6 @@ app.use(
     contributionGroupRoutes
 );
 
-app.use(
-    "/api/v1/contribution-groups/:groupId",
-    contributionFundRoutes
-);
-
 // ============================================================================
 // CONTRIBUTION GROUP PLANS
 // ============================================================================
@@ -254,6 +251,25 @@ app.use(
 app.use(
     "/api/v1/workspaces",
     announcementRoutes
+);
+
+// ============================================================================
+// POLLS & VOTING
+// ============================================================================
+//
+// GET    /workspaces/:workspaceId/polls                  list polls
+// POST   /workspaces/:workspaceId/polls                  create poll (draft, or open if an official publishes immediately)
+// GET    /workspaces/:workspaceId/polls/:pollId          poll detail + results
+// PUT    /workspaces/:workspaceId/polls/:pollId/publish  open a draft poll for voting
+// POST   /workspaces/:workspaceId/polls/:pollId/votes    cast a vote
+// PUT    /workspaces/:workspaceId/polls/:pollId/close    close a poll early and tally it
+// DELETE /workspaces/:workspaceId/polls/:pollId          cancel a draft/open poll
+//
+// ============================================================================
+
+app.use(
+    "/api/v1/workspaces",
+    pollRoutes
 );
 
 // ============================================================================

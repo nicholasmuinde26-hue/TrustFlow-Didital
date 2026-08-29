@@ -20,11 +20,19 @@ import {
   addInventoryItem,
   editInventoryItem,
   removeInventoryItem,
+  restockInventoryItem,
   posSale,
   getStorefront,
   putStorefront,
   getStorefrontOrders,
   patchStorefrontOrderStatus,
+  listRentalListings,
+  addRentalListing,
+  editRentalListing,
+  setRentalListingStatus,
+  removeRentalListing,
+  listRentalInquiries,
+  setRentalInquiryStatus,
 } from "./business.controller.js";
 
 const router = express.Router();
@@ -53,9 +61,21 @@ router.get("/:businessId/inventory", protect, listInventory);
 router.post("/:businessId/inventory", protect, addInventoryItem);
 router.put("/:businessId/inventory/:itemId", protect, editInventoryItem);
 router.delete("/:businessId/inventory/:itemId", protect, removeInventoryItem);
+router.post("/:businessId/inventory/:itemId/restock", protect, restockInventoryItem);
 
 // Point of Sale — checkout that deducts live stock on completion
 router.post("/:businessId/pos/sale", protect, posSale);
+
+// Rental listings (rooms & plots) — for category: "rental" businesses
+router.get("/:businessId/rental-listings", protect, listRentalListings);
+router.post("/:businessId/rental-listings", protect, addRentalListing);
+router.put("/:businessId/rental-listings/:listingId", protect, editRentalListing);
+router.patch("/:businessId/rental-listings/:listingId/status", protect, setRentalListingStatus);
+router.delete("/:businessId/rental-listings/:listingId", protect, removeRentalListing);
+
+// Leads generated from the public storefront's "Inquire" form
+router.get("/:businessId/rental-inquiries", protect, listRentalInquiries);
+router.patch("/:businessId/rental-inquiries/:inquiryId/status", protect, setRentalInquiryStatus);
 
 // Storefront configuration & order fulfillment (owner/staff side)
 router.get("/:businessId/storefront", protect, getStorefront);
@@ -64,5 +84,3 @@ router.get("/:businessId/storefront-orders", protect, getStorefrontOrders);
 router.patch("/:businessId/storefront-orders/:orderId/status", protect, patchStorefrontOrderStatus);
 
 export default router;
-
-

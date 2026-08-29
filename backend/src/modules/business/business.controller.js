@@ -111,6 +111,51 @@ export const removeInventoryItem = async (request, response, next) => {
   catch (error) { sendError(error, response, next); }
 };
 
+export const restockInventoryItem = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.restockInventoryItem(request.params.businessId, request.params.itemId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+/**
+ * ============================================================
+ * RENTAL LISTINGS (rooms & plots)
+ * ============================================================
+ */
+export const listRentalListings = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listRentalListings(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const addRentalListing = async (request, response, next) => {
+  try { response.status(201).json({ success: true, data: await businessService.createRentalListing(request.params.businessId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const editRentalListing = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.updateRentalListing(request.params.businessId, request.params.listingId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const setRentalListingStatus = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.updateRentalListingStatus(request.params.businessId, request.params.listingId, request.user, request.body.status) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const removeRentalListing = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.deleteRentalListing(request.params.businessId, request.params.listingId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const listRentalInquiries = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listRentalInquiries(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const setRentalInquiryStatus = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.updateRentalInquiryStatus(request.params.businessId, request.params.inquiryId, request.user, request.body.status) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
 /**
  * ============================================================
  * POINT OF SALE
@@ -154,4 +199,3 @@ export const patchStorefrontOrderStatus = async (request, response, next) => {
     response.json({ success: true, data: result });
   } catch (error) { sendError(error, response, next); }
 };
-

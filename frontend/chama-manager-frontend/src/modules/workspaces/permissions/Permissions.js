@@ -94,6 +94,20 @@ export function canManageMeetings(role, type) {
   return isManager(role, type);
 }
 
+// Chama: officials (chairperson, secretary, treasurer) can call and manage
+// polls — mirrors the backend's poll.service.js CHAMA_OFFICIAL_ROLES, which
+// is deliberately broader than isManager() (adds Secretary) since calling a
+// vote is a governance action, not a settings/finance one.
+// Contribution Group: organizer/co_organizer, same as isManager().
+const CHAMA_POLL_OFFICIAL_ROLES = ["chairperson", "secretary", "treasurer"];
+
+export function canManagePolls(role, type) {
+  if (type === "chama") {
+    return CHAMA_POLL_OFFICIAL_ROLES.includes(role);
+  }
+  return isManager(role, type);
+}
+
 // Contribution groups only — inviting/adding members and sending
 // invitations is restricted to organizer/co_organizer; Chama has no
 // invitation concept at all (see CHANGES doc).
