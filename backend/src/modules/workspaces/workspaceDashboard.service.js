@@ -112,8 +112,15 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
     daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   }
 
-  // Calculate target goal
-  const targetGoal = activePlanObj?.target_amount || activePlanObj?.amount_per_member * (memberCount || 1) || 100000;
+  // Calculate target goal — null (not a fabricated number) when there's
+  // no active plan, or the active plan sets neither a target_amount nor
+  // a fixed per-contribution amount to project from.
+  const targetGoal =
+    activePlanObj?.target_amount != null
+      ? Number(activePlanObj.target_amount)
+      : activePlanObj?.amount != null
+        ? Number(activePlanObj.amount) * (memberCount || 1)
+        : null;
 
   return {
     type,
@@ -127,4 +134,3 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
     upcoming: meetings.map((meeting) => ({ id: String(meeting._id), title: meeting.title, startsAt: meeting.starts_at })),
   };
 }
-

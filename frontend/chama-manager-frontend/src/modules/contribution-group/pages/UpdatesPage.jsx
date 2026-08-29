@@ -35,40 +35,26 @@ export default function UpdatesPage() {
   const { data: fetchedExpenses = [] } = useContributionGroupExpenses(workspaceId);
   const createExpenseMutation = useCreateContributionGroupExpense(workspaceId);
 
-  // Group balance metrics
-  const totalRaised = Number(summary.cashIn || summary.totalContributed || 72000);
-  const totalSpent = Number(summary.cashOut || summary.totalExpenses || 40000);
+  // Group balance metrics — real backend figures only, 0 when there's
+  // genuinely nothing yet, never a fabricated placeholder total.
+  const totalRaised = Number(summary.cashIn ?? summary.totalContributed ?? 0);
+  const totalSpent = Number(summary.cashOut ?? summary.totalExpenses ?? 0);
   const netBalance = totalRaised - totalSpent;
+  const paidMembersCount = summary.paidCount ?? null;
 
-  // Expense Feed items
-  const expenses = fetchedExpenses.length > 0 ? fetchedExpenses.map((exp) => ({
+  // Expense Feed items — real backend records only. No invented
+  // "Venue Booking" / "DJ & Sound System" placeholder entries when the
+  // group hasn't logged anything yet; the UI below shows an honest
+  // empty state instead.
+  const expenses = fetchedExpenses.map((exp) => ({
     id: String(exp._id),
     title: exp.title || exp.description || "Group Expense",
     category: exp.category || "General",
     amount: Number(exp.amount),
-    receiptName: exp.receipt_url ? exp.receipt_url.split("/").pop() : "verified_receipt.pdf",
+    receiptName: exp.receipt_url ? exp.receipt_url.split("/").pop() : null,
     date: new Date(exp.createdAt || Date.now()).toLocaleDateString(),
-    approvedBy: exp.approved_by || "Group Admins",
-  })) : [
-    {
-      id: "1",
-      title: "Venue Booking & Setup",
-      category: "Venue",
-      amount: 25000,
-      receiptName: "venue_receipt_aug12.pdf",
-      date: "Aug 12, 2026",
-      approvedBy: "2 Admins (Mercy & John)",
-    },
-    {
-      id: "2",
-      title: "DJ & Sound System Equipment",
-      category: "Entertainment",
-      amount: 15000,
-      receiptName: "dj_sound_invoice.jpg",
-      date: "Aug 08, 2026",
-      approvedBy: "2 Admins (Mercy & John)",
-    },
-  ];
+    approvedBy: exp.approved_by || null,
+  }));
 
   const handleCreateExpense = async (e) => {
     e.preventDefault();
@@ -146,7 +132,9 @@ export default function UpdatesPage() {
             <CircleDollarSign size={20} className="text-emerald-600" />
           </div>
           <p className="text-2xl font-black font-mono text-slate-900 dark:text-white">{money(totalRaised)}</p>
-          <p className="text-[11px] text-slate-500">From 18 paid members</p>
+          <p className="text-[11px] text-slate-500">
+            {paidMembersCount !== null ? `From ${paidMembersCount} paid member${paidMembersCount === 1 ? "" : "s"}` : "No contributions yet"}
+          </p>
         </div>
 
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-1">
@@ -155,7 +143,7 @@ export default function UpdatesPage() {
             <TrendingDown size={20} className="text-rose-600" />
           </div>
           <p className="text-2xl font-black font-mono text-rose-600 dark:text-rose-400">{money(totalSpent)}</p>
-          <p className="text-[11px] text-slate-500">{expenses.length} receipted expenses</p>
+          <p className="text-[11px] text-slate-500">{expenses.length} logged expense{expenses.length === 1 ? "" : "s"}</p>
         </div>
       </div>
 
@@ -165,42 +153,56 @@ export default function UpdatesPage() {
           <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
             <Receipt size={20} className="text-violet-600" /> Itemized Expense Stream & Receipts
           </h2>
-          <span className="text-xs font-bold text-slate-400">2-Admin Approval Required</span>
+          <span className="text-xs font-bold text-slate-400">{expenses.length} logged</span>
         </div>
 
         <div className="space-y-4">
-          {expenses.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-5 hover:bg-slate-50 transition-all dark:border-slate-800 dark:bg-slate-800/40 space-y-3"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
-                    <Building2 size={20} />
+          {expenses.length > 0 ? (
+            expenses.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-5 hover:bg-slate-50 transition-all dark:border-slate-800 dark:bg-slate-800/40 space-y-3"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                      <Building2 size={20} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-900 dark:text-white">{item.title}</p>
+                      <p className="text-xs text-slate-500 font-mono mt-0.5">Category: {item.category} • {item.date}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-black text-slate-900 dark:text-white">{item.title}</p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">Category: {item.category} • {item.date}</p>
-                  </div>
+
+                  <span className="font-mono font-black text-base text-rose-600 dark:text-rose-400">
+                    -{money(item.amount)}
+                  </span>
                 </div>
 
-                <span className="font-mono font-black text-base text-rose-600 dark:text-rose-400">
-                  -{money(item.amount)}
-                </span>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-xs">
+                  {item.receiptName ? (
+                    <div className="flex items-center gap-1.5 font-mono text-violet-700 dark:text-violet-300 bg-violet-100/60 dark:bg-violet-950/60 px-3 py-1 rounded-xl">
+                      <Paperclip size={14} /> Receipt Attached: <strong className="underline">{item.receiptName}</strong>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 font-mono text-slate-400 px-3 py-1">
+                      <Paperclip size={14} /> No receipt attached
+                    </div>
+                  )}
+
+                  {item.approvedBy && (
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                      <ShieldCheck size={14} /> Approved by {item.approvedBy}
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800 text-xs">
-                <div className="flex items-center gap-1.5 font-mono text-violet-700 dark:text-violet-300 bg-violet-100/60 dark:bg-violet-950/60 px-3 py-1 rounded-xl">
-                  <Paperclip size={14} /> Receipt Attached: <strong className="underline">{item.receiptName}</strong>
-                </div>
-
-                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                  <ShieldCheck size={14} /> Approved by {item.approvedBy}
-                </div>
-              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl bg-slate-50 p-8 text-center text-slate-500 dark:bg-slate-800/40">
+              <p className="text-xs font-medium">No expenses logged for this group yet.</p>
             </div>
-          ))}
+          )}
         </div>
       </section>
 

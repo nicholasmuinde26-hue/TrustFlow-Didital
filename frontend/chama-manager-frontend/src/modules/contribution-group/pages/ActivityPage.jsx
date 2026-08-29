@@ -19,8 +19,10 @@ export default function ActivityPage() {
 
   const { data: logs = [], isLoading } = useContributionGroupAuditLogs(workspaceId);
 
-  // Map real backend audit logs
-  const auditEvents = logs.length > 0 ? logs.map((log) => {
+  // Map real backend audit logs. No fabricated fallback feed — when
+  // there are no logs yet, the empty state below says so honestly
+  // instead of inventing "Mercy Wambui paid KES 5,000" etc.
+  const auditEvents = logs.map((log) => {
     const actorName = log.actorUserId ? `${log.actorUserId.first_name || ''} ${log.actorUserId.last_name || ''}`.trim() || log.actorUserId.email : "System";
     const act = (log.action || "").toLowerCase();
     let type = "contribution";
@@ -54,62 +56,7 @@ export default function ActivityPage() {
       icon,
       color,
     };
-  }) : [
-    {
-      id: "1",
-      timestamp: "Aug 14, 2026 • 14:30",
-      title: "Mercy Wambui paid KES 5,000",
-      details: "M-Pesa Reference: RHA92837190 • Verified & Posted to Ledger",
-      type: "contribution",
-      icon: CheckCircle2,
-      color: "emerald",
-    },
-    {
-      id: "2",
-      timestamp: "Aug 14, 2026 • 11:15",
-      title: "John Doe paid KES 5,000",
-      details: "M-Pesa Reference: RHA92837195 • Verified & Posted to Ledger",
-      type: "contribution",
-      icon: CheckCircle2,
-      color: "emerald",
-    },
-    {
-      id: "3",
-      timestamp: "Aug 13, 2026 • 09:00",
-      title: "Admin sent automated M-Pesa reminder to 2 members",
-      details: "Dispatched STK prompts to Mary Smith & Peter Jones",
-      type: "reminder",
-      icon: Bell,
-      color: "amber",
-    },
-    {
-      id: "4",
-      timestamp: "Aug 10, 2026 • 16:20",
-      title: "Payout of KES 20,000 sent to John Doe",
-      details: "M-Pesa B2C Reference: B2C98172310 • Round #1 Rotation Completed",
-      type: "payout",
-      icon: TrendingUp,
-      color: "indigo",
-    },
-    {
-      id: "5",
-      timestamp: "Aug 08, 2026 • 12:45",
-      title: "Expense Logged: DJ & Sound System KES 15,000",
-      details: "Receipt attached • Verified by 2 Admins",
-      type: "expense",
-      icon: Receipt,
-      color: "rose",
-    },
-    {
-      id: "6",
-      timestamp: "Aug 05, 2026 • 10:00",
-      title: "Sarah Connor joined the group circle",
-      details: "Invited via organizer link • Role: Member",
-      type: "member",
-      icon: UserPlus,
-      color: "blue",
-    },
-  ];
+  });
 
   const filteredEvents = auditEvents.filter((ev) =>
 
@@ -163,6 +110,17 @@ export default function ActivityPage() {
 
       {/* Audit Stream Timeline */}
       <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6">
+        {isLoading ? (
+          <p className="text-center text-xs font-medium text-slate-400 py-6">Loading activity…</p>
+        ) : filteredEvents.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-8 text-center text-slate-500 dark:bg-slate-800/40">
+            <p className="text-xs font-medium">
+              {logs.length === 0
+                ? "No activity logged for this group yet."
+                : "No activity matches this filter."}
+            </p>
+          </div>
+        ) : (
         <div className="relative border-l-2 border-slate-100 dark:border-slate-800 ml-4 space-y-6 pl-6">
           {filteredEvents.map((item) => {
             const Icon = item.icon;
@@ -196,6 +154,7 @@ export default function ActivityPage() {
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

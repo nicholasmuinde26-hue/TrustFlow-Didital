@@ -30,18 +30,21 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
   const [isMpesaModalOpen, setIsMpesaModalOpen] = useState(false);
   const [toastNotice, setToastNotice] = useState(null);
 
-  // Real Group Health Dashboard data metrics with computed fallbacks
-  const targetGoal = workspace.targetGoal ?? 100000;
+  // Group Health Dashboard data — every value comes straight off the
+  // dashboard the backend already computed. No fabricated fallbacks:
+  // when the backend hasn't set a field (no active plan, no event date),
+  // we show an honest "not set" state instead of inventing a number.
+  const targetGoal = workspace.targetGoal ?? null;
   const collected = stats.totalContributed ?? 0;
-  const daysLeft = workspace.daysLeft ?? (workspace.eventDate ? Math.max(0, Math.ceil((new Date(workspace.eventDate) - new Date()) / (1000 * 60 * 60 * 24))) : 30);
-  const progressPercent = targetGoal > 0 ? Math.min(100, Math.round((collected / targetGoal) * 100)) : 0;
+  const daysLeft = workspace.daysLeft ?? null;
+  const progressPercent = targetGoal ? Math.min(100, Math.round((collected / targetGoal) * 100)) : null;
 
   const totalMembers = stats.memberCount ?? 0;
-  const paidMembersCount = stats.paidCount ?? (collected > 0 ? 1 : 0);
+  const paidMembersCount = stats.paidCount ?? 0;
   const pendingMembersCount = Math.max(0, totalMembers - paidMembersCount);
+  const overdueCount = stats.overdueCount ?? 0;
 
-  const topContributor = workspace.topContributor || { name: "Pending contributions", amount: 0 };
-  const nextPayout = workspace.nextPayout || { date: "Upcoming", recipient: "Rotation queued", amount: targetGoal / (totalMembers || 1) };
+  const topContributor = workspace.topContributor || { name: "No contributions yet", amount: 0 };
 
   const handleReminderSent = () => {
     setToastNotice("Auto M-Pesa reminders dispatched to pending members!");
@@ -109,31 +112,40 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
           </div>
         </div>
 
-        {/* Goal Progress Card */}
-        <div className="mt-8 rounded-2xl bg-white/10 p-5 backdrop-blur-md border border-white/15 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold">
-            <span className="text-violet-200">
-              Goal Target: <strong className="text-white font-mono text-sm">{money(targetGoal)}</strong>
-            </span>
-            <span className="flex items-center gap-1 text-amber-300 font-mono">
-              <Clock size={14} /> {daysLeft} Days Remaining
-            </span>
-          </div>
+        {/* Goal Progress Card — only rendered once an active plan actually
+            sets a target; otherwise there's nothing real to show a bar for */}
+        {targetGoal ? (
+          <div className="mt-8 rounded-2xl bg-white/10 p-5 backdrop-blur-md border border-white/15 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold">
+              <span className="text-violet-200">
+                Goal Target: <strong className="text-white font-mono text-sm">{money(targetGoal)}</strong>
+              </span>
+              {daysLeft !== null && (
+                <span className="flex items-center gap-1 text-amber-300 font-mono">
+                  <Clock size={14} /> {daysLeft} Days Remaining
+                </span>
+              )}
+            </div>
 
-          {/* Progress Bar */}
-          <div className="space-y-1">
-            <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-950/60 p-0.5 border border-white/10">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-all duration-500 shadow-lg"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-[11px] font-mono text-violet-200/90 font-semibold pt-1">
-              <span>{progressPercent}% Collected ({money(collected)})</span>
-              <span>Remaining: {money(Math.max(0, targetGoal - collected))}</span>
+            {/* Progress Bar */}
+            <div className="space-y-1">
+              <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-950/60 p-0.5 border border-white/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-all duration-500 shadow-lg"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[11px] font-mono text-violet-200/90 font-semibold pt-1">
+                <span>{progressPercent}% Collected ({money(collected)})</span>
+                <span>Remaining: {money(Math.max(0, targetGoal - collected))}</span>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-8 rounded-2xl bg-white/10 p-4 backdrop-blur-md border border-white/15 text-xs font-medium text-violet-200">
+            No active contribution plan with a target amount yet — set one up to track progress here.
+          </div>
+        )}
       </section>
 
       {/* Group Health Metric Cards */}
@@ -167,17 +179,19 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
           </p>
         </div>
 
-        {/* Next Payout Rotation */}
+        {/* Overdue Contributions — real count the backend already computes */}
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-2">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-bold uppercase tracking-wider">Next Payout</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Overdue</span>
             <TrendingUp size={18} className="text-indigo-600" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-black text-slate-900 dark:text-white">{nextPayout.recipient}</span>
+            <span className={`text-2xl font-black font-mono ${overdueCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-900 dark:text-white"}`}>
+              {overdueCount}
+            </span>
           </div>
           <p className="text-xs font-medium text-slate-500">
-            Scheduled for <strong className="text-slate-900 dark:text-white font-bold">{nextPayout.date}</strong>
+            {overdueCount > 0 ? "Obligations past due date" : "Nothing overdue"}
           </p>
         </div>
 

@@ -20,6 +20,7 @@ import useFinanceSummary from "@/modules/finance/hooks/useFinanceSummary";
 import {
   useContributionGroupMembers,
   useContributionGroupTransactions,
+  useContributionGroupPlans,
 } from "../hooks/useContributionGroupData";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
@@ -36,15 +37,25 @@ export default function ContributionsPage() {
 
   const { data: members = [] } = useContributionGroupMembers(workspaceId);
   const { data: transactions = [] } = useContributionGroupTransactions(workspaceId);
+  const { data: plans = [] } = useContributionGroupPlans(workspaceId);
   const { summary: financeSummary } = useFinanceSummary(workspaceId);
+
+  // The active plan's real fixed amount, if one exists. There is no
+  // per-member "expected_amount" field anywhere in the data model — if
+  // there's no active fixed-amount plan, we honestly don't know what a
+  // member is expected to pay, so we show that instead of guessing.
+  const activePlan = plans.find((p) => p.status === "active") || plans[0] || null;
+  const planAmount = activePlan?.amount != null ? Number(activePlan.amount) : null;
 
   // Strictly dynamic dataset mapped from backend members & transactions
   const activeMembersList = members.map((m, idx) => {
     const userTx = transactions.find(t => t.user_id === m.user_id || t.user_id === m.user?._id || t.member_id === m._id);
     const paidAmt = userTx ? Number(userTx.amount) : 0;
-    const expAmt = Number(m.expected_amount || 5000);
+    const expAmt = planAmount ?? 0;
     const balAmt = Math.max(0, expAmt - paidAmt);
-    const st = paidAmt >= expAmt ? "paid" : paidAmt > 0 ? "partial" : "unpaid";
+    const st = !planAmount
+      ? (paidAmt > 0 ? "paid" : "unpaid")
+      : paidAmt >= expAmt ? "paid" : paidAmt > 0 ? "partial" : "unpaid";
     return {
       id: String(m._id || idx),
       name: m.user ? `${m.user.first_name || ''} ${m.user.last_name || ''}`.trim() || m.user.email : m.name || `Member ${idx + 1}`,
