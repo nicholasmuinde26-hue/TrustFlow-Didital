@@ -2,6 +2,7 @@ import QueryProvider from "./QueryProvider";
 import ThemeProvider from "./ThemeProvider";
 import AuthProvider from "./AuthProvider";
 import WorkspaceProvider from "./WorkspaceProvider";
+import SocketProvider from "./SocketProvider";
 
 
 export default function AppProvider({ children }) {
@@ -10,13 +11,17 @@ export default function AppProvider({ children }) {
 
       <AuthProvider>
 
-        <WorkspaceProvider>
+        <SocketProvider>
 
-          <ThemeProvider>
-            {children}
-          </ThemeProvider>
+          <WorkspaceProvider>
 
-        </WorkspaceProvider>
+            <ThemeProvider>
+              {children}
+            </ThemeProvider>
+
+          </WorkspaceProvider>
+
+        </SocketProvider>
 
       </AuthProvider>
 

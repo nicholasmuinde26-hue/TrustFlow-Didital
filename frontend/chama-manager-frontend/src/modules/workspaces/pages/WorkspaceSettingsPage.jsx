@@ -91,6 +91,7 @@ export default function WorkspaceSettingsPage() {
     setForm({
       name: chama?.name || "",
       monthly_savings: chama?.monthly_savings ?? "",
+      visibility: chama?.visibility || "private",
       contribution_cycle: profile?.contribution_cycle || "monthly",
       fine_amount: profile?.fine_amount ?? 0,
       meeting_day: profile?.meeting_day || "",
@@ -120,6 +121,7 @@ export default function WorkspaceSettingsPage() {
     const chamaUpdates = {
       name: form.name?.trim(),
       monthly_savings: Number(form.monthly_savings),
+      visibility: form.visibility,
     };
 
     const profileUpdates = {
@@ -374,6 +376,49 @@ export default function WorkspaceSettingsPage() {
                 required
                 className={FIELD_CLASS}
               />
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Join Invitation Code (Permanent)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={data?.chama?.join_code || "Generating..."}
+                  className={`${FIELD_CLASS} font-mono font-bold tracking-widest bg-violet-50/50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 uppercase`}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (data?.chama?.join_code) {
+                      navigator.clipboard.writeText(data.chama.join_code);
+                      toast.success("Join code copied to clipboard!");
+                    }
+                  }}
+                  className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/80 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Share this code with non-joined members so they can join directly.
+              </p>
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Directory Visibility</label>
+              <select
+                value={form.visibility}
+                onChange={handleChange("visibility")}
+                disabled={!canEdit}
+                className={FIELD_CLASS}
+              >
+                <option value="private">Private (Only reachable via code or link)</option>
+                <option value="public">Public (Discoverable in Browse Public Chamas)</option>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Public Chamas can be found and requested by any registered platform user.
+              </p>
             </div>
           </div>
         </SectionCard>

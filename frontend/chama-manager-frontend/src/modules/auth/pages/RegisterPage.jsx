@@ -31,7 +31,12 @@ export default function RegisterPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const redirectTo = location.state?.from?.pathname || "/home";
+  // Preserve the full path INCLUDING query string (e.g. a Chama
+  // join-link's ?token=...) — dropping .search here would silently
+  // strip the token and break the join-link flow after registering.
+  const redirectTo = location.state?.from
+    ? `${location.state.from.pathname || "/home"}${location.state.from.search || ""}`
+    : "/home";
 
   // SMS & WhatsApp ride on the phone number (always offered once one's
   // entered); Email only shows up once the user has typed one in.

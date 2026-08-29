@@ -1178,6 +1178,62 @@ export const acceptContributionGroupInvitationController = async (
 };
 
 // ========================================
+// DECLINE CONTRIBUTION GROUP INVITATION
+// ========================================
+//
+// PATCH
+// /api/v1/contribution-groups/invitations/:invitationId/decline
+//
+// Only the invited user can decline
+// their own invitation.
+//
+// ========================================
+
+export const declineContributionGroupInvitationController = async (
+
+  req,
+
+  res,
+
+  next
+
+) => {
+
+  try {
+
+    const actorUserId = req.user?._id;
+
+    const { invitationId } = req.params;
+
+    if (!actorUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authenticated user is required'
+      });
+    }
+
+    const result = await declineContributionGroupInvitation({
+      invitationId,
+      actorUserId
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Contribution group invitation declined',
+      data: {
+        invitation: result.invitation
+      }
+    });
+
+  } catch (error) {
+
+    return next(error);
+
+  }
+
+};
+
+// ========================================
 // GET CONTRIBUTION GROUP
 // ========================================
 //

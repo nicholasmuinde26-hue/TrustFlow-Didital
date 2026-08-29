@@ -13,6 +13,14 @@ const chamaApi = {
     return api.get(`/chamas/${chamaId}`);
   },
 
+  getPublicChamas() {
+    return api.get('/chamas/directory/public');
+  },
+
+  joinWithCode(joinCode) {
+    return api.post('/chamas/directory/join', { joinCode });
+  },
+
   update(chamaId, payload) {
     return api.patch(`/chamas/${chamaId}`, payload);
   },
@@ -46,7 +54,19 @@ const chamaApi = {
   createMeetingRecord(chamaId, payload) { return api.post(`/chamas/${chamaId}/meeting-records`, payload); },
   checkInMeeting(chamaId, meetingId) { return api.post(`/chamas/${chamaId}/meeting-records/${meetingId}/check-in`); },
   saveMeetingRecord(chamaId, meetingId, payload) { return api.put(`/chamas/${chamaId}/meeting-records/${meetingId}`, payload); },
+
+  // Public — safe to call before the user is authenticated, mirrors the
+  // accept endpoint below (same /chama-invitations/:token resource).
+  previewInvitation(token) { return api.get(`/chama-invitations/${token}`); },
   acceptInvitation(token) { return api.post(`/chama-invitations/${token}/accept`); },
+  myPendingRequests() { return api.get('/chama-invitations/mine/pending'); },
+
+  // Pending "request to join" entries are ChamaMembership records with
+  // status "pending" — this dedicated, treasurer/chairperson-only route
+  // is the correct source (the general members list at GET
+  // /chamas/:id/members hardcodes status: "active" and will never
+  // include these).
+  listJoinRequests(chamaId) { return api.get(`/chamas/${chamaId}/members/join-requests`); },
 
   getMgr(chamaId) {
     return api.get(`/chamas/${chamaId}/mgr`);

@@ -39,7 +39,15 @@ const MEMBERSHIP_STATUS = [
   'active',
   'inactive',
   'suspended',
-  'removed'
+  'removed',
+  // A join request made via an invite link. Created by acceptInvite()
+  // in chamaOperations.service.js and only becomes 'active' once the
+  // Treasurer or Chairperson approves it (member.service.js
+  // updateMemberStatus). Excluded from getChamaMembers() so pending
+  // requesters don't show up as members yet, and requireChamaMember
+  // rejects them (status !== 'active') so they can't access the
+  // Chama's data while awaiting approval.
+  'pending'
 ];
 
 // ========================================

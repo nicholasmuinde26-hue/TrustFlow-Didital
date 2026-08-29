@@ -38,6 +38,12 @@ class PaymentService {
     async initiate(payload) {
         return withSession(async (session) => {
             const normalizedPayload = validateInitiatePayment(payload);
+            // Preserve idempotency through the immutable PaymentContext. The
+            // store uses this to prevent duplicate STK/cash requests.
+            normalizedPayload.metadata = {
+                ...(normalizedPayload.metadata || {}),
+                idempotencyKey: normalizedPayload.idempotencyKey
+            };
             const context = new PaymentContext(normalizedPayload);
             
             const providerName = context.provider.name;

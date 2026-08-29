@@ -5,9 +5,38 @@ import {
   updateChama,
   deleteChama,
   verifyTreasurerUser,
+  getPublicChamas,
+  joinWithCode
 } from './chama.service.js';
 import PaymentIntent from '../../models/PaymentIntent.js';
 import { getMgrOverview, initiateSavingsDeposit, markMgrObligationPaid, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
+
+export const getPublicChamasController = async (req, res, next) => {
+  try {
+    const chamas = await getPublicChamas();
+    return res.status(200).json({
+      success: true,
+      data: { chamas },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const joinWithCodeController = async (req, res, next) => {
+  try {
+    const { joinCode } = req.body;
+    const membership = await joinWithCode(req.user._id, joinCode);
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Join request submitted successfully',
+      data: { membership },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const verifyTreasurerController = async (req, res, next) => {
   try {
@@ -48,6 +77,7 @@ export const createChamaController = async (
     const {
       name,
       monthlySavings,
+      visibility,
       treasurerPhone,
       treasurerEmail,
       treasurerUserId,
@@ -63,6 +93,7 @@ export const createChamaController = async (
       await createChama({
         name,
         monthlySavings,
+        visibility,
         userId,
         treasurerPhone,
         treasurerEmail,

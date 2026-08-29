@@ -1,32 +1,29 @@
-import React, { useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+
+import { Link, useLocation, useNavigate } from "react-router-dom";
+
 import { motion, AnimatePresence } from "framer-motion";
+
 import {
   Building2,
   Wallet,
   Store,
   Plus,
   Mail,
-  ChevronRight,
   AlertCircle,
   RotateCcw,
   ArrowUpRight,
   Users,
   Sparkles,
   Layers3,
-  ShieldCheck,
   TrendingUp,
-  CircleDollarSign,
-  BriefcaseBusiness,
   UserPlus,
   Search,
-  SlidersHorizontal,
-  Zap,
-  Activity,
-  Compass,
-  CheckCircle2,
-  Lock,
   ArrowRight,
+  Home,
+  BriefcaseBusiness,
+  Clock3,
+  UserCircle,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -40,47 +37,66 @@ import {
 import InvitationCard from "@/modules/invitations/components/InvitationCard";
 import Spinner from "@/shared/components/ui/Spinner";
 
-// ============================================================
-// WORKSPACE CONFIG (ADAPTIVE LIGHT / DARK TECH MATRIX)
-// ============================================================
+/* ============================================================
+   WORKSPACE CONFIG
+============================================================ */
 
 const workspaceConfig = {
   business: {
     icon: Store,
     label: "Business Hub",
     description: "Sales, inventory & operational ledger",
-    shortDescription: "Enterprise Operations",
-    iconBg: "bg-blue-50 border border-blue-200/60 text-blue-600 dark:bg-blue-500/10 dark:border-blue-500/20 dark:text-blue-400",
-    iconGlow: "shadow-[0_4px_12px_rgba(37,99,235,0.12)] dark:shadow-[0_0_20px_rgba(59,130,246,0.25)]",
-    accent: "bg-gradient-to-r from-blue-600 to-cyan-500",
-    badge: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
-    cardGlow: "hover:border-blue-300 dark:hover:border-blue-500/40 hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]",
+
+    iconBg:
+      "bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20",
+
+    accent: "from-blue-500 to-cyan-500",
+
+    badge:
+      "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300",
+
+    hover:
+      "hover:border-blue-200 hover:shadow-blue-100/50 dark:hover:border-blue-500/30",
   },
 
   chama: {
     icon: Building2,
     label: "Chama Circle",
     description: "Members, treasury & rotational payouts",
-    shortDescription: "Community Treasury",
-    iconBg: "bg-violet-50 border border-violet-200/60 text-violet-600 dark:bg-violet-500/10 dark:border-violet-500/20 dark:text-violet-400",
-    iconGlow: "shadow-[0_4px_12px_rgba(124,58,237,0.12)] dark:shadow-[0_0_20px_rgba(139,92,246,0.25)]",
-    accent: "bg-gradient-to-r from-violet-600 to-fuchsia-500",
-    badge: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
-    cardGlow: "hover:border-violet-300 dark:hover:border-violet-500/40 hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(139,92,246,0.15)]",
+
+    iconBg:
+      "bg-violet-50 text-violet-600 border-violet-100 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20",
+
+    accent: "from-violet-500 to-fuchsia-500",
+
+    badge:
+      "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300",
+
+    hover:
+      "hover:border-violet-200 hover:shadow-violet-100/50 dark:hover:border-violet-500/30",
   },
 
   contribution: {
     icon: Wallet,
     label: "Contribution Group",
     description: "Structured savings, collections & obligations",
-    shortDescription: "Group Savings Ledger",
-    iconBg: "bg-emerald-50 border border-emerald-200/60 text-emerald-600 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400",
-    iconGlow: "shadow-[0_4px_12px_rgba(5,150,105,0.12)] dark:shadow-[0_0_20px_rgba(16,185,129,0.25)]",
-    accent: "bg-gradient-to-r from-emerald-600 to-teal-500",
-    badge: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
-    cardGlow: "hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:shadow-xl dark:hover:shadow-[0_0_30px_rgba(16,185,129,0.15)]",
+
+    iconBg:
+      "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20",
+
+    accent: "from-emerald-500 to-teal-500",
+
+    badge:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300",
+
+    hover:
+      "hover:border-emerald-200 hover:shadow-emerald-100/50 dark:hover:border-emerald-500/30",
   },
 };
+
+/* ============================================================
+   HELPERS
+============================================================ */
 
 function normalizeWorkspaceType(type) {
   const normalized = String(type || "")
@@ -104,27 +120,245 @@ function normalizeWorkspaceType(type) {
 
 function getWorkspaceMeta(type) {
   const normalizedType = normalizeWorkspaceType(type);
+
   return workspaceConfig[normalizedType] || workspaceConfig.chama;
 }
 
+/* ============================================================
+   ROLE FORMATTER
+============================================================ */
+
 function formatRole(role) {
   if (!role) return "Member";
+
   return String(role)
     .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-// ============================================================
-// MAIN PAGE COMPONENT (THEME ADAPTIVE)
-// ============================================================
+/* ============================================================
+   TIME-AWARE GREETING
+============================================================ */
+
+function getTimeGreeting(date = new Date()) {
+  const hour = date.getHours();
+
+  if (hour >= 5 && hour < 12) {
+    return "Good morning";
+  }
+
+  if (hour >= 12 && hour < 17) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
+}
+
+function getGreetingIcon(date = new Date()) {
+  const hour = date.getHours();
+
+  if (hour >= 5 && hour < 12) {
+    return "☀️";
+  }
+
+  if (hour >= 12 && hour < 17) {
+    return "🌤️";
+  }
+
+  return "🌙";
+}
+
+/* ============================================================
+   WORKSPACE DATA HELPERS
+
+   Every one of these reads a real field off the workspace object
+   the API returned (or a documented alias of it) and falls back to
+   null — never a placeholder figure — when the backend hasn't sent
+   that value for this workspace.
+============================================================ */
+
+function getWorkspaceId(workspace) {
+  return workspace?.id ?? workspace?._id;
+}
+
+function getMemberCount(workspace) {
+  const value =
+    workspace?.memberCount ??
+    workspace?.membersCount ??
+    workspace?.totalMembers ??
+    (Array.isArray(workspace?.members) ? workspace.members.length : null);
+
+  return typeof value === "number" ? value : null;
+}
+
+function getTreasury(workspace) {
+  const value =
+    workspace?.treasuryBalance ??
+    workspace?.balance ??
+    workspace?.totalBalance ??
+    workspace?.treasury?.balance ??
+    workspace?.treasury ??
+    null;
+
+  return typeof value === "number" ? value : null;
+}
+
+function getMonthlySales(workspace) {
+  const value =
+    workspace?.monthlySales ??
+    workspace?.salesThisMonth ??
+    workspace?.monthlyRevenue ??
+    workspace?.sales ??
+    null;
+
+  return typeof value === "number" ? value : null;
+}
+
+function getGrowth(workspace) {
+  const value =
+    workspace?.growth ?? workspace?.growthPercentage ?? workspace?.monthlyGrowth ?? null;
+
+  return typeof value === "number" ? value : null;
+}
+
+function getNextPayout(workspace) {
+  return (
+    workspace?.nextPayout ??
+    workspace?.nextPayoutDate ??
+    workspace?.payoutDate ??
+    workspace?.payout?.date ??
+    null
+  );
+}
+
+function getContributionAmount(workspace) {
+  const value =
+    workspace?.contributionAmount ??
+    workspace?.monthlyContribution ??
+    workspace?.contributionPlan?.amount ??
+    workspace?.contribution?.amount ??
+    null;
+
+  return typeof value === "number" ? value : null;
+}
+
+function formatCurrency(value) {
+  if (value === undefined || value === null || value === "") {
+    return "—";
+  }
+
+  const numericValue = Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    return String(value);
+  }
+
+  return `KES ${numericValue.toLocaleString("en-KE", {
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatPayout(value) {
+  if (!value) {
+    return "Not scheduled";
+  }
+
+  if (typeof value === "number") {
+    return `in ${value} ${value === 1 ? "day" : "days"}`;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  const today = new Date();
+
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const startOfPayout = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const difference = Math.ceil(
+    (startOfPayout.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (difference > 0) {
+    return `in ${difference} ${difference === 1 ? "day" : "days"}`;
+  }
+
+  if (difference === 0) {
+    return "Today";
+  }
+
+  return "Scheduled";
+}
+
+/* Sums a numeric getter across workspaces. Returns null (not 0) when
+   not a single workspace actually reported the field, so the UI can
+   show "—" instead of a fabricated zero. */
+function sumField(workspaces, getter, predicate = () => true) {
+  let total = 0;
+  let sawAny = false;
+
+  workspaces.forEach((workspace) => {
+    if (!predicate(workspace)) return;
+
+    const value = getter(workspace);
+
+    if (typeof value === "number") {
+      total += value;
+      sawAny = true;
+    }
+  });
+
+  return sawAny ? total : null;
+}
+
+/* ============================================================
+   HOME PAGE
+============================================================ */
 
 export default function HomePage() {
   const { user } = useAuth();
-  const { workspaces = [], loading, selectWorkspace } = useWorkspace();
+
+  const { workspaces = [], loading, selectWorkspace, currentWorkspace } = useWorkspace();
+
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+
+  /* ==========================================================
+     LIVE CLOCK
+  ========================================================== */
+
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(new Date());
+    };
+
+    updateTime();
+
+    const interval = window.setInterval(updateTime, 60 * 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const greeting = useMemo(() => getTimeGreeting(currentTime), [currentTime]);
+
+  const greetingIcon = useMemo(() => getGreetingIcon(currentTime), [currentTime]);
+
+  /* ==========================================================
+     INVITATIONS
+  ========================================================== */
 
   const {
     data: invitations = [],
@@ -135,50 +369,105 @@ export default function HomePage() {
 
   const acceptInvitation = useAcceptInvitation();
 
-  // Counts
+  /* ==========================================================
+     COUNTS — all derived from the real workspaces the API returned
+  ========================================================== */
+
   const businessCount = useMemo(
-    () => workspaces.filter((w) => normalizeWorkspaceType(w.type) === "business").length,
+    () =>
+      workspaces.filter((workspace) => normalizeWorkspaceType(workspace.type) === "business")
+        .length,
     [workspaces]
   );
+
   const chamaCount = useMemo(
-    () => workspaces.filter((w) => normalizeWorkspaceType(w.type) === "chama").length,
+    () =>
+      workspaces.filter((workspace) => normalizeWorkspaceType(workspace.type) === "chama")
+        .length,
     [workspaces]
   );
+
   const contributionCount = useMemo(
-    () => workspaces.filter((w) => normalizeWorkspaceType(w.type) === "contribution").length,
+    () =>
+      workspaces.filter(
+        (workspace) => normalizeWorkspaceType(workspace.type) === "contribution"
+      ).length,
     [workspaces]
   );
 
-  // Filtered workspaces
-  const filteredWorkspaces = useMemo(() => {
-    return workspaces.filter((w) => {
-      const matchesSearch =
-        !searchQuery.trim() ||
-        w.name.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
-        String(w.type || "").toLowerCase().includes(searchQuery.toLowerCase().trim());
+  const totalMembers = useMemo(
+    () => sumField(workspaces, getMemberCount, (w) => normalizeWorkspaceType(w.type) !== "business"),
+    [workspaces]
+  );
 
-      const normType = normalizeWorkspaceType(w.type);
-      const matchesTab = activeTab === "all" || normType === activeTab;
+  const totalBalance = useMemo(() => sumField(workspaces, getTreasury), [workspaces]);
+
+  const totalMonthlyContributions = useMemo(
+    () =>
+      sumField(
+        workspaces,
+        getContributionAmount,
+        (w) => normalizeWorkspaceType(w.type) === "contribution"
+      ),
+    [workspaces]
+  );
+
+  /* ==========================================================
+     FILTER
+  ========================================================== */
+
+  const filteredWorkspaces = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return workspaces.filter((workspace) => {
+      const type = normalizeWorkspaceType(workspace.type);
+
+      const searchableText = [
+        workspace.name,
+        workspace.type,
+        workspace.role,
+        workspace.category,
+        workspace.businessType,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !query || searchableText.includes(query);
+
+      const matchesTab = activeTab === "all" || type === activeTab;
 
       return matchesSearch && matchesTab;
     });
   }, [workspaces, searchQuery, activeTab]);
 
+  /* ==========================================================
+     OPEN WORKSPACE
+  ========================================================== */
+
   function openWorkspace(workspace) {
     selectWorkspace(workspace);
-    const workspaceId = workspace.id ?? workspace._id;
+
+    const workspaceId = getWorkspaceId(workspace);
+
     const type = normalizeWorkspaceType(workspace.type);
 
     if (type === "business") {
       navigate(`/workspace/${workspaceId}/business`);
+
       return;
     }
 
     navigate(`/workspace/${workspaceId}`);
   }
 
+  /* ==========================================================
+     INVITATION
+  ========================================================== */
+
   async function handleAccept(invitation) {
     const result = await acceptInvitation.mutateAsync(invitation._id);
+
     const groupId = result?.group?._id || result?.membership?.contribution_group_id;
 
     if (groupId) {
@@ -186,223 +475,303 @@ export default function HomePage() {
     }
   }
 
-  return (
-    <div className="relative min-h-screen bg-[#f8fafc] dark:bg-[#090d16] text-slate-900 dark:text-slate-100 font-sans selection:bg-violet-500 selection:text-white pb-16 overflow-hidden transition-colors duration-300">
-      {/* ======================================================
-          AMBIENT BACKGROUND & MESH GRID
-      ====================================================== */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
-        {/* Subtle Grid Pattern */}
-        <div className="absolute inset-0 opacity-[0.035] dark:opacity-[0.07] bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:36px_36px]" />
+  /* ==========================================================
+     USER
+  ========================================================== */
 
-        {/* Ambient Soft Light Orbs */}
-        <div className="absolute -top-32 -left-32 h-[550px] w-[550px] rounded-full bg-violet-200/35 dark:bg-violet-600/25 blur-[130px]" />
-        <div className="absolute top-[20%] -right-40 h-[550px] w-[550px] rounded-full bg-blue-200/35 dark:bg-cyan-600/15 blur-[130px]" />
-        <div className="absolute bottom-10 left-[30%] h-[450px] w-[450px] rounded-full bg-emerald-200/25 dark:bg-emerald-600/15 blur-[130px]" />
+  const firstName = user?.name?.split(" ")[0] || "there";
+
+  /* ==========================================================
+     RENDER
+  ========================================================== */
+
+  return (
+    <div className="relative">
+      {/* ======================================================
+          BACKGROUND — decorative only, sits behind the platform
+          header/content, doesn't add its own chrome.
+      ====================================================== */}
+
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-violet-200/30 blur-[120px] dark:bg-violet-700/10" />
+
+        <div className="absolute right-[-200px] top-[20%] h-[500px] w-[500px] rounded-full bg-blue-200/30 blur-[120px] dark:bg-blue-700/10" />
+
+        <div className="absolute bottom-0 left-[30%] h-[400px] w-[400px] rounded-full bg-emerald-200/20 blur-[120px] dark:bg-emerald-700/10" />
       </div>
 
       {/* ======================================================
-          MAIN CONTENT CONTAINER
+          MAIN — horizontal padding/rhythm comes from
+          PlatformLayout; only extra scaling for very wide
+          screens lives here, so there's a single source of
+          truth for page gutters and nothing re-centers the
+          page inside a narrow column.
       ====================================================== */}
-      <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8 space-y-8">
-        
+
+      <div className="w-full pb-28 xl:px-6 2xl:px-12">
         {/* ====================================================
-            HERO COMMAND SECTION
+            HERO
         ==================================================== */}
+
         <motion.section
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: "easeOut" }}
-          className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 dark:border-slate-800/80 dark:bg-slate-900/60 p-6 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-2xl sm:p-8 lg:p-10"
+          className="relative mb-8 overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-br from-white via-violet-50/70 to-blue-50/70 p-6 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-violet-950/20 dark:to-blue-950/20 sm:p-8 lg:p-10 2xl:p-14"
         >
-          {/* Top Subtle Accent Line */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-violet-600 via-indigo-600 to-emerald-500" />
+          <div className="absolute right-[-80px] top-[-120px] h-80 w-80 rounded-full bg-violet-300/30 blur-3xl dark:bg-violet-500/10" />
 
-          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl space-y-4">
-              
-              {/* Matrix Status Badge */}
-              <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 dark:border-violet-500/30 dark:bg-violet-500/10 px-3.5 py-1.5 text-xs font-bold text-violet-700 dark:text-violet-300 shadow-sm">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <Sparkles size={13} className="text-violet-600 dark:text-violet-400" />
-                <span className="uppercase tracking-widest text-[10px] font-extrabold">FINANCIAL OS MATRIX</span>
+          <div className="absolute bottom-[-120px] right-[15%] h-72 w-72 rounded-full bg-blue-300/20 blur-3xl dark:bg-blue-500/10" />
+
+          <div className="relative flex flex-col justify-between gap-10 lg:flex-row lg:items-center">
+            <div className="max-w-2xl">
+              {/* Dynamic greeting badge */}
+
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/80 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-violet-600 shadow-sm backdrop-blur-sm dark:border-violet-500/20 dark:bg-slate-900/60 dark:text-violet-300">
+                <Sparkles size={13} />
+
+                <span>{greeting}</span>
+
+                <span className="text-sm">{greetingIcon}</span>
               </div>
 
-              {/* Dynamic Header Greeting */}
-              <h1 className="text-3xl font-black tracking-tight sm:text-5xl text-slate-950 dark:text-white">
-                Welcome back,{" "}
-                <span className="bg-gradient-to-r from-violet-600 via-indigo-600 to-emerald-600 dark:from-violet-400 dark:via-cyan-300 dark:to-emerald-400 bg-clip-text text-transparent">
-                  {user?.name ? user.name.split(" ")[0] : "Commander"}
-                </span>
-              </h1>
+              {/* Dynamic greeting */}
 
-              <p className="text-sm sm:text-base leading-relaxed text-slate-600 dark:text-slate-300 max-w-xl font-normal">
-                Everything you manage, collect, and grow — organized in your trusted financial operational workspace.
+              <h2 className="text-4xl font-black tracking-tight text-slate-950 dark:text-white sm:text-5xl 2xl:text-6xl">
+                {greeting},{" "}
+                <span className="bg-gradient-to-r from-violet-600 via-blue-600 to-emerald-500 bg-clip-text text-transparent">
+                  {firstName}
+                </span>
+              </h2>
+
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400 sm:text-base">
+                Here's what's happening across your financial ecosystem today.
               </p>
 
-              {/* Telemetry Status Pills */}
-              <div className="pt-2 flex flex-wrap items-center gap-2.5">
-                <AdaptiveStatusPill icon={Lock} label="End-to-End Encrypted" color="emerald" />
-                <AdaptiveStatusPill icon={Activity} label="Real-Time Telemetry" color="blue" />
-                <AdaptiveStatusPill icon={Layers3} label={`${workspaces.length} Active Workspace${workspaces.length === 1 ? "" : "s"}`} color="violet" />
-              </div>
-            </div>
+              {/* Search — the one place it lives, not duplicated in a
+                  second header */}
 
-            {/* Hero Quick Launcher Actions */}
-            <div className="flex flex-col sm:flex-row lg:flex-col gap-3 min-w-[220px]">
-              <HeroActionButton
-                to="/business/new"
-                icon={Store}
-                title="Launch Business"
-                sub="Sales & Operations"
-                gradient="from-blue-600 to-cyan-600"
-                shadow="shadow-blue-600/20"
-              />
-              <HeroActionButton
-                to="/chamas/new"
-                icon={Building2}
-                title="Start Chama"
-                sub="Treasury & Payouts"
-                gradient="from-violet-600 to-fuchsia-600"
-                shadow="shadow-violet-600/20"
-              />
-              <HeroActionButton
-                to="/contribution-groups/new"
-                icon={Wallet}
-                title="New Group"
-                sub="Savings & Obligations"
-                gradient="from-emerald-600 to-teal-600"
-                shadow="shadow-emerald-600/20"
-              />
-            </div>
-          </div>
-        </motion.section>
+              <div className="relative mt-6 max-w-md">
+                <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
 
-        {/* ====================================================
-            TELEMETRY METRICS SUMMARY BAR
-        ==================================================== */}
-        <motion.section
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, delay: 0.08 }}
-          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
-        >
-          <AdaptiveMetricCard
-            icon={Layers3}
-            title="Total Workspaces"
-            count={workspaces.length}
-            color="violet"
-            label="Active Consoles"
-          />
-          <AdaptiveMetricCard
-            icon={Store}
-            title="Business Hubs"
-            count={businessCount}
-            color="blue"
-            label="Operations"
-          />
-          <AdaptiveMetricCard
-            icon={Building2}
-            title="Chama Circles"
-            count={chamaCount}
-            color="fuchsia"
-            label="Treasuries"
-          />
-          <AdaptiveMetricCard
-            icon={Wallet}
-            title="Savings Groups"
-            count={contributionCount}
-            color="emerald"
-            label="Contributions"
-          />
-        </motion.section>
-
-        {/* ====================================================
-            WORKSPACE EXPLORER SECTION (SEARCH & TABS)
-        ==================================================== */}
-        <section className="space-y-5 pt-2">
-          
-          {/* Controls Bar: Title, Search & Filter Tabs */}
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-xl font-black tracking-tight text-slate-950 dark:text-white flex items-center gap-2.5">
-                <Compass className="text-violet-600 dark:text-cyan-400" size={20} />
-                Your Workspaces
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select a workspace console to launch your management dashboard</p>
-            </div>
-
-            {/* Filter Tabs & Search Bar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              
-              {/* Search Bar */}
-              <div className="relative flex-1 sm:w-64">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search workspace..."
+                  placeholder="Search workspaces, members..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/80 pl-10 pr-4 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 transition-all shadow-sm backdrop-blur-md"
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white/90 pl-11 pr-4 text-sm outline-none backdrop-blur-xl transition focus:border-violet-400 focus:ring-4 focus:ring-violet-500/10 dark:border-slate-800 dark:bg-slate-900/70"
                 />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold"
-                  >
-                    ×
-                  </button>
-                )}
               </div>
 
-              {/* Type Category Tabs */}
-              <div className="flex items-center rounded-xl border border-slate-200/80 bg-slate-100 dark:border-slate-800 dark:bg-slate-900/80 p-1 shadow-inner backdrop-blur-md overflow-x-auto scrollbar-none">
-                <AdaptiveFilterTab
-                  active={activeTab === "all"}
-                  onClick={() => setActiveTab("all")}
-                  label="All"
-                  count={workspaces.length}
-                />
-                <AdaptiveFilterTab
-                  active={activeTab === "business"}
-                  onClick={() => setActiveTab("business")}
-                  label="Business"
-                  count={businessCount}
-                />
-                <AdaptiveFilterTab
-                  active={activeTab === "chama"}
-                  onClick={() => setActiveTab("chama")}
-                  label="Chama"
-                  count={chamaCount}
-                />
-                <AdaptiveFilterTab
-                  active={activeTab === "contribution"}
-                  onClick={() => setActiveTab("contribution")}
-                  label="Groups"
-                  count={contributionCount}
-                />
+              {/* Hero stats — real, aggregated from the fetched
+                  workspaces; "—" when the backend hasn't sent a field */}
+
+              <div className="mt-6 grid grid-cols-3 gap-3 sm:flex sm:flex-wrap">
+                <HeroStat value={workspaces.length} label="Workspaces" />
+
+                <HeroStat value={totalMembers ?? "—"} label="Members" />
+
+                <HeroStat value={formatCurrency(totalBalance)} label="Total Balance" />
+              </div>
+            </div>
+
+            {/* Hero visual — a real breakdown of the user's own
+                workspaces by type, not a decorative placeholder stat */}
+
+            <div className="hidden lg:flex lg:w-72 lg:shrink-0 lg:flex-col lg:gap-3">
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400">
+                  <Building2 size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-400">Chamas</p>
+                  <p className="text-lg font-black">{chamaCount}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+                  <Store size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-400">Businesses</p>
+                  <p className="text-lg font-black">{businessCount}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                  <Wallet size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-400">Contribution Groups</p>
+                  <p className="text-lg font-black">{contributionCount}</p>
+                </div>
               </div>
             </div>
           </div>
+        </motion.section>
 
-          {/* Workspaces Grid */}
+        {/* ====================================================
+            QUICK ACTIONS
+        ==================================================== */}
+
+        <section className="mb-9">
+          <SectionHeading title="Quick Actions" />
+
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none lg:grid lg:grid-cols-5">
+            <QuickAction
+              to="/business/new"
+              icon={Store}
+              title="New Business"
+              description="Create a business workspace"
+              color="blue"
+            />
+
+            <QuickAction
+              to="/chamas/new"
+              icon={Building2}
+              title="New Chama"
+              description="Start a chama workspace"
+              color="violet"
+            />
+
+            <QuickAction
+              to="/contribution-groups/new"
+              icon={Wallet}
+              title="Contribution"
+              description="Setup savings & obligations"
+              color="emerald"
+            />
+
+            <QuickAction
+              to="/invitations"
+              icon={Mail}
+              title="Send Invite"
+              description="Invite members to join"
+              color="orange"
+            />
+
+            <QuickAction
+              to="/chamas/join"
+              icon={UserPlus}
+              title="Join Chama"
+              description="Use an invitation code"
+              color="indigo"
+            />
+          </div>
+        </section>
+
+        {/* ====================================================
+            OVERVIEW — every figure is a real aggregate over the
+            fetched workspaces, or "—" when nothing backs it yet.
+            No invented month-over-month deltas.
+        ==================================================== */}
+
+        <section className="mb-9">
+          <SectionHeading title="Overview" />
+
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <OverviewCard
+              icon={Layers3}
+              label="Total Workspaces"
+              value={workspaces.length}
+              color="violet"
+            />
+
+            <OverviewCard
+              icon={TrendingUp}
+              label="Total Balance"
+              value={formatCurrency(totalBalance)}
+              color="emerald"
+            />
+
+            <OverviewCard
+              icon={Wallet}
+              label="Monthly Contributions"
+              value={formatCurrency(totalMonthlyContributions)}
+              color="pink"
+            />
+
+            <OverviewCard
+              icon={Users}
+              label="Total Members"
+              value={totalMembers ?? "—"}
+              color="blue"
+            />
+          </div>
+        </section>
+
+        {/* ====================================================
+            WORKSPACES
+        ==================================================== */}
+
+        <section className="mb-9">
+          <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-black tracking-tight">Your Workspaces</h2>
+
+              <p className="mt-1 text-sm text-slate-400">Everything you manage in one place.</p>
+            </div>
+
+            <Link
+              to="/workspaces"
+              className="hidden items-center gap-1 text-sm font-bold text-violet-600 sm:flex dark:text-violet-400"
+            >
+              View All
+              <ArrowUpRight size={15} />
+            </Link>
+          </div>
+
+          {/* Filters */}
+
+          <div className="mb-4 flex gap-2 overflow-x-auto scrollbar-none">
+            <FilterButton
+              active={activeTab === "all"}
+              onClick={() => setActiveTab("all")}
+              label="All"
+              count={workspaces.length}
+            />
+
+            <FilterButton
+              active={activeTab === "business"}
+              onClick={() => setActiveTab("business")}
+              label="Business"
+              count={businessCount}
+            />
+
+            <FilterButton
+              active={activeTab === "chama"}
+              onClick={() => setActiveTab("chama")}
+              label="Chama"
+              count={chamaCount}
+            />
+
+            <FilterButton
+              active={activeTab === "contribution"}
+              onClick={() => setActiveTab("contribution")}
+              label="Groups"
+              count={contributionCount}
+            />
+          </div>
+
+          {/* Workspace Results */}
+
           {loading ? (
             <LoadingState />
           ) : filteredWorkspaces.length === 0 ? (
             <EmptyState searchQuery={searchQuery} activeTab={activeTab} />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 2xl:grid-cols-2">
               <AnimatePresence mode="popLayout">
                 {filteredWorkspaces.map((workspace, index) => {
-                  const id = workspace.id ?? workspace._id;
+                  const id = getWorkspaceId(workspace);
+
                   const meta = getWorkspaceMeta(workspace.type);
+
                   const Icon = meta.icon;
 
                   return (
-                    <AdaptiveWorkspaceCard
+                    <WorkspaceCard
                       key={id}
                       workspace={workspace}
                       meta={meta}
@@ -418,74 +787,33 @@ export default function HomePage() {
         </section>
 
         {/* ====================================================
-            FEATURE LAUNCHPAD (CREATE NEW WORKSPACE)
+            INVITATIONS + JOIN CHAMA — paired on wide screens
         ==================================================== */}
-        <section className="space-y-4 pt-4">
-          <div className="flex items-center gap-2">
-            <Zap className="text-amber-500" size={18} />
-            <h2 className="text-base font-bold text-slate-950 dark:text-white">Create New Workspace</h2>
-          </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <AdaptiveActionCard
-              to="/business/new"
-              icon={Store}
-              title="New Business Workspace"
-              description="Inventory, POS sales, customer records & financial reports."
-              color="blue"
-              badge="ENTERPRISE"
-            />
-            <AdaptiveActionCard
-              to="/chamas/new"
-              icon={Building2}
-              title="New Chama Workspace"
-              description="Member roster, rotational payouts, loan policy & treasury."
-              color="violet"
-              badge="COMMUNITY"
-            />
-            <AdaptiveActionCard
-              to="/contribution-groups/new"
-              icon={Wallet}
-              title="New Contribution Group"
-              description="Scheduled savings, obligations & automated reminders."
-              color="emerald"
-              badge="SAVINGS"
-            />
-          </div>
-        </section>
-
-        {/* ====================================================
-            PENDING INVITATIONS HUB
-        ==================================================== */}
-        <section className="pt-2">
-          <div className="overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 backdrop-blur-xl shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800/80 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <section className="mb-4 grid gap-5 2xl:grid-cols-[1.4fr_1fr]">
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+            <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-800">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 border border-orange-200/60 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30">
-                  <Mail size={16} />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-500 dark:bg-orange-500/10">
+                  <Mail size={18} />
                 </div>
+
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-black text-slate-950 dark:text-white">Pending Invitations</h3>
-                    {invitations.length > 0 && (
-                      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:bg-amber-500/10 dark:text-amber-300 animate-pulse">
-                        {invitations.length} NEW
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-400">Workspace invitations waiting for your response</p>
+                  <h3 className="text-base font-black">Invitations</h3>
+
+                  <p className="text-xs text-slate-400">Workspace invitations waiting for you</p>
                 </div>
+
+                {invitations.length > 0 && (
+                  <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-black text-orange-600 dark:bg-orange-500/10 dark:text-orange-400">
+                    {invitations.length}
+                  </span>
+                )}
               </div>
 
-              {invitations.length > 0 && (
-                <Link
-                  to="/invitations"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 transition-colors"
-                >
-                  View All Invitations
-                  <ArrowUpRight size={14} />
-                </Link>
-              )}
+              <Link to="/invitations" className="text-sm font-bold text-violet-600 dark:text-violet-400">
+                View All
+              </Link>
             </div>
 
             <div className="p-5">
@@ -496,29 +824,32 @@ export default function HomePage() {
               )}
 
               {invitationsError && (
-                <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/10 p-4 text-xs text-red-700 dark:text-red-300">
+                <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                   <span className="flex items-center gap-2">
-                    <AlertCircle size={15} />
-                    Unable to load invitations right now.
+                    <AlertCircle size={16} />
+                    Unable to load invitations.
                   </span>
+
                   <button
                     type="button"
                     onClick={() => refetchInvitations()}
-                    className="flex items-center gap-1 font-bold hover:underline"
+                    className="font-bold"
+                    aria-label="Retry loading invitations"
                   >
-                    <RotateCcw size={12} />
-                    Retry
+                    <RotateCcw size={14} />
                   </button>
                 </div>
               )}
 
               {!invitationsLoading && !invitationsError && invitations.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-6 text-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-400 dark:bg-slate-900 dark:text-slate-500 border border-slate-200 dark:border-slate-800">
+                <div className="py-7 text-center">
+                  <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 dark:bg-slate-800">
                     <Mail size={18} />
                   </div>
-                  <p className="mt-2 text-xs font-bold text-slate-700 dark:text-slate-300">No pending invitations</p>
-                  <p className="text-[11px] text-slate-400">You're all caught up on invitations.</p>
+
+                  <p className="mt-3 text-sm font-bold">You're all caught up</p>
+
+                  <p className="mt-1 text-xs text-slate-400">No pending workspace invitations.</p>
                 </div>
               )}
 
@@ -529,8 +860,7 @@ export default function HomePage() {
                       key={invitation._id}
                       invitation={invitation}
                       accepting={
-                        acceptInvitation.isPending &&
-                        acceptInvitation.variables === invitation._id
+                        acceptInvitation.isPending && acceptInvitation.variables === invitation._id
                       }
                       onAccept={handleAccept}
                     />
@@ -539,285 +869,593 @@ export default function HomePage() {
               )}
             </div>
           </div>
-        </section>
 
-        {/* ====================================================
-            JOIN CHAMA FOOTER BANNER
-        ==================================================== */}
-        <section className="relative overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 p-6 text-white shadow-xl">
-          <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-violet-600/20 blur-[60px]" />
-          <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white border border-white/10">
-                <UserPlus size={20} />
+          {/* ==================================================
+              JOIN CHAMA
+          ================================================== */}
+
+          <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-violet-950 to-slate-950 p-6 text-white shadow-xl sm:p-7">
+            <div className="flex h-full flex-col justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10">
+                  <UserPlus size={20} />
+                </div>
+
+                <div>
+                  <h3 className="text-base font-black">Have a Chama invitation code?</h3>
+
+                  <p className="mt-1 text-xs text-slate-400">Join an existing community workspace.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Have a Chama Invitation Code?</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Join an existing Chama or community group workspace directly.</p>
-              </div>
+
+              <Link
+                to="/chamas/join"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-violet-50 sm:w-auto"
+              >
+                Join Chama
+                <ArrowRight size={15} />
+              </Link>
             </div>
-
-            <Link
-              to="/chamas/join"
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-bold text-slate-950 transition-all hover:bg-violet-50 hover:text-violet-700 shadow-md"
-            >
-              Join Chama Workspace
-              <ArrowRight size={14} />
-            </Link>
           </div>
         </section>
+      </div>
 
-        {/* ====================================================
-            FOOTER
-        ==================================================== */}
-        <footer className="flex flex-wrap items-center justify-center gap-4 pt-6 text-[11px] text-slate-400">
-          <span className="flex items-center gap-1.5 text-slate-500 font-medium">
-            <ShieldCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
-            Secure Multi-Tenant Infrastructure
-          </span>
-          <span>•</span>
-          <span>VeriCircle Financial Operating System</span>
-        </footer>
+      {/* ======================================================
+          BOTTOM NAVIGATION — mobile only; the platform header
+          already covers this ground on larger screens.
+      ====================================================== */}
 
-      </main>
+      <BottomNavigation
+        location={location}
+        navigate={navigate}
+        currentWorkspace={currentWorkspace}
+      />
     </div>
   );
 }
 
-// ============================================================
-// HELPER COMPONENTS
-// ============================================================
+/* ============================================================
+   HERO STAT
+============================================================ */
 
-function AdaptiveStatusPill({ icon: Icon, label, color }) {
-  const colors = {
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
-    blue: "border-blue-200 bg-blue-50 text-blue-800 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-300",
-    violet: "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
+function HeroStat({ value, label }) {
+  return (
+    <div className="rounded-xl border border-white/80 bg-white/70 px-4 py-3 backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-900/50">
+      <p className="text-lg font-black leading-tight">{value}</p>
+
+      <p className="mt-0.5 text-xs font-medium text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+/* ============================================================
+   SECTION HEADING
+============================================================ */
+
+function SectionHeading({ title }) {
+  return (
+    <div className="mb-4 flex items-center justify-between">
+      <h2 className="text-xl font-black tracking-tight">{title}</h2>
+    </div>
+  );
+}
+
+/* ============================================================
+   QUICK ACTION
+============================================================ */
+
+function QuickAction({ to, icon: Icon, title, description, color }) {
+  const styles = {
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
+
+    violet: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400",
+
+    emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
+
+    orange: "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400",
+
+    indigo: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400",
   };
 
   return (
-    <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold backdrop-blur-md ${colors[color]}`}>
-      <Icon size={12} />
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function HeroActionButton({ to, icon: Icon, title, sub, gradient, shadow }) {
-  return (
     <Link
       to={to}
-      className={`group relative overflow-hidden rounded-2xl bg-gradient-to-r ${gradient} p-3.5 text-white shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl ${shadow}`}
+      className="group min-w-[200px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900/70 lg:min-w-0"
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 backdrop-blur-md">
-            <Icon size={18} />
-          </div>
-          <div>
-            <div className="text-xs font-bold">{title}</div>
-            <div className="text-[10px] text-white/80 font-normal">{sub}</div>
-          </div>
+      <div className="flex items-start justify-between">
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${styles[color]}`}>
+          <Icon size={19} />
         </div>
-        <ArrowUpRight size={16} className="text-white/80 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+
+        <ArrowUpRight
+          size={16}
+          className="text-slate-300 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-violet-500"
+        />
       </div>
+
+      <h3 className="mt-4 text-sm font-black">{title}</h3>
+
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">{description}</p>
     </Link>
   );
 }
 
-function AdaptiveMetricCard({ icon: Icon, title, count, color, label }) {
-  const themes = {
-    violet: "bg-violet-50 text-violet-600 border-violet-100 dark:bg-violet-500/5 dark:text-violet-400 dark:border-violet-500/20",
-    blue: "bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/5 dark:text-blue-400 dark:border-blue-500/20",
-    fuchsia: "bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100 dark:bg-fuchsia-500/5 dark:text-fuchsia-400 dark:border-fuchsia-500/20",
-    emerald: "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/5 dark:text-emerald-400 dark:border-emerald-500/20",
+/* ============================================================
+   OVERVIEW CARD
+============================================================ */
+
+function OverviewCard({ icon: Icon, label, value, color }) {
+  const styles = {
+    violet: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400",
+
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
+
+    emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
+
+    pink: "bg-pink-50 text-pink-600 dark:bg-pink-500/10 dark:text-pink-400",
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-4 shadow-sm backdrop-blur-md transition-all hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700">
-      <div className="flex items-center justify-between text-slate-400 mb-2">
-        <div className={`flex h-8 w-8 items-center justify-center rounded-xl border ${themes[color]}`}>
-          <Icon size={15} />
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</span>
-      </div>
-      <div className="text-2xl font-black text-slate-950 dark:text-white tracking-tight">{count}</div>
-      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">{title}</div>
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+      <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles[color]}`}>
+        <Icon size={17} />
+      </span>
+
+      <p className="mt-4 text-xs font-medium text-slate-400">{label}</p>
+
+      <p className="mt-1 truncate text-xl font-black tracking-tight">{value}</p>
     </div>
   );
 }
 
-function AdaptiveFilterTab({ active, onClick, label, count }) {
+/* ============================================================
+   FILTER BUTTON
+============================================================ */
+
+function FilterButton({ active, onClick, label, count }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 ${
+      className={`flex shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold transition ${
         active
-          ? "bg-white text-slate-950 shadow-sm border border-slate-200/80 dark:bg-violet-600 dark:text-white dark:border-violet-500 dark:shadow-[0_0_12px_rgba(139,92,246,0.4)]"
-          : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-800/60"
+          ? "bg-slate-950 text-white shadow-md dark:bg-white dark:text-slate-950"
+          : "border border-slate-200 bg-white text-slate-500 hover:border-violet-200 hover:text-violet-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
       }`}
     >
-      <span>{label}</span>
-      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${active ? "bg-slate-100 text-slate-900 dark:bg-white/20 dark:text-white" : "bg-slate-200/60 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
+      {label}
+
+      <span
+        className={`rounded-full px-2 py-0.5 text-xs ${
+          active ? "bg-white/15" : "bg-slate-100 dark:bg-slate-800"
+        }`}
+      >
         {count}
       </span>
     </button>
   );
 }
 
-function AdaptiveWorkspaceCard({ workspace, meta, Icon, index, onOpen }) {
+/* ============================================================
+   WORKSPACE CARD
+============================================================ */
+
+function WorkspaceCard({ workspace, meta, Icon, index, onOpen }) {
+  const type = normalizeWorkspaceType(workspace.type);
+
+  const isBusiness = type === "business";
+
+  const isContribution = type === "contribution";
+
+  const memberCount = getMemberCount(workspace);
+
+  const treasury = getTreasury(workspace);
+
+  const monthlySales = getMonthlySales(workspace);
+
+  const growth = getGrowth(workspace);
+
+  const nextPayout = getNextPayout(workspace);
+
+  const contributionAmount = getContributionAmount(workspace);
+
+  const members = Array.isArray(workspace?.members) ? workspace.members : [];
+
+  const visibleMembers = members.slice(0, 3);
+
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.3, delay: index * 0.04 }}
-      className="group relative cursor-pointer"
-      onClick={onOpen}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.25, delay: index * 0.04 }}
+      className="group h-full"
     >
-      <div className={`relative overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-slate-900/70 p-5 shadow-sm backdrop-blur-xl transition-all duration-300 ${meta.cardGlow} hover:-translate-y-1`}>
-        
-        {/* Top Gradient Accent Line */}
-        <div className={`absolute top-0 left-0 right-0 h-1 ${meta.accent}`} />
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`relative flex h-full w-full flex-col overflow-hidden rounded-[26px] border border-slate-200/90 bg-white text-left shadow-[0_8px_35px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(15,23,42,0.09)] focus:outline-none focus:ring-4 focus:ring-violet-500/10 dark:border-slate-800 dark:bg-slate-900/80 ${meta.hover}`}
+      >
+        {/* Top accent */}
 
-        {/* Card Header */}
-        <div className="flex items-start justify-between">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${meta.iconBg} ${meta.iconGlow}`}>
-            <Icon size={20} />
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${meta.badge}`}>
-              {meta.label}
-            </span>
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-400 group-hover:border-violet-300 dark:group-hover:border-violet-500/50 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-              <ArrowUpRight size={14} />
+        <div className={`absolute left-0 right-0 top-0 h-1 bg-gradient-to-r ${meta.accent}`} />
+
+        <div className="flex flex-1 flex-col gap-6 p-5 sm:p-6">
+          {/* ==================================================
+              IDENTITY
+          ================================================== */}
+
+          <div className="flex min-w-0 items-center gap-4">
+            <div
+              className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border sm:h-20 sm:w-20 ${meta.iconBg}`}
+            >
+              <Icon size={32} strokeWidth={1.6} />
+            </div>
+
+            <div className="min-w-0">
+              <span
+                className={`mb-2 inline-flex items-center rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${meta.badge}`}
+              >
+                {meta.label}
+              </span>
+
+              <h3 className="truncate text-lg font-black tracking-tight text-slate-950 sm:text-xl dark:text-white">
+                {workspace.name || "Unnamed Workspace"}
+              </h3>
+
+              <p className="mt-1 truncate text-xs font-medium text-slate-500 sm:text-sm dark:text-slate-400">
+                {meta.description}
+              </p>
             </div>
           </div>
+
+          {/* ==================================================
+              MEMBER AVATARS
+          ================================================== */}
+
+          {!isBusiness && (
+            <div className="flex items-center">
+              {visibleMembers.length > 0 ? (
+                visibleMembers.map((member, memberIndex) => {
+                  const avatar = member?.avatar || member?.profilePicture || member?.photo;
+
+                  const name = member?.name || member?.fullName || "Member";
+
+                  return (
+                    <div
+                      key={member?.id || member?._id || memberIndex}
+                      className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-slate-100 dark:border-slate-900 ${
+                        memberIndex > 0 ? "-ml-3" : ""
+                      }`}
+                      title={name}
+                    >
+                      {avatar ? (
+                        <img src={avatar} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <UserCircle size={22} className="text-slate-400" />
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-slate-400 dark:border-slate-900 dark:bg-slate-800">
+                  <Users size={16} />
+                </div>
+              )}
+
+              {memberCount !== null && (
+                <span className="ml-3 flex h-9 min-w-[44px] items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {visibleMembers.length > 0
+                    ? `+${Math.max(memberCount - visibleMembers.length, 0)}`
+                    : `${memberCount}`}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ==================================================
+              METRICS
+          ================================================== */}
+
+          <div className="grid grid-cols-2 gap-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
+            {/* Role */}
+
+            <WorkspaceMetric icon={UserCircle} label="Role" value={formatRole(workspace.role)} />
+
+            {/* Type / Members */}
+
+            {isBusiness ? (
+              <WorkspaceMetric
+                icon={Store}
+                label="Type"
+                value={workspace.businessType || workspace.category || "Business"}
+              />
+            ) : (
+              <WorkspaceMetric
+                icon={Users}
+                label="Members"
+                value={memberCount !== null ? `${memberCount}` : "—"}
+              />
+            )}
+
+            {/* Financial metric */}
+
+            {isBusiness ? (
+              <WorkspaceMetric icon={TrendingUp} label="Monthly Sales" value={formatCurrency(monthlySales)} />
+            ) : isContribution ? (
+              <WorkspaceMetric icon={Wallet} label="Contribution" value={formatCurrency(contributionAmount)} />
+            ) : (
+              <WorkspaceMetric icon={Wallet} label="Treasury" value={formatCurrency(treasury)} />
+            )}
+
+            {/* Final metric */}
+
+            {isBusiness ? (
+              <WorkspaceMetric
+                icon={TrendingUp}
+                label="Growth"
+                value={growth !== null ? `${growth > 0 ? "+" : ""}${growth}%` : "—"}
+                positive={growth !== null && growth >= 0}
+              />
+            ) : (
+              <WorkspaceMetric icon={Clock3} label="Next Payout" value={formatPayout(nextPayout)} />
+            )}
+          </div>
+
+          {/* ==================================================
+              OPEN WORKSPACE
+          ================================================== */}
+
+          <div className="mt-auto flex h-13 items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3.5 transition-all group-hover:border-violet-200 group-hover:bg-violet-50 dark:border-slate-700 dark:bg-slate-800/70 dark:group-hover:border-violet-500/30 dark:group-hover:bg-violet-500/10">
+            <span className="text-sm font-black">Open Workspace</span>
+
+            <ArrowRight
+              size={19}
+              className="transition-transform duration-300 group-hover:translate-x-1 group-hover:text-violet-600 dark:group-hover:text-violet-400"
+            />
+          </div>
         </div>
 
-        {/* Workspace Identity */}
-        <div className="mt-4 space-y-1">
-          <h3 className="text-base font-black tracking-tight text-slate-950 dark:text-white group-hover:text-violet-600 dark:group-hover:text-cyan-300 transition-colors truncate">
-            {workspace.name}
-          </h3>
-          <p className="text-xs text-slate-400 font-normal truncate">{meta.description}</p>
-        </div>
+        {/* Bottom accent */}
 
-        {/* Footer info */}
-        <div className="mt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-3.5 text-xs text-slate-500">
-          <span className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-            <Users size={13} className="text-slate-400" />
-            {formatRole(workspace.role)}
-          </span>
-
-          <span className="flex items-center gap-1 text-[11px] font-bold text-violet-600 dark:text-violet-400 group-hover:text-violet-700 dark:group-hover:text-violet-300 transition-colors">
-            Open Console
-            <ChevronRight size={13} className="transition-transform group-hover:translate-x-1" />
-          </span>
-        </div>
-      </div>
+        <div className={`h-1 w-full bg-gradient-to-r ${meta.accent} opacity-70`} />
+      </button>
     </motion.div>
   );
 }
 
-function AdaptiveActionCard({ to, icon: Icon, title, description, color, badge }) {
-  const styles = {
-    blue: {
-      border: "hover:border-blue-300 dark:hover:border-blue-500/40",
-      icon: "border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400",
-      badge: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300",
-      arrow: "group-hover:text-blue-600 dark:group-hover:text-blue-400",
-    },
-    violet: {
-      border: "hover:border-violet-300 dark:hover:border-violet-500/40",
-      icon: "border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-400",
-      badge: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
-      arrow: "group-hover:text-violet-600 dark:group-hover:text-violet-400",
-    },
-    emerald: {
-      border: "hover:border-emerald-300 dark:hover:border-emerald-500/40",
-      icon: "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400",
-      badge: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
-      arrow: "group-hover:text-emerald-600 dark:group-hover:text-emerald-400",
-    },
-  };
+/* ============================================================
+   WORKSPACE METRIC
+============================================================ */
 
-  const current = styles[color];
+function WorkspaceMetric({ icon: Icon, label, value, positive = false }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5">
+        <Icon size={13} className="shrink-0 text-slate-400" />
 
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</span>
+      </div>
+
+      <p
+        className={`mt-1 truncate text-sm font-black sm:text-base ${
+          positive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-800 dark:text-slate-200"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/* ============================================================
+   BOTTOM NAVIGATION
+
+   Real routes only:
+   - Home      -> /home
+   - Workspaces -> /workspaces
+   - Create (+) -> opens an in-place sheet with the three real
+     creation routes, since there's no single /create page
+   - Activity  -> the open workspace's own /activity page when one
+     is selected, otherwise /workspaces so the user can pick one
+   - Profile   -> /account/settings (the real profile route)
+============================================================ */
+
+function BottomNavigation({ location, navigate, currentWorkspace }) {
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const pathname = location?.pathname || "";
+
+  function goToActivity() {
+    const workspaceId = currentWorkspace?.id ?? currentWorkspace?._id;
+
+    if (workspaceId) {
+      navigate(`/workspace/${workspaceId}/activity`);
+    } else {
+      navigate("/workspaces");
+    }
+  }
+
+  return (
+    <nav className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-24px)] max-w-xl -translate-x-1/2 lg:hidden">
+      <AnimatePresence>
+        {createOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.97 }}
+            className="mb-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl shadow-slate-900/10 backdrop-blur-2xl dark:border-slate-700/80 dark:bg-slate-900/95"
+          >
+            <CreateSheetItem
+              to="/business/new"
+              icon={Store}
+              label="New Business"
+              onNavigate={() => setCreateOpen(false)}
+            />
+            <CreateSheetItem
+              to="/chamas/new"
+              icon={Building2}
+              label="New Chama"
+              onNavigate={() => setCreateOpen(false)}
+            />
+            <CreateSheetItem
+              to="/contribution-groups/new"
+              icon={Wallet}
+              label="New Contribution Group"
+              onNavigate={() => setCreateOpen(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-2xl shadow-slate-900/10 backdrop-blur-2xl dark:border-slate-700/80 dark:bg-slate-900/90">
+        <div className="flex items-center justify-around">
+          <BottomNavItem to="/home" icon={Home} label="Home" active={pathname === "/home"} />
+
+          <BottomNavItem
+            to="/workspaces"
+            icon={BriefcaseBusiness}
+            label="Workspaces"
+            active={pathname.startsWith("/workspaces")}
+          />
+
+          <button
+            type="button"
+            onClick={() => setCreateOpen((prev) => !prev)}
+            className="relative -mt-7 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-blue-600 text-white shadow-xl shadow-violet-600/30 ring-4 ring-white transition-transform dark:ring-slate-900"
+            aria-label={createOpen ? "Close create menu" : "Create a workspace"}
+            aria-expanded={createOpen}
+          >
+            <motion.span animate={{ rotate: createOpen ? 135 : 0 }} className="flex">
+              <Plus size={24} />
+            </motion.span>
+          </button>
+
+          <BottomNavItem
+            icon={Clock3}
+            label="Activity"
+            active={pathname.endsWith("/activity")}
+            onClick={goToActivity}
+          />
+
+          <BottomNavItem
+            to="/account/settings"
+            icon={UserCircle}
+            label="Profile"
+            active={pathname.startsWith("/account")}
+          />
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+/* ============================================================
+   CREATE SHEET ITEM
+============================================================ */
+
+function CreateSheetItem({ to, icon: Icon, label, onNavigate }) {
   return (
     <Link
       to={to}
-      className={`group relative flex flex-col justify-between rounded-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-5 shadow-sm backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${current.border}`}
+      onClick={onNavigate}
+      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
     >
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${current.icon}`}>
-            <Icon size={18} />
-          </div>
-          <span className={`rounded-full border px-2 py-0.5 text-[9px] font-extrabold tracking-wider ${current.badge}`}>
-            {badge}
-          </span>
-        </div>
-
-        <h3 className="text-sm font-black text-slate-950 dark:text-white group-hover:text-violet-600 dark:group-hover:text-cyan-300 transition-colors">{title}</h3>
-        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-normal">{description}</p>
-      </div>
-
-      <div className="mt-4 flex items-center justify-end">
-        <ArrowUpRight size={16} className={`text-slate-300 dark:text-slate-500 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 ${current.arrow}`} />
-      </div>
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <Icon size={16} />
+      </span>
+      {label}
     </Link>
   );
 }
 
+/* ============================================================
+   BOTTOM NAV ITEM
+
+   Renders a Link when `to` is given, otherwise a button that
+   calls `onClick` — used by items (like Activity) whose
+   destination depends on app state rather than a fixed route.
+============================================================ */
+
+function BottomNavItem({ to, icon: Icon, label, active, onClick }) {
+  const className = `flex min-w-[58px] flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition ${
+    active
+      ? "text-violet-600 dark:text-violet-400"
+      : "text-slate-400 hover:text-slate-700 dark:hover:text-white"
+  }`;
+
+  const content = (
+    <>
+      <Icon size={19} strokeWidth={active ? 2.5 : 2} />
+      <span className="text-xs font-bold">{label}</span>
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  );
+}
+
+/* ============================================================
+   LOADING
+============================================================ */
+
 function LoadingState() {
   return (
-    <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm backdrop-blur-xl">
+    <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/70">
       <Spinner />
     </div>
   );
 }
 
+/* ============================================================
+   EMPTY
+============================================================ */
+
 function EmptyState({ searchQuery, activeTab }) {
+  const filtered = searchQuery || activeTab !== "all";
+
   return (
-    <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-8 text-center shadow-sm backdrop-blur-md">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-400">
-        <Layers3 size={22} />
+    <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-500 dark:bg-violet-500/10">
+        <Layers3 size={24} />
       </div>
 
-      <h3 className="mt-3.5 text-base font-black text-slate-950 dark:text-white">
-        {searchQuery || activeTab !== "all" ? "No matching workspaces found" : "Your workspace starts here"}
+      <h3 className="mt-4 text-base font-black">
+        {filtered ? "No matching workspaces" : "Your workspace starts here"}
       </h3>
 
-      <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400">
-        {searchQuery || activeTab !== "all"
-          ? "Try adjusting your search query or category filter."
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
+        {filtered
+          ? "Try changing your search or workspace filter."
           : "Create your first Business, Chama, or Contribution Group workspace."}
       </p>
 
-      {!searchQuery && activeTab === "all" && (
-        <div className="mt-5 flex flex-wrap justify-center gap-2.5">
-          <Link
-            to="/business/new"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 transition-all shadow-md shadow-blue-600/20"
-          >
-            <Store size={14} />
+      {!filtered && (
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Link to="/business/new" className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-black text-white">
             Business
           </Link>
-          <Link
-            to="/chamas/new"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700 transition-all shadow-md shadow-violet-600/20"
-          >
-            <Building2 size={14} />
+
+          <Link to="/chamas/new" className="rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-black text-white">
             Chama
           </Link>
+
           <Link
             to="/contribution-groups/new"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition-all shadow-md shadow-emerald-600/20"
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white"
           >
-            <Wallet size={14} />
             Contribution Group
           </Link>
         </div>

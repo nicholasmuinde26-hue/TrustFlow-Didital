@@ -642,6 +642,118 @@ export async function deleteInventoryItem(businessId, itemId, user) {
 
 /**
  * ============================================================
+ * POINT OF SALE (POS) — in-person checkout that writes to the
+ * SAME BusinessItem stock + BusinessTransaction ledger as the
+ * online storefront ("one inventory, two faces").
+ * ============================================================
+ */
+export async function createPosSale(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+
+  if (!Array.isArray(data.items) || data.items.length === 0) {
+    const error = new Error("Sale must contain at least one item");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const paymentChannel = ["cash", "bank", "till", "paybill", "mpesa"].includes(data.payment_channel)
+    ? data.payment_channel
+    : "cash";
+
+  // Validate stock availability for every line BEFORE mutating anything
+  const lineItems = [];
+  let subtotal = 0;
+  for (const requested of data.items) {
+    const item = await BusinessItem.findOne({
+      _id: requested.item_id || requested.id,
+      business_id: business._id,
+    });
+
+    if (!item) {
+      const error = new Error("One or more items were not found in inventory");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const qty = Math.max(1, Number(requested.qty || requested.quantity || 1));
+    if (item.quantity < qty) {
+      const error = new Error(`"${item.name}" only has ${item.quantity} unit(s) left in stock`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const unitPrice = item.price;
+    const lineTotal = unitPrice * qty;
+    subtotal += lineTotal;
+    lineItems.push({ item, qty, unitPrice, lineTotal });
+  }
+
+  const discount = Math.max(0, Number(data.discount || 0));
+  const totalAmount = Math.max(0, subtotal - discount);
+  assertAmount(totalAmount);
+
+  const receiptTag = `POS-${Math.floor(1000 + Math.random() * 9000)}`;
+  const itemSummary = lineItems.map((l) => `${l.qty}x ${l.item.name}`).join(", ");
+
+  // Deduct live stock now — same moment the sale is recorded, so the
+  // POS grid and Inventory & Stock page never disagree on what's left.
+  for (const l of lineItems) {
+    l.item.quantity = Math.max(0, l.item.quantity - l.qty);
+    await l.item.save();
+  }
+
+  const transaction = await BusinessTransaction.create({
+    business_id: business._id,
+    type: "sale",
+    direction: "cash_in",
+    amount: totalAmount,
+    currency: business.currency,
+    payment_channel: paymentChannel,
+    status: "completed",
+    description: data.description || `POS Sale — ${itemSummary}`,
+    customer_name: data.customer_name || null,
+    customer_phone: data.customer_phone || null,
+    external_reference: receiptTag,
+    created_by: getUserId(user),
+  });
+
+  await onTransactionCompleted(transaction, business);
+
+  // Optional courtesy STK push when the buyer wants to pay by M-Pesa —
+  // the sale is already recorded, this just requests the actual payment.
+  let stk = null;
+  if (paymentChannel === "mpesa" && data.customer_phone) {
+    try {
+      stk = await mpesaService.initiateStkPush({
+        amount: totalAmount,
+        phoneNumber: data.customer_phone,
+        accountReference: receiptTag,
+        transactionDescription: `POS Sale at ${business.name}`,
+      });
+    } catch (e) {
+      console.warn("[POS M-Pesa STK Error]", e.message);
+    }
+  }
+
+  return {
+    transaction,
+    receipt_number: receiptTag,
+    items: lineItems.map((l) => ({
+      item_id: l.item._id,
+      name: l.item.name,
+      qty: l.qty,
+      price: l.unitPrice,
+      total: l.lineTotal,
+    })),
+    subtotal,
+    discount,
+    total: totalAmount,
+    stk,
+  };
+}
+
+/**
+ * ============================================================
  * STOREFRONT CONFIGURATION & PUBLIC E-COMMERCE ENDPOINTS
  * ============================================================
  */

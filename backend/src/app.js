@@ -20,6 +20,7 @@ import memberRoutes from "./modules/member/member.routes.js";
 
 // Contribution Groups
 import contributionGroupRoutes from "./modules/contributionGroups/contributionGroup.routes.js";
+import contributionFundRoutes from "./modules/contributionGroups/contributionFund.routes.js";
 import contributionGroupPlanRoutes from "./modules/contributionPlan/contributionGroupPlan.routes.js";
 import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
 import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
@@ -43,6 +44,7 @@ import announcementRoutes from "./modules/announcements/announcement.routes.js";
 // Audit
 import auditRoutes from "./modules/audit/audit.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
+import storefrontPublicRoutes from "./modules/business/storefront.public.routes.js";
 import loanRoutes from "./modules/loans/loan.routes.js";
 
 // Notifications
@@ -158,6 +160,11 @@ app.use(
     contributionGroupRoutes
 );
 
+app.use(
+    "/api/v1/contribution-groups/:groupId",
+    contributionFundRoutes
+);
+
 // ============================================================================
 // CONTRIBUTION GROUP PLANS
 // ============================================================================
@@ -193,6 +200,24 @@ app.use(
 app.use(
     "/api/v1/businesses",
     businessRoutes
+);
+
+// ============================================================================
+// PUBLIC STOREFRONT (buyer-facing, no authentication)
+// ============================================================================
+//
+// A seller's storefront lives at /store/:slug on the frontend and calls
+// these endpoints directly. Buyers never see the business-management app.
+//
+// GET  /api/v1/storefront/:slug            live catalog + branding
+// POST /api/v1/storefront/:slug/orders     place an order (no account)
+// GET  /api/v1/storefront/track/:orderCode track an order by code
+//
+// ============================================================================
+
+app.use(
+    "/api/v1/storefront",
+    storefrontPublicRoutes
 );
 
 // ============================================================================

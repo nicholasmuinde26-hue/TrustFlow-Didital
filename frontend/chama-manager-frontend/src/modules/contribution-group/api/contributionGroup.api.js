@@ -46,6 +46,39 @@ const contributionGroupApi = {
   createExpense(groupId, payload) {
     return api.post(`/workspaces/${groupId}/finance/expenses`, payload);
   },
+
+  // Time-bound fund / pledge workflow
+  getFundDashboard(groupId) {
+    return api.get(`/contribution-groups/${groupId}/dashboard`);
+  },
+
+  updateFundDetails(groupId, payload) {
+    return api.patch(`/contribution-groups/${groupId}/details`, payload);
+  },
+
+  extendFund(groupId, contribution_end_date) {
+    return api.post(`/contribution-groups/${groupId}/extend`, { contribution_end_date });
+  },
+
+  listPledges(groupId) {
+    return api.get(`/contribution-groups/${groupId}/pledges`);
+  },
+
+  pledge(groupId, payload) {
+    return api.post(`/contribution-groups/${groupId}/pledges`, payload);
+  },
+
+  initiatePledgeStk(groupId, pledgeId, payload) {
+    return api.post(`/contribution-groups/${groupId}/pledges/${pledgeId}/payments/stk`, payload);
+  },
+
+  recordCashPledgePayment(groupId, pledgeId, payload) {
+    return api.post(`/contribution-groups/${groupId}/pledges/${pledgeId}/payments/cash`, payload);
+  },
+
+  sendPledgeReminders(groupId) {
+    return api.post(`/contribution-groups/${groupId}/reminders`);
+  },
 };
 
-export default contributionGroupApi;
+export default contributionGroupApi;

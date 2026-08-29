@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, UserCheck, Search, ShieldCheck, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Building2, UserCheck, Search, ShieldCheck, AlertCircle, CheckCircle2, Eye, Lock, X } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 import chamaService from "@/modules/chama/services/chama.service";
@@ -14,6 +14,7 @@ export default function CreateChamaPage() {
   const [form, setForm] = useState({
     name: "",
     monthlySavings: "1000",
+    visibility: "private",
     treasurerInput: "",
   });
 
@@ -70,6 +71,7 @@ export default function CreateChamaPage() {
       const workspace = await createChama({
         name: form.name,
         monthlySavings: Number(form.monthlySavings),
+        visibility: form.visibility,
         treasurerUserId: treasurerUser._id,
         treasurerInput: form.treasurerInput.trim(),
       });
@@ -89,19 +91,30 @@ export default function CreateChamaPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6 pb-12 font-sans">
-      <div className="flex items-center gap-3">
-        <span className="rounded-2xl bg-indigo-50 p-3.5 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
-          <Building2 size={24} />
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="rounded-2xl bg-indigo-50 p-3.5 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
+            <Building2 size={24} />
+          </span>
 
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-            Create a Chama
-          </h1>
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-            You will be the Chairperson. Instantly assign a registered Treasurer to complete creation.
-          </p>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+              Create a Chama
+            </h1>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+              You will be the Chairperson. Instantly assign a registered Treasurer to complete creation.
+            </p>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => navigate("/home")}
+          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition shrink-0"
+          title="Close and cancel"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       <form
@@ -127,6 +140,67 @@ export default function CreateChamaPage() {
           onChange={handleChange}
           required
         />
+
+        {/* Chama Directory Visibility Choice */}
+        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            Chama Directory Visibility
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label
+              className={`flex flex-col p-3 rounded-2xl border cursor-pointer transition-all ${
+                form.visibility === "private"
+                  ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 dark:border-indigo-500"
+                  : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <Lock size={14} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>Private Chama</span>
+                </div>
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="private"
+                  checked={form.visibility === "private"}
+                  onChange={handleChange}
+                  className="accent-indigo-600"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                Members join via invitation code or share link only.
+              </p>
+            </label>
+
+            <label
+              className={`flex flex-col p-3 rounded-2xl border cursor-pointer transition-all ${
+                form.visibility === "public"
+                  ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 dark:border-indigo-500"
+                  : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <Eye size={14} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Public Chama</span>
+                </div>
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="public"
+                  checked={form.visibility === "public"}
+                  onChange={handleChange}
+                  className="accent-indigo-600"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                Discoverable in the Public Chama Directory for users to request join.
+              </p>
+            </label>
+          </div>
+        </div>
 
         {/* Treasurer Verification Section */}
         <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">

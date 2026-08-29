@@ -1938,6 +1938,58 @@ export const acceptContributionGroupInvitation = async ({
 };
 
 // ========================================
+// DECLINE CONTRIBUTION GROUP INVITATION
+// ========================================
+//
+// Only the invited user can decline their
+// own invitation. No membership is created.
+//
+// ========================================
+
+export const declineContributionGroupInvitation = async ({
+
+  invitationId,
+
+  actorUserId
+
+}) => {
+
+  if (
+    !invitationId ||
+    !mongoose.Types.ObjectId.isValid(invitationId)
+  ) {
+    throw new AppError('Invalid invitation ID', 400);
+  }
+
+  if (
+    !actorUserId ||
+    !mongoose.Types.ObjectId.isValid(actorUserId)
+  ) {
+    throw new AppError('Invalid user ID', 400);
+  }
+
+  const invitation = await ContributionGroupInvitation.findOne({
+    _id: invitationId,
+    invited_user_id: actorUserId
+  });
+
+  if (!invitation) {
+    throw new AppError('Invitation not found', 404);
+  }
+
+  if (invitation.status !== 'pending') {
+    throw new AppError(`This invitation has already been ${invitation.status}`, 409);
+  }
+
+  invitation.status = 'declined';
+  invitation.responded_at = new Date();
+  await invitation.save();
+
+  return { invitation };
+
+};
+
+// ========================================
 // GET SINGLE CONTRIBUTION GROUP
 // ========================================
 //

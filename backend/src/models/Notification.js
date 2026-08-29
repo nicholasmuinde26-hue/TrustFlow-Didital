@@ -20,7 +20,7 @@ const notificationSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['transaction', 'approval', 'announcement', 'system', 'invitation'],
+      enum: ['transaction', 'approval', 'announcement', 'system', 'invitation', 'message'],
       default: 'system',
       index: true,
     },

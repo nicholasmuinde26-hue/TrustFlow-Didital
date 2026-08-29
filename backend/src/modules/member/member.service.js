@@ -9,7 +9,8 @@ import AppError from '../../utils/AppError.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
 
 import {
-  createAuditLog
+  createAuditLog,
+  AUDIT_SCOPE_TYPES
 } from '../../services/audit.service.js';
 
 import {
@@ -437,6 +438,7 @@ export const addMemberToChama = async ({
 
     await createAuditLog({
       actorUserId,
+      scopeType: AUDIT_SCOPE_TYPES.CHAMA,
       chamaId,
       action: AUDIT_ACTIONS.MEMBER_REACTIVATED,
       resourceType: 'ChamaMembership',
@@ -474,6 +476,7 @@ export const addMemberToChama = async ({
 
   await createAuditLog({
     actorUserId,
+    scopeType: AUDIT_SCOPE_TYPES.CHAMA,
     chamaId,
     action: AUDIT_ACTIONS.MEMBER_ADDED,
     resourceType: 'ChamaMembership',
@@ -780,6 +783,9 @@ export const updateMemberRole = async ({
 
     actorUserId,
 
+    scopeType:
+      AUDIT_SCOPE_TYPES.CHAMA,
+
     chamaId,
 
     action:
@@ -978,6 +984,12 @@ export const updateMemberStatus = async ({
 
   };
 
+  // Was this a join-request approval/rejection? (status was 'pending'
+  // before this call.) Used below to pick a more specific audit
+  // action and, on approval, to stamp accepted_at.
+  const wasPendingJoinRequest =
+    before.status === 'pending';
+
 
   // --------------------------------------
   // 9. Update Status
@@ -985,6 +997,21 @@ export const updateMemberStatus = async ({
 
   membership.status =
     status;
+
+  // Approving a join request (pending -> active) is the moment the
+  // Treasurer/Chairperson accepted the member -- record it, the same
+  // way addMemberToChama's direct-add path never needed to (it is
+  // active from creation there).
+  if (
+    wasPendingJoinRequest &&
+    status === 'active' &&
+    !membership.accepted_at
+  ) {
+
+    membership.accepted_at =
+      new Date();
+
+  }
 
 
   // --------------------------------------
@@ -1018,14 +1045,24 @@ export const updateMemberStatus = async ({
   // 12. Create Audit Log
   // --------------------------------------
 
+  const auditAction =
+    wasPendingJoinRequest
+      ? (status === 'active'
+          ? AUDIT_ACTIONS.MEMBER_JOIN_APPROVED
+          : AUDIT_ACTIONS.MEMBER_JOIN_REJECTED)
+      : AUDIT_ACTIONS.MEMBER_STATUS_UPDATED;
+
   await createAuditLog({
 
     actorUserId,
 
+    scopeType:
+      AUDIT_SCOPE_TYPES.CHAMA,
+
     chamaId,
 
     action:
-      AUDIT_ACTIONS.MEMBER_STATUS_UPDATED,
+      auditAction,
 
     resourceType:
       'ChamaMembership',
@@ -1055,6 +1092,59 @@ export const updateMemberStatus = async ({
 
 
   return membership;
+
+};
+
+
+// ========================================
+// GET PENDING JOIN REQUESTS
+// ========================================
+//
+// A join-link "request to join" creates a ChamaMembership with
+// status "pending" (see chamaOperations.service.js acceptInvite).
+// This lists those requests so the Treasurer/Chairperson can review
+// them. Approving/rejecting reuses updateMemberStatus above -- set
+// status to "active" to approve, or "removed" to decline.
+//
+// ========================================
+
+export const getChamaJoinRequests = async ({
+  chamaId,
+  actorUserId
+}) => {
+
+  validateObjectId(
+    chamaId,
+    'Chama ID'
+  );
+
+  validateObjectId(
+    actorUserId,
+    'actor user ID'
+  );
+
+  await requireChamaRole({
+    chamaId,
+    actorUserId,
+    requiredRole: ['treasurer', 'chairperson']
+  });
+
+  const requests =
+    await ChamaMembership.find({
+      chama_id: chamaId,
+      status: 'pending'
+    })
+      .populate(
+        'user_id',
+        'name phone email avatar_url status createdAt'
+      )
+      .populate(
+        'invited_by',
+        'name'
+      )
+      .sort({ createdAt: -1 });
+
+  return requests;
 
 };
 
@@ -1234,6 +1324,9 @@ export const removeMemberFromChama = async ({
   await createAuditLog({
 
     actorUserId,
+
+    scopeType:
+      AUDIT_SCOPE_TYPES.CHAMA,
 
     chamaId,
 
@@ -1536,6 +1629,9 @@ export const transferTreasurerRole = async ({
 
     actorUserId,
 
+    scopeType:
+      AUDIT_SCOPE_TYPES.CHAMA,
+
     chamaId,
 
     action:
@@ -1798,6 +1894,9 @@ export const updateMemberProfile = async ({
   await createAuditLog({
 
     actorUserId,
+
+    scopeType:
+      AUDIT_SCOPE_TYPES.CHAMA,
 
     chamaId,
 
@@ -2126,6 +2225,9 @@ export const reorderPayoutPositions = async ({
   await createAuditLog({
 
     actorUserId,
+
+    scopeType:
+      AUDIT_SCOPE_TYPES.CHAMA,
 
     chamaId,
 

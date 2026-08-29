@@ -18,6 +18,11 @@ import {
   Crown,
   Pencil,
   ShieldAlert,
+  Link2,
+  Copy,
+  Check,
+  Clock,
+  X,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -40,6 +45,11 @@ import {
   useTransferTreasurer,
 } from "../hooks/useMembers";
 import { useSendInvitation } from "@/modules/invitations/hooks/useInvitations";
+import {
+  useCreateChamaInvite,
+  useChamaJoinRequests,
+  useInvalidateChamaJoinRequests,
+} from "@/modules/chama/hooks/useChamaInvite";
 
 import EditProfileModal from "../components/EditProfileModal";
 import Spinner from "@/shared/components/ui/Spinner";
@@ -84,6 +94,13 @@ export default function MembersPage() {
   const updateStatus = useUpdateMemberStatus(type, workspaceId);
   const transferTreasurer = useTransferTreasurer(type, workspaceId);
 
+  // Join-link + pending join requests are a Chama-only concept (see
+  // CHANGES: Contribution Groups use invitations.service.js instead).
+  const isChamaWorkspace = type === "chama";
+  const createInvite = useCreateChamaInvite(workspaceId);
+  const { data: joinRequests = [] } = useChamaJoinRequests(workspaceId, manage && isChamaWorkspace);
+  const invalidateJoinRequests = useInvalidateChamaJoinRequests(workspaceId);
+
   const [editingMember, setEditingMember] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -96,10 +113,15 @@ export default function MembersPage() {
   const [newMemberPhone, setNewMemberPhone] = useState("");
   const [addingPhone, setAddingPhone] = useState(false);
 
+  // Invite Link State
+  const [inviteLink, setInviteLink] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [decidingRequestId, setDecidingRequestId] = useState(null);
+
   const userId = user?.id ?? user?._id;
 
   const activeCount = members.filter((m) => m.status !== "inactive" && m.status !== "suspended").length;
-  const pendingInvitesCount = 0; // Dynamic pending invites count
+  const pendingInvitesCount = joinRequests.length;
 
   const handleAddMemberByPhone = async (e) => {
     e.preventDefault();
@@ -128,6 +150,49 @@ export default function MembersPage() {
       setEditingMember(null);
     } catch (err) {
       setActionError(err.response?.data?.message || "Failed to update member profile.");
+    }
+  };
+
+  const handleGenerateInviteLink = async () => {
+    try {
+      setActionError(null);
+      const result = await createInvite.mutateAsync({});
+      const path = result?.join_path || `/chamas/join?token=${result?.token}`;
+      setInviteLink(`${window.location.origin}${path}`);
+      setLinkCopied(false);
+    } catch (err) {
+      setActionError(err.response?.data?.message || "Failed to generate invite link.");
+    }
+  };
+
+  const handleCopyInviteLink = async () => {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable (e.g. insecure context) —
+      // the link is still shown and selectable, so this is non-fatal.
+    }
+  };
+
+  const handleJoinRequestDecision = async (request, decision) => {
+    setActionError(null);
+    setDecidingRequestId(request._id);
+    try {
+      await updateStatus.mutateAsync({
+        memberId: request._id,
+        status: decision === "approve" ? "active" : "removed",
+      });
+      invalidateJoinRequests();
+    } catch (err) {
+      setActionError(
+        err.response?.data?.message ||
+          `Could not ${decision === "approve" ? "approve" : "decline"} this request.`
+      );
+    } finally {
+      setDecidingRequestId(null);
     }
   };
 
@@ -295,6 +360,120 @@ export default function MembersPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Invite Link Card — Chama only. Anyone with the link can request
+          to join; a request only becomes membership once approved below. */}
+      {manage && isChamaWorkspace && (
+        <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+              <Link2 size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                Invite via Link
+              </h2>
+              <p className="text-xs text-slate-400">
+                Share a join link. Anyone who opens it — new or existing user — can
+                request to join; you approve or decline each request below.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={handleGenerateInviteLink}
+              disabled={createInvite.isPending}
+              className="shrink-0 rounded-2xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition disabled:opacity-50"
+            >
+              {createInvite.isPending ? "Generating..." : "Generate Invite Link"}
+            </button>
+
+            {inviteLink && (
+              <div className="flex flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-950">
+                <span className="flex-1 truncate text-xs font-mono text-slate-600 dark:text-slate-300">
+                  {inviteLink}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyInviteLink}
+                  className="flex shrink-0 items-center gap-1 rounded-xl bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 shadow-sm hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200"
+                >
+                  {linkCopied ? <Check size={12} /> : <Copy size={12} />}
+                  {linkCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Pending Join Requests Card — Chama only */}
+      {manage && isChamaWorkspace && joinRequests.length > 0 && (
+        <div className="rounded-3xl border border-amber-200/80 bg-amber-50/40 p-6 dark:border-amber-900/60 dark:bg-amber-950/10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+              <Clock size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                Pending Join Requests ({joinRequests.length})
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                People who used the invite link and are waiting on your approval.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {joinRequests.map((request) => {
+              const requestUser = request.user_id || {};
+              const deciding = decidingRequestId === request._id;
+
+              return (
+                <div
+                  key={request._id}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 font-extrabold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 text-sm">
+                      {initials(requestUser.name)}
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-slate-900 dark:text-white">
+                        {requestUser.name || "Member"}
+                      </p>
+                      <p className="text-[11px] text-slate-400 font-mono">
+                        {requestUser.phone || requestUser.email || "No contact"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={deciding}
+                      onClick={() => handleJoinRequestDecision(request, "approve")}
+                      className="flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+                    >
+                      <Check size={14} /> Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deciding}
+                      onClick={() => handleJoinRequestDecision(request, "reject")}
+                      className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                      <X size={14} /> Decline
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

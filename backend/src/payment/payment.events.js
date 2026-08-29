@@ -27,13 +27,17 @@ class PaymentEventFactory {
                 currency: payment.currency || context.currency || "KES",
                 status: payment.status || context.status || null,
                 productType: payment.productType || meta.productType || context.type || null,
-                paymentMethod: payment.paymentMethod || payment.method || meta.paymentMethod || context.paymentMethod || null
+                paymentMethod: payment.paymentMethod || payment.payment_method || payment.method || meta.paymentMethod || context.paymentMethod || null
             },
 
             context: {
                 chamaId: payment.chamaId || meta.chamaId || context.ownerId || null,
                 workspaceId: payment.workspaceId || meta.workspaceId || null,
-                contributionGroupId: meta.contributionGroupId || null
+                contributionGroupId: meta.contributionGroupId || null,
+                owner_id: meta.owner_id || context.ownerId || null,
+                owner_type: meta.owner_type || context.ownerType || null,
+                participantId: context.participant?.memberId || context.participant?.id || null,
+                metadata: meta
             },
 
             provider: {

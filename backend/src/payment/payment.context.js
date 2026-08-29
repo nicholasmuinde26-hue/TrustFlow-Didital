@@ -66,6 +66,7 @@ export default class PaymentContext {
         this.reference = reference || `PAY-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
         this.displayReference = displayReference || this.reference;
         this.correlationId = correlationId;
+        this.idempotencyKey = metadata?.idempotencyKey || metadata?.idempotency_key || null;
 
         // OWNER / OBLIGATION - Flat fields so Mapper can access easily
         this.chamaId = resolvedOwnerId;

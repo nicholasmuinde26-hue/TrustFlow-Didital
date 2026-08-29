@@ -66,6 +66,55 @@ const chamaSchema = new mongoose.Schema(
         'closed'
       ],
       default: 'active'
+    },
+
+
+    // ========================================
+    // VISIBILITY
+    // ========================================
+    //
+    // 'public'  -> discoverable in the "Browse Public Chamas" list
+    //              shown to any authenticated user looking to join.
+    // 'private' -> only reachable via the join code or an invite link.
+    //
+    // Either way, joining still requires Treasurer/Chairperson
+    // approval (see ChamaMembership status 'pending') — visibility
+    // only controls whether the Chama can be *found*, not whether a
+    // request is auto-approved.
+    //
+    // ========================================
+
+    visibility: {
+      type: String,
+      enum: [
+        'public',
+        'private'
+      ],
+      default: 'private'
+    },
+
+
+    // ========================================
+    // JOIN CODE
+    // ========================================
+    //
+    // A short, persistent, human-shareable code generated when the
+    // Chama is created. Visible only to the Chairperson and Treasurer
+    // (see chamaOperations.service.js getJoinCode), who can share it
+    // with prospective members so they can join directly via
+    // "Enter Invitation Code" instead of a link.
+    //
+    // Unlike ChamaInvitation.token, this code does NOT expire and is
+    // NOT single-use — it lives for as long as the Chama does, and
+    // can be regenerated (invalidating the old code) if it leaks.
+    //
+    // ========================================
+
+    join_code: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true
     }
 
   },

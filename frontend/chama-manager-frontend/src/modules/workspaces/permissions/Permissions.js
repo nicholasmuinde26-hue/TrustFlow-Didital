@@ -100,3 +100,45 @@ export function canManageMeetings(role, type) {
 export function canInviteMembers(role, type) {
   return type === "contribution-group" && isManager(role, type);
 }
+
+// ==========================================================
+// SENSITIVE / MANAGEMENT-ONLY AREAS
+//
+// These gate whole pages (Command Center, Administration /
+// Settings, the Loans Approval queue) rather than individual
+// fields — a plain member shouldn't just be blocked from
+// *editing* here, the section shouldn't be reachable or
+// visible at all (no nav item, no route, redirected if the
+// URL is visited directly).
+// ==========================================================
+
+// Chama-only: the Command Center is the officials' operational
+// dashboard (assign officials, verify member KYC, review goals).
+// Not a Contribution Group concept.
+export function canViewCommandCenter(role, type) {
+  return type === "chama" && isManager(role, "chama");
+}
+
+// Chama & Contribution Group: workspace-wide configuration and
+// (for the Treasurer/organizer) deletion. Restricted to managers.
+export function canViewAdministration(role, type) {
+  return isManager(role, type);
+}
+
+// Chama-only: the dual loan-approval queue (approve/reject/
+// disburse) is restricted to Chama officials — mirrors
+// OFFICIAL_ROLES in backend/src/modules/loans/Loan.controller.js.
+// Broader than isManager() above: Secretary and Auditor can also
+// review/approve loans even though they can't edit Chama settings.
+const LOAN_OFFICIAL_ROLES = ["treasurer", "chairperson", "secretary", "auditor"];
+
+export function isLoanOfficial(role, type) {
+  return type === "chama" && LOAN_OFFICIAL_ROLES.includes(role);
+}
+
+// Chama-only: initiating an M-Pesa disbursement once a loan is
+// fully approved is Treasurer-only — mirrors requireTreasurer()
+// in backend/src/middleware/chama.middleware.js.
+export function canDisburseLoan(role, type) {
+  return type === "chama" && role === "treasurer";
+}

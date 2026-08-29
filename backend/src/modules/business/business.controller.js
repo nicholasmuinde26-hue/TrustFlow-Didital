@@ -86,3 +86,72 @@ export const getBusinessAccounts = async (request, response, next) => {
   catch (error) { sendError(error, response, next); }
 };
 
+/**
+ * ============================================================
+ * INVENTORY & STOCK
+ * ============================================================
+ */
+export const listInventory = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listInventoryItems(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const addInventoryItem = async (request, response, next) => {
+  try { response.status(201).json({ success: true, data: await businessService.createInventoryItem(request.params.businessId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const editInventoryItem = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.updateInventoryItem(request.params.businessId, request.params.itemId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const removeInventoryItem = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.deleteInventoryItem(request.params.businessId, request.params.itemId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+/**
+ * ============================================================
+ * POINT OF SALE
+ * ============================================================
+ */
+export const posSale = async (request, response, next) => {
+  try {
+    const result = await businessService.createPosSale(request.params.businessId, request.user, request.body);
+    response.status(201).json({ success: true, message: "Sale completed", data: result });
+  } catch (error) { sendError(error, response, next); }
+};
+
+/**
+ * ============================================================
+ * STOREFRONT (ADMIN SIDE — owner configures & fulfills)
+ * ============================================================
+ */
+export const getStorefront = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.getOrCreateStorefront(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const putStorefront = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.updateStorefront(request.params.businessId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const getStorefrontOrders = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listStorefrontOrders(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const patchStorefrontOrderStatus = async (request, response, next) => {
+  try {
+    const result = await businessService.updateOrderFulfillmentStatus(
+      request.params.businessId,
+      request.params.orderId,
+      request.user,
+      request.body.status
+    );
+    response.json({ success: true, data: result });
+  } catch (error) { sendError(error, response, next); }
+};
+

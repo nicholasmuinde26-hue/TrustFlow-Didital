@@ -5,6 +5,7 @@ import User from '../../models/User.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 
 import AppError from '../../utils/AppError.js';
+import { generateUniqueJoinCode } from '../../utils/joinCode.js';
 
 
 // ========================================
@@ -34,6 +35,7 @@ import AppError from '../../utils/AppError.js';
 export const createChama = async ({
   name,
   monthlySavings,
+  visibility,
   userId,
   treasurerPhone,
   treasurerEmail,
@@ -181,6 +183,9 @@ export const createChama = async ({
   // 6. Create Chama
   // ----------------------------------------
 
+  const joinCode = await generateUniqueJoinCode();
+  const chamaVisibility = ['public', 'private'].includes(visibility) ? visibility : 'private';
+
   const chama =
     await Chama.create({
       name: chamaName,
@@ -192,7 +197,11 @@ export const createChama = async ({
         user._id,
 
       status:
-        'active'
+        'active',
+        
+      visibility: chamaVisibility,
+
+      join_code: joinCode
     });
 
 
@@ -756,6 +765,27 @@ export const updateChama = async (
 
   }
 
+  // ----------------------------------------
+  // UPDATE VISIBILITY
+  // ----------------------------------------
+
+  if (
+    updates.visibility !== undefined
+  ) {
+
+    if (
+      !['public', 'private'].includes(updates.visibility)
+    ) {
+      throw new AppError(
+        'Visibility must be either public or private',
+        400
+      );
+    }
+
+    allowedUpdates.visibility =
+      updates.visibility;
+
+  }
 
   // ----------------------------------------
   // 9. Prevent Empty Updates
@@ -802,6 +832,68 @@ export const updateChama = async (
 
 };
 
+
+
+// ========================================
+// GET PUBLIC CHAMAS
+// ========================================
+
+export const getPublicChamas = async () => {
+  const chamas = await Chama.find({
+    status: 'active',
+    visibility: 'public'
+  })
+    .select('name monthly_savings visibility status createdAt')
+    .sort({ createdAt: -1 });
+
+  return chamas;
+};
+
+// ========================================
+// JOIN WITH CODE
+// ========================================
+
+export const joinWithCode = async (userId, joinCode) => {
+  if (!joinCode || typeof joinCode !== 'string') {
+    throw new AppError('Join code is required', 400);
+  }
+
+  const chama = await Chama.findOne({
+    join_code: joinCode,
+    status: 'active'
+  });
+
+  if (!chama) {
+    throw new AppError('Invalid or inactive join code', 404);
+  }
+
+  const existingMembership = await ChamaMembership.findOne({
+    user_id: userId,
+    chama_id: chama._id
+  });
+
+  if (existingMembership) {
+    if (existingMembership.status === 'active') {
+      throw new AppError('You are already a member of this Chama', 409);
+    }
+    if (existingMembership.status === 'pending') {
+      throw new AppError('Your request to join this Chama is already pending approval', 409);
+    }
+  }
+
+  // Create pending membership
+  const membership = await ChamaMembership.create({
+    user_id: userId,
+    chama_id: chama._id,
+    role: 'member',
+    status: 'pending',
+    joined_at: new Date()
+  });
+
+  await membership.populate("chama_id", "name");
+
+  return membership;
+};
 
 
 // ========================================

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Wallet } from "lucide-react";
+import { Wallet, X } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 import { GROUP_TYPES, GROUP_VISIBILITY } from "@/modules/contribution-group/constants";
@@ -16,6 +16,9 @@ export default function CreateContributionGroupPage() {
     description: "",
     type: "other",
     event_date: "",
+    contribution_end_date: "",
+    target_amount: "",
+    beneficiary: "",
     location: "",
     visibility: "invite_only",
   });
@@ -38,6 +41,8 @@ export default function CreateContributionGroupPage() {
       const workspace = await createContributionGroup({
         ...form,
         event_date: form.event_date || undefined,
+        contribution_end_date: form.contribution_end_date || undefined,
+        target_amount: form.target_amount || undefined,
       });
 
       selectWorkspace(workspace);
@@ -58,20 +63,31 @@ export default function CreateContributionGroupPage() {
 
   return (
     <div className="mx-auto max-w-lg">
-      <div className="mb-6 flex items-center gap-3">
-        <span className="rounded-xl bg-primary/10 p-3">
-          <Wallet size={22} className="text-primary" />
-        </span>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="rounded-xl bg-primary/10 p-3">
+            <Wallet size={22} className="text-primary" />
+          </span>
 
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Create a Contribution Group
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+              Create a Contribution Group
+            </h1>
 
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            You can only have one active group at a time.
-          </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              You can only have one active group at a time.
+            </p>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => navigate("/home")}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+          title="Close and cancel"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       <form
@@ -133,6 +149,32 @@ export default function CreateContributionGroupPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Fund Target (KES)"
+            name="target_amount"
+            type="number"
+            min="0"
+            value={form.target_amount}
+            onChange={handleChange}
+            placeholder="100000"
+          />
+
+          <Input
+            label="Beneficiary (optional)"
+            name="beneficiary"
+            value={form.beneficiary}
+            onChange={handleChange}
+            placeholder="Who the fund supports"
+          />
+
+          <Input
+            label="Contribution Close Date"
+            name="contribution_end_date"
+            type="date"
+            value={form.contribution_end_date}
+            onChange={handleChange}
+          />
+
           <Input
             label="Event Date (optional)"
             name="event_date"

@@ -42,7 +42,7 @@ export default function WorkspaceLayout() {
     return <Navigate to="/home" replace />;
   }
 
-  const sections = getWorkspaceNavigation(workspaceId, workspace?.type);
+  const sections = getWorkspaceNavigation(workspaceId, workspace?.type, workspace?.role);
 
   if (workspace?.type === "contribution-group") {
     return (

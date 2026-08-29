@@ -19,6 +19,7 @@ import ThemeToggle from "@/shared/components/layout/ThemeToggle";
 import NotificationButton from "@/shared/components/layout/NotificationButton";
 import UserMenu from "@/shared/components/layout/UserMenu";
 import Logo from "@/shared/components/layout/Logo";
+import { canViewAdministration } from "@/modules/workspaces/permissions/Permissions";
 
 const navigation = [
   { label: "Overview", icon: LayoutDashboard, to: "" },
@@ -29,13 +30,18 @@ const navigation = [
   { label: "Chat", icon: MessageCircle, to: "chat" },
   { label: "Updates", icon: Megaphone, to: "announcements" },
   { label: "Meetings", icon: Video, to: "meetings" },
-  { label: "Settings", icon: Settings, to: "settings" },
+  // "Settings" is filtered out below for non-managers — see canViewAdministration.
+  { label: "Settings", icon: Settings, to: "settings", administration: true },
 ];
 
 export default function ContributionGroupLayout({ workspace, workspaceId }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const base = `/workspace/${workspaceId}`;
   const name = workspace?.name || "Contribution group";
+
+  const visibleNavigation = navigation.filter(
+    (item) => !item.administration || canViewAdministration(workspace?.role, "contribution-group")
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
@@ -86,7 +92,7 @@ export default function ContributionGroupLayout({ workspace, workspaceId }) {
           onClick={() => setSidebarOpen(false)}
           className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 scrollbar-thin"
         >
-          {navigation.map(({ label, icon: Icon, to }) => (
+          {visibleNavigation.map(({ label, icon: Icon, to }) => (
             <NavLink
               key={label}
               to={to ? `${base}/${to}` : base}

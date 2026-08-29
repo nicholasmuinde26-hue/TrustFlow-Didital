@@ -30,9 +30,13 @@ import {
   Building2,
   BadgeDollarSign,
   Store,
+  ShoppingBag,
+  Globe,
 } from "lucide-react";
 
-export function getWorkspaceNavigation(workspaceId, type) {
+import { canViewCommandCenter, canViewAdministration } from "../permissions/Permissions";
+
+export function getWorkspaceNavigation(workspaceId, type, role) {
   const base = `/workspace/${workspaceId}`;
   const normalizedType = type?.toLowerCase().replace(/[-_]/g, "");
 
@@ -59,6 +63,11 @@ export function getWorkspaceNavigation(workspaceId, type) {
           to: `${base}/business`,
         },
         {
+          title: "Point of Sale",
+          icon: ShoppingBag,
+          to: `${base}/business/pos`,
+        },
+        {
           title: "Sales & Invoicing",
           icon: ShoppingCart,
           to: `${base}/business/sales`,
@@ -72,6 +81,11 @@ export function getWorkspaceNavigation(workspaceId, type) {
           title: "Inventory & Stock",
           icon: Package,
           to: `${base}/business/inventory`,
+        },
+        {
+          title: "Online Storefront",
+          icon: Globe,
+          to: `${base}/business/storefront`,
         },
       ],
     },
@@ -390,6 +404,31 @@ export function getWorkspaceNavigation(workspaceId, type) {
   ];
 
   // =====================================================
+  // ROLE-BASED FILTERING
+  //
+  // Command Center and Administration/Settings are management-only
+  // areas — plain members shouldn't see a link to them at all, not
+  // just be blocked once they get there. Sections that end up with
+  // no items after filtering are dropped entirely.
+  // =====================================================
+  function filterByRole(sections) {
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          if (item.title === "Command Center") {
+            return canViewCommandCenter(role, type);
+          }
+          if (section.title === "Administration") {
+            return canViewAdministration(role, type);
+          }
+          return true;
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }
+
+  // =====================================================
   // WORKSPACE ROUTER MATCHING
   // =====================================================
   switch (normalizedType) {
@@ -398,10 +437,10 @@ export function getWorkspaceNavigation(workspaceId, type) {
 
     case "contribution":
     case "contributiongroup":
-      return contributionNavigation;
+      return filterByRole(contributionNavigation);
 
     case "chama":
     default:
-      return chamaNavigation;
+      return filterByRole(chamaNavigation);
   }
 }

@@ -6,7 +6,8 @@ import {
   removeMemberFromChama,
   transferTreasurerRole,
   updateMemberProfile,
-  reorderPayoutPositions
+  reorderPayoutPositions,
+  getChamaJoinRequests
 } from './member.service.js';
 
 import AppError from '../../utils/AppError.js';
@@ -103,6 +104,56 @@ export const addMemberController = async (
         'Member added to Chama successfully',
       data: {
         member: membership
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// ========================================
+// GET PENDING JOIN REQUESTS
+// ========================================
+//
+// GET /api/v1/chamas/:chamaId/members/join-requests
+//
+// Requirements:
+//
+// 1. User must be authenticated
+// 2. User must be an active Chama member
+// 3. User must be the Treasurer or Chairperson
+//
+// Approving/declining a request reuses the existing status endpoint:
+// PATCH /:chamaId/members/:memberId/status  { "status": "active" }    -> approve
+// PATCH /:chamaId/members/:memberId/status  { "status": "removed" }   -> decline
+//
+// ========================================
+
+export const getChamaJoinRequestsController = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      chamaId
+    } = req.params;
+
+    const actorUserId =
+      req.user._id;
+
+    const requests =
+      await getChamaJoinRequests({
+        chamaId,
+        actorUserId
+      });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        requests
       }
     });
 

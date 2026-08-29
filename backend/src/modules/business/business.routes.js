@@ -16,6 +16,15 @@ import {
   listSuppliers,
   createSupplier,
   getBusinessAccounts,
+  listInventory,
+  addInventoryItem,
+  editInventoryItem,
+  removeInventoryItem,
+  posSale,
+  getStorefront,
+  putStorefront,
+  getStorefrontOrders,
+  patchStorefrontOrderStatus,
 } from "./business.controller.js";
 
 const router = express.Router();
@@ -38,6 +47,21 @@ router.get("/:businessId/suppliers", protect, listSuppliers);
 router.post("/:businessId/suppliers", protect, createSupplier);
 
 router.get("/:businessId/accounts", protect, getBusinessAccounts);
+
+// Inventory & Stock — same catalog the POS grid and storefront both read from
+router.get("/:businessId/inventory", protect, listInventory);
+router.post("/:businessId/inventory", protect, addInventoryItem);
+router.put("/:businessId/inventory/:itemId", protect, editInventoryItem);
+router.delete("/:businessId/inventory/:itemId", protect, removeInventoryItem);
+
+// Point of Sale — checkout that deducts live stock on completion
+router.post("/:businessId/pos/sale", protect, posSale);
+
+// Storefront configuration & order fulfillment (owner/staff side)
+router.get("/:businessId/storefront", protect, getStorefront);
+router.put("/:businessId/storefront", protect, putStorefront);
+router.get("/:businessId/storefront-orders", protect, getStorefrontOrders);
+router.patch("/:businessId/storefront-orders/:orderId/status", protect, patchStorefrontOrderStatus);
 
 export default router;
 

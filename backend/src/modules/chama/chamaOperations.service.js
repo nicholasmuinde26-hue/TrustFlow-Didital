@@ -38,7 +38,102 @@ export async function createGoal(chamaId, userId, data) { if (!data.name || Numb
 export async function submitKyc(chamaId, membershipId, data) { if (!data.id_number || !data.selfie_url || !data.id_document_url) throw new AppError("ID number, ID document URL, and selfie URL are required", 400); return ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { $set: { id_number: data.id_number, selfie_url: data.selfie_url, id_document_url: data.id_document_url, status: "pending", reviewed_by: null, reviewed_at: null } }, { upsert: true, new: true, runValidators: true }); }
 export async function reviewKyc(chamaId, membershipId, userId, status) { if (!["verified", "rejected"].includes(status)) throw new AppError("Invalid KYC review status", 400); const kyc = await ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { status, reviewed_by: userId, reviewed_at: new Date() }, { new: true }); if (!kyc) throw new AppError("KYC submission not found", 404); return kyc; }
 export async function createInvite(chamaId, userId, data) { const token = crypto.randomBytes(24).toString("hex"); const invitation = await ChamaInvitation.create({ chama_id: chamaId, phone: data.phone || null, role: data.role || "member", token, invited_by: userId, expires_at: new Date(Date.now() + 7 * 86400000) }); return { invitation, token, join_path: `/chamas/join?token=${token}` }; }
-export async function acceptInvite(token, userId) { const invite = await ChamaInvitation.findOne({ token, accepted_at: null, expires_at: { $gt: new Date() } }); if (!invite) throw new AppError("Invitation is invalid or expired", 404); const member = await ChamaMembership.findOneAndUpdate({ chama_id: invite.chama_id, user_id: userId }, { $setOnInsert: { invited_by: invite.invited_by, joined_at: new Date(), payout_position: 999 }, $set: { role: invite.role, status: "active", accepted_at: new Date() } }, { upsert: true, new: true }); invite.accepted_at = new Date(); await invite.save(); return member; }
+
+// ========================================
+// PREVIEW INVITE (PUBLIC, UNAUTHENTICATED)
+// ========================================
+//
+// Lets the join-link landing page show "You've been invited to join
+// <Chama name>" BEFORE the visitor logs in or creates an account.
+// Deliberately exposes only non-sensitive fields — no financial data,
+// no member list.
+//
+// ========================================
+
+export async function previewInvite(token) {
+  const invite = await ChamaInvitation.findOne({ token })
+    .populate("chama_id", "name status")
+    .populate("invited_by", "name");
+
+  if (!invite) {
+    throw new AppError("This invite link is invalid", 404);
+  }
+
+  const expired = invite.expires_at.getTime() < Date.now();
+  const chamaActive = invite.chama_id?.status === "active";
+
+  return {
+    valid: Boolean(!expired && chamaActive && invite.chama_id),
+    expired,
+    chama: invite.chama_id ? { id: invite.chama_id._id, name: invite.chama_id.name } : null,
+    role: invite.role,
+    invited_by: invite.invited_by ? { name: invite.invited_by.name } : null,
+    expires_at: invite.expires_at,
+  };
+}
+
+// ========================================
+// ACCEPT INVITE -> REQUEST TO JOIN
+// ========================================
+//
+// A join link may be shared with many people (it's not a one-time-use
+// code — ChamaInvitation.phone is informational only, not enforced),
+// so accepting it does NOT immediately grant membership. It creates a
+// ChamaMembership with status "pending", which requireChamaMember
+// rejects until the Treasurer or Chairperson approves it (see
+// member.service.js updateMemberStatus / member.routes.js
+// GET /:chamaId/members/join-requests).
+//
+// ========================================
+
+export async function acceptInvite(token, userId) {
+  const invite = await ChamaInvitation.findOne({ token, expires_at: { $gt: new Date() } });
+  if (!invite) throw new AppError("This invite link is invalid or has expired", 404);
+
+  const existing = await ChamaMembership.findOne({ chama_id: invite.chama_id, user_id: userId });
+
+  if (existing && existing.status === "active") {
+    throw new AppError("You are already a member of this Chama", 409);
+  }
+  if (existing && existing.status === "pending") {
+    throw new AppError("Your request to join this Chama is already pending approval", 409);
+  }
+
+  const member = await ChamaMembership.findOneAndUpdate(
+    { chama_id: invite.chama_id, user_id: userId },
+    {
+      $setOnInsert: { invited_by: invite.invited_by, joined_at: new Date() },
+      $set: { role: invite.role, status: "pending", payout_position: null, accepted_at: null, removed_at: null, removed_by: null },
+    },
+    { upsert: true, new: true }
+  );
+
+  // Records that the link has been used at least once. Informational
+  // only — does NOT invalidate the link for the next person, since a
+  // Chairperson/Treasurer's join link is meant to be shared with the
+  // whole prospective membership, not a single named invitee.
+  invite.accepted_at = new Date();
+  await invite.save();
+
+  await member.populate("chama_id", "name");
+
+  return member;
+}
+
+// ========================================
+// MY PENDING JOIN REQUESTS
+// ========================================
+//
+// Lets a user who requested to join a Chama (and then navigated away)
+// check whether they're still waiting on approval.
+//
+// ========================================
+
+export async function getMyPendingRequests(userId) {
+  return ChamaMembership.find({ user_id: userId, status: "pending" })
+    .populate("chama_id", "name")
+    .sort({ createdAt: -1 });
+}
 // Loan application/approval/disbursement now live in modules/loans/*
 // (loanApplication.service.js, loanApproval.service.js, loanDisbursement.service.js).
 // `dashboard()` above still reads ChamaLoan directly for the command-center feed.

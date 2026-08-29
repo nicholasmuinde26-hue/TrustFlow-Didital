@@ -6,6 +6,7 @@ export const GROUP_TYPES = [
   "funeral",
   "birthday",
   "emergency",
+  "medical_emergency",
   "fundraiser",
   "community",
   "other",

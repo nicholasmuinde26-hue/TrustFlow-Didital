@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   Megaphone,
   Mail,
+  MessageCircle,
   Info,
   ExternalLink,
   ChevronRight,
@@ -44,6 +45,8 @@ function getCategoryIcon(category) {
       return <Megaphone className="text-violet-500" size={16} />;
     case "invitation":
       return <Mail className="text-blue-500" size={16} />;
+    case "message":
+      return <MessageCircle className="text-pink-500" size={16} />;
     default:
       return <Info className="text-cyan-500" size={16} />;
   }
@@ -191,8 +194,9 @@ export default function NotificationButton() {
           <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50/80 px-3 py-1.5 overflow-x-auto scrollbar-none dark:border-slate-800/80 dark:bg-slate-950/40">
             {[
               { id: "all", label: "All" },
-              { id: "transaction", label: "Txns" },
               { id: "approval", label: "Approvals" },
+              { id: "message", label: "Chats" },
+              { id: "transaction", label: "Txns" },
               { id: "announcement", label: "Announcements" },
               { id: "invitation", label: "Invites" },
             ].map((tab) => (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, Building2, Wallet, Plus, Store } from "lucide-react";
+import { ChevronDown, Building2, Wallet, Plus, Store, Home } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 
@@ -140,23 +140,54 @@ export default function WorkspaceSwitcher() {
             ))}
           </div>
 
-          <div className="border-t border-slate-200 p-2 dark:border-slate-700">
+          <div className="border-t border-slate-200 p-2 dark:border-slate-700 space-y-1">
             <button
-              onClick={() => navigate("/home")}
+              onClick={() => {
+                setOpen(false);
+                navigate("/home");
+              }}
               className="
                 flex
                 w-full
                 items-center
-                gap-2
+                gap-2.5
                 rounded-xl
                 px-3
-                py-3
+                py-2.5
+                text-xs
+                font-bold
+                text-slate-700
+                dark:text-slate-200
+                transition-colors
+                hover:bg-slate-100
+                dark:hover:bg-slate-800
+              "
+            >
+              <Home size={16} className="text-violet-600 dark:text-cyan-400" />
+              Return to Home Page
+            </button>
+
+            <button
+              onClick={() => {
+                setOpen(false);
+                navigate("/home");
+              }}
+              className="
+                flex
+                w-full
+                items-center
+                gap-2.5
+                rounded-xl
+                px-3
+                py-2.5
+                text-xs
+                font-bold
                 text-primary
                 transition-colors
                 hover:bg-primary/10
               "
             >
-              <Plus size={18} />
+              <Plus size={16} />
               Create Workspace
             </button>
           </div>

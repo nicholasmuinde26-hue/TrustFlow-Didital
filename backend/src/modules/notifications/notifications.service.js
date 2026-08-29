@@ -3,11 +3,16 @@ import User from '../../models/User.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import ChamaInvitation from '../../models/ChamaInvitation.js';
 import ContributionGroupInvitation from '../../models/ContributionGroupInvitation.js';
+import ContributionGroupMember from '../../models/ContributionGroupMember.js';
 import Announcement from '../../models/Announcement.js';
 import ChamaLoan from '../../models/ChamaLoan.js';
+import Payout from '../../models/Payout.js';
+import ChamaMemberKyc from '../../models/ChamaMemberKyc.js';
 import FinancialTransaction from '../../models/FinancialTransaction.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
 import AppError from '../../utils/AppError.js';
+
+const MANAGER_ROLES = ['admin', 'treasurer', 'secretary', 'chairperson'];
 
 /**
  * Syncs/aggregates live notifications from real system events for the given user
@@ -81,8 +86,8 @@ export const syncLiveUserNotifications = async (userId) => {
   const chamaIds = memberships.map((m) => m.chama_id);
 
   if (chamaIds.length > 0) {
-    // 3. Pending Loan Approvals for Managers
-    const isManagerOrAdmin = memberships.some((m) => ['admin', 'treasurer', 'secretary', 'chairperson'].includes(m.role));
+    // 3. Pending Approvals for Managers (loans, payouts, member KYC)
+    const isManagerOrAdmin = memberships.some((m) => MANAGER_ROLES.includes(m.role));
     if (isManagerOrAdmin) {
       const pendingLoans = await ChamaLoan.find({
         chama_id: { $in: chamaIds },
@@ -106,6 +111,60 @@ export const syncLiveUserNotifications = async (userId) => {
             metadata: {
               type: 'loan_approval',
               loan_id: loan._id,
+            },
+          });
+        }
+      }
+
+      const pendingPayouts = await Payout.find({
+        chama_id: { $in: chamaIds },
+        status: 'pending',
+      }).limit(5);
+
+      for (const payout of pendingPayouts) {
+        const existing = await Notification.findOne({
+          user_id: userId,
+          'metadata.type': 'payout_approval',
+          'metadata.payout_id': payout._id,
+        });
+
+        if (!existing) {
+          await Notification.create({
+            user_id: userId,
+            title: 'Payout Approval Required',
+            message: `A payout of KES ${Number(payout.amount || 0).toLocaleString()} is awaiting your approval.`,
+            category: 'approval',
+            link: `/workspace/${payout.chama_id}/finance/payouts`,
+            metadata: {
+              type: 'payout_approval',
+              payout_id: payout._id,
+            },
+          });
+        }
+      }
+
+      const pendingKyc = await ChamaMemberKyc.find({
+        chama_id: { $in: chamaIds },
+        status: 'pending',
+      }).limit(5);
+
+      for (const kyc of pendingKyc) {
+        const existing = await Notification.findOne({
+          user_id: userId,
+          'metadata.type': 'kyc_approval',
+          'metadata.kyc_id': kyc._id,
+        });
+
+        if (!existing) {
+          await Notification.create({
+            user_id: userId,
+            title: 'Member KYC Review Required',
+            message: 'A member has submitted KYC documents that need review.',
+            category: 'approval',
+            link: `/workspace/${kyc.chama_id}/members`,
+            metadata: {
+              type: 'kyc_approval',
+              kyc_id: kyc._id,
             },
           });
         }
@@ -170,6 +229,54 @@ export const syncLiveUserNotifications = async (userId) => {
       }
     }
   }
+};
+
+/**
+ * Create "new message" notifications for every other active member of a
+ * chat's workspace when a chat message is sent.
+ */
+export const notifyNewChatMessage = async (chatMessage, workspaceName) => {
+  const { workspace_id: workspaceId, workspace_type: workspaceType, sender_id: sender } = chatMessage;
+
+  let recipientUserIds = [];
+
+  if (workspaceType === 'chama') {
+    const members = await ChamaMembership.find({
+      chama_id: workspaceId,
+      status: 'active',
+      user_id: { $ne: sender?._id || sender },
+    }).select('user_id');
+    recipientUserIds = members.map((m) => m.user_id);
+  } else if (workspaceType === 'contribution-group') {
+    const members = await ContributionGroupMember.find({
+      contribution_group_id: workspaceId,
+      status: 'active',
+      user_id: { $ne: sender?._id || sender },
+    }).select('user_id');
+    recipientUserIds = members.map((m) => m.user_id);
+  }
+
+  if (recipientUserIds.length === 0) return;
+
+  const senderName = sender?.name || 'Someone';
+  const preview =
+    chatMessage.message?.length > 120 ? `${chatMessage.message.slice(0, 117)}...` : chatMessage.message || 'Sent an attachment';
+  const link = `/workspace/${workspaceId}/chat`;
+
+  await Notification.insertMany(
+    recipientUserIds.map((userId) => ({
+      user_id: userId,
+      title: `New message${workspaceName ? ` in ${workspaceName}` : ''}`,
+      message: `${senderName}: ${preview}`,
+      category: 'message',
+      link,
+      metadata: {
+        type: 'chat_message',
+        message_id: chatMessage._id,
+        workspace_id: workspaceId,
+      },
+    }))
+  );
 };
 
 /**
@@ -242,4 +349,5 @@ export default {
   markNotificationAsRead,
   markAllNotificationsAsRead,
   syncLiveUserNotifications,
+  notifyNewChatMessage,
 };

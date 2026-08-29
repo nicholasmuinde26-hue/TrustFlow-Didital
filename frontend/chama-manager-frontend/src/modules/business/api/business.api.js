@@ -33,6 +33,26 @@ export const businessApi = {
   updateInventoryItem: (workspaceId, itemId, payload) =>
     api.put(`/businesses/${workspaceId}/inventory/${itemId}`, payload),
 
+  deleteInventoryItem: (workspaceId, itemId) =>
+    api.delete(`/businesses/${workspaceId}/inventory/${itemId}`),
+
+  // Point of Sale
+  createPosSale: (workspaceId, payload) =>
+    api.post(`/businesses/${workspaceId}/pos/sale`, payload),
+
+  // Storefront (admin/owner side)
+  getStorefront: (workspaceId) =>
+    api.get(`/businesses/${workspaceId}/storefront`),
+
+  updateStorefront: (workspaceId, payload) =>
+    api.put(`/businesses/${workspaceId}/storefront`, payload),
+
+  getStorefrontOrders: (workspaceId) =>
+    api.get(`/businesses/${workspaceId}/storefront-orders`),
+
+  updateStorefrontOrderStatus: (workspaceId, orderId, status) =>
+    api.patch(`/businesses/${workspaceId}/storefront-orders/${orderId}/status`, { status }),
+
   // Customers
   getCustomers: (workspaceId, params) =>
     api.get(`/businesses/${workspaceId}/customers`, { params }),

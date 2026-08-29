@@ -124,6 +124,8 @@ const contributionGroupMemberSchema =
 
           'co_organizer',
 
+          'treasurer',
+
           'member'
 
         ],

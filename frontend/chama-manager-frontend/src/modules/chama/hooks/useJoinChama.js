@@ -1,31 +1,53 @@
 import { useState } from "react";
 import chamaService from "../services/chama.service";
 
+// Backs the invite-LINK flow on JoinChamaPage: previewing a shared
+// /chamas/join?token=... link before login, then accepting it once
+// authenticated. The join-CODE and public-directory flows on that page
+// call chamaService.joinWithCode directly and don't use this hook.
 export default function useJoinChama() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
 
-  async function joinChama(payload) {
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState(null);
+
+  async function previewInvite(token) {
     try {
-      setLoading(true);
-      setError(null);
-
-      return await chamaService.join(payload);
+      setPreviewing(true);
+      setPreviewError(null);
+      return await chamaService.previewInvite(token);
     } catch (err) {
-      setError(
-        err.response?.data?.message ??
-        "Unable to join chama."
+      setPreviewError(
+        err.response?.data?.message ?? "Unable to load this invitation."
       );
-
       throw err;
     } finally {
-      setLoading(false);
+      setPreviewing(false);
+    }
+  }
+
+  async function acceptInvite(token) {
+    try {
+      setJoining(true);
+      setJoinError(null);
+      return await chamaService.acceptInvite(token);
+    } catch (err) {
+      setJoinError(
+        err.response?.data?.message ?? "Unable to submit your request to join."
+      );
+      throw err;
+    } finally {
+      setJoining(false);
     }
   }
 
   return {
-    joinChama,
-    loading,
-    error,
+    previewInvite,
+    previewing,
+    previewError,
+    acceptInvite,
+    joining,
+    joinError,
   };
 }

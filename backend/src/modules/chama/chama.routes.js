@@ -15,6 +15,8 @@ import {
   recordMgrReminderController,
   markMgrPaidController,
   verifyTreasurerController,
+  getPublicChamasController,
+  joinWithCodeController,
 } from './chama.controller.js';
 
 import {
@@ -33,6 +35,22 @@ const router =
 
 
 router.get('/verify-treasurer', protect, verifyTreasurerController);
+
+// ========================================
+// PUBLIC DIRECTORY & JOIN CODE
+// ========================================
+
+router.get(
+  '/directory/public',
+  protect,
+  getPublicChamasController
+);
+
+router.post(
+  '/directory/join',
+  protect,
+  joinWithCodeController
+);
 
 // ========================================
 // CREATE CHAMA

@@ -13,6 +13,12 @@ import {
 } from "lucide-react";
 import useWorkspace from "@/app/hooks/useWorkspace";
 import loanService from "../services/loan.service";
+import { isLoanOfficial, canDisburseLoan } from "@/modules/workspaces/permissions/Permissions";
+
+function formatRoleLabel(role) {
+  if (!role) return "Member";
+  return String(role).charAt(0).toUpperCase() + String(role).slice(1);
+}
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -21,6 +27,13 @@ export default function LoansPage() {
   const workspaceCtx = useWorkspace();
   const workspaceId = paramId || workspaceCtx?.workspaceId;
   const userRole = workspaceCtx?.activeWorkspace?.role || "member";
+  const workspaceType = workspaceCtx?.activeWorkspace?.type || "chama";
+
+  // Approving, rejecting, and disbursing loans is restricted to Chama
+  // officials (mirrors backend OFFICIAL_ROLES) — a plain member never
+  // sees the Approvals tab or its actions at all.
+  const canReviewLoans = isLoanOfficial(userRole, workspaceType);
+  const canDisburse = canDisburseLoan(userRole, workspaceType);
 
   const [activeSubTab, setActiveSubTab] = useState("overview"); // 'overview' | 'apply' | 'approval'
 
@@ -111,10 +124,14 @@ export default function LoansPage() {
 
       setApplySuccess("Loan application submitted successfully! It is now pending dual approval by both Chairperson and Treasurer.");
       loadData();
-      setTimeout(() => {
-        setActiveSubTab("approval");
-        setApplySuccess("");
-      }, 1800);
+      if (canReviewLoans) {
+        setTimeout(() => {
+          setActiveSubTab("approval");
+          setApplySuccess("");
+        }, 1800);
+      } else {
+        setTimeout(() => setApplySuccess(""), 3000);
+      }
     } catch (err) {
       setApplyError(err?.response?.data?.message || "Could not submit loan application.");
     } finally {
@@ -196,16 +213,18 @@ export default function LoansPage() {
             >
               Apply Loan
             </button>
-            <button
-              onClick={() => setActiveSubTab("approval")}
-              className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${
-                activeSubTab === "approval"
-                  ? "bg-violet-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
-              }`}
-            >
-              Approvals ({pendingApprovalCount})
-            </button>
+            {canReviewLoans && (
+              <button
+                onClick={() => setActiveSubTab("approval")}
+                className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${
+                  activeSubTab === "approval"
+                    ? "bg-violet-600 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
+                }`}
+              >
+                Approvals ({pendingApprovalCount})
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
@@ -270,33 +289,35 @@ export default function LoansPage() {
 
           {/* Analytics & Lower Grid Row */}
           <div className="grid gap-6 lg:grid-cols-12">
-            <div className="lg:col-span-6 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
-              <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4">Pending Dual Approvals</h2>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-2xl bg-amber-50/60 p-4 dark:bg-amber-950/30">
-                    <div>
-                      <p className="text-xs font-bold text-slate-900 dark:text-white">Loan applications awaiting decision</p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Chairperson & Treasurer approvals required</p>
+            {canReviewLoans && (
+              <div className="lg:col-span-6 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4">Pending Dual Approvals</h2>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-2xl bg-amber-50/60 p-4 dark:bg-amber-950/30">
+                      <div>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">Loan applications awaiting decision</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Chairperson & Treasurer approvals required</p>
+                      </div>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-xs font-black text-amber-800">
+                        {pendingApprovalCount}
+                      </span>
                     </div>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-xs font-black text-amber-800">
-                      {pendingApprovalCount}
-                    </span>
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-right">
-                <button
-                  onClick={() => setActiveSubTab("approval")}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700"
-                >
-                  Go to Approvals Queue <ChevronRight size={14} />
-                </button>
+                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-right">
+                  <button
+                    onClick={() => setActiveSubTab("approval")}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700"
+                  >
+                    Go to Approvals Queue <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="lg:col-span-6 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+            <div className={`${canReviewLoans ? "lg:col-span-6" : "lg:col-span-12"} rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between`}>
               <div>
                 <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4">Top Borrowers</h2>
                 <div className="space-y-3">
@@ -464,7 +485,7 @@ export default function LoansPage() {
       )}
 
       {/* LOAN APPROVAL QUEUE VIEW (DUAL APPROVAL TRACKER) */}
-      {activeSubTab === "approval" && (
+      {activeSubTab === "approval" && canReviewLoans && (
         <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -573,38 +594,34 @@ export default function LoansPage() {
                     {/* Action Buttons Row */}
                     {!isRejected && (
                       <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
-                        {/* Chairperson Action */}
-                        {!chairApproved && !isFullyApproved && (
-                          <button
-                            onClick={() => handleApprovalDecision(app._id || app.id, "approved", "Chairperson")}
-                            className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition"
-                          >
-                            Approve as Chairperson
-                          </button>
-                        )}
-
-                        {/* Treasurer Action */}
-                        {!treasurerApproved && !isFullyApproved && (
-                          <button
-                            onClick={() => handleApprovalDecision(app._id || app.id, "approved", "Treasurer")}
-                            className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-violet-700 transition"
-                          >
-                            Approve as Treasurer
-                          </button>
-                        )}
+                        {/* Approve — only the viewer's own role can act, and only
+                            once, matching who the backend actually records the
+                            decision under (see Loanapproval.service.js: role
+                            comes from the authenticated membership, not a label
+                            picked in the UI). */}
+                        {!isFullyApproved &&
+                          (userRole === "chairperson" || userRole === "treasurer") &&
+                          !hasRoleApproved(app, userRole) && (
+                            <button
+                              onClick={() => handleApprovalDecision(app._id || app.id, "approved", formatRoleLabel(userRole))}
+                              className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition"
+                            >
+                              Approve as {formatRoleLabel(userRole)}
+                            </button>
+                          )}
 
                         {/* Reject Action */}
                         {!isFullyApproved && (
                           <button
-                            onClick={() => handleApprovalDecision(app._id || app.id, "rejected", userRole)}
+                            onClick={() => handleApprovalDecision(app._id || app.id, "rejected", formatRoleLabel(userRole))}
                             className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:bg-slate-900 dark:hover:bg-rose-950 transition"
                           >
                             Reject Loan
                           </button>
                         )}
 
-                        {/* Disburse Action (when fully approved) */}
-                        {isFullyApproved && app.status !== "disbursed" && app.status !== "active" && (
+                        {/* Disburse Action (when fully approved) — Treasurer only */}
+                        {canDisburse && isFullyApproved && app.status !== "disbursed" && app.status !== "active" && (
                           <button
                             onClick={() => handleDisburseLoan(app._id || app.id)}
                             className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition"

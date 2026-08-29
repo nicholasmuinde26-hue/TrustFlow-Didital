@@ -28,9 +28,15 @@ export default function PlatformLayout({ children }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-10 lg:px-8">
-        {children ?? <Outlet />}
-      </main>
+      {/*
+        No max-w/mx-auto here on purpose — that used to cap every page in
+        this layout (including /home) at ~1024px and center it on wide
+        screens, regardless of what width the page itself wanted. The
+        base padding stays (pages besides /home rely on it for their own
+        spacing); a page that wants a narrower reading column, like the
+        create-* forms, still applies its own max-w/mx-auto internally.
+      */}
+      <main className="w-full px-6 py-10 lg:px-8">{children ?? <Outlet />}</main>
     </div>
   );
 }

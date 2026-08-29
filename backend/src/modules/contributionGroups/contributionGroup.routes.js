@@ -26,6 +26,8 @@ import {
 
   acceptContributionGroupInvitationController,
 
+  declineContributionGroupInvitationController,
+
 
 } from './contributionGroup.controller.js';
 
@@ -155,6 +157,16 @@ router.patch(
   protect,
 
   acceptContributionGroupInvitationController
+
+);
+
+router.patch(
+
+  '/invitations/:invitationId/decline',
+
+  protect,
+
+  declineContributionGroupInvitationController
 
 );
 

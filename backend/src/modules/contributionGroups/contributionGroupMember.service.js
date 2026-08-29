@@ -1408,7 +1408,9 @@ export const updateContributionGroupMemberRole = async ({
 
     'member',
 
-    'co_organizer'
+    'co_organizer',
+
+    'treasurer'
 
   ];
 
@@ -1425,7 +1427,7 @@ export const updateContributionGroupMemberRole = async ({
 
     throw new AppError(
 
-      'Invalid role. Only member and co_organizer roles are allowed.',
+      'Invalid role. Only member, co_organizer, and treasurer roles are allowed.',
 
       400
 

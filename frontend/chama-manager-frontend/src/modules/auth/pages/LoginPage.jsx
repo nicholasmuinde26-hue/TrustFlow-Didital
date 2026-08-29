@@ -30,7 +30,12 @@ export default function LoginPage() {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const redirectTo = location.state?.from?.pathname || "/home";
+  // Preserve the full path INCLUDING query string (e.g. a Chama
+  // join-link's ?token=...) — dropping .search here would silently
+  // strip the token and break the join-link flow after login.
+  const redirectTo = location.state?.from
+    ? `${location.state.from.pathname || "/home"}${location.state.from.search || ""}`
+    : "/home";
 
   // Look up which channels this phone or email can receive an OTP on
   useEffect(() => {

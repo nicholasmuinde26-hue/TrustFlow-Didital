@@ -8,6 +8,7 @@ import { connectDatabase } from "./config/database.js";
 import { initSocket } from "./modules/realtime/socketServer.js";
 
 import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js"; // FIX: was paymentIntentReconciliation.job
+import { startContributionGroupLifecycleJob } from "./jobs/contributionGroupLifecycle.job.js";
 
 // NEW: Payment Provider Bootstrap
 import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
@@ -49,7 +50,9 @@ async function startServer() {
         // ============================================================
 
         startPaymentIntentReconciliationJob();
+        startContributionGroupLifecycleJob();
         console.log(` Payment Intent Reconciliation Job: Started [30s interval]`);
+        console.log(` Contribution Group Lifecycle Job: Started [daily interval]`);
 
         // ============================================================
         // START HTTP SERVER

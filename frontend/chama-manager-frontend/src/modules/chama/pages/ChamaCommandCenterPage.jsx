@@ -748,12 +748,14 @@ export default function ChamaCommandCenterPage() {
                 onSubmit={(payload) =>
                   runAction(async () => {
                     const result = await chamaApi.createInvitation(workspaceId, payload);
-                    const joinPath = result.data.data.join_path;
+                    const invitedName = result.data.data.invited_user?.name;
                     setNotice({
                       type: "success",
-                      text: `Invitation created! Share link: ${window.location.origin}${joinPath}`,
+                      text: invitedName
+                        ? `Invitation sent to ${invitedName}. It'll appear instantly on their Invitations page to accept or reject.`
+                        : "Invitation sent. It'll appear instantly on their Invitations page to accept or reject.",
                     });
-                  }, "Invitation created.")
+                  }, "Invitation sent.")
                 }
               />
             </div>

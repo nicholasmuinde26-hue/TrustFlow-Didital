@@ -48,6 +48,8 @@ import AccountSettingsPage from "@/modules/account/pages/AccountSettingsPage";
 import WorkspaceOverviewPage from "@/modules/workspaces/pages/WorkspaceOverviewPage";
 import WorkspaceSettingsPage from "@/modules/workspaces/pages/WorkspaceSettingsPage";
 import WorkspacesPage from "@/modules/workspaces/pages/WorkspacesPage";
+import RequireWorkspaceRole from "@/shared/components/routing/RequireWorkspaceRole";
+import { canViewCommandCenter, canViewAdministration } from "@/modules/workspaces/permissions/Permissions";
 
 // ======================================================
 // Business Module
@@ -62,6 +64,15 @@ import SuppliersPage from "@/modules/business/pages/SuppliersPage";
 import InventoryPage from "@/modules/business/pages/InventoryPage";
 import BusinessReportsPage from "@/modules/business/pages/ReportsPage";
 import BusinessSettingsPage from "@/modules/business/pages/BusinessSettingsPage";
+import PosPage from "@/modules/business/pages/PosPage";
+import StorefrontPage from "@/modules/business/pages/StorefrontPage";
+
+// ======================================================
+// Public Storefront (buyer-facing, no auth)
+// ======================================================
+
+import PublicStorefrontPage from "@/modules/storefront/pages/PublicStorefrontPage";
+import TrackOrderPage from "@/modules/storefront/pages/TrackOrderPage";
 
 // ======================================================
 // Members
@@ -123,6 +134,28 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <LandingPage />,
+  },
+
+  // ======================================================
+  // PUBLIC STOREFRONT (buyer-facing, no auth, no app shell)
+  // ======================================================
+
+  {
+    path: "/store/:slug",
+    element: <PublicStorefrontPage />,
+  },
+  {
+    path: "/store/:slug/track",
+    element: <TrackOrderPage />,
+  },
+
+  // Chama join-link landing page. Deliberately public (not wrapped in
+  // ProtectedRoute or GuestRoute) — it must render for a visitor who
+  // isn't logged in yet AND for one who already is; the page itself
+  // branches on auth state via useAuth().
+  {
+    path: "/chamas/join",
+    element: <JoinChamaPage />,
   },
 
   // ======================================================
@@ -229,6 +262,14 @@ const router = createBrowserRouter([
             element: <InventoryPage />,
           },
           {
+            path: "business/pos",
+            element: <PosPage />,
+          },
+          {
+            path: "business/storefront",
+            element: <StorefrontPage />,
+          },
+          {
             path: "business/customers",
             element: <CustomersPage />,
           },
@@ -292,7 +333,11 @@ const router = createBrowserRouter([
           },
           {
             path: "command-center",
-            element: <ChamaCommandCenterPage />,
+            element: (
+              <RequireWorkspaceRole check={canViewCommandCenter}>
+                <ChamaCommandCenterPage />
+              </RequireWorkspaceRole>
+            ),
           },
           {
             path: "my-chama",
@@ -407,7 +452,11 @@ const router = createBrowserRouter([
 
           {
             path: "settings",
-            element: <WorkspaceSettingsPage />,
+            element: (
+              <RequireWorkspaceRole check={canViewAdministration}>
+                <WorkspaceSettingsPage />
+              </RequireWorkspaceRole>
+            ),
           },
         ],
       },

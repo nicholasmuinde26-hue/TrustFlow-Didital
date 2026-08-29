@@ -51,6 +51,41 @@ export const businessService = {
     return res.data?.data || res.data;
   },
 
+  async updateInventoryItem(workspaceId, itemId, payload) {
+    const res = await businessApi.updateInventoryItem(workspaceId, itemId, payload);
+    return res.data?.data || res.data;
+  },
+
+  async deleteInventoryItem(workspaceId, itemId) {
+    const res = await businessApi.deleteInventoryItem(workspaceId, itemId);
+    return res.data?.data || res.data;
+  },
+
+  async createPosSale(workspaceId, payload) {
+    const res = await businessApi.createPosSale(workspaceId, payload);
+    return res.data?.data || res.data;
+  },
+
+  async getStorefront(workspaceId) {
+    const res = await businessApi.getStorefront(workspaceId);
+    return res.data?.data || res.data;
+  },
+
+  async updateStorefront(workspaceId, payload) {
+    const res = await businessApi.updateStorefront(workspaceId, payload);
+    return res.data?.data || res.data;
+  },
+
+  async getStorefrontOrders(workspaceId) {
+    const res = await businessApi.getStorefrontOrders(workspaceId);
+    return extractArray(res, "orders");
+  },
+
+  async updateStorefrontOrderStatus(workspaceId, orderId, status) {
+    const res = await businessApi.updateStorefrontOrderStatus(workspaceId, orderId, status);
+    return res.data?.data || res.data;
+  },
+
   async getCustomers(workspaceId, params) {
     const res = await businessApi.getCustomers(workspaceId, params);
     return extractArray(res, "customers");

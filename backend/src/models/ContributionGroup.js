@@ -116,6 +116,8 @@ const contributionGroupSchema =
 
           'emergency',
 
+          'medical_emergency',
+
           'fundraiser',
 
           'community',
@@ -177,6 +179,8 @@ const contributionGroupSchema =
 
           'active',
 
+          'closing_review',
+
           'completed',
 
           'cancelled',
@@ -226,6 +230,53 @@ const contributionGroupSchema =
         default: null
 
       },
+
+      // A time-bound group uses this as its contribution deadline. event_date
+      // may be later (for example, a wedding date) and must not be used as
+      // the financial close date.
+      contribution_end_date: {
+        type: Date,
+        default: null,
+        index: true
+      },
+
+      start_date: {
+        type: Date,
+        default: Date.now
+      },
+
+      beneficiary: {
+        type: String,
+        trim: true,
+        maxlength: 150,
+        default: null
+      },
+
+      target_amount: {
+        type: mongoose.Schema.Types.Decimal128,
+        default: null,
+        min: 0
+      },
+
+      // The group is archived only after this post-deadline window and only
+      // when there are no arrears or payments still being processed.
+      grace_period_days: {
+        type: Number,
+        default: 7,
+        min: 1,
+        max: 90
+      },
+
+      reminder_policy: {
+        organizer_days_before: { type: [Number], default: [14, 7, 3, 1] },
+        member_days_before: { type: [Number], default: [7, 3, 1] },
+        cooldown_hours: { type: Number, default: 24, min: 1, max: 168 }
+      },
+
+      extended_at: { type: Date, default: null },
+      extended_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      archived_at: { type: Date, default: null },
+      archive_reason: { type: String, trim: true, maxlength: 250, default: null },
 
 
       // ======================================
@@ -327,6 +378,17 @@ contributionGroupSchema.index({
 
   status: 1
 
+});
+
+contributionGroupSchema.index({ status: 1, contribution_end_date: 1 });
+
+contributionGroupSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    if (ret.target_amount !== undefined && ret.target_amount !== null) {
+      ret.target_amount = ret.target_amount.toString();
+    }
+    return ret;
+  }
 });
 
 

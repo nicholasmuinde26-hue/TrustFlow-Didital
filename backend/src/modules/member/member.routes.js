@@ -8,7 +8,8 @@ import {
   removeMemberController,
   transferTreasurerController,
   updateMemberProfileController,
-  reorderPayoutPositionsController
+  reorderPayoutPositionsController,
+  getChamaJoinRequestsController
 } from './member.controller.js';
 
 import {
@@ -159,6 +160,33 @@ router.patch(
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
   reorderPayoutPositionsController
+);
+
+
+// ========================================
+// GET PENDING JOIN REQUESTS
+// ========================================
+//
+// GET
+// /api/v1/chamas/:chamaId/members/join-requests
+//
+// Requirements:
+//
+// 1. User must be authenticated
+// 2. User must be an active Chama member
+// 3. User must be the Treasurer or Chairperson
+//
+// IMPORTANT: declared BEFORE the dynamic '/:memberId' GET route below
+// — otherwise Express would treat "join-requests" as a :memberId value.
+//
+// ========================================
+
+router.get(
+  '/:chamaId/members/join-requests',
+  protect,
+  requireChamaMember,
+  requireChamaTreasurerOrChairperson,
+  getChamaJoinRequestsController
 );
 
 
