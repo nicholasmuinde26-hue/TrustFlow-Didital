@@ -5,7 +5,9 @@ import { WORKSPACE_STATUS } from "./workspace.constants.js";
 
 export function mapChamaWorkspace(
     membership,
-    chama
+    chama,
+    memberCount = 0,
+    members = []
 ){
 
     return{
@@ -26,8 +28,9 @@ export function mapChamaWorkspace(
 
         status:chama.status,
 
-        memberCount:
-            chama.member_count ?? 0,
+        memberCount,
+
+        members,
 
         avatar:
             chama.logo ?? null,
@@ -41,7 +44,9 @@ export function mapChamaWorkspace(
 
 export function mapContributionWorkspace(
     membership,
-    group
+    group,
+    memberCount = 0,
+    members = []
 ){
 
     return{
@@ -62,8 +67,9 @@ export function mapContributionWorkspace(
 
         status:group.status,
 
-        memberCount:
-            group.member_count ?? 0,
+        memberCount,
+
+        members,
 
         avatar:
             group.logo ?? null,
