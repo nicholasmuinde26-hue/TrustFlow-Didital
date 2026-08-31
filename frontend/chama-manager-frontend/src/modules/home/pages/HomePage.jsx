@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,12 +20,12 @@ import {
   UserPlus,
   Search,
   ArrowRight,
-  Home,
-  BriefcaseBusiness,
   Clock3,
   UserCircle,
   ChevronDown,
   ChevronUp,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -47,7 +47,9 @@ const workspaceConfig = {
   business: {
     icon: Store,
     label: "Business Hub",
+    pluralLabel: "Businesses",
     description: "Sales, inventory & operational ledger",
+    createTo: "/business/new",
 
     iconBg:
       "bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20",
@@ -59,12 +61,19 @@ const workspaceConfig = {
 
     hover:
       "hover:border-blue-200 hover:shadow-blue-100/50 dark:hover:border-blue-500/30",
+
+    sectionHeader:
+      "border-blue-200/80 bg-blue-50/60 dark:border-blue-900/60 dark:bg-blue-950/30",
+
+    solidIconBg: "bg-blue-600",
   },
 
   chama: {
     icon: Building2,
     label: "Chama Circle",
+    pluralLabel: "Chamas",
     description: "Members, treasury & rotational payouts",
+    createTo: "/chamas/new",
 
     iconBg:
       "bg-violet-50 text-violet-600 border-violet-100 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20",
@@ -76,12 +85,19 @@ const workspaceConfig = {
 
     hover:
       "hover:border-violet-200 hover:shadow-violet-100/50 dark:hover:border-violet-500/30",
+
+    sectionHeader:
+      "border-violet-200/80 bg-violet-50/60 dark:border-violet-900/60 dark:bg-violet-950/30",
+
+    solidIconBg: "bg-violet-600",
   },
 
   contribution: {
     icon: Wallet,
     label: "Contribution Group",
+    pluralLabel: "Contribution Groups",
     description: "Structured savings, collections & obligations",
+    createTo: "/contribution-groups/new",
 
     iconBg:
       "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20",
@@ -93,6 +109,11 @@ const workspaceConfig = {
 
     hover:
       "hover:border-emerald-200 hover:shadow-emerald-100/50 dark:hover:border-emerald-500/30",
+
+    sectionHeader:
+      "border-emerald-200/80 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/30",
+
+    solidIconBg: "bg-emerald-600",
   },
 };
 
@@ -326,22 +347,30 @@ function sumField(workspaces, getter, predicate = () => true) {
 export default function HomePage() {
   const { user } = useAuth();
 
-  const { workspaces = [], loading, selectWorkspace, currentWorkspace } = useWorkspace();
+  const { workspaces = [], loading, selectWorkspace } = useWorkspace();
 
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
-  const [collapsedSections, setCollapsedSections] = useState({
-    chama: false,
-    contribution: false,
-    business: false,
-  });
+  const [activeTab, setActiveTab] = useState("chama");
+  const [viewStyle, setViewStyle] = useState("compact"); // 'compact' (list) | 'cards'
 
-  const toggleSection = (key) => {
-    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  /* ==========================================================
+     TYPE NAVIGATION — shared by the mobile bottom bar and the
+     filter tabs: switches "Your Workspaces" to that type and
+     scrolls it into view. There's always exactly one type
+     selected (Chama, Contribution Group, or Business) — no "all".
+  ========================================================== */
+
+  function goToWorkspaceType(type) {
+    setActiveTab(type);
+
+    const target = document.getElementById("workspaces-section");
+
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
 
   /* ==========================================================
      LIVE CLOCK
@@ -413,16 +442,6 @@ export default function HomePage() {
 
   const totalBalance = useMemo(() => sumField(workspaces, getTreasury), [workspaces]);
 
-  const totalMonthlyContributions = useMemo(
-    () =>
-      sumField(
-        workspaces,
-        getContributionAmount,
-        (w) => normalizeWorkspaceType(w.type) === "contribution"
-      ),
-    [workspaces]
-  );
-
   /* ==========================================================
      FILTER
   ========================================================== */
@@ -446,7 +465,7 @@ export default function HomePage() {
 
       const matchesSearch = !query || searchableText.includes(query);
 
-      const matchesTab = activeTab === "all" || type === activeTab;
+      const matchesTab = type === activeTab;
 
       return matchesSearch && matchesTab;
     });
@@ -623,100 +642,22 @@ export default function HomePage() {
         </motion.section>
 
         {/* ====================================================
-            QUICK ACTIONS
+            CREATE A WORKSPACE — trimmed to exactly the three
+            workspace types (mirrors the mobile bottom bar's type
+            tabs), so this row and the tab bar teach the same
+            mental model instead of listing five mixed actions.
+            "Send Invite" now lives in the Invitations panel and
+            "Join Chama" has its own dedicated card below, so
+            neither is duplicated up here.
         ==================================================== */}
 
-        <section className="mb-9">
-          <SectionHeading title="Quick Actions" />
-
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none lg:grid lg:grid-cols-5">
-            <QuickAction
-              to="/business/new"
-              icon={Store}
-              title="New Business"
-              description="Create a business workspace"
-              color="blue"
-            />
-
-            <QuickAction
-              to="/chamas/new"
-              icon={Building2}
-              title="New Chama"
-              description="Start a chama workspace"
-              color="violet"
-            />
-
-            <QuickAction
-              to="/contribution-groups/new"
-              icon={Wallet}
-              title="Contribution"
-              description="Setup savings & obligations"
-              color="emerald"
-            />
-
-            <QuickAction
-              to="/invitations"
-              icon={Mail}
-              title="Send Invite"
-              description="Invite members to join"
-              color="orange"
-            />
-
-            <QuickAction
-              to="/chamas/join"
-              icon={UserPlus}
-              title="Join Chama"
-              description="Use an invitation code"
-              color="indigo"
-            />
-          </div>
-        </section>
-
-        {/* ====================================================
-            OVERVIEW — every figure is a real aggregate over the
-            fetched workspaces, or "—" when nothing backs it yet.
-            No invented month-over-month deltas.
-        ==================================================== */}
-
-        <section className="mb-9">
-          <SectionHeading title="Overview" />
-
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <OverviewCard
-              icon={Layers3}
-              label="Total Workspaces"
-              value={workspaces.length}
-              color="violet"
-            />
-
-            <OverviewCard
-              icon={TrendingUp}
-              label="Total Balance"
-              value={formatCurrency(totalBalance)}
-              color="emerald"
-            />
-
-            <OverviewCard
-              icon={Wallet}
-              label="Monthly Contributions"
-              value={formatCurrency(totalMonthlyContributions)}
-              color="pink"
-            />
-
-            <OverviewCard
-              icon={Users}
-              label="Total Members"
-              value={totalMembers ?? "—"}
-              color="blue"
-            />
-          </div>
-        </section>
+      
 
         {/* ====================================================
             WORKSPACES
         ==================================================== */}
 
-        <section className="mb-9">
+        <section id="workspaces-section" className="mb-9 scroll-mt-28">
           <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-2xl font-black tracking-tight">Your Workspaces</h2>
@@ -733,215 +674,95 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {/* Filters */}
+          {/* Filters & View Style Switcher Toolbar — Chama, Groups,
+              and Business only; there's always exactly one selected,
+              so the list below is a single unified block per type
+              instead of three collapsible groups. */}
 
-          <div className="mb-4 flex gap-2 overflow-x-auto scrollbar-none">
-            <FilterButton
-              active={activeTab === "all"}
-              onClick={() => setActiveTab("all")}
-              label="All"
-              count={workspaces.length}
-            />
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-2 overflow-x-auto scrollbar-none">
+              <FilterButton
+                active={activeTab === "chama"}
+                onClick={() => setActiveTab("chama")}
+                label="Chama"
+                count={chamaCount}
+              />
 
-            <FilterButton
-              active={activeTab === "business"}
-              onClick={() => setActiveTab("business")}
-              label="Business"
-              count={businessCount}
-            />
+              <FilterButton
+                active={activeTab === "contribution"}
+                onClick={() => setActiveTab("contribution")}
+                label="Groups"
+                count={contributionCount}
+              />
 
-            <FilterButton
-              active={activeTab === "chama"}
-              onClick={() => setActiveTab("chama")}
-              label="Chama"
-              count={chamaCount}
-            />
+              <FilterButton
+                active={activeTab === "business"}
+                onClick={() => setActiveTab("business")}
+                label="Business"
+                count={businessCount}
+              />
+            </div>
 
-            <FilterButton
-              active={activeTab === "contribution"}
-              onClick={() => setActiveTab("contribution")}
-              label="Groups"
-              count={contributionCount}
-            />
+            {/* View Style Switcher */}
+            <div className="flex items-center gap-1 shrink-0 rounded-2xl border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={() => setViewStyle("compact")}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                  viewStyle === "compact"
+                    ? "bg-slate-950 text-white shadow-xs dark:bg-white dark:text-slate-950"
+                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                }`}
+              >
+                <List size={14} /> List View
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewStyle("cards")}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                  viewStyle === "cards"
+                    ? "bg-slate-950 text-white shadow-xs dark:bg-white dark:text-slate-950"
+                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                }`}
+              >
+                <LayoutGrid size={14} /> Card View
+              </button>
+            </div>
           </div>
 
-          {/* Workspace Results grouped into Collapsible Sections */}
+          {/* Workspace Results — one type at a time, matching the
+              tab above; no per-type header/collapse since the tab
+              already tells you which type you're looking at. */}
+
           {loading ? (
             <LoadingState />
           ) : filteredWorkspaces.length === 0 ? (
             <EmptyState searchQuery={searchQuery} activeTab={activeTab} />
+          ) : viewStyle === "compact" ? (
+            <div className="space-y-2">
+              {filteredWorkspaces.map((workspace, index) => (
+                <CompactWorkspaceRow
+                  key={getWorkspaceId(workspace)}
+                  workspace={workspace}
+                  meta={getWorkspaceMeta(workspace.type)}
+                  Icon={getWorkspaceMeta(workspace.type).icon}
+                  index={index}
+                  onOpen={() => openWorkspace(workspace)}
+                />
+              ))}
+            </div>
           ) : (
-            <div className="space-y-6">
-              {/* Section 1: All Chamas */}
-              {(activeTab === "all" || activeTab === "chama") && (
-                (() => {
-                  const chamas = filteredWorkspaces.filter(
-                    (w) => normalizeWorkspaceType(w.type) === "chama"
-                  );
-                  if (chamas.length === 0 && activeTab === "chama") {
-                    return <EmptyState searchQuery={searchQuery} activeTab="chama" />;
-                  }
-                  if (chamas.length === 0) return null;
-
-                  return (
-                    <div className="space-y-3">
-                      <div
-                        onClick={() => toggleSection("chama")}
-                        className="flex items-center justify-between p-4 rounded-2xl border border-violet-200/80 bg-violet-50/60 dark:border-violet-900/60 dark:bg-violet-950/30 cursor-pointer select-none hover:bg-violet-100/60 transition"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-xs">
-                            <Building2 size={20} />
-                          </span>
-                          <div>
-                            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                              All Chamas
-                              <span className="rounded-full bg-violet-200 px-2.5 py-0.5 text-xs font-black text-violet-900 dark:bg-violet-900 dark:text-violet-200">
-                                {chamas.length}
-                              </span>
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Rotational payouts, member treasury & Chama governance
-                            </p>
-                          </div>
-                        </div>
-                        <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-600 shadow-xs dark:bg-slate-900 dark:text-slate-300">
-                          {collapsedSections.chama ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-                        </button>
-                      </div>
-
-                      {!collapsedSections.chama && (
-                        <div className="grid gap-4 2xl:grid-cols-2">
-                          {chamas.map((workspace, index) => (
-                            <WorkspaceCard
-                              key={getWorkspaceId(workspace)}
-                              workspace={workspace}
-                              meta={getWorkspaceMeta(workspace.type)}
-                              Icon={getWorkspaceMeta(workspace.type).icon}
-                              index={index}
-                              onOpen={() => openWorkspace(workspace)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()
-              )}
-
-              {/* Section 2: All Contribution Groups */}
-              {(activeTab === "all" || activeTab === "contribution") && (
-                (() => {
-                  const groups = filteredWorkspaces.filter(
-                    (w) => normalizeWorkspaceType(w.type) === "contribution"
-                  );
-                  if (groups.length === 0 && activeTab === "contribution") {
-                    return <EmptyState searchQuery={searchQuery} activeTab="contribution" />;
-                  }
-                  if (groups.length === 0) return null;
-
-                  return (
-                    <div className="space-y-3">
-                      <div
-                        onClick={() => toggleSection("contribution")}
-                        className="flex items-center justify-between p-4 rounded-2xl border border-emerald-200/80 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/30 cursor-pointer select-none hover:bg-emerald-100/60 transition"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
-                            <Wallet size={20} />
-                          </span>
-                          <div>
-                            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                              All Contribution Groups
-                              <span className="rounded-full bg-emerald-200 px-2.5 py-0.5 text-xs font-black text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200">
-                                {groups.length}
-                              </span>
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Target fundraisers, cause pages & public pledges
-                            </p>
-                          </div>
-                        </div>
-                        <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-600 shadow-xs dark:bg-slate-900 dark:text-slate-300">
-                          {collapsedSections.contribution ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-                        </button>
-                      </div>
-
-                      {!collapsedSections.contribution && (
-                        <div className="grid gap-4 2xl:grid-cols-2">
-                          {groups.map((workspace, index) => (
-                            <WorkspaceCard
-                              key={getWorkspaceId(workspace)}
-                              workspace={workspace}
-                              meta={getWorkspaceMeta(workspace.type)}
-                              Icon={getWorkspaceMeta(workspace.type).icon}
-                              index={index}
-                              onOpen={() => openWorkspace(workspace)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()
-              )}
-
-              {/* Section 3: All Businesses */}
-              {(activeTab === "all" || activeTab === "business") && (
-                (() => {
-                  const businesses = filteredWorkspaces.filter(
-                    (w) => normalizeWorkspaceType(w.type) === "business"
-                  );
-                  if (businesses.length === 0 && activeTab === "business") {
-                    return <EmptyState searchQuery={searchQuery} activeTab="business" />;
-                  }
-                  if (businesses.length === 0) return null;
-
-                  return (
-                    <div className="space-y-3">
-                      <div
-                        onClick={() => toggleSection("business")}
-                        className="flex items-center justify-between p-4 rounded-2xl border border-blue-200/80 bg-blue-50/60 dark:border-blue-900/60 dark:bg-blue-950/30 cursor-pointer select-none hover:bg-blue-100/60 transition"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
-                            <Store size={20} />
-                          </span>
-                          <div>
-                            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                              All Businesses
-                              <span className="rounded-full bg-blue-200 px-2.5 py-0.5 text-xs font-black text-blue-900 dark:bg-blue-900 dark:text-blue-200">
-                                {businesses.length}
-                              </span>
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Rental, Retail, Restaurant, Service & Generic operational hubs
-                            </p>
-                          </div>
-                        </div>
-                        <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-600 shadow-xs dark:bg-slate-900 dark:text-slate-300">
-                          {collapsedSections.business ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-                        </button>
-                      </div>
-
-                      {!collapsedSections.business && (
-                        <div className="grid gap-4 2xl:grid-cols-2">
-                          {businesses.map((workspace, index) => (
-                            <WorkspaceCard
-                              key={getWorkspaceId(workspace)}
-                              workspace={workspace}
-                              meta={getWorkspaceMeta(workspace.type)}
-                              Icon={getWorkspaceMeta(workspace.type).icon}
-                              index={index}
-                              onOpen={() => openWorkspace(workspace)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()
-              )}
+            <div className="grid gap-4 2xl:grid-cols-2">
+              {filteredWorkspaces.map((workspace, index) => (
+                <WorkspaceCard
+                  key={getWorkspaceId(workspace)}
+                  workspace={workspace}
+                  meta={getWorkspaceMeta(workspace.type)}
+                  Icon={getWorkspaceMeta(workspace.type).icon}
+                  index={index}
+                  onOpen={() => openWorkspace(workspace)}
+                />
+              ))}
             </div>
           )}
         </section>
@@ -971,9 +792,19 @@ export default function HomePage() {
                 )}
               </div>
 
-              <Link to="/invitations" className="text-sm font-bold text-violet-600 dark:text-violet-400">
-                View All
-              </Link>
+              <div className="flex items-center gap-4">
+                <Link
+                  to="/invitations"
+                  className="hidden items-center gap-1 text-sm font-bold text-orange-600 sm:flex dark:text-orange-400"
+                >
+                  <Mail size={14} />
+                  Send Invite
+                </Link>
+
+                <Link to="/invitations" className="text-sm font-bold text-violet-600 dark:text-violet-400">
+                  View All
+                </Link>
+              </div>
             </div>
 
             <div className="p-5">
@@ -1061,14 +892,21 @@ export default function HomePage() {
       </div>
 
       {/* ======================================================
-          BOTTOM NAVIGATION — mobile only; the platform header
-          already covers this ground on larger screens.
+          BOTTOM NAVIGATION — mobile only. On small screens this
+          is the fast path to each workspace type (Chama /
+          Contribution Group / Business) plus the create button;
+          on large screens the same three types are already one
+          click away via the "Create a Workspace" row and the
+          filter tabs above the workspace list, so no bottom bar
+          is needed there.
       ====================================================== */}
 
       <BottomNavigation
-        location={location}
-        navigate={navigate}
-        currentWorkspace={currentWorkspace}
+        activeTab={activeTab}
+        onSelectType={goToWorkspaceType}
+        chamaCount={chamaCount}
+        contributionCount={contributionCount}
+        businessCount={businessCount}
       />
     </div>
   );
@@ -1137,34 +975,6 @@ function QuickAction({ to, icon: Icon, title, description, color }) {
 
       <p className="mt-1 text-xs leading-relaxed text-slate-400">{description}</p>
     </Link>
-  );
-}
-
-/* ============================================================
-   OVERVIEW CARD
-============================================================ */
-
-function OverviewCard({ icon: Icon, label, value, color }) {
-  const styles = {
-    violet: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400",
-
-    blue: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
-
-    emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
-
-    pink: "bg-pink-50 text-pink-600 dark:bg-pink-500/10 dark:text-pink-400",
-  };
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
-      <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles[color]}`}>
-        <Icon size={17} />
-      </span>
-
-      <p className="mt-4 text-xs font-medium text-slate-400">{label}</p>
-
-      <p className="mt-1 truncate text-xl font-black tracking-tight">{value}</p>
-    </div>
   );
 }
 
@@ -1410,32 +1220,23 @@ function WorkspaceMetric({ icon: Icon, label, value, positive = false }) {
 }
 
 /* ============================================================
-   BOTTOM NAVIGATION
+   BOTTOM NAVIGATION — mobile only (lg:hidden)
 
-   Real routes only:
-   - Home      -> /home
-   - Workspaces -> /workspaces
-   - Create (+) -> opens an in-place sheet with the three real
-     creation routes, since there's no single /create page
-   - Activity  -> the open workspace's own /activity page when one
-     is selected, otherwise /workspaces so the user can pick one
-   - Profile   -> /account/settings (the real profile route)
+   Small screens don't have room for the "Create a Workspace" row
+   and the filter tabs to both stay in view, so the bottom bar is
+   the fast path to each workspace type:
+   - Chama / Groups / Business -> filters "Your Workspaces" to that
+     type and scrolls it into view (tapping the active one again
+     clears back to "all")
+   - Create (+) -> opens an in-place sheet with the three creation
+     routes, plus "Join Chama" for entering an invitation code —
+     the same actions Quick Actions/the Join Chama card expose on
+     larger screens, just consolidated into one sheet here since
+     there's no room for four separate cards on mobile
 ============================================================ */
 
-function BottomNavigation({ location, navigate, currentWorkspace }) {
+function BottomNavigation({ activeTab, onSelectType, chamaCount, contributionCount, businessCount }) {
   const [createOpen, setCreateOpen] = useState(false);
-
-  const pathname = location?.pathname || "";
-
-  function goToActivity() {
-    const workspaceId = currentWorkspace?.id ?? currentWorkspace?._id;
-
-    if (workspaceId) {
-      navigate(`/workspace/${workspaceId}/activity`);
-    } else {
-      navigate("/workspaces");
-    }
-  }
 
   return (
     <nav className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-24px)] max-w-xl -translate-x-1/2 lg:hidden">
@@ -1465,19 +1266,35 @@ function BottomNavigation({ location, navigate, currentWorkspace }) {
               label="New Contribution Group"
               onNavigate={() => setCreateOpen(false)}
             />
+            <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+            <CreateSheetItem
+              to="/chamas/join"
+              icon={UserPlus}
+              label="Join Chama with a Code"
+              onNavigate={() => setCreateOpen(false)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-2xl shadow-slate-900/10 backdrop-blur-2xl dark:border-slate-700/80 dark:bg-slate-900/90">
         <div className="flex items-center justify-around">
-          <BottomNavItem to="/home" icon={Home} label="Home" active={pathname === "/home"} />
+          <WorkspaceTypeNavItem
+            type="chama"
+            label="Chama"
+            Icon={Building2}
+            active={activeTab === "chama"}
+            count={chamaCount}
+            onClick={() => onSelectType("chama")}
+          />
 
-          <BottomNavItem
-            to="/workspaces"
-            icon={BriefcaseBusiness}
-            label="Workspaces"
-            active={pathname.startsWith("/workspaces")}
+          <WorkspaceTypeNavItem
+            type="contribution"
+            label="Groups"
+            Icon={Wallet}
+            active={activeTab === "contribution"}
+            count={contributionCount}
+            onClick={() => onSelectType("contribution")}
           />
 
           <button
@@ -1492,18 +1309,13 @@ function BottomNavigation({ location, navigate, currentWorkspace }) {
             </motion.span>
           </button>
 
-          <BottomNavItem
-            icon={Clock3}
-            label="Activity"
-            active={pathname.endsWith("/activity")}
-            onClick={goToActivity}
-          />
-
-          <BottomNavItem
-            to="/account/settings"
-            icon={UserCircle}
-            label="Profile"
-            active={pathname.startsWith("/account")}
+          <WorkspaceTypeNavItem
+            type="business"
+            label="Business"
+            Icon={Store}
+            active={activeTab === "business"}
+            count={businessCount}
+            onClick={() => onSelectType("business")}
           />
         </div>
       </div>
@@ -1531,38 +1343,52 @@ function CreateSheetItem({ to, icon: Icon, label, onNavigate }) {
 }
 
 /* ============================================================
-   BOTTOM NAV ITEM
+   WORKSPACE TYPE NAV ITEM
 
-   Renders a Link when `to` is given, otherwise a button that
-   calls `onClick` — used by items (like Activity) whose
-   destination depends on app state rather than a fixed route.
+   One of the three bottom-bar tabs. Colors reuse workspaceConfig
+   so a Chama looks the same shade of violet here as it does on
+   its badge and card everywhere else on the page.
 ============================================================ */
 
-function BottomNavItem({ to, icon: Icon, label, active, onClick }) {
-  const className = `flex min-w-[58px] flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition ${
-    active
-      ? "text-violet-600 dark:text-violet-400"
-      : "text-slate-400 hover:text-slate-700 dark:hover:text-white"
-  }`;
-
-  const content = (
-    <>
-      <Icon size={19} strokeWidth={active ? 2.5 : 2} />
-      <span className="text-xs font-bold">{label}</span>
-    </>
-  );
-
-  if (to) {
-    return (
-      <Link to={to} className={className}>
-        {content}
-      </Link>
-    );
-  }
+function WorkspaceTypeNavItem({ type, label, Icon, active, count, onClick }) {
+  const meta = getWorkspaceMeta(type);
 
   return (
-    <button type="button" onClick={onClick} className={className}>
-      {content}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="flex min-w-[64px] flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition"
+    >
+      <span
+        className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+          active
+            ? meta.iconBg
+            : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+        }`}
+      >
+        <Icon size={18} strokeWidth={active ? 2.4 : 2} />
+
+        {count > 0 && (
+          <span
+            className={`absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-black ${
+              active
+                ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+            }`}
+          >
+            {count}
+          </span>
+        )}
+      </span>
+
+      <span
+        className={`text-[11px] font-bold ${
+          active ? "text-slate-900 dark:text-white" : "text-slate-400"
+        }`}
+      >
+        {label}
+      </span>
     </button>
   );
 }
@@ -1621,5 +1447,103 @@ function EmptyState({ searchQuery, activeTab }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ============================================================
+   COMPACT WORKSPACE ROW (WhatsApp-Style)
+============================================================ */
+
+function CompactWorkspaceRow({ workspace, meta, Icon, index, onOpen }) {
+  const type = normalizeWorkspaceType(workspace.type);
+  const isBusiness = type === "business";
+  const isContribution = type === "contribution";
+  const memberCount = getMemberCount(workspace);
+  const treasury = getTreasury(workspace);
+  const monthlySales = getMonthlySales(workspace);
+  const contributionAmount = getContributionAmount(workspace);
+  const nextPayout = getNextPayout(workspace);
+
+  const iconBgMap = {
+    chama: "bg-violet-100 text-violet-700 dark:bg-violet-950/80 dark:text-violet-300 border-violet-200 dark:border-violet-800",
+    contribution: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
+    business: "bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+  };
+
+  const badgeBgMap = {
+    chama: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/60 dark:text-violet-300 dark:border-violet-800",
+    contribution: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800",
+    business: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800",
+  };
+
+  let subtitleMetric = "";
+  if (isBusiness) {
+    const catLabel = workspace.businessType || workspace.category || "Business";
+    const salesStr = monthlySales !== null ? ` • ${formatCurrency(monthlySales)} Sales` : "";
+    subtitleMetric = `${catLabel}${salesStr}`;
+  } else if (isContribution) {
+    const mStr = memberCount !== null ? `${memberCount} Members` : "";
+    const contribStr = contributionAmount !== null ? ` • ${formatCurrency(contributionAmount)} Target` : "";
+    subtitleMetric = `${mStr}${contribStr}` || "Contribution Group";
+  } else {
+    const mStr = memberCount !== null ? `${memberCount} Members` : "";
+    const balStr = treasury !== null ? ` • ${formatCurrency(treasury)} Treasury` : "";
+    subtitleMetric = `${mStr}${balStr}` || "Chama Workspace";
+  }
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.18, delay: index * 0.02 }}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className="group relative flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-3 sm:px-4 shadow-xs transition-all hover:bg-slate-50 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:bg-slate-800/80 text-left"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Left Avatar with status dot */}
+          <div className="relative shrink-0">
+            <div className={`flex h-11 w-11 items-center justify-center rounded-2xl border font-bold ${iconBgMap[type] || iconBgMap.chama}`}>
+              <Icon size={20} />
+            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
+          </div>
+
+          {/* Center Details */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h4 className="truncate text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                {workspace.name || "Unnamed Workspace"}
+              </h4>
+              <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${badgeBgMap[type] || badgeBgMap.chama}`}>
+                {formatRole(workspace.role)}
+              </span>
+            </div>
+
+            <p className="truncate text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+              {subtitleMetric}
+            </p>
+          </div>
+        </div>
+
+        {/* Right Side Info */}
+        <div className="flex items-center gap-3 shrink-0">
+          {nextPayout && (
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <Clock3 size={11} className="text-slate-400" />
+              {formatPayout(nextPayout)}
+            </span>
+          )}
+
+          <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-400 group-hover:bg-slate-900 group-hover:text-white dark:bg-slate-800 dark:group-hover:bg-white dark:group-hover:text-slate-950 transition">
+            <ArrowUpRight size={14} />
+          </div>
+        </div>
+      </button>
+    </motion.div>
   );
 }
