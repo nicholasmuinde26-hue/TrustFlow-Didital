@@ -31,6 +31,16 @@ export const businessService = {
     return res.data?.data || res.data;
   },
 
+  async completeTransaction(workspaceId, transactionId) {
+    const res = await businessApi.completeTransaction(workspaceId, transactionId);
+    return res.data?.data || res.data;
+  },
+
+  async setKitchenStatus(workspaceId, transactionId, kitchenStatus) {
+    const res = await businessApi.setKitchenStatus(workspaceId, transactionId, kitchenStatus);
+    return res.data?.data || res.data;
+  },
+
   async getExpenses(workspaceId, params) {
     const res = await businessApi.getExpenses(workspaceId, params);
     return extractArray(res, "expenses");

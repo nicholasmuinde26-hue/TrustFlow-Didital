@@ -16,6 +16,14 @@ export const businessApi = {
   createSale: (workspaceId, payload) =>
     api.post(`/businesses/${workspaceId}/sales`, payload),
 
+  // Force-complete a pending payment (manual STK follow-up / admin override)
+  completeTransaction: (workspaceId, transactionId) =>
+    api.post(`/businesses/${workspaceId}/transactions/${transactionId}/complete`),
+
+  // Kitchen prep status — independent of payment status, see backend model comment
+  setKitchenStatus: (workspaceId, transactionId, kitchenStatus) =>
+    api.patch(`/businesses/${workspaceId}/transactions/${transactionId}/kitchen-status`, { kitchen_status: kitchenStatus }),
+
   // Expenses
   getExpenses: (workspaceId, params) =>
     api.get(`/businesses/${workspaceId}/expenses`, { params }),

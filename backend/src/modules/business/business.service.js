@@ -265,7 +265,14 @@ export async function createBusiness(data, user) {
     name: data.name,
     category,
     category_label: data.category_label || data.categoryLabel || "",
-    currency: data.currency,
+    currency: data.currency || "KES",
+    location: data.location || null,
+    fiscal_year_start: data.fiscal_year_start || data.fiscalYearStart || "January",
+    tax_settings: {
+      vat_registered: Boolean(data.vat_registered || data.tax_settings?.vat_registered),
+      vat_rate: Number(data.vat_rate || data.tax_settings?.vat_rate || 16),
+      tax_id: data.tax_id || data.tax_settings?.tax_id || null,
+    },
     mpesa_till: data.mPesaTill || null,
     mpesa_paybill: data.mPesaPaybill || null,
     created_by: getUserId(user),
@@ -534,6 +541,34 @@ export async function checkStkStatus(businessId, transactionId, user) {
   return { transaction };
 }
 
+/**
+ * Kitchen prep status — separate from payment `status`. Marking an order
+ * "ready" never touches payment fields (no fake M-Pesa receipt, no forced
+ * completion of an unpaid STK push); it only flips whether the food is done.
+ */
+export async function setKitchenStatus(businessId, transactionId, user, kitchenStatus) {
+  if (!["queued", "ready"].includes(kitchenStatus)) {
+    const error = new Error("Invalid kitchen status");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const business = await getOwnedBusiness(businessId, user);
+  const transaction = await BusinessTransaction.findOneAndUpdate(
+    { _id: transactionId, business_id: business._id, type: "sale" },
+    { kitchen_status: kitchenStatus },
+    { new: true }
+  );
+
+  if (!transaction) {
+    const error = new Error("Order not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return { transaction };
+}
+
 export async function forceCompleteTransaction(businessId, transactionId, user) {
   const business = await getOwnedBusiness(businessId, user);
   const transaction = await BusinessTransaction.findOne({
@@ -563,6 +598,66 @@ export async function forceCompleteTransaction(businessId, transactionId, user) 
  * CUSTOMERS DIRECTORY
  * ============================================================
  */
+export async function listCustomers(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  return BusinessCustomer.find({ business_id: business._id }).sort({ last_transaction_at: -1 });
+}
+
+export async function createCustomer(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  if (!data.name?.trim()) {
+    const error = new Error("Customer name is required");
+    error.statusCode = 400;
+    throw error;
+  }
+  return BusinessCustomer.create({
+    business_id: business._id,
+    name: data.name.trim(),
+    phone: data.phone || null,
+    email: data.email || null,
+    is_auto_registered: false,
+  });
+}
+
+/**
+ * ============================================================
+ * SUPPLIERS DIRECTORY
+ * ============================================================
+ */
+export async function listSuppliers(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  return BusinessSupplier.find({ business_id: business._id }).sort({ last_payout_at: -1 });
+}
+
+export async function createSupplier(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user);
+  if (!data.name?.trim()) {
+    const error = new Error("Supplier name is required");
+    error.statusCode = 400;
+    throw error;
+  }
+  return BusinessSupplier.create({
+    business_id: business._id,
+    name: data.name.trim(),
+    phone: data.phone || null,
+    email: data.email || null,
+    contact_person: data.contact_person || null,
+    is_auto_registered: false,
+  });
+}
+
+/**
+ * ============================================================
+ * FINANCIAL ACCOUNTS (Cash / Bank / M-Pesa) — POS & Reports read from these
+ * ============================================================
+ */
+export async function getBusinessAccounts(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  const ownerType = business.isGroup ? "ContributionGroup" : "Business";
+  const accountsMap = await ensureBusinessAccounts(business._id, getUserId(user), ownerType);
+  return Object.values(accountsMap);
+}
+
 import BusinessItem from "../../models/BusinessItem.js";
 import Storefront from "../../models/Storefront.js";
 import StorefrontOrder from "../../models/StorefrontOrder.js";

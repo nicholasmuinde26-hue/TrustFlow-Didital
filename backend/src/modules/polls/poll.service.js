@@ -19,7 +19,12 @@ import AppError from "../../utils/AppError.js";
 //
 // ============================================================================
 
-const CHAMA_OFFICIAL_ROLES = ["chairperson", "secretary", "treasurer"];
+// Mirrors CHAMA_POLL_OFFICIAL_ROLES in the frontend's
+// workspaces/permissions/Permissions.js — committee members are the
+// chama's voting/governance body and are included here so they can
+// create, publish, and manage polls (and count toward "officials_only"
+// eligibility/voting), same as the UI already lets them do.
+const CHAMA_OFFICIAL_ROLES = ["chairperson", "secretary", "treasurer", "committee_member"];
 const CONTRIBUTION_GROUP_OFFICIAL_ROLES = ["organizer", "co_organizer"];
 
 // ============================================================================

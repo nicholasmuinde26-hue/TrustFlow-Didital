@@ -134,6 +134,7 @@ export default function BusinessDashboard() {
       <BusinessStatCards stats={stats} />
 
       <QuickActions
+        category={profile?.category}
         onAction={handleQuickAction}
         onOpenMpesa={() => setIsMpesaModalOpen(true)}
       />

@@ -31,7 +31,9 @@ const ALLOWED_ROLES = [
   'treasurer',
   'secretary',
   'auditor',
-  'chairperson'
+  'chairperson',
+  'committee_member',
+  'patron'
 ];
 
 const ALLOWED_STATUSES = [
@@ -760,6 +762,15 @@ export const updateMemberRole = async ({
 
   membership.role =
     role;
+
+  // Patron is advisory-only and never holds a rotational payout slot
+  // (mirrors createChama, which always creates the Patron membership
+  // with payout_position: null). Moving someone into Patron frees up
+  // whatever slot they held; moving them back out does NOT auto-assign
+  // one — that still goes through the normal payout-order flow.
+  if (role === 'patron') {
+    membership.payout_position = null;
+  }
 
 
   await membership.save();

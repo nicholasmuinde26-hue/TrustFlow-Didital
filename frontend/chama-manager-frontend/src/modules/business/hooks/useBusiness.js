@@ -49,6 +49,55 @@ export function useBusinessSales(workspaceId, params = {}) {
   };
 }
 
+/**
+ * ============================================================
+ * KITCHEN — for category: "restaurant" businesses
+ * ============================================================
+ * Not a new data model: an order is a "sale" BusinessTransaction —
+ * the same table SalesPage, POS and Reports already read from.
+ *
+ * Kitchen readiness (kitchen_status) is deliberately kept separate
+ * from payment status (status). A cash order at POS is recorded
+ * `status: "completed"` the instant it's rung up — that's a payment
+ * fact, not a "food is ready" fact — so tickets are filtered on
+ * `kitchen_status`, and "Mark Ready" only flips that field. It never
+ * touches payment status, so it can't accidentally mark an unpaid
+ * M-Pesa order as paid.
+ */
+export function useKitchenOrders(workspaceId) {
+  const queryClient = useQueryClient();
+
+  const salesQuery = useQuery({
+    queryKey: ["business", "sales", workspaceId, {}],
+    queryFn: () => businessService.getSales(workspaceId, {}),
+    enabled: Boolean(workspaceId),
+    // Poll so a new order placed at the till shows up on the kitchen screen
+    refetchInterval: 10000,
+  });
+
+  const markReadyMutation = useMutation({
+    mutationFn: (transactionId) => businessService.setKitchenStatus(workspaceId, transactionId, "ready"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["business", "sales", workspaceId] });
+    },
+  });
+
+  const sales = Array.isArray(salesQuery.data) ? salesQuery.data : [];
+  // Documents written before this field existed come back without it
+  // (queries here use .lean() upstream, so mongoose defaults don't apply
+  // on read) — treat a missing value the same as "queued".
+  const kitchenStatus = (sale) => sale.kitchen_status || "queued";
+
+  return {
+    tickets: sales.filter((sale) => kitchenStatus(sale) === "queued"),
+    readySales: sales.filter((sale) => kitchenStatus(sale) === "ready"),
+    isLoading: salesQuery.isLoading,
+    refetch: salesQuery.refetch,
+    markReady: markReadyMutation.mutateAsync,
+    isMarkingReady: markReadyMutation.isPending,
+  };
+}
+
 // Expenses Hooks
 export function useBusinessExpenses(workspaceId, params = {}) {
   const queryClient = useQueryClient();

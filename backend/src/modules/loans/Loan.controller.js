@@ -7,8 +7,12 @@ import loanRepayment from './Loanrepayment.service.js';
 import loanRecovery from './loanRecovery.service.js';
 import loanDashboard from './Loandashboard.service.js';
 import loanPolicy from './Loanpolicy.service.js';
+import { LOAN_OFFICIAL_ROLES } from './Loan.constants.js';
 
-const OFFICIAL_ROLES = ['treasurer', 'chairperson', 'secretary', 'auditor'];
+// Committee members are included because the recusal quorum (spec section
+// 5/9 — "other authorized committee members" stand in when an officer is
+// recused as an applicant) needs them to be able to review and decide.
+const OFFICIAL_ROLES = LOAN_OFFICIAL_ROLES;
 
 const send = (handler) => async (req, res, next) => {
   try {
@@ -25,9 +29,14 @@ function requireOfficial(req) {
   }
 }
 
-function requireTreasurer(req) {
-  if (req.membership.role !== 'treasurer') {
-    throw new AppError('This action is restricted to the treasurer', 403);
+// Disbursement is normally treasurer-only, but the treasurer can never
+// disburse their own loan — the chairperson is the authorized fallback
+// when the treasurer is the applicant. That per-loan nuance needs the
+// loan itself, so only a coarse role gate happens here; the specific
+// check is enforced by Loandisbursement.service.js#assertAuthorizedDisburser.
+function requireDisburserRole(req) {
+  if (!['treasurer', 'chairperson'].includes(req.membership.role)) {
+    throw new AppError('This action is restricted to the treasurer (or the chairperson when the treasurer is the applicant)', 403);
   }
 }
 
@@ -38,6 +47,46 @@ function requireTreasurer(req) {
 export const getMySummary = send((req) => loanDashboard.getMemberLoanSummary({ chama: req.chama, membership: req.membership }));
 
 export const listMyLoans = send((req) => loanDashboard.listMemberLoans({ chama: req.chama, membership: req.membership }));
+
+export const checkEligibility = send(async (req) => {
+  const policy = await loanPolicy.getOrCreatePolicy(req.chama._id);
+  const { amount, purpose, repaymentPeriodMonths, repaymentFrequency, loanType } = req.query;
+  const loanEligibilityService = (await import('./Loaneligibility.service.js')).default;
+  return loanEligibilityService.checkEligibility({
+    chama: req.chama,
+    membership: req.membership,
+    policy,
+    amount: Number(amount || 0),
+    purpose: purpose || 'General',
+    repaymentPeriodMonths: Number(repaymentPeriodMonths || 1),
+    repaymentFrequency: repaymentFrequency || 'monthly',
+    loanType: loanType || 'standard',
+  });
+});
+
+export const listMyGuarantees = send(async (req) => {
+  const ChamaLoan = (await import('../../models/ChamaLoan.js')).default;
+  const loans = await ChamaLoan.find({
+    chama_id: req.chama._id,
+    'guarantors.membership_id': req.membership._id,
+  })
+    .populate({ path: 'membership_id', populate: { path: 'user_id', select: 'name phone email' } })
+    .sort({ createdAt: -1 });
+
+  return loans.map((loanItem) => {
+    const myGuarantee = (loanItem.guarantors || []).find((g) => String(g.membership_id) === String(req.membership._id));
+    return {
+      loan_id: loanItem._id,
+      reference: loanItem.reference,
+      borrower_name: loanItem.membership_id?.user_id?.name || 'Member',
+      amount: loanItem.amount,
+      purpose: loanItem.purpose,
+      guaranteed_amount: myGuarantee?.guaranteed_amount || 0,
+      status: myGuarantee?.status || 'pending',
+      requested_at: myGuarantee?.requested_at,
+    };
+  });
+});
 
 export const applyForLoan = send((req) =>
   loanApplication.applyForLoan({ chama: req.chama, membership: req.membership, userId: req.user._id, data: req.body })
@@ -74,6 +123,7 @@ export const respondToGuarantee = send((req) =>
     loanId: req.params.loanId,
     guarantorMembershipId: req.membership._id,
     decision: req.body.decision,
+    userId: req.user._id,
   })
 );
 
@@ -114,16 +164,17 @@ export const decideLoan = send((req) => {
 // ==========================================================
 
 export const initiateDisbursement = send((req) => {
-  requireTreasurer(req);
-  return loanDisbursement.initiateDisbursement({ chama: req.chama, loanId: req.params.loanId, userId: req.user._id });
+  requireDisburserRole(req);
+  return loanDisbursement.initiateDisbursement({ chama: req.chama, loanId: req.params.loanId, userId: req.user._id, membership: req.membership });
 });
 
 export const confirmManualDisbursement = send((req) => {
-  requireTreasurer(req);
+  requireDisburserRole(req);
   return loanDisbursement.confirmManualDisbursement({
     chama: req.chama,
     loanId: req.params.loanId,
     userId: req.user._id,
+    membership: req.membership,
     disbursementMethod: req.body.disbursement_method,
     externalReference: req.body.external_reference,
   });

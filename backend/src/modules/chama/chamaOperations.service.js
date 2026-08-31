@@ -8,9 +8,22 @@ import ChamaMemberKyc from "../../models/ChamaMemberKyc.js";
 import ChamaMeetingRecord from "../../models/ChamaMeetingRecord.js";
 import ChamaInvitation from "../../models/ChamaInvitation.js";
 
+// officialRoles gates broad chama-management permissions (dashboard's
+// "officials" widget, who can create invites/goals/meeting records —
+// see official() in chamaOperations.controller.js and canManage()
+// below). Deliberately NOT expanded to committee_member/patron: those
+// roles are governance/voting and advisory respectively, not general
+// management officials.
 export const officialRoles = ["chairperson", "treasurer", "secretary"];
 export const canManage = (membership) => officialRoles.includes(membership.role);
 export const requireRole = (membership, roles) => { if (!roles.includes(membership.role)) throw new AppError("You do not have permission for this Chama action", 403); };
+
+// Separate from officialRoles: this is every role assignOfficial() is
+// allowed to hand out via PUT /officials/:membershipId, which is a
+// distinct, broader concern from "who counts as an official" above —
+// mirrors ALLOWED_ROLES in member.service.js's updateMemberRole (the
+// Members-page role dropdown covers the same full role set).
+export const ASSIGNABLE_ROLES = ["member", "chairperson", "treasurer", "secretary", "auditor", "committee_member", "patron"];
 
 export async function dashboard(chamaId, membership) {
   const [profile, goals, loans, kyc, meetings, officials, members] = await Promise.all([
@@ -33,7 +46,7 @@ export async function getProfile(chamaId) {
 }
 
 export async function updateProfile(chamaId, data) { return ChamaProfile.findOneAndUpdate({ chama_id: chamaId }, { $set: { ...data, chama_id: chamaId } }, { new: true, upsert: true, runValidators: true }); }
-export async function assignOfficial(chamaId, membershipId, role) { if (!officialRoles.includes(role)) throw new AppError("Role must be chairperson, treasurer, or secretary", 400); const member = await ChamaMembership.findOneAndUpdate({ _id: membershipId, chama_id: chamaId, status: "active" }, { role }, { new: true }); if (!member) throw new AppError("Active member not found", 404); return member; }
+export async function assignOfficial(chamaId, membershipId, role) { if (!ASSIGNABLE_ROLES.includes(role)) throw new AppError(`Role must be one of: ${ASSIGNABLE_ROLES.join(", ")}`, 400); const update = { role, ...(role === "patron" ? { payout_position: null } : {}) }; const member = await ChamaMembership.findOneAndUpdate({ _id: membershipId, chama_id: chamaId, status: "active" }, update, { new: true }); if (!member) throw new AppError("Active member not found", 404); return member; }
 export async function createGoal(chamaId, userId, data) { if (!data.name || Number(data.target_amount) <= 0) throw new AppError("Goal name and target amount are required", 400); return ChamaGoal.create({ chama_id: chamaId, name: data.name, target_amount: data.target_amount, target_date: data.target_date || null, created_by: userId }); }
 export async function submitKyc(chamaId, membershipId, data) { if (!data.id_number || !data.selfie_url || !data.id_document_url) throw new AppError("ID number, ID document URL, and selfie URL are required", 400); return ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { $set: { id_number: data.id_number, selfie_url: data.selfie_url, id_document_url: data.id_document_url, status: "pending", reviewed_by: null, reviewed_at: null } }, { upsert: true, new: true, runValidators: true }); }
 export async function reviewKyc(chamaId, membershipId, userId, status) { if (!["verified", "rejected"].includes(status)) throw new AppError("Invalid KYC review status", 400); const kyc = await ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { status, reviewed_by: userId, reviewed_at: new Date() }, { new: true }); if (!kyc) throw new AppError("KYC submission not found", 404); return kyc; }

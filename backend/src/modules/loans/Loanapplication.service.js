@@ -1,8 +1,9 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import AppError from '../../utils/AppError.js';
-import { getOrCreatePolicy, resolveApprovalRoles } from './Loanpolicy.service.js';
+import { getOrCreatePolicy } from './Loanpolicy.service.js';
 import { checkEligibility } from './Loaneligibility.service.js';
 import { requestGuarantors, allGuaranteesAccepted, anyGuaranteeDeclined, validateGuarantor } from './Loanguarantor.service.js';
+import { resolveApprovalPlan } from './Loanconflict.service.js';
 import { loanReference, LOAN_STATUS, LOAN_TYPE } from './Loan.constants.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
@@ -84,10 +85,32 @@ export async function applyForLoan({ chama, membership, userId, data }) {
     return loan;
   }
 
-  loan.status = LOAN_STATUS.PENDING_APPROVAL;
   loan.submitted_at = new Date();
   if (!loan.reference) loan.reference = loanReference();
-  loan.required_approval_roles = resolveApprovalRoles(policy, loan.amount);
+
+  const plan = await resolveApprovalPlan({ chama, membership, policy, amount: loan.amount });
+  applyApprovalPlan(loan, plan);
+
+  if (plan.conflict && !plan.quorumFeasible) {
+    // Conflict-of-interest recusal leaves no feasible approval path —
+    // stop here rather than let the applicant's own role bypass governance.
+    loan.status = LOAN_STATUS.BLOCKED_CONFLICT;
+    await loan.save();
+
+    await createAuditLog({
+      actorUserId: userId,
+      scopeType: AUDIT_SCOPE_TYPES.CHAMA,
+      chamaId: chama._id,
+      action: AUDIT_ACTIONS.LOAN_CREATED,
+      resourceType: 'ChamaLoan',
+      resourceId: loan._id,
+      after: { amount: loan.amount, status: loan.status, reference: loan.reference, reason: loan.governance_block_reason },
+    }).catch(() => null);
+
+    return loan;
+  }
+
+  loan.status = LOAN_STATUS.PENDING_APPROVAL;
 
   if (Array.isArray(data.guarantors) && data.guarantors.length) {
     await requestGuarantors({ chama, policy, loan, guarantors: data.guarantors }).catch(() => null);
@@ -109,14 +132,33 @@ export async function applyForLoan({ chama, membership, userId, data }) {
   return loan;
 }
 
+/** Stamps the recusal outcome from resolveApprovalPlan() onto a loan. */
+function applyApprovalPlan(loan, plan) {
+  loan.required_approval_roles = plan.requiredRoles;
+  loan.recused_roles = plan.recusedRoles;
+  loan.recusal_quorum_required = plan.quorumRequired;
+  loan.conflict_of_interest = plan.conflict;
+  loan.governance_block_reason = plan.conflict && !plan.quorumFeasible ? plan.blockReason : null;
+  return loan;
+}
+
 /** Moves a loan from "guarantors pending" into the approval queue once every
  *  required guarantee has been accepted (or none were required). */
-export async function maybeAutoSubmit(loan, policy) {
+export async function maybeAutoSubmit(loan, policy, { chama, membership } = {}) {
   if (loan.status !== LOAN_STATUS.SUBMITTED) return loan;
   if (anyGuaranteeDeclined(loan)) return loan; // stays submitted; applicant must replace the guarantor
   if (!allGuaranteesAccepted(loan)) return loan;
 
-  loan.required_approval_roles = resolveApprovalRoles(policy, loan.amount);
+  const resolvedChama = chama || { _id: loan.chama_id };
+  const resolvedMembership = membership || (await (await import('../../models/ChamaMembership.js')).default.findById(loan.membership_id));
+  const plan = await resolveApprovalPlan({ chama: resolvedChama, membership: resolvedMembership, policy, amount: loan.amount });
+  applyApprovalPlan(loan, plan);
+
+  if (plan.conflict && !plan.quorumFeasible) {
+    loan.status = LOAN_STATUS.BLOCKED_CONFLICT;
+    return loan;
+  }
+
   loan.status = LOAN_STATUS.PENDING_APPROVAL;
   loan.submitted_at = new Date();
   if (!loan.reference) loan.reference = loanReference();

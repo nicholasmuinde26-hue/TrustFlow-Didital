@@ -2,7 +2,7 @@ import ChamaLoan from '../../models/ChamaLoan.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import AppError from '../../utils/AppError.js';
 import { getOrCreatePolicy, resolveApprovalRoles } from './Loanpolicy.service.js';
-import { LOAN_STATUS } from './Loan.constants.js';
+import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from './Loan.constants.js';
 import { assessRisk } from './Loanrisk.service.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
@@ -76,9 +76,22 @@ export async function decide({ chama, loanId, membership, userId, decision, comm
   const requiredRoles = (loan.required_approval_roles && loan.required_approval_roles.length > 0)
     ? loan.required_approval_roles
     : ['chairperson', 'treasurer'];
+  const quorumRequired = Number(loan.recusal_quorum_required || 0);
 
-  const isOfficial = ['treasurer', 'chairperson', 'secretary', 'admin'].includes(membership.role);
-  if (!isOfficial && !requiredRoles.includes(membership.role)) {
+  // Conflict-of-Interest Recusal: The applicant can never approve their own loan.
+  // Checked before the role check below so a recused chairperson/treasurer gets
+  // the specific recusal reason rather than a generic role-mismatch error.
+  if (String(loan.membership_id) === String(membership._id)) {
+    throw new AppError('Conflict of interest recusal: You cannot approve your own loan application.', 403);
+  }
+
+  // Anyone in the required role list can approve. When there's an active
+  // recusal quorum requirement (an officer is borrowing), any other
+  // independent official — including committee members standing in for the
+  // recused seat — is also allowed in.
+  const isOfficial = LOAN_OFFICIAL_ROLES.includes(membership.role);
+  const isEligibleApprover = requiredRoles.includes(membership.role) || (quorumRequired > 0 && isOfficial);
+  if (!isEligibleApprover) {
     throw new AppError(`Your role (${membership.role}) is not part of the approval chain for this loan`, 403);
   }
 
@@ -101,12 +114,23 @@ export async function decide({ chama, loanId, membership, userId, decision, comm
     loan.rejected_at = new Date();
     loan.rejection_reason = comment || `Rejected by ${membership.role}`;
   } else {
-    const approvedRoles = new Set(
-      loan.approvals.filter((a) => a.decision === 'approved').map((a) => a.role)
-    );
+    const approvedDecisions = loan.approvals.filter((a) => a.decision === 'approved');
+    const approvedRoles = new Set(approvedDecisions.map((a) => a.role));
     const allRequiredRolesApproved = requiredRoles.every((role) => approvedRoles.has(role));
 
-    if (allRequiredRolesApproved) {
+    // Recusal quorum: approvals that aren't already accounted for by one of
+    // the fixed required-role seats stand in for the recused role(s).
+    let quorumMet = true;
+    if (quorumRequired > 0) {
+      const quorumFillers = new Set(
+        approvedDecisions
+          .filter((a) => !requiredRoles.includes(a.role))
+          .map((a) => String(a.membership_id))
+      );
+      quorumMet = quorumFillers.size >= quorumRequired;
+    }
+
+    if (allRequiredRolesApproved && quorumMet) {
       loan.status = LOAN_STATUS.APPROVED;
       loan.approved_at = new Date();
       await buildLoanAgreement(loan);

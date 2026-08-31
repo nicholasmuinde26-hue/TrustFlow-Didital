@@ -85,6 +85,13 @@ const chamaLoanPolicySchema = new mongoose.Schema(
       ],
     },
 
+    // Conflict-of-interest recusal: when the applicant themself holds one
+    // of the required_roles above, that seat can't be filled by them. This
+    // is how many OTHER independent officials (any of treasurer,
+    // chairperson, secretary, auditor, committee_member — excluding the
+    // applicant) must approve in its place.
+    recusal_quorum_size: { type: Number, default: 2, min: 1 },
+
     emergency_loan_enabled: { type: Boolean, default: true },
     emergency_loan_limit: { type: Number, default: 5000, min: 0 },
     emergency_loan_approval_roles: { type: [String], default: ['treasurer'] },

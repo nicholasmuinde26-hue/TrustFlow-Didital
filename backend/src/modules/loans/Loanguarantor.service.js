@@ -5,6 +5,8 @@ import { getMemberSavings, getGuaranteeExposure } from './loanSavings.service.js
 import { GUARANTOR_STATUS } from './Loan.constants.js';
 import { getOrCreatePolicy } from './Loanpolicy.service.js';
 import { maybeAutoSubmit } from './Loanapplication.service.js';
+import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
+import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 
 /**
  * Validates a proposed guarantor and returns their available guarantee
@@ -69,7 +71,7 @@ export async function requestGuarantors({ chama, policy, loan, guarantors }) {
   return loan;
 }
 
-export async function respondToGuarantee({ chamaId, loanId, guarantorMembershipId, decision }) {
+export async function respondToGuarantee({ chamaId, loanId, guarantorMembershipId, decision, userId }) {
   if (!['accepted', 'declined'].includes(decision)) {
     throw new AppError('Decision must be accepted or declined', 400);
   }
@@ -83,10 +85,38 @@ export async function respondToGuarantee({ chamaId, loanId, guarantorMembershipI
     throw new AppError('This guarantee request has already been responded to', 400);
   }
 
+  const policy = await getOrCreatePolicy(chamaId);
+
+  // Guarantor verification: an acceptance re-confirms the guarantor is
+  // still an active member with enough remaining capacity. Time may have
+  // passed since the original request — their savings or other guarantees
+  // could have moved in the meantime, so we don't just trust the stale
+  // check made when the request was first sent.
+  if (decision === GUARANTOR_STATUS.ACCEPTED) {
+    await validateGuarantor({
+      chama: { _id: chamaId },
+      policy,
+      guarantorMembershipId,
+      proposedAmount: entry.guaranteed_amount,
+      borrowerMembershipId: loan.membership_id,
+    });
+  }
+
   entry.status = decision;
   entry.responded_at = new Date();
-  if (decision === GUARANTOR_STATUS.ACCEPTED) await maybeAutoSubmit(loan, await getOrCreatePolicy(chamaId));
+  if (decision === GUARANTOR_STATUS.ACCEPTED) await maybeAutoSubmit(loan, policy);
   await loan.save();
+
+  await createAuditLog({
+    actorUserId: userId,
+    scopeType: AUDIT_SCOPE_TYPES.CHAMA,
+    chamaId,
+    action: AUDIT_ACTIONS.LOAN_GUARANTOR_RESPONDED,
+    resourceType: 'ChamaLoan',
+    resourceId: loan._id,
+    after: { guarantor_membership_id: guarantorMembershipId, decision, guaranteed_amount: entry.guaranteed_amount },
+  }).catch(() => null);
+
   return loan;
 }
 

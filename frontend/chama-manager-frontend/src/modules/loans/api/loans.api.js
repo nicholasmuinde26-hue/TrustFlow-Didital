@@ -4,6 +4,8 @@ const base = (chamaId) => `/chamas/${chamaId}/loans`;
 export default {
   summary: (chamaId) => api.get(`${base(chamaId)}/me/summary`),
   mine: (chamaId) => api.get(`${base(chamaId)}/me`),
+  checkEligibility: (chamaId, params) => api.get(`${base(chamaId)}/eligibility-check`, { params }),
+  myGuarantees: (chamaId) => api.get(`${base(chamaId)}/my-guarantees`),
   apply: (chamaId, payload) => api.post(base(chamaId), payload),
   loan: (chamaId, loanId) => api.get(`${base(chamaId)}/${loanId}`),
   respondGuarantee: (chamaId, loanId, decision) => api.post(`${base(chamaId)}/${loanId}/guarantee-response`, { decision }),

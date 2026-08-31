@@ -32,6 +32,7 @@ export async function updatePolicy(chamaId, updates, userId) {
     'allow_guarantor_recovery',
     'min_guarantors_required',
     'approval_matrix',
+    'recusal_quorum_size',
     'emergency_loan_enabled',
     'emergency_loan_limit',
     'emergency_loan_approval_roles',

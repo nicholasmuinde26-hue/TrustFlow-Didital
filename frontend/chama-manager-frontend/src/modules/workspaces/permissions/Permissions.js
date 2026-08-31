@@ -25,6 +25,8 @@ export const CHAMA_ROLES = [
   "secretary",
   "auditor",
   "chairperson",
+  "committee_member",
+  "patron",
 ];
 
 export const CONTRIBUTION_GROUP_ROLES = [
@@ -34,9 +36,7 @@ export const CONTRIBUTION_GROUP_ROLES = [
 ];
 
 // Roles a manager is allowed to hand to another member. Deliberately
-// excludes "organizer" for contribution groups — the backend's role-update
-// endpoint only supports toggling member <-> co_organizer; organizer status
-// follows ContributionGroup.created_by and isn't reassigned this way.
+// excludes "organizer" for contribution groups.
 export function assignableRoles(type) {
   if (type === "chama") {
     return CHAMA_ROLES;
@@ -79,27 +79,35 @@ export function canEditMemberProfile(role, type, isSelf) {
 }
 
 export function canManageAnnouncements(role, type) {
+  if (type === "chama") {
+    return ["chairperson", "treasurer", "secretary"].includes(role);
+  }
   return isManager(role, type);
 }
 
 export function canPinAnnouncement(role, type) {
+  if (type === "chama") {
+    return ["chairperson", "treasurer", "secretary"].includes(role);
+  }
   return isManager(role, type);
 }
 
 export function canDeleteAnnouncement(role, type) {
+  if (type === "chama") {
+    return ["chairperson", "treasurer", "secretary"].includes(role);
+  }
   return isManager(role, type);
 }
 
 export function canManageMeetings(role, type) {
+  if (type === "chama") {
+    return ["chairperson", "treasurer", "secretary"].includes(role);
+  }
   return isManager(role, type);
 }
 
-// Chama: officials (chairperson, secretary, treasurer) can call and manage
-// polls — mirrors the backend's poll.service.js CHAMA_OFFICIAL_ROLES, which
-// is deliberately broader than isManager() (adds Secretary) since calling a
-// vote is a governance action, not a settings/finance one.
-// Contribution Group: organizer/co_organizer, same as isManager().
-const CHAMA_POLL_OFFICIAL_ROLES = ["chairperson", "secretary", "treasurer"];
+// Chama: officials & committee members can call and manage polls
+const CHAMA_POLL_OFFICIAL_ROLES = ["chairperson", "secretary", "treasurer", "committee_member"];
 
 export function canManagePolls(role, type) {
   if (type === "chama") {
@@ -141,18 +149,26 @@ export function canViewAdministration(role, type) {
 
 // Chama-only: the dual loan-approval queue (approve/reject/
 // disburse) is restricted to Chama officials — mirrors
-// OFFICIAL_ROLES in backend/src/modules/loans/Loan.controller.js.
-// Broader than isManager() above: Secretary and Auditor can also
-// review/approve loans even though they can't edit Chama settings.
-const LOAN_OFFICIAL_ROLES = ["treasurer", "chairperson", "secretary", "auditor"];
+// LOAN_OFFICIAL_ROLES in backend/src/modules/loans/Loan.constants.js.
+// Broader than isManager() above: Secretary, Auditor, and Committee
+// Member can also review/approve loans even though not all of them
+// can edit Chama settings. Committee members matter especially for
+// the conflict-of-interest recusal quorum (when the Chairperson or
+// Treasurer is themself the applicant, other committee members fill
+// the recused seat).
+const LOAN_OFFICIAL_ROLES = ["treasurer", "chairperson", "secretary", "auditor", "committee_member"];
 
 export function isLoanOfficial(role, type) {
   return type === "chama" && LOAN_OFFICIAL_ROLES.includes(role);
 }
 
-// Chama-only: initiating an M-Pesa disbursement once a loan is
-// fully approved is Treasurer-only — mirrors requireTreasurer()
-// in backend/src/middleware/chama.middleware.js.
+// Chama-only: initiating a disbursement once a loan is fully approved
+// is normally Treasurer-only — mirrors requireDisburserRole() in
+// backend/src/modules/loans/Loan.controller.js. The Chairperson is
+// also allowed here because the Treasurer can never disburse their
+// own loan: when the Treasurer is the applicant, the Chairperson is
+// the authorized fallback disburser (the backend still enforces the
+// precise per-loan rule via assertAuthorizedDisburser()).
 export function canDisburseLoan(role, type) {
-  return type === "chama" && role === "treasurer";
+  return type === "chama" && ["treasurer", "chairperson"].includes(role);
 }

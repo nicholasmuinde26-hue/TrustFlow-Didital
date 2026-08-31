@@ -844,3 +844,29 @@ export const requireAuditAccess = async (
   }
 
 };
+
+// ========================================
+// REQUIRE SECRETARY OR MANAGER
+// ========================================
+//
+// Allows Chairperson, Treasurer, or Secretary
+// for meeting records, announcements, and
+// register management.
+//
+// ========================================
+
+export const requireSecretaryOrManager = async (req, res, next) => {
+  try {
+    validateChamaContext(req);
+
+    const allowedRoles = ['chairperson', 'treasurer', 'secretary'];
+
+    if (!allowedRoles.includes(req.membership.role)) {
+      throw new AppError('Only the chairperson, treasurer, or secretary can perform this action', 403);
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};

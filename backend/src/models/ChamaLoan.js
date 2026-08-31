@@ -157,7 +157,7 @@ const chamaLoanSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        'draft', 'submitted', 'eligibility_failed', 'pending_approval', 'rejected',
+        'draft', 'submitted', 'eligibility_failed', 'blocked_conflict', 'pending_approval', 'rejected',
         'approved', 'disbursement_pending', 'disbursed', 'active', 'partially_repaid',
         'overdue', 'defaulted', 'recovered', 'closed', 'cancelled',
       ],
@@ -173,6 +173,15 @@ const chamaLoanSchema = new mongoose.Schema(
     rejected_at: { type: Date, default: null },
     rejection_reason: { type: String, default: null },
     approved_at: { type: Date, default: null },
+
+    // Conflict-of-interest routing (spec: "the applicant can never approve
+    // or disburse their own loan"). When the applicant holds one of the
+    // required approval roles, that seat is recused and replaced with a
+    // quorum of independent officials instead. See Loanconflict.service.js.
+    conflict_of_interest: { type: Boolean, default: false },
+    recused_roles: { type: [String], default: [] },
+    recusal_quorum_required: { type: Number, default: 0, min: 0 },
+    governance_block_reason: { type: String, default: null },
 
     disbursement: { type: disbursementSchema, default: () => ({}) },
 

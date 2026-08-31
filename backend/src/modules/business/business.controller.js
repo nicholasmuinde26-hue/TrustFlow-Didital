@@ -60,6 +60,20 @@ export const forceCompleteTransaction = async (request, response, next) => {
   } catch (error) { sendError(error, response, next); }
 };
 
+// Kitchen prep status — independent of payment completion (see model comment
+// on kitchen_status). Used by the Kitchen page's "Mark Ready" action.
+export const setKitchenStatus = async (request, response, next) => {
+  try {
+    const result = await businessService.setKitchenStatus(
+      request.params.businessId,
+      request.params.transactionId,
+      request.user,
+      request.body.kitchen_status
+    );
+    response.json({ success: true, data: result });
+  } catch (error) { sendError(error, response, next); }
+};
+
 
 export const listCustomers = async (request, response, next) => {
   try { response.json({ success: true, data: await businessService.listCustomers(request.params.businessId, request.user) }); }

@@ -6,6 +6,9 @@ import { LOAN_STATUS } from './Loan.constants.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 
+import ChamaMembership from '../../models/ChamaMembership.js';
+import { allGuaranteesAccepted } from './Loanguarantor.service.js';
+
 /**
  * Kicks off disbursement. The loan is NOT marked `disbursed` here — only
  * `disbursement_pending` — because a B2C request being accepted by
@@ -18,6 +21,19 @@ export async function initiateDisbursement({ chama, loanId, userId }) {
   if (!loan) throw new AppError('Loan not found', 404);
   if (loan.status !== LOAN_STATUS.APPROVED) {
     throw new AppError('Only an approved loan can be disbursed', 400);
+  }
+
+  // Conflict of Interest Recusal: The applicant can never disburse their own loan
+  if (userId) {
+    const disburserMembership = await ChamaMembership.findOne({ chama_id: chama._id, user_id: userId });
+    if (disburserMembership && String(disburserMembership._id) === String(loan.membership_id)) {
+      throw new AppError('Conflict of interest recusal: You cannot disburse your own loan application.', 403);
+    }
+  }
+
+  // Guarantor Check: All guarantors must have accepted
+  if (!allGuaranteesAccepted(loan)) {
+    throw new AppError('Cannot disburse loan: All requested guarantors must accept their guarantee requests first.', 400);
   }
 
   if (loan.disbursement_method === 'mpesa' && !loan.phone_number) {

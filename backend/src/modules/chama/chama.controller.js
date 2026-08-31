@@ -82,6 +82,12 @@ export const createChamaController = async (
       treasurerEmail,
       treasurerUserId,
       treasurerInput,
+      secretaryUserId,
+      secretaryInput,
+      committeeUserIds,
+      committeeInputs,
+      patronUserId,
+      patronInput,
     } = req.body;
 
 
@@ -99,6 +105,12 @@ export const createChamaController = async (
         treasurerEmail,
         treasurerUserId,
         treasurerInput,
+        secretaryUserId,
+        secretaryInput,
+        committeeUserIds,
+        committeeInputs,
+        patronUserId,
+        patronInput,
       });
 
 

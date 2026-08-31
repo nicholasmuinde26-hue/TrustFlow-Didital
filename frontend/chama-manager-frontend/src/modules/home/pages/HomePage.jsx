@@ -24,6 +24,8 @@ import {
   BriefcaseBusiness,
   Clock3,
   UserCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -331,6 +333,15 @@ export default function HomePage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [collapsedSections, setCollapsedSections] = useState({
+    chama: false,
+    contribution: false,
+    business: false,
+  });
+
+  const toggleSection = (key) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   /* ==========================================================
      LIVE CLOCK
@@ -754,34 +765,183 @@ export default function HomePage() {
             />
           </div>
 
-          {/* Workspace Results */}
-
+          {/* Workspace Results grouped into Collapsible Sections */}
           {loading ? (
             <LoadingState />
           ) : filteredWorkspaces.length === 0 ? (
             <EmptyState searchQuery={searchQuery} activeTab={activeTab} />
           ) : (
-            <div className="grid gap-4 2xl:grid-cols-2">
-              <AnimatePresence mode="popLayout">
-                {filteredWorkspaces.map((workspace, index) => {
-                  const id = getWorkspaceId(workspace);
-
-                  const meta = getWorkspaceMeta(workspace.type);
-
-                  const Icon = meta.icon;
+            <div className="space-y-6">
+              {/* Section 1: All Chamas */}
+              {(activeTab === "all" || activeTab === "chama") && (
+                (() => {
+                  const chamas = filteredWorkspaces.filter(
+                    (w) => normalizeWorkspaceType(w.type) === "chama"
+                  );
+                  if (chamas.length === 0 && activeTab === "chama") {
+                    return <EmptyState searchQuery={searchQuery} activeTab="chama" />;
+                  }
+                  if (chamas.length === 0) return null;
 
                   return (
-                    <WorkspaceCard
-                      key={id}
-                      workspace={workspace}
-                      meta={meta}
-                      Icon={Icon}
-                      index={index}
-                      onOpen={() => openWorkspace(workspace)}
-                    />
+                    <div className="space-y-3">
+                      <div
+                        onClick={() => toggleSection("chama")}
+                        className="flex items-center justify-between p-4 rounded-2xl border border-violet-200/80 bg-violet-50/60 dark:border-violet-900/60 dark:bg-violet-950/30 cursor-pointer select-none hover:bg-violet-100/60 transition"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-xs">
+                            <Building2 size={20} />
+                          </span>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                              All Chamas
+                              <span className="rounded-full bg-violet-200 px-2.5 py-0.5 text-xs font-black text-violet-900 dark:bg-violet-900 dark:text-violet-200">
+                                {chamas.length}
+                              </span>
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Rotational payouts, member treasury & Chama governance
+                            </p>
+                          </div>
+                        </div>
+                        <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-600 shadow-xs dark:bg-slate-900 dark:text-slate-300">
+                          {collapsedSections.chama ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+                        </button>
+                      </div>
+
+                      {!collapsedSections.chama && (
+                        <div className="grid gap-4 2xl:grid-cols-2">
+                          {chamas.map((workspace, index) => (
+                            <WorkspaceCard
+                              key={getWorkspaceId(workspace)}
+                              workspace={workspace}
+                              meta={getWorkspaceMeta(workspace.type)}
+                              Icon={getWorkspaceMeta(workspace.type).icon}
+                              index={index}
+                              onOpen={() => openWorkspace(workspace)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
-                })}
-              </AnimatePresence>
+                })()
+              )}
+
+              {/* Section 2: All Contribution Groups */}
+              {(activeTab === "all" || activeTab === "contribution") && (
+                (() => {
+                  const groups = filteredWorkspaces.filter(
+                    (w) => normalizeWorkspaceType(w.type) === "contribution"
+                  );
+                  if (groups.length === 0 && activeTab === "contribution") {
+                    return <EmptyState searchQuery={searchQuery} activeTab="contribution" />;
+                  }
+                  if (groups.length === 0) return null;
+
+                  return (
+                    <div className="space-y-3">
+                      <div
+                        onClick={() => toggleSection("contribution")}
+                        className="flex items-center justify-between p-4 rounded-2xl border border-emerald-200/80 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/30 cursor-pointer select-none hover:bg-emerald-100/60 transition"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
+                            <Wallet size={20} />
+                          </span>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                              All Contribution Groups
+                              <span className="rounded-full bg-emerald-200 px-2.5 py-0.5 text-xs font-black text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200">
+                                {groups.length}
+                              </span>
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Target fundraisers, cause pages & public pledges
+                            </p>
+                          </div>
+                        </div>
+                        <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-600 shadow-xs dark:bg-slate-900 dark:text-slate-300">
+                          {collapsedSections.contribution ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+                        </button>
+                      </div>
+
+                      {!collapsedSections.contribution && (
+                        <div className="grid gap-4 2xl:grid-cols-2">
+                          {groups.map((workspace, index) => (
+                            <WorkspaceCard
+                              key={getWorkspaceId(workspace)}
+                              workspace={workspace}
+                              meta={getWorkspaceMeta(workspace.type)}
+                              Icon={getWorkspaceMeta(workspace.type).icon}
+                              index={index}
+                              onOpen={() => openWorkspace(workspace)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* Section 3: All Businesses */}
+              {(activeTab === "all" || activeTab === "business") && (
+                (() => {
+                  const businesses = filteredWorkspaces.filter(
+                    (w) => normalizeWorkspaceType(w.type) === "business"
+                  );
+                  if (businesses.length === 0 && activeTab === "business") {
+                    return <EmptyState searchQuery={searchQuery} activeTab="business" />;
+                  }
+                  if (businesses.length === 0) return null;
+
+                  return (
+                    <div className="space-y-3">
+                      <div
+                        onClick={() => toggleSection("business")}
+                        className="flex items-center justify-between p-4 rounded-2xl border border-blue-200/80 bg-blue-50/60 dark:border-blue-900/60 dark:bg-blue-950/30 cursor-pointer select-none hover:bg-blue-100/60 transition"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
+                            <Store size={20} />
+                          </span>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                              All Businesses
+                              <span className="rounded-full bg-blue-200 px-2.5 py-0.5 text-xs font-black text-blue-900 dark:bg-blue-900 dark:text-blue-200">
+                                {businesses.length}
+                              </span>
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Rental, Retail, Restaurant, Service & Generic operational hubs
+                            </p>
+                          </div>
+                        </div>
+                        <button className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-600 shadow-xs dark:bg-slate-900 dark:text-slate-300">
+                          {collapsedSections.business ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+                        </button>
+                      </div>
+
+                      {!collapsedSections.business && (
+                        <div className="grid gap-4 2xl:grid-cols-2">
+                          {businesses.map((workspace, index) => (
+                            <WorkspaceCard
+                              key={getWorkspaceId(workspace)}
+                              workspace={workspace}
+                              meta={getWorkspaceMeta(workspace.type)}
+                              Icon={getWorkspaceMeta(workspace.type).icon}
+                              index={index}
+                              onOpen={() => openWorkspace(workspace)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
             </div>
           )}
         </section>

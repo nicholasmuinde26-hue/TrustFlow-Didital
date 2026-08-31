@@ -8,6 +8,12 @@ const businessTransactionSchema = new mongoose.Schema({
   currency: { type: String, default: "KES", uppercase: true },
   payment_channel: { type: String, enum: ["cash", "bank", "till", "paybill", "mpesa"], required: true },
   status: { type: String, enum: ["pending", "completed", "failed"], default: "completed", index: true },
+  // Kitchen prep status — independent of payment `status` above. Only meaningful
+  // for type: "sale" on restaurant-category businesses; every other business type
+  // ignores it. Kept off `status` on purpose: `status` tracks whether the M-Pesa
+  // payment cleared, not whether the food is ready — conflating the two would let
+  // "order ready" accidentally mark an unpaid bill as paid (or vice versa).
+  kitchen_status: { type: String, enum: ["queued", "ready"], default: "queued" },
   description: { type: String, default: "", trim: true, maxlength: 500 },
   customer_name: { type: String, default: null, trim: true },
   customer_phone: { type: String, default: null, trim: true },

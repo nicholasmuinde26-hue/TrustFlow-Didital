@@ -8,6 +8,7 @@ import {
   initiateStkPush,
   queryStkStatus,
   forceCompleteTransaction,
+  setKitchenStatus,
   getSummary,
   listExpenses,
   listSales,
@@ -47,6 +48,9 @@ router.post("/:businessId/customer-payouts", protect, customerPayout);
 router.post("/:businessId/mpesa/stkpush", protect, initiateStkPush);
 router.get("/:businessId/mpesa/stkpush/query/:transactionId", protect, queryStkStatus);
 router.post("/:businessId/transactions/:transactionId/complete", protect, forceCompleteTransaction);
+
+// Kitchen prep status (restaurant category) — separate from payment status above
+router.patch("/:businessId/transactions/:transactionId/kitchen-status", protect, setKitchenStatus);
 
 router.get("/:businessId/customers", protect, listCustomers);
 router.post("/:businessId/customers", protect, createCustomer);

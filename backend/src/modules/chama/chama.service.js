@@ -41,10 +41,16 @@ export const createChama = async ({
   treasurerEmail,
   treasurerUserId,
   treasurerInput,
+  secretaryUserId,
+  secretaryInput,
+  committeeUserIds = [],
+  committeeInputs = [],
+  patronUserId,
+  patronInput,
 }) => {
 
   // ----------------------------------------
-  // 1. Validate User ID
+  // 1. Validate User ID (Chairperson)
   // ----------------------------------------
 
   if (
@@ -73,14 +79,9 @@ export const createChama = async ({
     );
   }
 
+  const chamaName = name.trim();
 
-  const chamaName =
-    name.trim();
-
-
-  if (
-    chamaName.length < 2
-  ) {
+  if (chamaName.length < 2) {
     throw new AppError(
       'Chama name must be at least 2 characters',
       400
@@ -92,20 +93,10 @@ export const createChama = async ({
   // 3. Validate monthly savings
   // ----------------------------------------
 
-  const savings =
-    monthlySavings !== undefined
-      ? Number(monthlySavings)
-      : 1000;
+  const savings = monthlySavings !== undefined ? Number(monthlySavings) : 1000;
 
-
-  if (
-    !Number.isFinite(savings) ||
-    savings < 1
-  ) {
-    throw new AppError(
-      'Monthly savings must be at least 1 KES',
-      400
-    );
+  if (!Number.isFinite(savings) || savings < 1) {
+    throw new AppError('Monthly savings must be at least 1 KES', 400);
   }
 
 
@@ -113,158 +104,163 @@ export const createChama = async ({
   // 4. Find authenticated User (Chairperson)
   // ----------------------------------------
 
-  const user =
-    await User.findById(
-      userId
-    );
-
+  const user = await User.findById(userId);
 
   if (!user) {
-    throw new AppError(
-      'User not found',
-      404
-    );
+    throw new AppError('User not found', 404);
   }
 
-
-  if (
-    user.status !== 'active'
-  ) {
-    throw new AppError(
-      'Your user account is not active',
-      403
-    );
+  if (user.status !== 'active') {
+    throw new AppError('Your user account is not active', 403);
   }
+
+  const assignedUserIds = new Set([user._id.toString()]);
+
+  // Helper to resolve & verify a user for a governance role
+  const resolveRoleUser = async (idVal, inputVal, roleTitle, isRequired = true) => {
+    const query = (inputVal || '').trim();
+    let foundUser = null;
+
+    if (idVal && mongoose.Types.ObjectId.isValid(idVal)) {
+      foundUser = await User.findById(idVal);
+    } else if (query) {
+      const formattedPhone = query.replace(/\s+/g, '');
+      foundUser = await User.findOne({
+        $or: [
+          { phone: query },
+          { phone: formattedPhone },
+          { email: query.toLowerCase() },
+        ],
+      });
+    }
+
+    if (!foundUser) {
+      if (isRequired) {
+        throw new AppError(`A valid registered user is required for ${roleTitle}.`, 400);
+      }
+      return null;
+    }
+
+    if (foundUser.status !== 'active') {
+      throw new AppError(`The user specified for ${roleTitle} is not active.`, 400);
+    }
+
+    const uidStr = foundUser._id.toString();
+    if (assignedUserIds.has(uidStr)) {
+      throw new AppError(`Each governance role must be assigned to a distinct user. (${foundUser.name || foundUser.email} is assigned multiple roles).`, 400);
+    }
+
+    assignedUserIds.add(uidStr);
+    return foundUser;
+  };
+
+  // ----------------------------------------
+  // 5. Resolve & Verify Governance Officials
+  // ----------------------------------------
+
+  // A. Treasurer (Required)
+  const treasurerUser = await resolveRoleUser(treasurerUserId, treasurerInput || treasurerPhone || treasurerEmail, 'Treasurer', true);
+
+  // B. Secretary (Required)
+  const secretaryUser = await resolveRoleUser(secretaryUserId, secretaryInput, 'Secretary', true);
+
+  // C. Committee Members (3 to 5 Required)
+  const rawCommitteeList = Array.isArray(committeeUserIds) && committeeUserIds.length > 0 
+    ? committeeUserIds.map((id, idx) => ({ id, input: committeeInputs[idx] || '' }))
+    : Array.isArray(committeeInputs) ? committeeInputs.map((input) => ({ id: null, input })) : [];
+
+  if (rawCommitteeList.length < 3 || rawCommitteeList.length > 5) {
+    throw new AppError('Between 3 and 5 Committee Members are required to create a Chama.', 400);
+  }
+
+  const committeeUsers = [];
+  for (let i = 0; i < rawCommitteeList.length; i++) {
+    const item = rawCommitteeList[i];
+    const cUser = await resolveRoleUser(item.id, item.input, `Committee Member #${i + 1}`, true);
+    committeeUsers.push(cUser);
+  }
+
+  // D. Patron (Optional)
+  const patronUser = await resolveRoleUser(patronUserId, patronInput, 'Patron', false);
 
 
   // ----------------------------------------
-  // 5. Verify & Find Treasurer User
-  // ----------------------------------------
-
-  const searchInput = (treasurerInput || treasurerPhone || treasurerEmail || '').trim();
-  let treasurerUser = null;
-
-  if (treasurerUserId && mongoose.Types.ObjectId.isValid(treasurerUserId)) {
-    treasurerUser = await User.findById(treasurerUserId);
-  } else if (searchInput) {
-    const formattedPhone = searchInput.replace(/\s+/g, '');
-    treasurerUser = await User.findOne({
-      $or: [
-        { phone: searchInput },
-        { phone: formattedPhone },
-        { email: searchInput.toLowerCase() },
-      ],
-    });
-  }
-
-  if (!treasurerUser) {
-    throw new AppError(
-      'A valid registered treasurer user is required to create a Chama. Please specify a registered user by phone or email.',
-      400
-    );
-  }
-
-  if (treasurerUser._id.toString() === user._id.toString()) {
-    throw new AppError(
-      'The chairperson cannot be the same user as the treasurer.',
-      400
-    );
-  }
-
-  if (treasurerUser.status !== 'active') {
-    throw new AppError(
-      'The specified treasurer user account is not active.',
-      400
-    );
-  }
-
-
-  // ----------------------------------------
-  // 6. Create Chama
+  // 6. Create Chama Document
   // ----------------------------------------
 
   const joinCode = await generateUniqueJoinCode();
   const chamaVisibility = ['public', 'private'].includes(visibility) ? visibility : 'private';
 
-  const chama =
-    await Chama.create({
-      name: chamaName,
-
-      monthly_savings:
-        savings,
-
-      created_by:
-        user._id,
-
-      status:
-        'active',
-        
-      visibility: chamaVisibility,
-
-      join_code: joinCode
-    });
+  const chama = await Chama.create({
+    name: chamaName,
+    monthly_savings: savings,
+    created_by: user._id,
+    status: 'active',
+    visibility: chamaVisibility,
+    join_code: joinCode
+  });
 
 
   // ----------------------------------------
   // 7. Create Chama Memberships
   // ----------------------------------------
-  //
-  // Creator becomes Chairperson (payout position 1).
-  // Added User becomes Treasurer (payout position 2).
-  //
-  // ----------------------------------------
 
   try {
+    let position = 1;
 
-    // 1. Creator = Chairperson
+    // 1. Creator = Chairperson (Position 1)
     await ChamaMembership.create({
-      user_id:
-        user._id,
-
-      chama_id:
-        chama._id,
-
-      role:
-        'chairperson',
-
-      status:
-        'active',
-
-      payout_position:
-        1
+      user_id: user._id,
+      chama_id: chama._id,
+      role: 'chairperson',
+      status: 'active',
+      payout_position: position++
     });
 
-    // 2. Verified User = Treasurer
+    // 2. Verified User = Treasurer (Position 2)
     await ChamaMembership.create({
-      user_id:
-        treasurerUser._id,
-
-      chama_id:
-        chama._id,
-
-      role:
-        'treasurer',
-
-      status:
-        'active',
-
-      payout_position:
-        2
+      user_id: treasurerUser._id,
+      chama_id: chama._id,
+      role: 'treasurer',
+      status: 'active',
+      payout_position: position++
     });
+
+    // 3. Verified User = Secretary (Position 3)
+    await ChamaMembership.create({
+      user_id: secretaryUser._id,
+      chama_id: chama._id,
+      role: 'secretary',
+      status: 'active',
+      payout_position: position++
+    });
+
+    // 4. Committee Members (Positions 4..N)
+    for (const cUser of committeeUsers) {
+      await ChamaMembership.create({
+        user_id: cUser._id,
+        chama_id: chama._id,
+        role: 'committee_member',
+        status: 'active',
+        payout_position: position++
+      });
+    }
+
+    // 5. Patron (Optional - no rotational payout position)
+    if (patronUser) {
+      await ChamaMembership.create({
+        user_id: patronUser._id,
+        chama_id: chama._id,
+        role: 'patron',
+        status: 'active',
+        payout_position: null
+      });
+    }
 
   } catch (error) {
-
-    await Chama.findByIdAndDelete(
-      chama._id
-    );
-
-    await ChamaMembership.deleteMany({
-      chama_id:
-        chama._id
-    });
-
+    await Chama.findByIdAndDelete(chama._id);
+    await ChamaMembership.deleteMany({ chama_id: chama._id });
     throw error;
-
   }
 
 
@@ -272,18 +268,9 @@ export const createChama = async ({
   // 8. Return populated Chama
   // ----------------------------------------
 
-  const populatedChama =
-    await Chama.findById(
-      chama._id
-    )
-      .populate(
-        'created_by',
-        'name phone status'
-      );
-
+  const populatedChama = await Chama.findById(chama._id).populate('created_by', 'name phone status');
 
   return populatedChama;
-
 };
 
 export const verifyTreasurerUser = async (query, actorUserId) => {

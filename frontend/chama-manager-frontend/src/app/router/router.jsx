@@ -67,6 +67,7 @@ import RentalInquiriesPage from "@/modules/business/pages/RentalInquiriesPage";
 import BusinessReportsPage from "@/modules/business/pages/ReportsPage";
 import BusinessSettingsPage from "@/modules/business/pages/BusinessSettingsPage";
 import PosPage from "@/modules/business/pages/PosPage";
+import KitchenPage from "@/modules/business/pages/KitchenPage";
 import StorefrontPage from "@/modules/business/pages/StorefrontPage";
 
 // ======================================================
@@ -282,6 +283,10 @@ const router = createBrowserRouter([
           {
             path: "business/pos",
             element: <PosPage />,
+          },
+          {
+            path: "business/kitchen",
+            element: <KitchenPage />,
           },
           {
             path: "business/storefront",

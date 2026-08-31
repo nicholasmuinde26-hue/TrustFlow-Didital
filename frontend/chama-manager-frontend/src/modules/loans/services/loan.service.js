@@ -9,6 +9,8 @@ const loanService = {
     return { summary, loans: loans || [], portfolio };
   },
   getRepayments: (chamaId, loanId) => data(loansApi.repayments(chamaId, loanId)),
+  checkEligibility: (chamaId, params) => data(loansApi.checkEligibility(chamaId, params)),
+  getMyGuarantees: (chamaId) => data(loansApi.myGuarantees(chamaId)),
   apply: (chamaId, payload) => data(loansApi.apply(chamaId, payload)),
   respondToGuarantee: (chamaId, loanId, decision) => data(loansApi.respondGuarantee(chamaId, loanId, decision)),
   decide: (chamaId, loanId, decision, comment) => data(loansApi.decide(chamaId, loanId, decision, comment)),

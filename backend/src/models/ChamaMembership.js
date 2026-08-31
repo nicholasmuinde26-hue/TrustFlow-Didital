@@ -28,7 +28,9 @@ const MEMBERSHIP_ROLES = [
   'treasurer',
   'secretary',
   'auditor',
-  'chairperson'
+  'chairperson',
+  'committee_member',
+  'patron'
 ];
 
 // ========================================
@@ -234,6 +236,16 @@ chamaMembershipSchema.index({
 //
 // This is what stops the "Duplicate payout positions" error
 //
+// IMPORTANT: the partialFilterExpression also requires payout_position
+// to actually be a number. MongoDB's unique index treats null as a
+// real, comparable value (not exempted the way sparse indexes exempt
+// *missing* fields) — so without this, a SECOND active membership with
+// payout_position: null (e.g. a Patron, or any regular member added
+// via addMemberToChama/join-request approval, both of which default to
+// null) would hit a duplicate-key error on save. Restricting the index
+// to numeric values means only real position collisions are enforced;
+// any number of active members can share payout_position: null.
+//
 // ========================================
 
 chamaMembershipSchema.index(
@@ -241,7 +253,7 @@ chamaMembershipSchema.index(
   {
     unique: true,
     name: 'unique_active_payout_position',
-    partialFilterExpression: { status: 'active' }
+    partialFilterExpression: { status: 'active', payout_position: { $type: 'number' } }
   }
 );
 

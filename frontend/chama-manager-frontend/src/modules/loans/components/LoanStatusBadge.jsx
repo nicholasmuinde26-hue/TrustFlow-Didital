@@ -11,6 +11,7 @@ const tones = {
   defaulted: "bg-red-500/10 text-red-400 border-red-500/30 icon:ShieldAlert",
   rejected: "bg-red-500/10 text-rose-400 border-red-500/30 icon:XCircle",
   eligibility_failed: "bg-red-500/10 text-rose-400 border-red-500/30 icon:XCircle",
+  blocked_conflict: "bg-red-500/10 text-rose-400 border-red-500/30 icon:ShieldAlert",
 };
 
 export default function LoanStatusBadge({ status }) {

@@ -1,4 +1,4 @@
-import { X, Send, Calendar, CheckCircle2 } from "lucide-react";
+import { X, Send, Calendar, CheckCircle2, ShieldAlert } from "lucide-react";
 import LoanStatusBadge from "./LoanStatusBadge";
 
 const money = (n) => `KES ${Number(n || 0).toLocaleString()}`;
@@ -32,6 +32,23 @@ export default function LoanDetailsPanel({ loan, payments, onClose, onPay, payin
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {loan.conflict_of_interest && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <ShieldAlert className="h-5 w-5 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1 text-xs leading-relaxed">
+            <p className="font-bold uppercase tracking-wider text-[10px]">Conflict-of-interest recusal</p>
+            {loan.status === "blocked_conflict" ? (
+              <p>{loan.governance_block_reason || "The applicant holds a required approval role and there aren't enough independent officials to form a replacement quorum."}</p>
+            ) : (
+              <p>
+                The applicant is automatically recused from the {(loan.recused_roles || []).join(", ")} seat on this loan.
+                {loan.recusal_quorum_required > 0 && ` ${loan.recusal_quorum_required} independent official(s) must approve in their place.`}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/60">

@@ -2,6 +2,11 @@ export const LOAN_STATUS = Object.freeze({
   DRAFT: 'draft',
   SUBMITTED: 'submitted',
   ELIGIBILITY_FAILED: 'eligibility_failed',
+  // Eligible, but governance rules can't be satisfied: the applicant holds
+  // one of the required approval roles (e.g. chairperson/treasurer) and
+  // there aren't enough other independent officials to form the recusal
+  // quorum in their place. See Loanconflict.service.js.
+  BLOCKED_CONFLICT: 'blocked_conflict',
   PENDING_APPROVAL: 'pending_approval',
   REJECTED: 'rejected',
   APPROVED: 'approved',
@@ -15,6 +20,13 @@ export const LOAN_STATUS = Object.freeze({
   CLOSED: 'closed',
   CANCELLED: 'cancelled',
 });
+
+// Every role that is treated as a Chama "official" for loan governance
+// purposes — able to review applications, sit on the approval chain, and
+// (for committee_member) fill in for a recused chairperson/treasurer seat.
+// Kept in one place so approval, disbursement, and controller-level access
+// checks can't drift apart.
+export const LOAN_OFFICIAL_ROLES = ['treasurer', 'chairperson', 'secretary', 'auditor', 'committee_member'];
 
 // Statuses in which the loan still carries an outstanding balance and
 // therefore counts against "one active loan at a time" / portfolio totals.

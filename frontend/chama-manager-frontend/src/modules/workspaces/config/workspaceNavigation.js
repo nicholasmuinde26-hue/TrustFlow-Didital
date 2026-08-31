@@ -41,19 +41,49 @@ import { canViewCommandCenter, canViewAdministration } from "../permissions/Perm
 export function getWorkspaceNavigation(workspaceId, type, role, category) {
   const base = `/workspace/${workspaceId}`;
   const normalizedType = type?.toLowerCase().replace(/[-_]/g, "");
+  // Category flags
   const isRental = category === "rental";
+  const isRetail = category === "retail";
+  const isRestaurant = category === "restaurant";
+  const isService = category === "service";
 
-  // Catalogue nav item changes shape by business category: a rental
-  // landlord manages rooms/plots, everyone else manages a product/menu/
-  // service catalogue that still shares the same Inventory & Stock page.
-  const catalogueItem = isRental
-    ? { title: "Rooms & Plots", icon: Home, to: `${base}/business/rental-listings` }
-    : {
-        title:
-          category === "restaurant" ? "Menu Items" : category === "service" ? "Services" : "Inventory & Stock",
-        icon: Package,
-        to: `${base}/business/inventory`,
-      };
+  // Specialized Business Operations per Category
+  let operationsItems = [
+    { title: "Dashboard", icon: Store, to: `${base}/business` },
+  ];
+
+  if (isRental) {
+    operationsItems.push(
+      { title: "Rooms & Plots", icon: Home, to: `${base}/business/rental-listings` },
+      { title: "Tenant Inquiries", icon: ClipboardList, to: `${base}/business/rental-inquiries` },
+      { title: "Rent Collections", icon: ShoppingCart, to: `${base}/business/sales` },
+      { title: "Maintenance & Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` }
+    );
+  } else if (isRestaurant) {
+    operationsItems.push(
+      { title: "Menu Items", icon: Package, to: `${base}/business/inventory` },
+      { title: "Point of Sale (POS)", icon: ShoppingBag, to: `${base}/business/pos` },
+      { title: "Orders & Sales", icon: ShoppingCart, to: `${base}/business/sales` },
+      { title: "Kitchen & Food Prep", icon: ClipboardList, to: `${base}/business/kitchen` },
+      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` }
+    );
+  } else if (isService) {
+    operationsItems.push(
+      { title: "Services", icon: Package, to: `${base}/business/inventory` },
+      { title: "Appointments & Jobs", icon: ClipboardList, to: `${base}/business/sales` },
+      { title: "Invoices & Billing", icon: ShoppingCart, to: `${base}/business/sales` },
+      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` }
+    );
+  } else {
+    // Retail & Other
+    operationsItems.push(
+      { title: "Point of Sale (POS)", icon: ShoppingBag, to: `${base}/business/pos` },
+      { title: "Sales & Invoicing", icon: ShoppingCart, to: `${base}/business/sales` },
+      { title: "Inventory & Stock", icon: Package, to: `${base}/business/inventory` },
+      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
+      { title: "Online Storefront", icon: Globe, to: `${base}/business/storefront` }
+    );
+  }
 
   // =====================================================
   // 1. BUSINESS WORKSPACE NAVIGATION
@@ -71,54 +101,14 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
 
     {
       title: "Business Operations",
-      items: [
-        {
-          title: "Dashboard",
-          icon: Store,
-          to: `${base}/business`,
-        },
-        ...(isRental
-          ? []
-          : [
-              {
-                title: "Point of Sale",
-                icon: ShoppingBag,
-                to: `${base}/business/pos`,
-              },
-              {
-                title: "Sales & Invoicing",
-                icon: ShoppingCart,
-                to: `${base}/business/sales`,
-              },
-              {
-                title: "Expenses",
-                icon: BadgeDollarSign,
-                to: `${base}/business/expenses`,
-              },
-            ]),
-        catalogueItem,
-        {
-          title: "Online Storefront",
-          icon: Globe,
-          to: `${base}/business/storefront`,
-        },
-        ...(isRental
-          ? [
-              {
-                title: "Tenant Inquiries",
-                icon: ClipboardList,
-                to: `${base}/business/rental-inquiries`,
-              },
-            ]
-          : []),
-      ],
+      items: operationsItems,
     },
 
     {
       title: "People & Partners",
       items: [
         {
-          title: "Customers",
+          title: isRental ? "Tenants & Customers" : isService ? "Clients & Customers" : "Customers",
           icon: Users,
           to: `${base}/business/customers`,
         },
