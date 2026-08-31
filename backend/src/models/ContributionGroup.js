@@ -293,6 +293,28 @@ const contributionGroupSchema =
 
         default: null
 
+      },
+
+      // ======================================
+      // SHAREABLE JOIN CODE
+      // ======================================
+
+      join_code: {
+
+        type: String,
+
+        uppercase: true,
+
+        trim: true,
+
+        sparse: true,
+
+        index: true,
+
+        unique: true,
+
+        default: null
+
       }
 
     },
@@ -304,6 +326,18 @@ const contributionGroupSchema =
     }
 
   );
+
+contributionGroupSchema.pre('save', function (next) {
+  if (!this.join_code) {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let code = 'CG-';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    this.join_code = code;
+  }
+  next();
+});
 
 
 // ========================================

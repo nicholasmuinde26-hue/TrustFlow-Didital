@@ -9,6 +9,7 @@ import Topbar from "@/shared/components/layout/Topbar";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import Spinner from "@/shared/components/ui/Spinner";
 import ContributionGroupLayout from "./ContributionGroupLayout";
+import { AiAssistantWidget } from "@/modules/ai";
 
 export default function WorkspaceLayout() {
   const { workspaceId } = useParams();
@@ -73,6 +74,12 @@ export default function WorkspaceLayout() {
           <Outlet />
         </main>
       </div>
+
+      <AiAssistantWidget
+        workspaceId={workspaceId}
+        workspaceType={workspace?.type}
+        workspaceName={workspace?.name}
+      />
     </div>
   );
 }

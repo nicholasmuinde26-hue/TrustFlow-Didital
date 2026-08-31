@@ -59,6 +59,11 @@ const contributionGroupService = {
     const { data } = await contributionGroupApi.createExpense(groupId, payload);
     return data.data;
   },
+
+  async updateRsvp(groupId, rsvpStatus) {
+    const { data } = await contributionGroupApi.updateRsvp(groupId, rsvpStatus);
+    return data.data.membership;
+  },
 };
 
-export default contributionGroupService;
+export default contributionGroupService;

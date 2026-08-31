@@ -7,7 +7,9 @@ import {
    getContributionGroupById,
    getMyContributionGroups,
    updateContributionGroup,
-   updateContributionGroupStatus
+   updateContributionGroupStatus,
+   getPublicGroupPreviewByJoinCode,
+   joinGroupViaJoinCode
 
 } from './contributionGroup.service.js';
 
@@ -1622,4 +1624,48 @@ export const updateContributionGroupStatusController = async (
 
   }
 
+};
+
+// ========================================
+// PUBLIC GROUP PREVIEW CONTROLLER
+// ========================================
+
+export const getPublicGroupPreviewController = async (req, res, next) => {
+  try {
+    const { joinCode } = req.params;
+    const result = await getPublicGroupPreviewByJoinCode(joinCode);
+    return res.status(200).json({
+      success: true,
+      message: 'Public group preview retrieved successfully',
+      data: result
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ========================================
+// JOIN GROUP VIA JOIN CODE CONTROLLER
+// ========================================
+
+export const joinGroupViaCodeController = async (req, res, next) => {
+  try {
+    const { joinCode } = req.params;
+    const userId = req.user?._id;
+    const { pledged_amount } = req.body;
+
+    const result = await joinGroupViaJoinCode({
+      joinCode,
+      userId,
+      pledgedAmount: pledged_amount
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Successfully joined contribution group',
+      data: result
+    });
+  } catch (error) {
+    return next(error);
+  }
 };

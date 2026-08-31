@@ -9,6 +9,25 @@ export function useContributionGroupMembers(groupId) {
   });
 }
 
+export function useUpdateMyRsvp(groupId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (rsvpStatus) => contributionGroupService.updateRsvp(groupId, rsvpStatus),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["contribution-group-members", groupId] });
+    },
+  });
+}
+
+export function useContributionGroupDetail(groupId) {
+  return useQuery({
+    queryKey: ["contribution-group-detail", groupId],
+    queryFn: () => contributionGroupService.get(groupId),
+    enabled: !!groupId,
+  });
+}
+
 export function useContributionGroupPlans(groupId) {
   return useQuery({
     queryKey: ["contribution-group-plans", groupId],

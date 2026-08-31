@@ -28,6 +28,9 @@ import {
 
   declineContributionGroupInvitationController,
 
+  getPublicGroupPreviewController,
+
+  joinGroupViaCodeController
 
 } from './contributionGroup.controller.js';
 
@@ -43,6 +46,13 @@ import {
 
 
 const router = express.Router();
+
+// ========================================
+// PUBLIC GROUP PREVIEW & JOIN VIA LINK CODE
+// ========================================
+
+router.get('/join/:joinCode', getPublicGroupPreviewController);
+router.post('/join/:joinCode', protect, joinGroupViaCodeController);
 
 
 // ========================================

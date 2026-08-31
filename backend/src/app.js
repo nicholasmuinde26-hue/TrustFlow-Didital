@@ -20,6 +20,7 @@ import memberRoutes from "./modules/member/member.routes.js";
 
 // Contribution Groups
 import contributionGroupRoutes from "./modules/contributionGroups/contributionGroup.routes.js";
+import contributionFundRoutes from "./modules/contributionGroups/contributionFund.routes.js";
 import contributionGroupPlanRoutes from "./modules/contributionPlan/contributionGroupPlan.routes.js";
 import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
 import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
@@ -51,6 +52,9 @@ import loanRoutes from "./modules/loans/loan.routes.js";
 
 // Notifications
 import notificationRoutes from "./modules/notifications/notifications.routes.js";
+
+// AI Assistant
+import aiRoutes from "./modules/ai/ai.routes.js";
 
 import "./modules/finance/financeEngine.service.js";
 
@@ -162,6 +166,11 @@ app.use(
     contributionGroupRoutes
 );
 
+app.use(
+    "/api/v1/contribution-groups/:groupId/fund",
+    contributionFundRoutes
+);
+
 // ============================================================================
 // CONTRIBUTION GROUP PLANS
 // ============================================================================
@@ -270,6 +279,23 @@ app.use(
 app.use(
     "/api/v1/workspaces",
     pollRoutes
+);
+
+// ============================================================================
+// AI ASSISTANT
+// ============================================================================
+//
+// GET  /workspaces/:workspaceId/ai/insights
+// GET  /workspaces/:workspaceId/ai/suggestions
+// GET  /workspaces/:workspaceId/ai/overview
+// POST /workspaces/:workspaceId/ai/chat
+//
+// In-house, rule-based (no third-party AI API) — see modules/ai for details.
+// ============================================================================
+
+app.use(
+    "/api/v1/workspaces",
+    aiRoutes
 );
 
 // ============================================================================

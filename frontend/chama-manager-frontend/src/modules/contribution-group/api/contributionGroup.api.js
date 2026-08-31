@@ -47,37 +47,58 @@ const contributionGroupApi = {
     return api.post(`/workspaces/${groupId}/finance/expenses`, payload);
   },
 
-  // Time-bound fund / pledge workflow
+  // Public Join Link & Preview
+  getPublicPreview(joinCode) {
+    return api.get(`/contribution-groups/join/${joinCode}`);
+  },
+
+  joinViaCode(joinCode, payload) {
+    return api.post(`/contribution-groups/join/${joinCode}`, payload);
+  },
+
+  // Time-bound fund / pledge workflow (mounted under /contribution-groups/:groupId/fund)
   getFundDashboard(groupId) {
-    return api.get(`/contribution-groups/${groupId}/dashboard`);
+    return api.get(`/contribution-groups/${groupId}/fund/dashboard`);
   },
 
   updateFundDetails(groupId, payload) {
-    return api.patch(`/contribution-groups/${groupId}/details`, payload);
+    return api.patch(`/contribution-groups/${groupId}/fund/details`, payload);
   },
 
   extendFund(groupId, contribution_end_date) {
-    return api.post(`/contribution-groups/${groupId}/extend`, { contribution_end_date });
+    return api.post(`/contribution-groups/${groupId}/fund/extend`, { contribution_end_date });
   },
 
   listPledges(groupId) {
-    return api.get(`/contribution-groups/${groupId}/pledges`);
+    return api.get(`/contribution-groups/${groupId}/fund/pledges`);
   },
 
   pledge(groupId, payload) {
-    return api.post(`/contribution-groups/${groupId}/pledges`, payload);
+    return api.post(`/contribution-groups/${groupId}/fund/pledges`, payload);
   },
 
   initiatePledgeStk(groupId, pledgeId, payload) {
-    return api.post(`/contribution-groups/${groupId}/pledges/${pledgeId}/payments/stk`, payload);
+    return api.post(`/contribution-groups/${groupId}/fund/pledges/${pledgeId}/payments/stk`, payload);
   },
 
   recordCashPledgePayment(groupId, pledgeId, payload) {
-    return api.post(`/contribution-groups/${groupId}/pledges/${pledgeId}/payments/cash`, payload);
+    return api.post(`/contribution-groups/${groupId}/fund/pledges/${pledgeId}/payments/cash`, payload);
   },
 
   sendPledgeReminders(groupId) {
-    return api.post(`/contribution-groups/${groupId}/reminders`);
+    return api.post(`/contribution-groups/${groupId}/fund/reminders`);
+  },
+
+  // RSVP (persisted on the caller's own membership record)
+  updateRsvp(groupId, rsvp_status) {
+    return api.patch(`/contribution-groups/${groupId}/rsvp`, { rsvp_status });
+  },
+
+  // Generic M-Pesa payment-intent polling — not group-scoped, but the
+  // STK push initiated via /fund/pledges/:pledgeId/payments/stk returns
+  // a paymentIntentId that's polled through this shared endpoint.
+  getPaymentIntentStatus(paymentIntentId) {
+    return api.get(`/mpesa/payment-intents/${paymentIntentId}`);
   },
 };
 

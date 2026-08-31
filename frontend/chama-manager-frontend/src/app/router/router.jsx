@@ -75,6 +75,7 @@ import StorefrontPage from "@/modules/business/pages/StorefrontPage";
 
 import PublicStorefrontPage from "@/modules/storefront/pages/PublicStorefrontPage";
 import TrackOrderPage from "@/modules/storefront/pages/TrackOrderPage";
+import PublicCausePreviewPage from "@/modules/contribution-group/pages/PublicCausePreviewPage";
 
 // ======================================================
 // Members
@@ -137,6 +138,12 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <LandingPage />,
+  },
+
+  // Public Cause Preview link (e.g. /g/CG-X89K2P)
+  {
+    path: "/g/:joinCode",
+    element: <PublicCausePreviewPage />,
   },
 
   // ======================================================

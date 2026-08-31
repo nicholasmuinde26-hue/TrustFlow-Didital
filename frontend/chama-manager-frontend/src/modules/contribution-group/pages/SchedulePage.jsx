@@ -6,31 +6,54 @@ import {
   Zap,
   CheckCircle2,
   Settings,
+  UserCheck,
+  UserX,
+  HelpCircle,
+  Clock,
+  MapPin
 } from "lucide-react";
 
+import useAuth from "@/app/hooks/useAuth";
 import {
   useContributionGroupPlans,
   useContributionGroupMembers,
+  useUpdateMyRsvp,
 } from "../hooks/useContributionGroupData";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
+const RSVP_LABEL = { going: "Going", maybe: "Maybe", declined: "Can't Make It" };
+
 export default function SchedulePage() {
   const { workspaceId } = useParams();
   const base = `/workspace/${workspaceId}`;
+  const { user } = useAuth();
+  const myUserId = user?.id ?? user?._id;
 
   const [toastNotice, setToastNotice] = useState(null);
 
   const { data: plans = [] } = useContributionGroupPlans(workspaceId);
   const { data: members = [] } = useContributionGroupMembers(workspaceId);
+  const updateRsvp = useUpdateMyRsvp(workspaceId);
+
+  // My RSVP is read from the members list (backed by
+  // ContributionGroupMember.rsvp_status), not local-only state — it
+  // persists across refreshes and is visible to organizers too.
+  const myMembership = members.find(
+    (m) => String(m.user_id?._id || m.user_id) === String(myUserId)
+  );
+  const rsvpStatus = myMembership?.rsvp_status || null;
+
+  const rsvpCounts = members.reduce(
+    (acc, m) => {
+      if (m.rsvp_status) acc[m.rsvp_status] = (acc[m.rsvp_status] || 0) + 1;
+      return acc;
+    },
+    { going: 0, maybe: 0, declined: 0 }
+  );
 
   const activePlan = plans.find((p) => p.status === "active") || plans[0] || null;
 
-  // Real contribution schedule settings — pulled from the active plan's
-  // actual fields (frequency, amount, start_date). There is no due_day,
-  // amount_per_member, or next_due_date field on the model, so rather
-  // than inventing "5th"/1000/"Sep 5, 2026" when a plan doesn't set
-  // these, we show that the plan hasn't configured them.
   const scheduleConfig = {
     frequency: activePlan?.frequency
       ? activePlan.frequency.charAt(0).toUpperCase() + activePlan.frequency.slice(1)
@@ -39,24 +62,29 @@ export default function SchedulePage() {
     startDate: activePlan?.start_date ? new Date(activePlan.start_date).toLocaleDateString() : null,
   };
 
-  // Members, in the order they joined — a real, honest ordering. There is
-  // no payout-rotation feature in the backend for contribution groups
-  // (no ContributionGroupMember.payout_position, no Payout records scoped
-  // to a contribution group), so rather than inventing recipients, dates,
-  // and payout amounts, this lists real members and says so plainly.
   const orderedMembers = [...members]
     .sort((a, b) => new Date(a.joined_at || a.createdAt || 0) - new Date(b.joined_at || b.createdAt || 0))
     .map((m, idx) => ({
       id: String(m._id || idx),
-      name: m.user ? `${m.user.first_name || ''} ${m.user.last_name || ''}`.trim() || m.user.email : m.name || `Member ${idx + 1}`,
+      name: m.user_id?.name || (m.user ? `${m.user.first_name || ''} ${m.user.last_name || ''}`.trim() || m.user.email : m.name) || `Member ${idx + 1}`,
       joinedAt: m.joined_at || m.createdAt ? new Date(m.joined_at || m.createdAt).toLocaleDateString() : null,
+      rsvpStatus: m.rsvp_status || null,
     }));
+
+  const handleRsvp = async (status) => {
+    try {
+      await updateRsvp.mutateAsync(status);
+      setToastNotice(`Your RSVP was saved: ${RSVP_LABEL[status]}`);
+    } catch (err) {
+      setToastNotice(err?.response?.data?.message || "Could not save your RSVP. Try again.");
+    }
+    setTimeout(() => setToastNotice(null), 4000);
+  };
 
   const handleTriggerAutoReminders = () => {
     setToastNotice("Auto M-Pesa reminder schedule updated! Reminders queued 3 days prior.");
     setTimeout(() => setToastNotice(null), 5000);
   };
-
 
   return (
     <div className="space-y-8 font-sans">
@@ -72,13 +100,13 @@ export default function SchedulePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
-            AUTOMATED MONEY PLAN
+            EVENT PLANNING & SCHEDULE
           </span>
           <h1 className="mt-1 text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
-            Contribution Calendar & Payout Rotation
+            Cause Schedule & RSVP Attendance
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            Set group contribution rules, auto M-Pesa reminders, and rotating payout schedules.
+            Track key cause dates, RSVP attendance, and automated payment deadlines.
           </p>
         </div>
 
@@ -86,8 +114,63 @@ export default function SchedulePage() {
           to={`${base}/settings`}
           className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 shrink-0"
         >
-          <Settings size={16} /> Configure Rules Engine
+          <Settings size={16} /> Configure Rules
         </Link>
+      </div>
+
+      {/* RSVP Banner */}
+      <div className="rounded-3xl bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 p-6 text-white shadow-xl border border-emerald-800/50 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Cause Event RSVP</span>
+            <h2 className="text-lg font-black text-white">Main Event Attendance</h2>
+            <p className="text-xs text-slate-200">Confirm your availability for the group's event date</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleRsvp("going")}
+              disabled={updateRsvp.isPending}
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition-all disabled:opacity-50 ${
+                rsvpStatus === "going"
+                  ? "bg-emerald-400 text-emerald-950 font-black shadow-lg"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+            >
+              <UserCheck size={16} /> Going
+            </button>
+
+            <button
+              onClick={() => handleRsvp("maybe")}
+              disabled={updateRsvp.isPending}
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition-all disabled:opacity-50 ${
+                rsvpStatus === "maybe"
+                  ? "bg-amber-400 text-amber-950 font-black shadow-lg"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+            >
+              <HelpCircle size={16} /> Maybe
+            </button>
+
+            <button
+              onClick={() => handleRsvp("declined")}
+              disabled={updateRsvp.isPending}
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition-all disabled:opacity-50 ${
+                rsvpStatus === "declined"
+                  ? "bg-rose-500 text-white font-black shadow-lg"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+            >
+              <UserX size={16} /> Can't Make It
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-4 text-[11px] font-bold text-slate-200/90 pt-1">
+          <span className="flex items-center gap-1.5"><UserCheck size={13} className="text-emerald-400" /> {rsvpCounts.going} going</span>
+          <span className="flex items-center gap-1.5"><HelpCircle size={13} className="text-amber-400" /> {rsvpCounts.maybe} maybe</span>
+          <span className="flex items-center gap-1.5"><UserX size={13} className="text-rose-400" /> {rsvpCounts.declined} can't make it</span>
+        </div>
       </div>
 
       {/* 1. Recurring Money Plan Card */}
@@ -114,42 +197,39 @@ export default function SchedulePage() {
         <div className="grid gap-4 sm:grid-cols-3 text-xs">
           <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-md border border-white/10 space-y-1">
             <span className="text-violet-300 font-semibold">Contribution Frequency</span>
-            <p className="text-base font-black text-white">{scheduleConfig.frequency || "No active plan"}</p>
+            <p className="text-base font-black text-white">{scheduleConfig.frequency || "One-Time Fundraiser"}</p>
             <p className="text-[11px] text-violet-200/80 font-mono">
-              {scheduleConfig.amountPerMember != null ? `Amount: ${money(scheduleConfig.amountPerMember)} / member` : "No fixed amount set"}
+              {scheduleConfig.amountPerMember != null ? `Amount: ${money(scheduleConfig.amountPerMember)} / member` : "Free-will pledge"}
             </p>
           </div>
 
           <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-md border border-white/10 space-y-1">
             <span className="text-violet-300 font-semibold">Plan Start Date</span>
-            <p className="text-base font-black text-emerald-300 font-mono">{scheduleConfig.startDate || "Not started"}</p>
-            <p className="text-[11px] text-violet-200/80">Use the reminder button to notify members now</p>
+            <p className="text-base font-black text-emerald-300 font-mono">{scheduleConfig.startDate || "Active"}</p>
+            <p className="text-[11px] text-violet-200/80">Use reminder button to notify members</p>
           </div>
 
           <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-md border border-white/10 space-y-1">
-            <span className="text-violet-300 font-semibold">Members on Plan</span>
+            <span className="text-violet-300 font-semibold">Members Registered</span>
             <p className="text-base font-black text-amber-300">{members.length}</p>
             <p className="text-[11px] text-violet-200/80">Active members in this group</p>
           </div>
         </div>
       </div>
 
-      {/* 2. Members, in join order — payout rotation scheduling isn't a
-          feature of contribution groups yet, so this section shows the
-          real member list rather than a fabricated recipient/date queue. */}
+      {/* 2. Member List */}
       <section className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
           <div>
             <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <TrendingUp size={20} className="text-emerald-600" /> Members
+              <TrendingUp size={20} className="text-emerald-600" /> Member Directory
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Payout rotation scheduling isn't set up for this group yet — shown here in join order.
+              Group members registered for this cause.
             </p>
           </div>
         </div>
 
-        {/* Member List */}
         <div className="space-y-3">
           {orderedMembers.length > 0 ? (
             orderedMembers.map((member, idx) => (
@@ -168,6 +248,18 @@ export default function SchedulePage() {
                     )}
                   </div>
                 </div>
+
+                {member.rsvpStatus && (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                    member.rsvpStatus === "going"
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                      : member.rsvpStatus === "maybe"
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                      : "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                  }`}>
+                    {RSVP_LABEL[member.rsvpStatus]}
+                  </span>
+                )}
               </div>
             ))
           ) : (

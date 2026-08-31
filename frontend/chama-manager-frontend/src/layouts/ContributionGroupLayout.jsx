@@ -21,6 +21,7 @@ import NotificationButton from "@/shared/components/layout/NotificationButton";
 import UserMenu from "@/shared/components/layout/UserMenu";
 import Logo from "@/shared/components/layout/Logo";
 import { canViewAdministration } from "@/modules/workspaces/permissions/Permissions";
+import { AiAssistantWidget } from "@/modules/ai";
 
 const navigation = [
   { label: "Overview", icon: LayoutDashboard, to: "" },
@@ -154,6 +155,12 @@ export default function ContributionGroupLayout({ workspace, workspaceId }) {
           </div>
         </main>
       </div>
+
+      <AiAssistantWidget
+        workspaceId={workspaceId}
+        workspaceType="contribution-group"
+        workspaceName={name}
+      />
     </div>
   );
 }

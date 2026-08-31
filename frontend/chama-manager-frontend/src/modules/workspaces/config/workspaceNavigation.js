@@ -232,6 +232,11 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           to: `${base}/announcements`,
         },
         {
+          title: "Expenses",
+          icon: Receipt,
+          to: `${base}/updates`,
+        },
+        {
           title: "Contributions",
           icon: Coins,
           to: `${base}/contributions`,
