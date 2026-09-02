@@ -8,8 +8,6 @@ import {
   Coins,
   CalendarClock,
   Activity,
-  Megaphone,
-  MessageSquare,
   Video,
   Receipt,
   BookOpen,
@@ -112,11 +110,18 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           icon: Users,
           to: `${base}/business/customers`,
         },
-        {
-          title: "Suppliers",
-          icon: Truck,
-          to: `${base}/business/suppliers`,
-        },
+        // Suppliers are a goods/vendor-payout concept (restock, wholesale,
+        // ingredient vendors) that doesn't apply to a rental portfolio —
+        // maintenance vendors are tracked as expense payees instead.
+        ...(isRental
+          ? []
+          : [
+              {
+                title: "Suppliers",
+                icon: Truck,
+                to: `${base}/business/suppliers`,
+              },
+            ]),
       ],
     },
 
@@ -210,16 +215,6 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           title: "Members",
           icon: Users,
           to: `${base}/members`,
-        },
-        {
-          title: "Chat",
-          icon: MessageSquare,
-          to: `${base}/chat`,
-        },
-        {
-          title: "Announcements",
-          icon: Megaphone,
-          to: `${base}/announcements`,
         },
         {
           title: "Expenses",
@@ -389,23 +384,6 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           title: "Reports",
           icon: FileBarChart2,
           to: `${base}/reports`,
-        },
-      ],
-    },
-
-    {
-      title: "Community",
-      items: [
-       
-        {
-          title: "Chat",
-          icon: MessageSquare,
-          to: `${base}/chat`,
-        },
-        {
-          title: "Announcements",
-          icon: Megaphone,
-          to: `${base}/announcements`,
         },
       ],
     },

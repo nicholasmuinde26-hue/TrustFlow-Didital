@@ -4,9 +4,14 @@ import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import { useBusinessExpenses } from "../hooks/useBusiness";
 
 export default function ExpensesPage() {
-  const { workspaceId } = useWorkspace();
+  const { workspaceId, currentWorkspace } = useWorkspace();
   const { expenses, isLoading, isRefetching, refetch } = useBusinessExpenses(workspaceId);
   const expensesList = Array.isArray(expenses) ? expenses : [];
+
+  const isRental = currentWorkspace?.category === "rental";
+  const subtitle = isRental
+    ? "Track maintenance costs, utility bills, and property-related expenses."
+    : "Track operating costs, rent, supplier invoices, and petty cash.";
 
   if (isLoading) {
     return (
@@ -21,7 +26,7 @@ export default function ExpensesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white">Expenses</h1>
-          <p className="text-xs text-slate-500">Track operating costs, rent, supplier invoices, and petty cash.</p>
+          <p className="text-xs text-slate-500">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -78,4 +83,4 @@ export default function ExpensesPage() {
       </div>
     </div>
   );
-}
+}

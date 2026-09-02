@@ -2,6 +2,11 @@ import { useParams } from "react-router-dom";
 import { Megaphone } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
+import {
+  canManageAnnouncements,
+  canPinAnnouncement,
+  canDeleteAnnouncement,
+} from "@/modules/workspaces/permissions/Permissions";
 
 import {
   useAnnouncements,
@@ -16,13 +21,18 @@ import Spinner from "@/shared/components/ui/Spinner";
 
 export default function AnnouncementsPage() {
   const { workspaceId } = useParams();
-  const { workspaces } = useWorkspace();
+  const { workspaces, currentWorkspace } = useWorkspace();
 
-  const workspace = workspaces.find(
-    (w) => (w.id ?? w._id) === workspaceId
-  );
+  const workspace =
+    workspaces.find((w) => (w.id ?? w._id) === workspaceId) ||
+    currentWorkspace ||
+    {};
 
-  const manage = false;
+  const type = workspace?.type || "chama";
+
+  const manage = canManageAnnouncements(workspace?.role, type);
+  const canPin = canPinAnnouncement(workspace?.role, type);
+  const canDelete = canDeleteAnnouncement(workspace?.role, type);
 
   const { data: announcements = [], isLoading, isError } =
     useAnnouncements(workspaceId);
@@ -82,7 +92,8 @@ export default function AnnouncementsPage() {
           <AnnouncementCard
             key={announcement.id ?? announcement._id}
             announcement={announcement}
-            canManage={manage}
+            canPin={canPin}
+            canDelete={canDelete}
             onTogglePin={(item) =>
               setPinned.mutate({
                 announcementId: item.id ?? item._id,

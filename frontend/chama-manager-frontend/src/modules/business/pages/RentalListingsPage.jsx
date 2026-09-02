@@ -48,6 +48,14 @@ export default function RentalListingsPage() {
   } = useRentalListings(workspaceId);
   const listingList = Array.isArray(listings) ? listings : [];
 
+  const totalUnits = listingList.length;
+  const occupiedCount = listingList.filter((l) => l.status === "occupied").length;
+  const vacantCount = totalUnits - occupiedCount;
+  const occupancyRate = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
+  const potentialMonthlyRent = listingList
+    .filter((l) => (l.rent_period || "month") === "month")
+    .reduce((sum, l) => sum + Number(l.rent_amount || 0), 0);
+
   const [modalMode, setModalMode] = useState(null); // "add" | "edit" | null
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -182,6 +190,22 @@ export default function RentalListingsPage() {
           </button>
         }
       />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <PortfolioStat label="Total Units" value={totalUnits} />
+        <PortfolioStat label="Occupied" value={occupiedCount} tone="text-emerald-600" />
+        <PortfolioStat label="Vacant" value={vacantCount} tone="text-amber-600" />
+        <PortfolioStat label="Occupancy Rate" value={`${occupancyRate}%`} tone="text-primary" />
+      </div>
+
+      {potentialMonthlyRent > 0 && (
+        <p className="text-xs text-gray-500">
+          Potential monthly rent across all listed units: {" "}
+          <span className="font-bold text-gray-900 dark:text-white">
+            {formatMoney(potentialMonthlyRent, currency)}
+          </span>
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {listingList.length === 0 ? (
@@ -504,6 +528,15 @@ export default function RentalListingsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PortfolioStat({ label, value, tone = "text-gray-900 dark:text-white" }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className={`mt-1 text-xl font-extrabold ${tone}`}>{value}</p>
     </div>
   );
 }

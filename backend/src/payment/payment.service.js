@@ -117,10 +117,17 @@ class PaymentService {
                 intent = await PaymentIntent.findOne({ 
                     provider_request_id: callback.checkoutRequestId 
                 }).session(session);
+
+                if (!intent && callback.checkoutRequestId) {
+                    await new Promise(r => setTimeout(r, 300));
+                    intent = await PaymentIntent.findOne({ 
+                        provider_request_id: callback.checkoutRequestId 
+                    }).session(session);
+                }
             } else {
                 intent = await PaymentIntent.findById(paymentId).session(session);
                 callback = {
-                    checkoutRequestId: intent.provider_request_id,
+                    checkoutRequestId: intent?.provider_request_id,
                     status: status,
                     reason: providerData?.ResultDesc,
                     raw: providerData,
@@ -129,17 +136,19 @@ class PaymentService {
             }
             
             if (!intent) {
-                console.warn(`[payment.service] No PaymentIntent found for ${callback.checkoutRequestId || paymentId}`);
+                console.warn(`[payment.service] No PaymentIntent found for ${callback?.checkoutRequestId || paymentId}`);
                 return { success: false, skipped: true, reason: 'PaymentIntent not found' };
             }
+
+            const targetStatus = String(callback.status || PAYMENT_STATUS.FAILED).toLowerCase();
 
             if (intent.status === PAYMENT_STATUS.COMPLETED) {
                 return { success: true, duplicate: true, intent };
             }
 
-            intent.status = callback.status;
+            intent.status = targetStatus;
             intent.provider_response = callback.raw;
-            intent.completed_at = callback.status === PAYMENT_STATUS.COMPLETED ? new Date() : null;
+            intent.completed_at = targetStatus === PAYMENT_STATUS.COMPLETED ? new Date() : null;
             await intent.save({ session });
 
             let payment = null;

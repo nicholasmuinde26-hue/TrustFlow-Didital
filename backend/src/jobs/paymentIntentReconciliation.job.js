@@ -10,6 +10,7 @@ import PaymentIntent from "../models/PaymentIntent.js";
 import MpesaAttempt from "../models/MpesaAttempt.js";
 import mpesaService from "../payment/providers/mpesa/mpesa.service.js";
 import paymentService from "../payment/payment.service.js";
+import { PAYMENT_STATUS } from "../payment/payment.constants.js";
 
 const SWEEP_INTERVAL_MS = Number(process.env.MPESA_RECONCILE_INTERVAL_MS) || 30_000;
 const MIN_AGE_MS = Number(process.env.MPESA_RECONCILE_MIN_AGE_MS) || 25_000;
@@ -30,13 +31,12 @@ const reconcileOne = async (intent) => {
 
     const successful = Number(query.resultCode) === 0;
 
-    // FIX: Use processCallback so we don't have to fake the MPesa body
-    // This emits PAYMENT_COMPLETED/FAILED event -> FinanceEngine handles routing
+    // Use processCallback with standard lowercase PAYMENT_STATUS enum values
     await paymentService.processCallback({
       provider: 'mpesa',
       paymentId: intent._id,
       success: successful,
-      status: successful? 'COMPLETED' : 'FAILED',
+      status: successful ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED,
       providerData: {
        ...query,
         ResultDesc: query.resultDescription || "M-Pesa STK status received (reconciliation sweep)"

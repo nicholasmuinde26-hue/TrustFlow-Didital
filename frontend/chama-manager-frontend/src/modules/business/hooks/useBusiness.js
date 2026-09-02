@@ -42,6 +42,7 @@ export function useBusinessSales(workspaceId, params = {}) {
   return {
     sales: Array.isArray(salesQuery.data) ? salesQuery.data : [],
     isLoading: salesQuery.isLoading,
+    isRefetching: salesQuery.isFetching,
     isError: salesQuery.isError,
     refetch: salesQuery.refetch,
     createSale: createSaleMutation.mutateAsync,
@@ -119,6 +120,7 @@ export function useBusinessExpenses(workspaceId, params = {}) {
   return {
     expenses: Array.isArray(expensesQuery.data) ? expensesQuery.data : [],
     isLoading: expensesQuery.isLoading,
+    isRefetching: expensesQuery.isFetching,
     refetch: expensesQuery.refetch,
     createExpense: createExpenseMutation.mutateAsync,
     isCreating: createExpenseMutation.isPending,
@@ -313,6 +315,7 @@ export function useBusinessCustomers(workspaceId, params = {}) {
   return {
     customers: Array.isArray(customersQuery.data) ? customersQuery.data : [],
     isLoading: customersQuery.isLoading,
+    isRefetching: customersQuery.isFetching,
     refetch: customersQuery.refetch,
     createCustomer: createCustomerMutation.mutateAsync,
     isCreating: createCustomerMutation.isPending,
@@ -356,6 +359,7 @@ export function useBusinessAccounts(workspaceId) {
   return {
     accounts: Array.isArray(accountsQuery.data) ? accountsQuery.data : [],
     isLoading: accountsQuery.isLoading,
+    isRefetching: accountsQuery.isFetching,
     refetch: accountsQuery.refetch,
   };
 }

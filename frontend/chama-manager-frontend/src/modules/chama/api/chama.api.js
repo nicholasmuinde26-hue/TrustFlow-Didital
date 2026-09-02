@@ -68,25 +68,17 @@ const chamaApi = {
   // include these).
   listJoinRequests(chamaId) { return api.get(`/chamas/${chamaId}/members/join-requests`); },
 
-  getMgr(chamaId) {
-    return api.get(`/chamas/${chamaId}/mgr`);
+  listMembers(chamaId) {
+    return api.get(`/chamas/${chamaId}/members`);
   },
 
-  saveMgrSettings(chamaId, payload) {
-    return api.put(`/chamas/${chamaId}/mgr/settings`, payload);
-  },
-
-  recordMgrReminder(chamaId, payload) {
-    return api.post(`/chamas/${chamaId}/mgr/reminders`, payload);
-  },
-
-  getMgrHistory(chamaId) {
-    return api.get(`/chamas/${chamaId}/mgr/history`);
-  },
-
-  markMgrPaid(chamaId, obligationId, payload) {
-    return api.post(`/chamas/${chamaId}/mgr/obligations/${obligationId}/mark-paid`, payload);
-  },
+  // NOTE: MGR (Merry-Go-Round) is NOT a sub-resource of /chamas/:id — it's
+  // its own governed module mounted at /api/v1/mgr (policies, rounds,
+  // approvals). None of the /chamas/:id/mgr/* routes this object used to
+  // define exist on the backend (see backend/src/modules/mgr/mgr.routes.js
+  // and mgr.controller.js). Use `mgrApi` from "./mgr.api" instead — its
+  // getOverview/createPolicy/activatePolicy/recordPayment/proposePayout/
+  // disbursePayout/reorderRotation calls are what's actually mounted.
 };
 
 export default chamaApi;

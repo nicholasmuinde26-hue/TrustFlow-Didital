@@ -56,6 +56,10 @@ import notificationRoutes from "./modules/notifications/notifications.routes.js"
 // AI Assistant
 import aiRoutes from "./modules/ai/ai.routes.js";
 
+// MGR & Approvals Engine
+import mgrRoutes from "./modules/mgr/mgr.routes.js";
+import approvalRoutes from "./modules/approval/approval.routes.js";
+
 import "./modules/finance/financeEngine.service.js";
 
 // ============================================================================
@@ -338,6 +342,10 @@ app.use(
     "/api/v1/notifications",
     notificationRoutes
 );
+
+// MGR Workflow & Approvals Engine
+app.use("/api/v1/mgr", mgrRoutes);
+app.use("/api/v1/approvals", approvalRoutes);
 
 // ============================================================================
 // 404 HANDLER

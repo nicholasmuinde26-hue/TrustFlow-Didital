@@ -10,6 +10,7 @@ import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import Spinner from "@/shared/components/ui/Spinner";
 import ContributionGroupLayout from "./ContributionGroupLayout";
 import { AiAssistantWidget } from "@/modules/ai";
+import WorkspaceQuickLaunchers from "@/modules/workspaces/components/WorkspaceQuickLaunchers";
 
 export default function WorkspaceLayout() {
   const { workspaceId } = useParams();
@@ -74,6 +75,8 @@ export default function WorkspaceLayout() {
           <Outlet />
         </main>
       </div>
+
+      <WorkspaceQuickLaunchers workspaceId={workspaceId} workspaceType={workspace?.type} />
 
       <AiAssistantWidget
         workspaceId={workspaceId}

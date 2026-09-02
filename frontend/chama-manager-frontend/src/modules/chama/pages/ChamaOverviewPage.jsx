@@ -23,7 +23,7 @@ import useAuth from "@/app/hooks/useAuth";
 import MpesaStkModal from "@/modules/finance/components/MpesaStkModal";
 import useFinanceSummary from "@/modules/finance/hooks/useFinanceSummary";
 import useLedger from "@/modules/finance/hooks/useLedger";
-import chamaApi from "../api/chama.api";
+import mgrApi from "../api/mgr.api";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -44,7 +44,7 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
 
   useEffect(() => {
     if (workspaceId) {
-      chamaApi.getMgr(workspaceId)
+      mgrApi.getOverview(workspaceId)
         .then((res) => setMgrData(res?.data?.data))
         .catch(() => {});
     }
@@ -58,10 +58,16 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
   const monthIncome = financeSummary?.total_contributions ?? (financeSummary?.cash_in || 0);
   const savingsBalance = financeSummary?.savings_balance ?? 0;
 
-  // Calculate MGR Pool strictly from backend obligations & plan
+  // Calculate MGR Pool strictly from backend obligations & policy
   const mgrObligations = mgrData?.obligations || [];
-  const mgrPlanAmount = Number(mgrData?.plan?.amount?.$numberDecimal || mgrData?.plan?.amount || 0);
-  const mgrPool = mgrObligations.length > 0 ? mgrObligations.length * mgrPlanAmount : (mgrPlanAmount * (mgrData?.members?.length || 0));
+  const mgrPolicy = mgrData?.policy || null;
+  const mgrPlanAmount = Number(
+    mgrPolicy?.contribution_rule?.uniform_amount?.$numberDecimal ||
+    mgrPolicy?.contribution_rule?.uniform_amount ||
+    0
+  );
+  const mgrParticipants = mgrPolicy?.participants || [];
+  const mgrPool = mgrObligations.length > 0 ? mgrObligations.length * mgrPlanAmount : (mgrPlanAmount * mgrParticipants.length);
 
   const outstanding = financeSummary?.outstanding_loans ?? 0;
 
@@ -202,7 +208,7 @@ export default function ChamaOverviewPage({ dashboard = {} }) {
             {money(mgrPool)}
           </p>
           <div className="mt-2 flex items-center justify-between text-xs text-slate-400 font-medium">
-            <span>{mgrData?.round ? `Round #${mgrData.round.number || '1'}` : 'Rotational Pool'}</span>
+            <span>{mgrData?.currentRound ? `Round #${mgrData.currentRound.round_number || '1'}` : 'Rotational Pool'}</span>
           </div>
         </div>
 

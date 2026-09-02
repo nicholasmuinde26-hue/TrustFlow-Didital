@@ -36,6 +36,41 @@ class JournalService {
      */
 
     async create(context, transaction, session = null) {
+        const chamaId =
+            context.chama ||
+            context.chamaId ||
+            context.chama_id ||
+            context.owner_id ||
+            context.ownerId ||
+            transaction?.chama ||
+            transaction?.chama_id ||
+            transaction?.owner_id;
+
+        const memberId =
+            context.member ||
+            context.memberId ||
+            context.participant_id ||
+            context.participantId ||
+            transaction?.member ||
+            transaction?.member_id ||
+            null;
+
+        let parsedAmount = context.amount;
+        if (parsedAmount === undefined || parsedAmount === null) {
+            parsedAmount = transaction?.amount;
+        }
+
+        let numAmount = 0;
+        if (parsedAmount !== null && parsedAmount !== undefined) {
+            if (typeof parsedAmount === 'object' && typeof parsedAmount.toString === 'function') {
+                numAmount = Number(parsedAmount.toString());
+            } else {
+                numAmount = Number(parsedAmount);
+            }
+        }
+        if (isNaN(numAmount)) {
+            numAmount = 0;
+        }
 
         const journal = await Journal.create([{
 
@@ -46,22 +81,22 @@ class JournalService {
                 transaction._id || transaction,
 
             chama:
-                context.chama,
+                chamaId,
 
             member:
-                context.member,
+                memberId,
 
             transactionType:
-                context.transactionType || context.referenceType,
+                context.transactionType || context.referenceType || "PAYOUT",
  
             amount:
-                Number(context.amount),
+                numAmount,
  
             currency:
-                context.currency || "KES",
+                context.currency || transaction?.currency || "KES",
  
             narration:
-                context.description || context.narration,
+                context.description || context.narration || "",
 
             provider:
                 context.provider,

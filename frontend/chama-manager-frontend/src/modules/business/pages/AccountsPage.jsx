@@ -5,8 +5,14 @@ import { useBusinessAccounts } from "../hooks/useBusiness";
 import { CashAccountsCard } from "../components/CashAccountsCard";
 
 export default function AccountsPage() {
-  const { workspaceId } = useWorkspace();
+  const { workspaceId, currentWorkspace } = useWorkspace();
   const { accounts, isLoading, isRefetching, refetch } = useBusinessAccounts(workspaceId);
+
+  const isRental = currentWorkspace?.category === "rental";
+  const heading = isRental ? "Rent & Deposit Accounts" : "Cash & Bank Accounts";
+  const subtitle = isRental
+    ? "Overview of rent collection accounts, security deposit holdings, and bank balances."
+    : "Overview of liquid assets, M-Pesa tills, and bank balances.";
 
   if (isLoading) {
     return (
@@ -20,8 +26,8 @@ export default function AccountsPage() {
     <div className="p-4 sm:p-8 space-y-6 max-w-7xl mx-auto font-sans">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Cash & Bank Accounts</h1>
-          <p className="text-xs text-slate-500">Overview of liquid assets, M-Pesa tills, and bank balances.</p>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white">{heading}</h1>
+          <p className="text-xs text-slate-500">{subtitle}</p>
         </div>
         <button
           onClick={() => refetch()}

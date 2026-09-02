@@ -446,12 +446,7 @@ export const startPayout = async ({
 
 
         if(activePayout){
-
-            throw new AppError(
-                "There is already an active payout",
-                409
-            );
-
+            return activePayout;
         }
 
 
@@ -517,30 +512,26 @@ export const startPayout = async ({
 
 
         // ----------------------------------------------------
-        // 5. Validate rotation positions
+        // 5. Validate & auto-assign rotation positions
         // ----------------------------------------------------
 
+        const unassigned = memberships.filter(
+            member => member.payout_position === null || member.payout_position === undefined
+        );
 
-        const invalidMember =
-            memberships.find(
-
-                member =>
-
-                    member.payout_position === null ||
-
-                    member.payout_position === undefined
-
+        if (unassigned.length > 0) {
+            let maxPos = memberships.reduce(
+                (max, m) => Math.max(max, Number(m.payout_position) || 0),
+                0
             );
-
-
-
-        if(invalidMember){
-
-            throw new AppError(
-                "All members must have payout positions",
-                400
-            );
-
+            for (const member of unassigned) {
+                maxPos += 1;
+                member.payout_position = maxPos;
+                await ChamaMembership.updateOne(
+                    { _id: member._id },
+                    { $set: { payout_position: maxPos } }
+                );
+            }
         }
 
 

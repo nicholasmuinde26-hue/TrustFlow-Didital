@@ -9,6 +9,7 @@ import { CashAccountsCard } from "../components/CashAccountsCard";
 import { RecentSales } from "../components/RecentSales";
 import { SalesChart } from "../components/SalesChart";
 import { QuickActions } from "../components/QuickActions";
+import { RentalOccupancySnapshot } from "../components/RentalOccupancySnapshot";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import BusinessMpesaModal from "../components/BusinessMpesaModal";
 
@@ -132,6 +133,10 @@ export default function BusinessDashboard() {
       />
 
       <BusinessStatCards stats={stats} />
+
+      {profile?.category === "rental" && (
+        <RentalOccupancySnapshot workspaceId={workspaceId} currency={profile?.currency || "KES"} />
+      )}
 
       <QuickActions
         category={profile?.category}

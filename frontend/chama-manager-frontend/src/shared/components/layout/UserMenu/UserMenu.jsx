@@ -4,6 +4,8 @@ import {
   ChevronDown,
   User,
   LogOut,
+  Mail,
+  LayoutGrid,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -36,6 +38,19 @@ export default function UserMenu() {
   function goToProfile() {
     setOpen(false);
     navigate("/account/settings");
+  }
+
+  // Reachable from anywhere in the app shell — including from deep
+  // inside a specific workspace, which has no other path back to
+  // /workspaces or /invitations besides the WorkspaceSwitcher.
+  function goToWorkspaces() {
+    setOpen(false);
+    navigate("/workspaces");
+  }
+
+  function goToInvitations() {
+    setOpen(false);
+    navigate("/invitations");
   }
 
   const name = user?.name || "Account";
@@ -121,6 +136,28 @@ export default function UserMenu() {
               {email && <p className="text-sm text-slate-500">{email}</p>}
             </div>
           </div>
+
+          <button
+            onClick={goToWorkspaces}
+            className="
+            flex w-full items-center gap-3 px-4 py-3 transition-colors
+            hover:bg-slate-100 dark:hover:bg-slate-800
+            "
+          >
+            <LayoutGrid size={18} />
+            All Workspaces
+          </button>
+
+          <button
+            onClick={goToInvitations}
+            className="
+            flex w-full items-center gap-3 px-4 py-3 transition-colors
+            hover:bg-slate-100 dark:hover:bg-slate-800
+            "
+          >
+            <Mail size={18} />
+            Invitations
+          </button>
 
           <button
             onClick={goToProfile}

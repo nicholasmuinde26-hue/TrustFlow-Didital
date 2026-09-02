@@ -82,7 +82,7 @@ export default function CreateContributionGroupPage() {
 
         <button
           type="button"
-          onClick={() => navigate("/home")}
+          onClick={() => navigate(-1)}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
           title="Close and cancel"
         >

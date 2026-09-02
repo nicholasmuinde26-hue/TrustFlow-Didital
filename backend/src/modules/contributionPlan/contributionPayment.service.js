@@ -108,6 +108,18 @@ class ContributionPaymentService {
     if (obligation.owner_type === 'Chama') {
       const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');
       await maybeCreateMgrPayoutForChama(String(obligation.owner_id), String(contributionPayment.participant_id)).catch(() => null);
+
+      try {
+        const mgrService = (await import('../mgr/mgr.service.js')).default;
+        await mgrService.syncRoundCollection({
+          chamaId: obligation.owner_id,
+          policyId: obligation.plan_id,
+          amount: Number(contributionPayment.amount),
+          actorUserId: contributionPayment.created_by
+        });
+      } catch (err) {
+        console.warn("[completeContributionPayment] syncRoundCollection notice:", err.message);
+      }
     }
 
     return { payment: contributionPayment };

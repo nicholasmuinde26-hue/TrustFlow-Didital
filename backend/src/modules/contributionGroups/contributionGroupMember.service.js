@@ -758,23 +758,42 @@ export const getContributionGroupMembers = async ({
 
 
   // ======================================
-  // 3. GROUP NOT FOUND
+  // 3. GROUP NOT FOUND (Check Chama Fallback)
   // ======================================
 
-  if (
+  if (!group) {
+    const Chama = (await import("../../models/Chama.js")).default;
+    const ChamaMembership = (await import("../../models/ChamaMembership.js")).default;
 
-    !group
+    const chama = await Chama.findById(groupId).lean();
+    if (chama) {
+      const chamaMembers = await ChamaMembership.find({
+        chama_id: groupId,
+        status: "active",
+      })
+        .populate("user_id", "name phone status")
+        .lean();
 
-  ) {
+      const members = chamaMembers.map((cm) => ({
+        _id: cm._id,
+        user_id: cm.user_id,
+        role: cm.role,
+        status: cm.status,
+        joined_at: cm.createdAt,
+      }));
+
+      // Return the same shape the controller expects: { group, members, total }
+      return {
+        group: { _id: chama._id, name: chama.name, status: chama.status },
+        members,
+        total: members.length,
+      };
+    }
 
     throw new AppError(
-
-      'Contribution group not found',
-
+      "Contribution group not found",
       404
-
     );
-
   }
 
 

@@ -793,30 +793,63 @@ class FinancialEngine {
                     event
                 );
 
-                // Round-completion check (all members' current-round
-                // obligations paid -> start the payout) runs after the
-                // ledger/obligation update above has committed, and is
-                // best-effort: a failure here must not undo the payment
-                // that was just recorded.
+                // Best-effort: a failure below must not undo the payment
+                // that was just recorded and posted to the ledger.
                 const chamaId =
                     event.context?.chamaId ||
                     event.context?.owner_id;
 
                 if (chamaId) {
 
-                    const { maybeCreateMgrPayoutForChama } = await import(
-                        "../chama/chamaFinance.service.js"
-                    );
+                    const MgrPolicy = (await import(
+                        "../../models/MgrPolicy.js"
+                    )).default;
 
-                    await maybeCreateMgrPayoutForChama(
-                        chamaId,
-                        event.actor?.userId
-                    ).catch((err) => {
-                        console.error(
-                            "[FinanceEngine] maybeCreateMgrPayoutForChama failed:",
-                            err.message
-                        );
+                    const activePolicy = await MgrPolicy.findOne({
+                        chama_id: chamaId,
+                        status: "active",
                     });
+
+                    if (activePolicy) {
+                        // Governed MGR workflow: just sync the round's
+                        // collected total. Payout is never auto-created
+                        // here - it requires an explicit Treasurer
+                        // proposal (proposePayout) plus multi-role
+                        // approval sign-off (separation of duties).
+                        const mgrService = (await import(
+                            "../mgr/mgr.service.js"
+                        )).default;
+
+                        await mgrService.syncRoundCollection({
+                            chamaId,
+                            policyId: activePolicy._id,
+                            amount: event.payment?.amount,
+                            actorUserId: event.actor?.userId,
+                        }).catch((err) => {
+                            console.error(
+                                "[FinanceEngine] mgrService.syncRoundCollection failed:",
+                                err.message
+                            );
+                        });
+                    } else {
+                        // Legacy, ungoverned MGR - no MgrPolicy has been
+                        // set up for this chama, so the original
+                        // auto-payout-on-full-collection behavior is
+                        // preserved for backwards compatibility.
+                        const { maybeCreateMgrPayoutForChama } = await import(
+                            "../chama/chamaFinance.service.js"
+                        );
+
+                        await maybeCreateMgrPayoutForChama(
+                            chamaId,
+                            event.actor?.userId
+                        ).catch((err) => {
+                            console.error(
+                                "[FinanceEngine] maybeCreateMgrPayoutForChama failed:",
+                                err.message
+                            );
+                        });
+                    }
                 }
 
                 return;

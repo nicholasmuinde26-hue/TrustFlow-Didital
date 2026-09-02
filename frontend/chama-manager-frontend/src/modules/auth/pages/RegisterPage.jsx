@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Building2, Store, Wallet, ArrowRight } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
+import useWorkspace from "@/app/hooks/useWorkspace";
+import workspaceService from "@/app/services/workspace.service";
+
 import AuthLayout from "@/layouts/AuthLayout";
 import AuthCard from "@/modules/auth/components/AuthCard";
 import PasswordInput from "@/modules/auth/components/PasswordInput";
@@ -9,12 +13,34 @@ import OtpChannelSelect from "@/modules/auth/components/OtpChannelSelect";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
 
+/* ============================================================
+   WORKSPACE TYPE HELPERS — same normalization used on LoginPage
+   and across the workspace switcher / hub, so a workspace lands
+   in the same bucket here as it does everywhere else.
+============================================================ */
+
+const TYPE_META = {
+  chama: { label: "Chama", icon: Building2 },
+  business: { label: "Business", icon: Store },
+  contribution: { label: "Contribution Group", icon: Wallet },
+};
+
+function normalizeType(type) {
+  const t = String(type || "").toLowerCase();
+  if (t === "business") return "business";
+  if (t === "contribution-group" || t === "contribution_group" || t === "contribution") {
+    return "contribution";
+  }
+  return "chama";
+}
+
 export default function RegisterPage() {
-  const { register, verifyOtp, sendOtp } = useAuth();
+  const { register, verifyOtp, sendOtp, setSuppressGuestRedirect } = useAuth();
+  const { selectWorkspace } = useWorkspace();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Registration Steps: "register" (Step 1) | "otp" (Step 2)
+  // Registration Steps: "register" (Step 1) | "otp" (Step 2) | "workspace" (Step 3)
   const [step, setStep] = useState("register");
 
   const [form, setForm] = useState({
@@ -27,6 +53,14 @@ export default function RegisterPage() {
   const [otpCode, setOtpCode] = useState("");
   const [channel, setChannel] = useState("sms");
 
+  // Workspace-picker step (post-verification) state — mirrors LoginPage's
+  // step 3 exactly, for someone who registered but already belongs to a
+  // workspace (e.g. auto-added via a join-link/invite during signup).
+  const [myWorkspaces, setMyWorkspaces] = useState([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [selectedType, setSelectedType] = useState("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
+
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -34,6 +68,11 @@ export default function RegisterPage() {
   // Preserve the full path INCLUDING query string (e.g. a Chama
   // join-link's ?token=...) — dropping .search here would silently
   // strip the token and break the join-link flow after registering.
+  // If the person was bounced here from a specific link, honor that
+  // destination instead of interrupting it with the workspace picker —
+  // the picker only makes sense when there's nowhere specific to go.
+  const hasExplicitRedirect = Boolean(location.state?.from);
+
   const redirectTo = location.state?.from
     ? `${location.state.from.pathname || "/home"}${location.state.from.search || ""}`
     : "/home";
@@ -111,7 +150,7 @@ export default function RegisterPage() {
         );
         setStep("otp");
       } else {
-        navigate(redirectTo, { replace: true });
+        await finishRegistration();
       }
     } catch (err) {
       setError(
@@ -130,17 +169,87 @@ export default function RegisterPage() {
     setError("");
     setSubmitting(true);
 
+    // Block GuestRoute's own auto-redirect for the duration of this
+    // flow — verifyOtp() below flips isAuthenticated true, and without
+    // this GuestRoute would immediately send the person to /home
+    // before finishRegistration() gets to show the workspace picker.
+    setSuppressGuestRedirect?.(true);
+
     try {
       const identifier = channel === "email" && form.email.trim() ? form.email.trim() : form.phone;
       await verifyOtp({ identifier, phone: form.phone, email: form.email, otpCode });
-      navigate(redirectTo, { replace: true });
+      await finishRegistration();
     } catch (err) {
       setError(
         err?.response?.data?.message || "Invalid or expired OTP code."
       );
+      setSuppressGuestRedirect?.(false);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // After the account is fully verified: there's no homepage to land
+  // on anymore, so — unless the person was headed somewhere specific —
+  // pull their workspaces and let them pick exactly which one to open
+  // straight into. A brand-new account almost always has none yet, in
+  // which case this falls through to /home, which handles first-time
+  // onboarding (create/join) on its own. But someone who registered
+  // via a join-link or was auto-added to a workspace during signup
+  // gets the same type → workspace picker Login offers, instead of a
+  // homepage flash.
+  // ------------------------------------------------------------------
+  async function finishRegistration() {
+    if (hasExplicitRedirect) {
+      navigate(redirectTo, { replace: true });
+      return;
+    }
+
+    setWorkspacesLoading(true);
+
+    try {
+      const items = await workspaceService.getWorkspaces();
+
+      if (!items.length) {
+        navigate("/home", { replace: true });
+        return;
+      }
+
+      setMyWorkspaces(items);
+      setStep("workspace");
+    } catch {
+      // Couldn't fetch the list — fall back to the resolver, which
+      // will fetch again and route the person in on its own.
+      navigate("/home", { replace: true });
+    } finally {
+      setWorkspacesLoading(false);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // STEP 3: Choose which workspace to open into
+  // ------------------------------------------------------------------
+  function handleOpenWorkspace(event) {
+    event.preventDefault();
+
+    const workspace = myWorkspaces.find(
+      (w) => String(w.id ?? w._id) === String(selectedWorkspaceId)
+    );
+
+    if (!workspace) {
+      setError("Please choose a workspace to continue.");
+      return;
+    }
+
+    selectWorkspace(workspace);
+
+    const workspaceId = workspace.id ?? workspace._id;
+    const type = normalizeType(workspace.type);
+
+    navigate(type === "business" ? `/workspace/${workspaceId}/business` : `/workspace/${workspaceId}`, {
+      replace: true,
+    });
   }
 
   // Resend OTP code
@@ -163,17 +272,35 @@ export default function RegisterPage() {
     }
   }
 
+  // Types the person actually has at least one workspace of — no
+  // point offering "Business" in the dropdown if they don't have one.
+  const availableTypes = Object.keys(TYPE_META).filter((type) =>
+    myWorkspaces.some((w) => normalizeType(w.type) === type)
+  );
+
+  const workspacesOfSelectedType = myWorkspaces.filter(
+    (w) => normalizeType(w.type) === selectedType
+  );
+
   return (
     <AuthLayout>
       <AuthCard>
         <h2 className="text-2xl font-bold">
-          {step === "register" ? "Create Account" : channel === "email" ? "Email Verification" : "Phone Verification"}
+          {step === "register"
+            ? "Create Account"
+            : step === "otp"
+            ? channel === "email"
+              ? "Email Verification"
+              : "Phone Verification"
+            : "Choose a Workspace"}
         </h2>
 
         <p className="mt-1 text-slate-500">
           {step === "register"
             ? "Start managing your Chama today"
-            : `Enter the 6-digit security code sent to ${channel === "email" ? form.email : form.phone}`}
+            : step === "otp"
+            ? `Enter the 6-digit security code sent to ${channel === "email" ? form.email : form.phone}`
+            : "Pick which workspace you'd like to open."}
         </p>
 
         {/* Status Alerts & Notifications */}
@@ -276,8 +403,8 @@ export default function RegisterPage() {
               required
             />
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Verifying Code..." : "Verify & Activate Account"}
+            <Button type="submit" className="w-full" disabled={submitting || workspacesLoading}>
+              {submitting || workspacesLoading ? "Verifying Code..." : "Verify & Activate Account"}
             </Button>
 
             <div className="flex items-center justify-between pt-2 text-xs">
@@ -302,6 +429,69 @@ export default function RegisterPage() {
                 Change Registration Details
               </button>
             </div>
+          </form>
+        )}
+
+        {/* STEP 3: WORKSPACE PICKER — appears only once the account is
+            fully verified, and only when the person wasn't already
+            headed somewhere specific. Type dropdown first; the
+            workspace dropdown only appears (and is only populated)
+            once a type is chosen. Same shape as LoginPage's picker. */}
+        {step === "workspace" && (
+          <form onSubmit={handleOpenWorkspace} className="mt-6 space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Workspace Type</label>
+              <select
+                value={selectedType}
+                onChange={(e) => {
+                  setSelectedType(e.target.value);
+                  setSelectedWorkspaceId("");
+                  setError("");
+                }}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
+                required
+              >
+                <option value="" disabled>
+                  Select Chama, Business, or Contribution Group
+                </option>
+                {availableTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {TYPE_META[type].label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedType && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Which {TYPE_META[selectedType].label}?
+                </label>
+                <select
+                  value={selectedWorkspaceId}
+                  onChange={(e) => {
+                    setSelectedWorkspaceId(e.target.value);
+                    setError("");
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
+                  required
+                >
+                  <option value="" disabled>
+                    Choose a workspace
+                  </option>
+                  {workspacesOfSelectedType.map((workspace) => (
+                    <option key={workspace.id ?? workspace._id} value={workspace.id ?? workspace._id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <Button type="submit" className="w-full" disabled={!selectedWorkspaceId}>
+              Open Workspace
+              <ArrowRight size={16} />
+            </Button>
           </form>
         )}
 

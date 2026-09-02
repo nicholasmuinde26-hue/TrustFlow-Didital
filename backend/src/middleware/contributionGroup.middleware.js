@@ -146,13 +146,33 @@ async (
         });
 
     if (!membership) {
-      const groupCreated = await ContributionGroup.findOne({ _id: groupId, created_by: req.user._id }).lean();
+      const groupCreated = await ContributionGroup.findById(groupId).lean();
       if (groupCreated) {
+        const isOwner = String(groupCreated.created_by) === String(req.user._id);
+        const role = isOwner ? 'organizer' : 'member';
         membership = await ContributionGroupMember.findOneAndUpdate(
           { contribution_group_id: groupId, user_id: req.user._id },
-          { contribution_group_id: groupId, user_id: req.user._id, role: 'organizer', status: 'active' },
+          { contribution_group_id: groupId, user_id: req.user._id, role, status: 'active' },
           { upsert: true, new: true }
         ).lean();
+      } else {
+        // Fallback: check if this is a Chama workspace ID where user is an active member
+        const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
+        const chamaMember = await ChamaMembership.findOne({
+          chama_id: groupId,
+          user_id: req.user._id,
+          status: 'active',
+        }).lean();
+
+        if (chamaMember) {
+          membership = {
+            _id: chamaMember._id,
+            user_id: req.user._id,
+            contribution_group_id: groupId,
+            role: ['treasurer', 'chairperson'].includes(chamaMember.role) ? 'organizer' : 'member',
+            status: 'active',
+          };
+        }
       }
     }
 

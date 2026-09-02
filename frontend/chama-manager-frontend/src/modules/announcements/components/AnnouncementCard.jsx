@@ -13,11 +13,13 @@ function formatDate(value) {
 
 export default function AnnouncementCard({
   announcement,
-  canManage,
+  canPin = false,
+  canDelete = false,
   onTogglePin,
   onDelete,
 }) {
   const { title, content, author, createdAt, pinned } = announcement;
+  const showActions = canPin || canDelete;
 
   return (
     <div
@@ -52,23 +54,27 @@ export default function AnnouncementCard({
           </p>
         </div>
 
-        {canManage && (
+        {showActions && (
           <div className="flex shrink-0 items-center gap-1">
-            <button
-              onClick={() => onTogglePin(announcement)}
-              title={pinned ? "Unpin" : "Pin"}
-              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800"
-            >
-              <Pin size={16} />
-            </button>
+            {canPin && (
+              <button
+                onClick={() => onTogglePin(announcement)}
+                title={pinned ? "Unpin" : "Pin"}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800"
+              >
+                <Pin size={16} />
+              </button>
+            )}
 
-            <button
-              onClick={() => onDelete(announcement)}
-              title="Delete"
-              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
-            >
-              <Trash2 size={16} />
-            </button>
+            {canDelete && (
+              <button
+                onClick={() => onDelete(announcement)}
+                title="Delete"
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
           </div>
         )}
       </div>

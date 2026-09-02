@@ -12,6 +12,15 @@ export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Set by LoginPage/RegisterPage right before they authenticate the
+  // user (verifyOtp), and cleared once they've finished routing the
+  // person themselves (workspace picker or /home fallback). While
+  // true, GuestRoute must NOT auto-redirect on its own — otherwise it
+  // races the page's own post-auth navigation and yanks the user
+  // straight to /home the instant isAuthenticated flips true, before
+  // the workspace-type/workspace picker ever gets a chance to render.
+  const [suppressGuestRedirect, setSuppressGuestRedirect] = useState(false);
+
   //-----------------------------------------------------
 
   async function loadUser() {
@@ -87,6 +96,7 @@ export default function AuthProvider({ children }) {
     } finally {
       localStorage.removeItem("access_token");
       setUser(null);
+      setSuppressGuestRedirect(false);
     }
   }
 
@@ -104,8 +114,10 @@ export default function AuthProvider({ children }) {
       getOtpChannels,
       logout,
       refresh: loadUser,
+      suppressGuestRedirect,
+      setSuppressGuestRedirect,
     }),
-    [user, loading]
+    [user, loading, suppressGuestRedirect]
   );
 
   return (

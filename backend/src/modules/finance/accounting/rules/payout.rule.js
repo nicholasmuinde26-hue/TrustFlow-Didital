@@ -124,23 +124,20 @@ class PayoutRule {
 
 
     buildObligation(context){
-
-
         return {
-
-
             transactionType:
                 "PAYOUT_OBLIGATION",
-
-
-
             description:
-
                 context.description ||
                 "Payout obligation created",
-
-
-
+            chama:
+                context.chama || context.owner_id || context.ownerId || context.chamaId,
+            member:
+                context.member || context.memberId || context.created_by,
+            amount:
+                context.amount,
+            currency:
+                context.currency || "KES",
             entries:[
 
 
@@ -210,32 +207,26 @@ class PayoutRule {
 
 
     buildSettlement(context){
-
-
-
         const assetAccount =
             this.resolveDisbursementAccount(
                 context.disbursement_method ||
                 context.metadata?.disbursement_method
             );
 
-
-
         return {
-
-
             transactionType:
                 "PAYOUT_SETTLEMENT",
-
-
-
             description:
-
                 context.description ||
                 "Payout settlement",
-
-
-
+            chama:
+                context.chama || context.owner_id || context.ownerId || context.chamaId,
+            member:
+                context.member || context.memberId || context.created_by,
+            amount:
+                context.amount,
+            currency:
+                context.currency || "KES",
             entries:[
 
 
@@ -306,24 +297,20 @@ class PayoutRule {
 
 
     buildCancellation(context){
-
-
-
         return {
-
-
             transactionType:
                 "PAYOUT_CANCELLATION",
-
-
-
             description:
-
                 context.description ||
                 "Payout cancelled",
-
-
-
+            chama:
+                context.chama || context.owner_id || context.ownerId || context.chamaId,
+            member:
+                context.member || context.memberId || context.created_by,
+            amount:
+                context.amount,
+            currency:
+                context.currency || "KES",
             entries:[
 
 

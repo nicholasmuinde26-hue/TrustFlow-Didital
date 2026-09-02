@@ -23,6 +23,17 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
   const pollRef = useRef(null);
   const countdownRef = useRef(null);
 
+  // Declared before the effect (and before the early return below) so
+  // it's always initialized by the time either the effect's cleanup
+  // or the early "isOpen is false" render needs it — defining it after
+  // an early return meant a render with isOpen=false never reached
+  // this line, leaving `clearTimers` in the temporal dead zone when
+  // that render's cleanup later fired.
+  const clearTimers = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+  };
+
   useEffect(() => {
     if (isOpen) {
       setAmount(balance ? String(balance) : "");
@@ -36,11 +47,6 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const clearTimers = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-  };
 
   const startPolling = (paymentIntentId) => {
     setState("waiting");

@@ -172,3 +172,15 @@ export function isLoanOfficial(role, type) {
 export function canDisburseLoan(role, type) {
   return type === "chama" && ["treasurer", "chairperson"].includes(role);
 }
+
+// Chama-only: every MGR (Merry-Go-Round) mutation route on the backend —
+// create/activate policy, reorder rotation, record a payment, propose a
+// payout, disburse — is gated by requireChamaTreasurer(), which checks
+// membership.role === 'treasurer' exactly (no chairperson fallback, unlike
+// canDisburseLoan above). Keep this strict so the UI never offers an action
+// the API will 403 on. Approval sign-off is intentionally NOT gated by this
+// helper — eligibility for that is per-policy (approval_rule.eligible_roles)
+// and enforced server-side in approval.service.js.
+export function canManageMgr(role, type) {
+  return type === "chama" && role === "treasurer";
+}

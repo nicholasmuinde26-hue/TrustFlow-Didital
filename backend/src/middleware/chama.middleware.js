@@ -14,13 +14,31 @@ import AppError from '../utils/AppError.js';
 // GET CHAMA ID FROM REQUEST
 // ========================================
 
-const getChamaId = (req) => {
+const getChamaId = async (req) => {
+  if (req.params.chamaId) return req.params.chamaId;
+  if (req.params.id) return req.params.id;
+  if (req.body?.chamaId) return req.body.chamaId;
+  if (req.query?.chamaId) return req.query.chamaId;
 
-  return (
-    req.params.chamaId ||
-    req.params.id
-  );
+  if (req.params.roundId && mongoose.Types.ObjectId.isValid(req.params.roundId)) {
+    const MgrRound = (await import('../models/MgrRound.js')).default;
+    const round = await MgrRound.findById(req.params.roundId).lean();
+    if (round) return String(round.chama_id);
+  }
 
+  if (req.params.policyId && mongoose.Types.ObjectId.isValid(req.params.policyId)) {
+    const MgrPolicy = (await import('../models/MgrPolicy.js')).default;
+    const policy = await MgrPolicy.findById(req.params.policyId).lean();
+    if (policy) return String(policy.chama_id);
+  }
+
+  if (req.params.requestId && mongoose.Types.ObjectId.isValid(req.params.requestId)) {
+    const ApprovalRequest = (await import('../models/ApprovalRequest.js')).default;
+    const approval = await ApprovalRequest.findById(req.params.requestId).lean();
+    if (approval) return String(approval.chama_id);
+  }
+
+  return null;
 };
 
 
@@ -171,7 +189,7 @@ export const requireChamaMember = async (
     // --------------------------------------
 
     const chamaId =
-      getChamaId(req);
+      await getChamaId(req);
 
 
     // --------------------------------------
@@ -415,13 +433,15 @@ export const requireChamaTreasurer = async (
 
     validateChamaContext(req);
 
+    const isCreator = String(req.chama?.created_by) === String(req.user?._id);
+    const isAllowedRole = ['treasurer', 'chairperson', 'organizer', 'admin'].includes(req.membership?.role);
 
     if (
-      req.membership.role !== 'treasurer'
+      !isAllowedRole && !isCreator
     ) {
 
       throw new AppError(
-        'Only the treasurer can perform this action',
+        'Only the treasurer or authorized official can perform this action',
         403
       );
 

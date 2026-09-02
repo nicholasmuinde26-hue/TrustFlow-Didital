@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import {
   Plus,
@@ -16,17 +16,16 @@ import {
 } from "lucide-react";
 import BusinessMpesaModal from "@/modules/business/components/BusinessMpesaModal";
 import useFinanceSummary from "@/modules/finance/hooks/useFinanceSummary";
-
-import {
-  useContributionGroupMembers,
-  useContributionGroupTransactions,
-  useContributionGroupPlans,
-} from "../hooks/useContributionGroupData";
+import mgrApi from "@/modules/chama/api/mgr.api";
+import useWorkspace from "@/app/hooks/useWorkspace";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
 export default function ContributionsPage() {
-  const { workspaceId } = useParams();
+  const { workspaceId: routeWorkspaceId } = useParams();
+  const { workspaceId: ctxWorkspaceId } = useWorkspace();
+  const workspaceId = routeWorkspaceId || ctxWorkspaceId;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [methodFilter, setMethodFilter] = useState("all");
@@ -35,39 +34,47 @@ export default function ContributionsPage() {
   const [toastNotice, setToastNotice] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const { data: members = [] } = useContributionGroupMembers(workspaceId);
-  const { data: transactions = [] } = useContributionGroupTransactions(workspaceId);
-  const { data: plans = [] } = useContributionGroupPlans(workspaceId);
+  // Chama-native contributions data
+  const [contribData, setContribData] = useState({ plans: [], activePlan: null, members: [] });
+  const [loadingContrib, setLoadingContrib] = useState(true);
+
   const { summary: financeSummary } = useFinanceSummary(workspaceId);
 
-  // The active plan's real fixed amount, if one exists. There is no
-  // per-member "expected_amount" field anywhere in the data model — if
-  // there's no active fixed-amount plan, we honestly don't know what a
-  // member is expected to pay, so we show that instead of guessing.
-  const activePlan = plans.find((p) => p.status === "active") || plans[0] || null;
-  const planAmount = activePlan?.amount != null ? Number(activePlan.amount) : null;
+  useEffect(() => {
+    if (!workspaceId) return;
+    setLoadingContrib(true);
+    mgrApi.getContributions(workspaceId)
+      .then(res => setContribData(res.data?.data || { plans: [], activePlan: null, members: [] }))
+      .catch(() => {})
+      .finally(() => setLoadingContrib(false));
+  }, [workspaceId]);
 
-  // Strictly dynamic dataset mapped from backend members & transactions
+  const { plans = [], activePlan, members = [] } = contribData;
+  const planAmount = activePlan?.amount != null ? Number(activePlan.amount)
+    : activePlan?.contribution_rule?.uniform_amount != null ? Number(activePlan.contribution_rule.uniform_amount)
+    : null;
+
+  // Build member list from Chama-native response
   const activeMembersList = members.map((m, idx) => {
-    const userTx = transactions.find(t => t.user_id === m.user_id || t.user_id === m.user?._id || t.member_id === m._id);
-    const paidAmt = userTx ? Number(userTx.amount) : 0;
-    const expAmt = planAmount ?? 0;
+    const paidAmt = Number(m.paid || 0);
+    const expAmt = Number(m.expected || planAmount || 0);
     const balAmt = Math.max(0, expAmt - paidAmt);
-    const st = !planAmount
+    const st = !expAmt
       ? (paidAmt > 0 ? "paid" : "unpaid")
       : paidAmt >= expAmt ? "paid" : paidAmt > 0 ? "partial" : "unpaid";
     return {
       id: String(m._id || idx),
-      name: m.user ? `${m.user.first_name || ''} ${m.user.last_name || ''}`.trim() || m.user.email : m.name || `Member ${idx + 1}`,
+      name: m.user_id?.name || `Member ${idx + 1}`,
+      phone: m.user_id?.phone || "—",
       expected: expAmt,
       paid: paidAmt,
       balance: balAmt,
-      status: st,
-      method: paidAmt > 0 ? (userTx?.payment_method || "M-Pesa") : "-",
+      status: m.status === "paid" ? "paid" : st,
+      method: paidAmt > 0 ? "M-Pesa" : "-",
     };
   });
 
-  // Dynamic totals strictly derived from backend summary / active members
+  // Dynamic totals
   const totalReceived = financeSummary?.total_contributions || activeMembersList.reduce((acc, m) => acc + m.paid, 0);
   const totalOutstanding = activeMembersList.reduce((acc, m) => acc + m.balance, 0);
   const totalExpected = totalReceived + totalOutstanding;

@@ -97,7 +97,8 @@ const paymentIntentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'processing', 'completed', 'failed', 'cancelled', 'refunded'], // FIX: added refunded
+      enum: ['pending', 'processing', 'completed', 'failed', 'cancelled', 'refunded'],
+      set: (v) => (v ? String(v).toLowerCase() : 'pending'),
       default: 'pending',
       index: true
     },

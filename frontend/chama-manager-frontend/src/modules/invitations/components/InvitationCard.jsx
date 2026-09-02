@@ -1,4 +1,4 @@
-import { Wallet } from "lucide-react";
+import { Wallet, Clock3 } from "lucide-react";
 
 import Button from "@/shared/components/ui/Button";
 
@@ -17,14 +17,14 @@ export default function InvitationCard({ invitation, onAccept, accepting }) {
   const invitedBy = invitation.invited_by;
 
   return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex gap-4">
-        <span className="rounded-xl bg-primary/10 p-3">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+      <div className="flex items-start gap-3 sm:gap-4">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
           <Wallet size={20} className="text-primary" />
         </span>
 
-        <div>
-          <p className="font-semibold text-slate-900 dark:text-white">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold text-slate-900 dark:text-white">
             {group.name || "Contribution Group"}
           </p>
 
@@ -35,20 +35,25 @@ export default function InvitationCard({ invitation, onAccept, accepting }) {
           )}
 
           {invitation.message && (
-            <p className="mt-2 text-sm italic text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-sm italic leading-relaxed text-slate-500 dark:text-slate-400">
               "{invitation.message}"
             </p>
           )}
 
           {invitation.expires_at && (
-            <p className="mt-2 text-xs text-slate-400">
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+              <Clock3 size={12} />
               Expires {formatDate(invitation.expires_at)}
             </p>
           )}
         </div>
       </div>
 
-      <Button onClick={() => onAccept(invitation)} disabled={accepting}>
+      <Button
+        onClick={() => onAccept(invitation)}
+        disabled={accepting}
+        className="mt-4 w-full sm:ml-auto sm:mt-4 sm:w-auto sm:min-w-[110px] sm:block"
+      >
         {accepting ? "Joining..." : "Accept"}
       </Button>
     </div>

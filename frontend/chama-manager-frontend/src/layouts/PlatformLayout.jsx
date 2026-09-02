@@ -4,22 +4,31 @@ import Logo from "@/shared/components/layout/Logo";
 import ThemeToggle from "@/shared/components/layout/ThemeToggle";
 import NotificationButton from "@/shared/components/layout/NotificationButton";
 import UserMenu from "@/shared/components/layout/UserMenu";
+import WorkspaceSwitcher from "@/shared/components/layout/WorkspaceSwitcher";
 
-// The shell for the "User Platform" layer (/home and friends) — the user
-// hasn't opened a workspace yet, so there's no Sidebar and no
-// WorkspaceSwitcher here, just identity + account-level actions.
+// The shell for the "User Platform" layer — /home (onboarding, only
+// ever seen by a user with zero workspaces), /workspaces (the hub, for
+// everyone else), /invitations, /account/settings. No left Sidebar here
+// since these pages aren't scoped to one workspace, but the
+// WorkspaceSwitcher still shows up (it renders null on its own for a
+// brand-new user with no active workspace yet) so anyone who already
+// has workspaces can jump straight into one or create another without
+// getting stuck on this layer.
 export default function PlatformLayout({ children }) {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <header
         className="
-        sticky top-0 z-30 flex h-20 items-center justify-between
+        sticky top-0 z-30 flex h-20 items-center justify-between gap-4
         border-b border-slate-200 bg-white/80 px-6 backdrop-blur-xl
         dark:border-slate-800 dark:bg-slate-900/80
         lg:px-10
         "
       >
-        <Logo />
+        <div className="flex items-center gap-4 min-w-0">
+          <Logo />
+          <WorkspaceSwitcher />
+        </div>
 
         <div className="flex items-center gap-4">
           <ThemeToggle />

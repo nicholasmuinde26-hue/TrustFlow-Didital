@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Store,
   ArrowLeft,
@@ -109,12 +109,13 @@ export default function CreateBusinessPage() {
   return (
     <div className="min-h-screen bg-[#fafafa] font-sans text-slate-900 px-4 py-8 sm:px-8 pb-16">
       <div className="max-w-3xl mx-auto space-y-6">
-        <Link
-          to="/home"
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition"
         >
-          <ArrowLeft size={14} /> Back to Home
-        </Link>
+          <ArrowLeft size={14} /> Back
+        </button>
 
         <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm space-y-6">
           <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
