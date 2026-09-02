@@ -111,44 +111,37 @@ export const validateObjectId = (
 
 
 
+export const normalizeOwnerType = (type) => {
+    if (!type) return "Chama";
+    const str = String(type).trim();
+    const lower = str.toLowerCase();
+    if (lower === "chama") return "Chama";
+    if (lower === "group" || lower === "contributiongroup" || lower === "contribution_group") return "ContributionGroup";
+    return str;
+};
+
 export const validateOwnerType = (
-
     type
-
 )=>{
-
-
+    const normalized = normalizeOwnerType(type);
     const allowed = [
-
         "CHAMA",
-
         "GROUP",
-
-        "USER"
-
+        "USER",
+        "Chama",
+        "ContributionGroup"
     ];
 
-
-
     if(
-
-        !allowed.includes(type)
-
+        !allowed.includes(type) && !allowed.includes(normalized)
     ){
-
         throw new AppError(
-
             "Invalid owner type",
-
             400
-
         );
-
     }
 
-
     return true;
-
 };
 
 
@@ -266,18 +259,13 @@ export const createContributionPlan = async({
 
 
 
+    const normalizedOwner = normalizeOwnerType(owner_type);
+
     const plan =
-
         await ContributionPlan.create(
-
             [
-
                 {
-
-
-                    owner_type,
-
-
+                    owner_type: normalizedOwner,
                     owner_id,
 
 
@@ -500,18 +488,12 @@ export const getOwnerContributionPlans = async({
 
 
 
+    const normalizedOwner = normalizeOwnerType(owner_type);
     const query = {
-
-
-
-        owner_type,
-
-
-
-        owner_id
-
-
-
+        $or: [
+            { owner_type: normalizedOwner, owner_id },
+            { owner_type, owner_id },
+        ],
     };
 
 

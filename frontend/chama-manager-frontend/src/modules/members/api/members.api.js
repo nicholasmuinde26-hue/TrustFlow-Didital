@@ -4,9 +4,14 @@ import api from "@/app/services/api";
 // on the backend (different routes, different response shapes, different
 // role vocabularies) — this dispatches by workspace type so the rest of
 // the frontend (hooks/components/page) can stay uniform.
+//
+// Burial Chamas are Chama documents underneath (same ChamaMembership
+// model, same routes), so they're treated identically to "chama" here.
+const isChamaType = (type) => type === "chama" || type === "burial-chama";
+
 const membersApi = {
   list(type, workspaceId) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.get(`/chamas/${workspaceId}/members`);
     }
 
@@ -17,7 +22,7 @@ const membersApi = {
   // backends require this exact field — there is no phone/email lookup
   // endpoint (see CHANGES doc), so the caller must already know it.
   add(type, workspaceId, payload) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.post(`/chamas/${workspaceId}/members`, payload);
     }
 
@@ -25,7 +30,7 @@ const membersApi = {
   },
 
   updateRole(type, workspaceId, memberId, role) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.patch(`/chamas/${workspaceId}/members/${memberId}/role`, { role });
     }
 
@@ -38,7 +43,7 @@ const membersApi = {
   // Chama soft-removes via PATCH .../remove; Contribution Group actually
   // uses DELETE. This is the backend's own inconsistency, not a typo.
   remove(type, workspaceId, memberId) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.patch(`/chamas/${workspaceId}/members/${memberId}/remove`);
     }
 
@@ -46,7 +51,7 @@ const membersApi = {
   },
 
   updateProfile(type, workspaceId, memberId, payload) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.patch(
         `/chamas/${workspaceId}/members/${memberId}/profile`,
         payload
@@ -60,7 +65,7 @@ const membersApi = {
   // transferring the Treasurer role. Contribution Groups have no
   // equivalent backend routes for either.
   updateStatus(type, workspaceId, memberId, status) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.patch(`/chamas/${workspaceId}/members/${memberId}/status`, { status });
     }
 
@@ -68,7 +73,7 @@ const membersApi = {
   },
 
   transferTreasurer(type, workspaceId, newTreasurerMemberId) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.patch(`/chamas/${workspaceId}/members/transfer-treasurer`, {
         newTreasurerMemberId,
       });
@@ -82,7 +87,7 @@ const membersApi = {
   // ChamaMembership IDs, first payout to last. No Contribution Group
   // equivalent exists on the backend.
   reorderPayoutPositions(type, workspaceId, order) {
-    if (type === "chama") {
+    if (isChamaType(type)) {
       return api.patch(`/chamas/${workspaceId}/members/payout-order`, {
         order,
       });

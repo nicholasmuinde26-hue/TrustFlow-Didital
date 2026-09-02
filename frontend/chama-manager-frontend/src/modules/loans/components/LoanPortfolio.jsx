@@ -4,7 +4,7 @@ import LoanStatusBadge from "./LoanStatusBadge";
 
 const money = (n) => `KES ${Number(n || 0).toLocaleString()}`;
 
-export default function LoanPortfolio({ portfolio, onDecision, onDisburse, busy }) {
+export default function LoanPortfolio({ portfolio, onDecision, onDisburse, onConfirmManual, busy }) {
   if (!portfolio) return null;
 
   const pendingLoans = (portfolio.loans || []).filter(
@@ -80,14 +80,25 @@ export default function LoanPortfolio({ portfolio, onDecision, onDisburse, busy 
                 )}
 
                 {loan.status === "approved" && (
-                  <button
-                    disabled={busy}
-                    onClick={() => onDisburse(loan.id || loan._id)}
-                    className="flex items-center gap-1.5 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-black text-white shadow-md hover:bg-sky-500 transition"
-                  >
-                    <Send className="h-4 w-4" />
-                    <span>Disburse M-Pesa B2C</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={busy}
+                      onClick={() => onDisburse(loan.id || loan._id)}
+                      className="flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-md hover:bg-sky-500 transition"
+                    >
+                      <Send className="h-4 w-4" />
+                      <span>M-Pesa B2C</span>
+                    </button>
+                    {onConfirmManual && (
+                      <button
+                        disabled={busy}
+                        onClick={() => onConfirmManual(loan.id || loan._id)}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 transition"
+                      >
+                        Confirm Cash/Bank
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

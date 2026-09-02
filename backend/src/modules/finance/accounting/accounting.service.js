@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 
 import contributionPaymentRule from "./rules/contributionPayment.rule.js";
 import payoutRule from "./rules/payout.rule.js";
+import savingsShareoutRule from "./rules/savingsShareout.rule.js";
 import accountingValidator from "./accounting.validator.js";
 import journalService from "./journal.service.js";
 import ledgerService from "./ledger.service.js";
@@ -28,7 +29,10 @@ class AccountingService {
             CONTRIBUTION_PAYMENT: contributionPaymentRule,
             PAYOUT_OBLIGATION: payoutRule,
             PAYOUT_SETTLEMENT: payoutRule,
-            PAYOUT_CANCELLATION: payoutRule
+            PAYOUT_CANCELLATION: payoutRule,
+            SAVINGS_SHAREOUT_OBLIGATION: savingsShareoutRule,
+            SAVINGS_SHAREOUT_SETTLEMENT: savingsShareoutRule,
+            SAVINGS_SHAREOUT_CANCELLATION: savingsShareoutRule
         };
     }
 

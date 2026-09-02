@@ -31,8 +31,7 @@ const contributionPaymentSchema = new mongoose.Schema(
     payment_intent_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'PaymentIntent',
-      required: false,
-      index: true
+      required: false
     },
     plan_id: {
       type: mongoose.Schema.Types.ObjectId,

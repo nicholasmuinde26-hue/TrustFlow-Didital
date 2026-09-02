@@ -15,7 +15,8 @@ import {
   Users,
   Award,
   FileText,
-  HeartHandshake
+  HeartHandshake,
+  HeartPulse,
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
@@ -28,6 +29,7 @@ export default function CreateChamaPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
+    chamaType: "standard",
     name: "",
     monthlySavings: "1000",
     visibility: "private",
@@ -55,6 +57,10 @@ export default function CreateChamaPage() {
     if (name === "treasurerInput") setTreasurerUser(null);
     if (name === "secretaryInput") setSecretaryUser(null);
     if (name === "patronInput") setPatronUser(null);
+  }
+
+  function handleTypeChange(chamaType) {
+    setForm((prev) => ({ ...prev, chamaType }));
   }
 
   function handleCommitteeInputChange(index, value) {
@@ -158,6 +164,7 @@ export default function CreateChamaPage() {
         name: form.name,
         monthlySavings: Number(form.monthlySavings),
         visibility: form.visibility,
+        chamaType: form.chamaType,
         treasurerUserId: treasurerUser._id,
         treasurerInput: form.treasurerInput.trim(),
         secretaryUserId: secretaryUser._id,
@@ -169,7 +176,17 @@ export default function CreateChamaPage() {
       });
 
       selectWorkspace(workspace);
-      navigate(`/workspace/${workspace.id ?? workspace._id}`, { replace: true });
+
+      const workspaceId = workspace.id ?? workspace._id;
+
+      // Burial chamas still need their benefit rules, membership classes,
+      // beneficiaries, etc. configured before they're usable — send them
+      // straight into that wizard instead of the generic overview.
+      if (form.chamaType === "burial") {
+        navigate(`/workspace/${workspaceId}/burial-chama-setup`, { replace: true });
+      } else {
+        navigate(`/workspace/${workspaceId}`, { replace: true });
+      }
     } catch (err) {
       setError(err?.response?.data?.message || "Could not create the Chama.");
     } finally {
@@ -177,20 +194,30 @@ export default function CreateChamaPage() {
     }
   }
 
+  const isBurial = form.chamaType === "burial";
+
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-12 font-sans">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="rounded-2xl bg-indigo-50 p-3.5 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
-            <Building2 size={24} />
+          <span
+            className={`rounded-2xl p-3.5 ${
+              isBurial
+                ? "bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400"
+                : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400"
+            }`}
+          >
+            {isBurial ? <HeartPulse size={24} /> : <Building2 size={24} />}
           </span>
           <div>
             <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-              Create a Chama
+              {isBurial ? "Create a Burial Chama" : "Create a Chama"}
             </h1>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-              Set up Chama governance rules and assign your leadership team.
+              {isBurial
+                ? "Set up governance, then configure burial benefits, membership classes and beneficiaries."
+                : "Set up Chama governance rules and assign your leadership team."}
             </p>
           </div>
         </div>
@@ -209,6 +236,67 @@ export default function CreateChamaPage() {
         onSubmit={handleSubmit}
         className="space-y-6 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-xs dark:border-slate-800 dark:bg-slate-900"
       >
+        {/* Section 0: Chama Type */}
+        <div className="space-y-3">
+          <h2 className="text-sm font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+            0. Chama Type
+          </h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label
+              className={`flex flex-col p-3 rounded-2xl border cursor-pointer transition-all ${
+                form.chamaType === "standard"
+                  ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 dark:border-indigo-500"
+                  : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <Building2 size={14} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>Standard Chama</span>
+                </div>
+                <input
+                  type="radio"
+                  name="chamaType"
+                  value="standard"
+                  checked={form.chamaType === "standard"}
+                  onChange={() => handleTypeChange("standard")}
+                  className="accent-indigo-600"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                Savings, contributions, loans and merry-go-round rotations.
+              </p>
+            </label>
+
+            <label
+              className={`flex flex-col p-3 rounded-2xl border cursor-pointer transition-all ${
+                form.chamaType === "burial"
+                  ? "border-rose-600 bg-rose-50/50 dark:bg-rose-950/40 dark:border-rose-500"
+                  : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
+                  <HeartPulse size={14} className="text-rose-600 dark:text-rose-400" />
+                  <span>Burial Chama</span>
+                </div>
+                <input
+                  type="radio"
+                  name="chamaType"
+                  value="burial"
+                  checked={form.chamaType === "burial"}
+                  onChange={() => handleTypeChange("burial")}
+                  className="accent-rose-600"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                Welfare & burial benefits, cases and beneficiary payouts.
+              </p>
+            </label>
+          </div>
+        </div>
+
         {/* Section 1: Basic Information */}
         <div className="space-y-4">
           <h2 className="text-sm font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
@@ -559,7 +647,11 @@ export default function CreateChamaPage() {
           className="w-full py-3.5 text-xs font-extrabold shadow-lg"
           disabled={submitting}
         >
-          {submitting ? "Creating Chama & Governance Team..." : "Create Chama & Assign Leadership Team"}
+          {submitting
+            ? "Creating Chama & Governance Team..."
+            : isBurial
+            ? "Create Burial Chama & Continue Setup"
+            : "Create Chama & Assign Leadership Team"}
         </Button>
       </form>
     </div>

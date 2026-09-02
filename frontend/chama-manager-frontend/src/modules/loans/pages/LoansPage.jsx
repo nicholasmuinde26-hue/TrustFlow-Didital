@@ -195,6 +195,12 @@ export default function LoansPage() {
     }
   }
 
+  // Manual Disbursement Modal State
+  const [confirmManualLoan, setConfirmManualLoan] = useState(null);
+  const [manualMethod, setManualMethod] = useState("cash");
+  const [manualReference, setManualReference] = useState("");
+  const [confirmingDisburse, setConfirmingDisburse] = useState(false);
+
   async function handleDisburseLoan(loanId) {
     setActionMessage({ text: "", isError: false });
     try {
@@ -203,6 +209,28 @@ export default function LoansPage() {
       loadData();
     } catch (err) {
       setActionMessage({ text: err?.response?.data?.message || "Disbursement failed.", isError: true });
+    }
+  }
+
+  async function handleConfirmManualDisbursementSubmit(e) {
+    e.preventDefault();
+    if (!confirmManualLoan) return;
+
+    setConfirmingDisburse(true);
+    setActionMessage({ text: "", isError: false });
+    try {
+      await loanService.confirmDisbursement(workspaceId, confirmManualLoan._id, {
+        disbursementMethod: manualMethod,
+        externalReference: manualReference.trim() || `MANUAL-${manualMethod.toUpperCase()}-${Date.now()}`,
+      });
+      setActionMessage({ text: `Loan ${confirmManualLoan.reference || ""} disbursement confirmed successfully!`, isError: false });
+      setConfirmManualLoan(null);
+      setManualReference("");
+      loadData();
+    } catch (err) {
+      setActionMessage({ text: err?.response?.data?.message || "Disbursement confirmation failed.", isError: true });
+    } finally {
+      setConfirmingDisburse(false);
     }
   }
 
@@ -614,12 +642,20 @@ export default function LoansPage() {
                             Recused: You cannot disburse your own loan.
                           </span>
                         ) : canDisburseThisLoan ? (
-                          <button
-                            onClick={() => handleDisburseLoan(l._id)}
-                            className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-black text-slate-950 hover:bg-emerald-400 shadow-md"
-                          >
-                            Disburse Funds via M-Pesa <ArrowRight size={14} />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDisburseLoan(l._id)}
+                              className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-black text-slate-950 hover:bg-emerald-400 shadow-md"
+                            >
+                              Disburse M-Pesa B2C <ArrowRight size={14} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmManualLoan(l)}
+                              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                            >
+                              Confirm Cash/Bank
+                            </button>
+                          </div>
                         ) : (
                           <span className="text-xs font-bold text-slate-500 italic">
                             Treasurer only — {borrowerRole === "treasurer" ? "Chairperson may disburse instead" : "not disbursable by your role"}.
@@ -752,6 +788,80 @@ export default function LoansPage() {
               >
                 {applying ? "Submitting..." : "Submit Loan Application"}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Manual Disbursement Modal */}
+      {confirmManualLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">CONFIRM DISBURSEMENT</span>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  {confirmManualLoan.reference || "Loan Disbursement"}
+                </h3>
+              </div>
+              <button onClick={() => setConfirmManualLoan(null)} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                ✕
+              </button>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4 border border-slate-200/60 dark:border-slate-700/60 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Borrower:</span>
+                <b className="text-slate-900 dark:text-white">{confirmManualLoan.member_name || confirmManualLoan.membership_id?.user_id?.name || "Member"}</b>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Amount:</span>
+                <b className="font-mono text-emerald-600 font-bold">{money(confirmManualLoan.amount)}</b>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmManualDisbursementSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 dark:text-slate-300">Disbursement Method *</label>
+                <select
+                  value={manualMethod}
+                  onChange={(e) => setManualMethod(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-bold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                >
+                  <option value="cash">Cash Settlement</option>
+                  <option value="bank">Bank Transfer (EFT / RTGS)</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="mpesa">Manual M-Pesa Offline</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 dark:text-slate-300">Transaction Reference / Receipt</label>
+                <input
+                  type="text"
+                  placeholder="e.g. CHQ-89021, TXN-998822"
+                  value={manualReference}
+                  onChange={(e) => setManualReference(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmManualLoan(null)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={confirmingDisburse}
+                  className="rounded-2xl bg-emerald-600 px-5 py-2.5 font-black text-white shadow-md hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  {confirmingDisburse ? "Confirming..." : "Confirm & Post"}
+                </button>
+              </div>
             </form>
           </div>
         </div>

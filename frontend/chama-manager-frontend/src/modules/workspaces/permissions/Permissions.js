@@ -19,6 +19,13 @@
 //   group status or be treated as the sole owner — co_organizer is a
 //   helper role, not equal to organizer.
 
+// Burial Chamas are Chama documents underneath (same ChamaMembership
+// model/role vocabulary, same governance routes) — just with an extra
+// BurialChamaProfile layered on top. Anything gated on "is this a
+// Chama-backed workspace" should treat both types the same.
+const CHAMA_BACKED_TYPES = ["chama", "burial-chama"];
+const isChamaBacked = (type) => CHAMA_BACKED_TYPES.includes(type);
+
 export const CHAMA_ROLES = [
   "member",
   "treasurer",
@@ -38,7 +45,7 @@ export const CONTRIBUTION_GROUP_ROLES = [
 // Roles a manager is allowed to hand to another member. Deliberately
 // excludes "organizer" for contribution groups.
 export function assignableRoles(type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return CHAMA_ROLES;
   }
 
@@ -46,7 +53,7 @@ export function assignableRoles(type) {
 }
 
 function isManager(role, type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return role === "treasurer" || role === "chairperson";
   }
 
@@ -71,11 +78,11 @@ export function canEditChamaSettings(role) {
 // Chama-only: members can edit their own profile; treasurer/chairperson
 // can edit any member's profile (backend: PATCH .../members/:id/profile).
 export function canEditMemberProfile(role, type, isSelf) {
-  if (type !== "chama") {
+  if (!isChamaBacked(type)) {
     return false;
   }
 
-  return isSelf || isManager(role, "chama");
+  return isSelf || isManager(role, type);
 }
 
 export function canManageAnnouncements(role, type) {
@@ -182,5 +189,25 @@ export function canDisburseLoan(role, type) {
 // helper — eligibility for that is per-policy (approval_rule.eligible_roles)
 // and enforced server-side in approval.service.js.
 export function canManageMgr(role, type) {
+  return type === "chama" && role === "treasurer";
+}
+
+// Chama-only: Savings Share-Out policy CRUD (create/update/activate/archive)
+// and triggering a share-out are gated by requireChamaTreasurerOrChairperson()
+// on the backend — either official can run this module, unlike the strict
+// treasurer-only MGR gate above.
+export function canManageSavingsShareout(role, type) {
+  return type === "chama" && isManager(role, "chama");
+}
+
+// Chama-only: approving a pending_approval share-out is Chairperson-only
+// on the backend (PATCH .../savings-shareouts/:id/approve).
+export function canApproveSavingsShareout(role, type) {
+  return type === "chama" && role === "chairperson";
+}
+
+// Chama-only: marking an individual share-out line item as paid is
+// Treasurer-only on the backend (PATCH .../items/:itemId/pay).
+export function canPaySavingsShareoutItem(role, type) {
   return type === "chama" && role === "treasurer";
 }

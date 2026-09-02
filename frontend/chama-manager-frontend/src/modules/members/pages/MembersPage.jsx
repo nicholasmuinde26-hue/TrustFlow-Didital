@@ -101,7 +101,11 @@ export default function MembersPage() {
   const updateStatus = useUpdateMemberStatus(type, workspaceId);
   const transferTreasurer = useTransferTreasurer(type, workspaceId);
 
-  const isChamaWorkspace = type === "chama";
+  // Burial Chamas are Chama documents underneath (same membership model,
+  // same invite/join-request routes), so they get the same manage panel
+  // as a standard Chama — just relabelled for a welfare-fund audience.
+  const isBurialChama = type === "burial-chama";
+  const isChamaWorkspace = type === "chama" || isBurialChama;
   const createInvite = useCreateChamaInvite(workspaceId);
   const { data: joinRequests = [] } = useChamaJoinRequests(workspaceId, manage && isChamaWorkspace);
   const invalidateJoinRequests = useInvalidateChamaJoinRequests(workspaceId);
@@ -305,17 +309,29 @@ export default function MembersPage() {
               {workspace?.name || "workspace"}
             </Link>
             <span>›</span>
-            <span className="text-slate-600 dark:text-slate-300 font-bold">Members Directory</span>
+            <span className="text-slate-600 dark:text-slate-300 font-bold">
+              {isBurialChama ? "Welfare Members" : "Members Directory"}
+            </span>
           </div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-            Members Directory
+            {isBurialChama ? "Welfare Members" : "Members Directory"}
           </h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-            {members.length} {members.length === 1 ? "member" : "members"} in this workspace
+            {isBurialChama
+              ? `${members.length} ${members.length === 1 ? "member" : "members"} covered under this welfare fund`
+              : `${members.length} ${members.length === 1 ? "member" : "members"} in this workspace`}
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
+          {isBurialChama && (
+            <Link
+              to={`/workspace/${workspaceId}/beneficiaries`}
+              className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 transition"
+            >
+              <ShieldCheck size={16} /> Manage Beneficiaries
+            </Link>
+          )}
           <button
             onClick={handleExportMembers}
             className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition"
@@ -349,7 +365,7 @@ export default function MembersPage() {
             </div>
             <div>
               <p className="text-2xl font-black text-slate-900 dark:text-white">{members.length}</p>
-              <span className="text-xs font-bold text-slate-400">Total Members</span>
+              <span className="text-xs font-bold text-slate-400">{isBurialChama ? "Covered Members" : "Total Members"}</span>
             </div>
           </div>
         </div>
@@ -361,7 +377,7 @@ export default function MembersPage() {
             </div>
             <div>
               <p className="text-2xl font-black text-slate-900 dark:text-white">{activeCount}</p>
-              <span className="text-xs font-bold text-slate-400">Active Members</span>
+              <span className="text-xs font-bold text-slate-400">{isBurialChama ? "In Good Standing" : "Active Members"}</span>
             </div>
           </div>
         </div>
@@ -388,7 +404,11 @@ export default function MembersPage() {
             </div>
             <div>
               <h2 className="text-base font-extrabold text-slate-900 dark:text-white">Add Member by Phone</h2>
-              <p className="text-xs text-slate-400">Enter phone number of active registered user.</p>
+              <p className="text-xs text-slate-400">
+                {isBurialChama
+                  ? "Enrol a registered user into this welfare fund by phone number."
+                  : "Enter phone number of active registered user."}
+              </p>
             </div>
           </div>
 
@@ -441,8 +461,14 @@ export default function MembersPage() {
               <Users size={20} />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">Members List</h2>
-              <p className="text-xs text-slate-400">Manage and assign roles for members in this workspace.</p>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                {isBurialChama ? "Welfare Members List" : "Members List"}
+              </h2>
+              <p className="text-xs text-slate-400">
+                {isBurialChama
+                  ? "Manage roles and welfare cover status for members of this burial chama."
+                  : "Manage and assign roles for members in this workspace."}
+              </p>
             </div>
           </div>
 

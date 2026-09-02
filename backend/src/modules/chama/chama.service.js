@@ -36,6 +36,7 @@ export const createChama = async ({
   name,
   monthlySavings,
   visibility,
+  chamaType,
   userId,
   treasurerPhone,
   treasurerEmail,
@@ -190,6 +191,7 @@ export const createChama = async ({
 
   const joinCode = await generateUniqueJoinCode();
   const chamaVisibility = ['public', 'private'].includes(visibility) ? visibility : 'private';
+  const resolvedChamaType = ['standard', 'burial'].includes(chamaType) ? chamaType : 'standard';
 
   const chama = await Chama.create({
     name: chamaName,
@@ -197,6 +199,7 @@ export const createChama = async ({
     created_by: user._id,
     status: 'active',
     visibility: chamaVisibility,
+    chama_type: resolvedChamaType,
     join_code: joinCode
   });
 

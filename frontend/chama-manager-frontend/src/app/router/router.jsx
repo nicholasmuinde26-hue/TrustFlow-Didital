@@ -102,7 +102,18 @@ import ReportsPage from "@/modules/chama/pages/ReportsPage";
 import ChamaFinancePage from "@/modules/chama/pages/FinancePage";
 import MerryGoRoundPage from "@/modules/chama/pages/MerryGoRoundPage";
 import ChamaCommandCenterPage from "@/modules/chama/pages/ChamaCommandCenterPage";
-import MemberDashboardPage from "@/modules/chama/pages/MemberDashboardPage";
+import MyChamaRouterPage from "@/modules/workspaces/pages/MyChamaRouterPage";
+
+// ======================================================
+// Burial Chama Module
+// ======================================================
+
+import BurialChamaSetupPage from "@/modules/burialChama/pages/BurialChamaSetupPage";
+import BeneficiariesPage from "@/modules/burialChama/pages/BeneficiariesPage";
+import BurialCasesPage from "@/modules/burialChama/pages/BurialCasesPage";
+import MemberStatementPage from "@/modules/burialChama/pages/MemberStatementPage";
+import EquipmentHirePage from "@/modules/burialChama/pages/EquipmentHirePage";
+import FundraisingPage from "@/modules/burialChama/pages/FundraisingPage";
 
 // ======================================================
 // Contribution Groups
@@ -364,7 +375,36 @@ const router = createBrowserRouter([
           },
           {
             path: "my-chama",
-            element: <MemberDashboardPage />,
+            element: <MyChamaRouterPage />,
+          },
+
+          // ----------------------------------------------
+          // BURIAL CHAMA MODULE
+          // ----------------------------------------------
+
+          {
+            path: "burial-chama-setup",
+            element: <BurialChamaSetupPage />,
+          },
+          {
+            path: "beneficiaries",
+            element: <BeneficiariesPage />,
+          },
+          {
+            path: "burial-cases",
+            element: <BurialCasesPage />,
+          },
+          {
+            path: "member-statement",
+            element: <MemberStatementPage />,
+          },
+          {
+            path: "equipment-hire",
+            element: <EquipmentHirePage />,
+          },
+          {
+            path: "fundraising",
+            element: <FundraisingPage />,
           },
 
           // ----------------------------------------------

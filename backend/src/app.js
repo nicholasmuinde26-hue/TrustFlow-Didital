@@ -31,6 +31,7 @@ import financeRoutes from "./modules/finance/finance.routes.js";
 
 // Payouts
 import payoutRoutes from "./modules/payout/payout.routes.js";
+import savingsShareoutRoutes from "./modules/savingsShareout/savingsShareout.routes.js";
 
 // Chat
 import chatRoutes from "./modules/chat/chat.routes.js";
@@ -59,6 +60,9 @@ import aiRoutes from "./modules/ai/ai.routes.js";
 // MGR & Approvals Engine
 import mgrRoutes from "./modules/mgr/mgr.routes.js";
 import approvalRoutes from "./modules/approval/approval.routes.js";
+
+// Burial Chama
+import burialChamaRoutes from "./modules/burialChama/burialChama.routes.js";
 
 import "./modules/finance/financeEngine.service.js";
 
@@ -158,6 +162,10 @@ app.use(
 app.use(
     "/api/v1/chamas",
     payoutRoutes
+);
+app.use(
+    "/api/v1/chamas",
+    savingsShareoutRoutes
 );
 app.use("/api/v1/chamas", loanRoutes);
 
@@ -346,6 +354,9 @@ app.use(
 // MGR Workflow & Approvals Engine
 app.use("/api/v1/mgr", mgrRoutes);
 app.use("/api/v1/approvals", approvalRoutes);
+
+// Burial Chama
+app.use("/api/v1/burial-chama", burialChamaRoutes);
 
 // ============================================================================
 // 404 HANDLER

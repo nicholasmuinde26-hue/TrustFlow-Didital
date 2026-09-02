@@ -44,7 +44,7 @@ export default function ProductCard({
         )}
 
         {discount ? (
-          <span className="absolute left-2 top-2 rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-white">
+          <span className="absolute left-2 top-2 rounded-md bg-orange-500 px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-white">
             -{discount}%
           </span>
         ) : null}

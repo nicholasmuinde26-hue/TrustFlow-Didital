@@ -32,6 +32,17 @@ import {
   Globe,
   Home,
   ClipboardList,
+
+  // Burial Chama Specific Icons
+  HeartPulse,
+  UserPlus,
+  FileText,
+  Smartphone,
+  MessageSquare,
+  ShieldCheck,
+  Users2,
+  Tent,
+  Megaphone,
 } from "lucide-react";
 
 import { canViewCommandCenter, canViewAdministration } from "../permissions/Permissions";
@@ -55,7 +66,10 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Rooms & Plots", icon: Home, to: `${base}/business/rental-listings` },
       { title: "Tenant Inquiries", icon: ClipboardList, to: `${base}/business/rental-inquiries` },
       { title: "Rent Collections", icon: ShoppingCart, to: `${base}/business/sales` },
-      { title: "Maintenance & Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` }
+      { title: "Maintenance & Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
+      // Landlords need this link too — it's how they get the public
+      // /store/:slug URL to actually share their vacant rooms/plots.
+      { title: "Online Storefront", icon: Globe, to: `${base}/business/storefront` }
     );
   } else if (isRestaurant) {
     operationsItems.push(
@@ -111,9 +125,12 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           to: `${base}/business/customers`,
         },
         // Suppliers are a goods/vendor-payout concept (restock, wholesale,
-        // ingredient vendors) that doesn't apply to a rental portfolio —
-        // maintenance vendors are tracked as expense payees instead.
-        ...(isRental
+        // ingredient vendors). Doesn't apply to a rental portfolio
+        // (maintenance vendors are tracked as expense payees instead) or a
+        // service provider (no stock to restock — see CATEGORIES in
+        // CreateBusinessPage.jsx: "Services, Appointments, Customer Jobs,
+        // Invoices & Expenses", no supplier concept).
+        ...(isRental || isService
           ? []
           : [
               {
@@ -286,6 +303,32 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
+      title: "Burial Chama",
+      items: [
+        {
+          title: "Setup Wizard",
+          icon: ShieldCheck,
+          to: `${base}/burial-chama-setup`,
+        },
+        {
+          title: "Beneficiaries",
+          icon: UserPlus,
+          to: `${base}/beneficiaries`,
+        },
+        {
+          title: "Burial Cases",
+          icon: HeartPulse,
+          to: `${base}/burial-cases`,
+        },
+        {
+          title: "Member Statement",
+          icon: FileText,
+          to: `${base}/member-statement`,
+        },
+      ],
+    },
+
+    {
       title: "Chama Operations",
       items: [
         {
@@ -338,6 +381,11 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           title: "Payouts",
           icon: ArrowLeftRight,
           to: `${base}/finance/payouts`,
+        },
+        {
+          title: "Savings Share-Out",
+          icon: PiggyBank,
+          to: `${base}/finance/savings-shareout`,
         },
       ],
     },
@@ -426,6 +474,192 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
   }
 
   // =====================================================
+  // 4. BURIAL CHAMA NAVIGATION
+  //
+  // Deliberately NOT a copy of the standard chama nav. A burial /
+  // welfare chama's core job is bereavement cover, not rotating
+  // savings — so MGR and "Savings Share-Out" (which imply the fund
+  // gets fully divided out among members, table-banking style) are
+  // dropped. In their place: an "Income & Fundraising" section for
+  // the things burial groups actually do to grow the welfare fund
+  // in a Kenyan context — hiring out tents/chairs/cooking gear for
+  // funerals and events, lending surplus at interest, and running
+  // harambees for cases that exceed the standard payout.
+  // =====================================================
+  const burialChamaNavigation = [
+    {
+      items: [
+        {
+          title: "Overview",
+          icon: LayoutDashboard,
+          to: base,
+        },
+        {
+          title: "Members",
+          icon: Users,
+          to: `${base}/members`,
+        },
+        {
+          title: "My Chama",
+          icon: Wallet,
+          to: `${base}/my-chama`,
+        },
+      ],
+    },
+
+    {
+      title: "Burial Chama",
+      items: [
+        {
+          title: "Setup Wizard",
+          icon: ShieldCheck,
+          to: `${base}/burial-chama-setup`,
+        },
+        {
+          title: "Beneficiaries",
+          icon: UserPlus,
+          to: `${base}/beneficiaries`,
+        },
+        {
+          title: "Burial Cases",
+          icon: HeartPulse,
+          to: `${base}/burial-cases`,
+        },
+        {
+          title: "Member Statement",
+          icon: FileText,
+          to: `${base}/member-statement`,
+        },
+      ],
+    },
+
+    {
+      title: "Welfare & Contributions",
+      items: [
+        {
+          title: "Contributions",
+          icon: Coins,
+          to: `${base}/contributions`,
+        },
+        {
+          title: "Record Contribution",
+          icon: PlusCircle,
+          to: `${base}/finance/record-contribution`,
+        },
+        {
+          title: "Welfare Fund",
+          icon: PiggyBank,
+          to: `${base}/finance/savings`,
+        },
+        {
+          title: "Benevolent Payouts",
+          icon: ArrowLeftRight,
+          to: `${base}/finance/payouts`,
+        },
+      ],
+    },
+
+    {
+      title: "Income & Fundraising",
+      items: [
+        {
+          title: "Emergency Loans",
+          icon: HandCoins,
+          to: `${base}/loans`,
+        },
+        {
+          title: "Equipment & Tent Hire",
+          icon: Tent,
+          to: `${base}/equipment-hire`,
+        },
+        {
+          title: "Harambee & Fundraising",
+          icon: Megaphone,
+          to: `${base}/fundraising`,
+        },
+      ],
+    },
+
+    {
+      title: "Meetings & Notices",
+      items: [
+        {
+          title: "Meeting Records",
+          icon: Video,
+          to: `${base}/meetings`,
+        },
+        {
+          title: "Announcements",
+          icon: MessageSquare,
+          to: `${base}/announcements`,
+        },
+      ],
+    },
+
+    {
+      title: "Books & Reports",
+      items: [
+        {
+          title: "Transactions",
+          icon: Receipt,
+          to: `${base}/finance/transactions`,
+        },
+        {
+          title: "General Ledger",
+          icon: BookOpen,
+          to: `${base}/finance/ledger`,
+        },
+        {
+          title: "Chart of Accounts",
+          icon: Landmark,
+          to: `${base}/finance/accounts`,
+        },
+        {
+          title: "Trial Balance",
+          icon: Scale,
+          to: `${base}/finance/trial-balance`,
+        },
+        {
+          title: "Balance Sheet",
+          icon: BarChart3,
+          to: `${base}/finance/balance-sheet`,
+        },
+        {
+          title: "Income Statement",
+          icon: TrendingUp,
+          to: `${base}/finance/income-statement`,
+        },
+        {
+          title: "Cash Flow",
+          icon: LineChart,
+          to: `${base}/finance/cash-flow`,
+        },
+        {
+          title: "Reports",
+          icon: FileBarChart2,
+          to: `${base}/reports`,
+        },
+      ],
+    },
+
+    {
+      title: "Administration",
+      items: [
+        {
+          title: "Command Center",
+          icon: Settings,
+          to: `${base}/command-center`,
+        },
+        {
+          title: "Settings",
+          icon: Settings,
+          to: `${base}/settings`,
+        },
+      ],
+    },
+  ];
+
+  // =====================================================
   // WORKSPACE ROUTER MATCHING
   // =====================================================
   switch (normalizedType) {
@@ -435,6 +669,9 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     case "contribution":
     case "contributiongroup":
       return filterByRole(contributionNavigation);
+
+    case "burialchama":
+      return filterByRole(burialChamaNavigation);
 
     case "chama":
     default:

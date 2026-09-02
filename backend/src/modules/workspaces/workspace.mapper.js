@@ -16,7 +16,10 @@ export function mapChamaWorkspace(
 
         workspaceId:chama._id,
 
-        type:WORKSPACE_TYPES.CHAMA,
+        type:
+            chama.chama_type === 'burial'
+                ? WORKSPACE_TYPES.BURIAL_CHAMA
+                : WORKSPACE_TYPES.CHAMA,
 
         name:chama.name,
 

@@ -3,7 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 
 const money = (value) => `KES ${Number(value ?? 0).toLocaleString()}`;
 
-export function RecentSales({ sales = [] }) {
+export function RecentSales({ sales = [], title = "Recent Sales" }) {
   const completedSales = (Array.isArray(sales) ? sales : []).filter(
     (sale) => !sale.status || sale.status === "completed"
   );
@@ -11,7 +11,7 @@ export function RecentSales({ sales = [] }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Recent Sales</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">{title}</h2>
         <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{completedSales.length} completed</span>
       </div>
       <div className="divide-y divide-slate-100 dark:divide-slate-800">

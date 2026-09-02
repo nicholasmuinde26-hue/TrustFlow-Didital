@@ -23,7 +23,14 @@ export function useWorkspace() {
     currentWorkspace,
     workspaceId,
     workspaceType,
-    isChama: workspaceType === "chama",
+    // Burial chamas are still Chama documents underneath (same
+    // governance/settings/membership model) — just with an extra
+    // BurialChamaProfile layered on top — so anything gated on "is
+    // this a Chama-backed workspace" (settings, savings deposits,
+    // etc.) should treat both the same. Use isBurialChama where the
+    // distinction actually matters (e.g. sidebar nav).
+    isChama: workspaceType === "chama" || workspaceType === "burial-chama",
+    isBurialChama: workspaceType === "burial-chama",
     isBusiness: workspaceType === "business",
     isContributionGroup:
       workspaceType === "contribution-group" ||

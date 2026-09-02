@@ -5,7 +5,13 @@ import Spinner from "@/shared/components/ui/Spinner";
 import useDashboard from "../hooks/useDashboard";
 
 import ChamaOverviewPage from "@/modules/chama/pages/ChamaOverviewPage";
+import BurialChamaOverviewPage from "@/modules/burialChama/pages/Burialchamaoverviewpage";
 import ContributionGroupOverviewPage from "@/modules/contribution-group/pages/ContributionGroupOverviewPage";
+
+// Burial Chamas are Chama documents underneath, so the backend may hand
+// back "burial-chama" or "burial_chama" depending on the call site —
+// normalize before branching (mirrors workspaceNavigation.js).
+const isBurialChamaType = (type) => type?.toLowerCase().replace(/[-_]/g, "") === "burialchama";
 
 export default function WorkspaceOverviewPage() {
   const { workspaceId } = useParams();
@@ -42,6 +48,10 @@ export default function WorkspaceOverviewPage() {
 
   if (dashboard?.type === "contribution-group") {
     return <ContributionGroupOverviewPage dashboard={dashboard} />;
+  }
+
+  if (isBurialChamaType(dashboard?.type)) {
+    return <BurialChamaOverviewPage dashboard={dashboard} refreshing={isFetching} />;
   }
 
   return <ChamaOverviewPage dashboard={dashboard} refreshing={isFetching} />;

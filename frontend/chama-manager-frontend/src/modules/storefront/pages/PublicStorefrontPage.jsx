@@ -5,7 +5,10 @@ import {
   usePlaceStorefrontOrder,
 } from "../../business/hooks/useBusiness";
 
-import AppTopBar from "../components/AppTopBar";
+import TopUtilityBar from "../components/TopUtilityBar";
+import Header from "../components/Header";
+import NavBar from "../components/NavBar";
+import CategorySidebar from "../components/CategorySidebar";
 import BottomNav from "../components/BottomNav";
 import HomeTab from "../components/HomeTab";
 import ShopTab from "../components/ShopTab";
@@ -159,82 +162,126 @@ export default function PublicStorefrontPage() {
     );
   }
 
+  const goToTrack = () => navigate(`/store/${slug}/track`);
+
+  const openCart = () => {
+    setCartStep("cart");
+    setActiveTab("cart");
+  };
+
+  const handleHeaderSearch = (value) => {
+    setSearch(value);
+    setCategory("All");
+    setActiveTab("shop");
+  };
+
+  const isBrowseTab = activeTab === "home" || activeTab === "shop";
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-16">
-      <AppTopBar
+    <div className="min-h-screen bg-gray-50 pb-16 lg:pb-0">
+      <TopUtilityBar storefront={storefront} currency={currency} onGoToTrack={goToTrack} />
+
+      <Header
         storefront={storefront}
         primaryColor={primaryColor}
         cartCount={cartCount}
         cartSubtotal={subtotal}
         currency={currency}
-        onOpenCart={() => {
-          setCartStep("cart");
-          setActiveTab("cart");
-        }}
+        searchValue={search}
+        onSearchSubmit={handleHeaderSearch}
+        onOpenCart={openCart}
+        onOpenAccount={() => setActiveTab("account")}
       />
 
-      {activeTab === "home" && (
-        <HomeTab
-          storefront={storefront}
-          items={items}
-          categories={categories}
-          cart={cart}
-          currency={currency}
-          primaryColor={primaryColor}
-          onAdd={addToCart}
-          onChangeQty={changeQty}
-          onOpenDetail={setQuickViewItem}
-          onBrowseCategory={goToCategory}
-        />
-      )}
+      <NavBar
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
+        primaryColor={primaryColor}
+      />
 
-      {activeTab === "shop" && (
-        <ShopTab
-          items={items}
-          categories={categories}
-          category={category}
-          onSelectCategory={setCategory}
-          search={search}
-          onSearchChange={setSearch}
-          sortValue={sortValue}
-          onSortChange={setSortValue}
-          cart={cart}
-          currency={currency}
-          primaryColor={primaryColor}
-          onAdd={addToCart}
-          onChangeQty={changeQty}
-          onOpenDetail={setQuickViewItem}
-        />
-      )}
+      <div
+        className={
+          isBrowseTab
+            ? "mx-auto flex max-w-[1400px] items-start gap-6 px-4 py-4 sm:px-6 lg:py-6"
+            : "mx-auto max-w-3xl px-0 py-0 sm:px-0"
+        }
+      >
+        {isBrowseTab && (
+          <CategorySidebar
+            categories={categories}
+            activeCategory={category}
+            onSelectCategory={goToCategory}
+          />
+        )}
 
-      {activeTab === "cart" && (
-        <CartTab
-          step={cartStep}
-          cartLines={cartLines}
-          subtotal={subtotal}
-          currency={currency}
-          primaryColor={primaryColor}
-          onChangeQty={changeQty}
-          onRemove={removeFromCart}
-          onGoToCheckout={() => setCartStep("checkout")}
-          onBackToCart={() => setCartStep("cart")}
-          onBrowse={() => setActiveTab("shop")}
-          form={form}
-          onFormChange={updateForm}
-          onPlaceOrder={handlePlaceOrder}
-          isPlacing={placeOrderMutation.isPending}
-          error={error}
-        />
-      )}
+        <div className="min-w-0 flex-1">
+          {activeTab === "home" && (
+            <HomeTab
+              storefront={storefront}
+              items={items}
+              categories={categories}
+              cart={cart}
+              currency={currency}
+              primaryColor={primaryColor}
+              onAdd={addToCart}
+              onChangeQty={changeQty}
+              onOpenDetail={setQuickViewItem}
+              onBrowseCategory={goToCategory}
+              onShopNow={() => goToCategory("All")}
+              onSignIn={() => setActiveTab("account")}
+              onTrackOrder={goToTrack}
+            />
+          )}
 
-      {activeTab === "account" && (
-        <AccountTab
-          storefront={storefront}
-          business={business}
-          primaryColor={primaryColor}
-          onGoToTrack={() => navigate(`/store/${slug}/track`)}
-        />
-      )}
+          {activeTab === "shop" && (
+            <ShopTab
+              items={items}
+              categories={categories}
+              category={category}
+              onSelectCategory={setCategory}
+              search={search}
+              onSearchChange={setSearch}
+              sortValue={sortValue}
+              onSortChange={setSortValue}
+              cart={cart}
+              currency={currency}
+              primaryColor={primaryColor}
+              onAdd={addToCart}
+              onChangeQty={changeQty}
+              onOpenDetail={setQuickViewItem}
+            />
+          )}
+
+          {activeTab === "cart" && (
+            <CartTab
+              step={cartStep}
+              cartLines={cartLines}
+              subtotal={subtotal}
+              currency={currency}
+              primaryColor={primaryColor}
+              onChangeQty={changeQty}
+              onRemove={removeFromCart}
+              onGoToCheckout={() => setCartStep("checkout")}
+              onBackToCart={() => setCartStep("cart")}
+              onBrowse={() => setActiveTab("shop")}
+              form={form}
+              onFormChange={updateForm}
+              onPlaceOrder={handlePlaceOrder}
+              isPlacing={placeOrderMutation.isPending}
+              error={error}
+            />
+          )}
+
+          {activeTab === "account" && (
+            <AccountTab
+              storefront={storefront}
+              business={business}
+              primaryColor={primaryColor}
+              onGoToTrack={goToTrack}
+            />
+          )}
+        </div>
+      </div>
 
       <ProductQuickView
         item={quickViewItem}
@@ -246,8 +293,7 @@ export default function PublicStorefrontPage() {
         onChangeQty={changeQty}
         onViewCart={() => {
           setQuickViewItem(null);
-          setCartStep("cart");
-          setActiveTab("cart");
+          openCart();
         }}
       />
 
@@ -255,7 +301,7 @@ export default function PublicStorefrontPage() {
         activeTab={activeTab}
         onChangeTab={(tab) => {
           if (tab === "track") {
-            navigate(`/store/${slug}/track`);
+            goToTrack();
             return;
           }
           setActiveTab(tab);

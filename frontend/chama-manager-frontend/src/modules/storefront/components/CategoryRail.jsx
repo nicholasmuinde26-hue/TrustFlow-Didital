@@ -10,9 +10,10 @@ export default function CategoryRail({
   primaryColor,
 }) {
   return (
-    <div className="sticky top-14 z-10 border-b border-gray-100 bg-white/95 px-4 py-2.5 backdrop-blur sm:px-8">
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="border-b border-gray-100 px-4 py-2.5 sm:px-5">
+      <div className="flex items-center gap-2 lg:justify-between">
+        <p className="hidden text-xs font-semibold text-gray-400 lg:block">Sort products</p>
+        <div className="flex flex-1 gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
           <CategoryChip
             label="All"
             active={activeCategory === "All"}

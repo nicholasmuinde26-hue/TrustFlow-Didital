@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { Plus, Pencil, Trash2, X, Home, MapPin, BedDouble, Bath, Ruler, ImagePlus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, Pencil, Trash2, X, Home, MapPin, BedDouble, Bath, Ruler, ImagePlus, Share2, Copy, Check } from "lucide-react";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
-import { useRentalListings } from "../hooks/useBusiness";
+import { useRentalListings, useStorefrontSettings } from "../hooks/useBusiness";
+import { RentalOccupancySnapshot } from "../components/RentalOccupancySnapshot";
 import PageHeader from "../../../shared/components/ui/PageHeader";
 import Spinner from "../../../shared/components/ui/Spinner";
 import { readImageAsDataUri } from "../../../shared/utils/readImageAsDataUri";
@@ -48,13 +50,19 @@ export default function RentalListingsPage() {
   } = useRentalListings(workspaceId);
   const listingList = Array.isArray(listings) ? listings : [];
 
-  const totalUnits = listingList.length;
-  const occupiedCount = listingList.filter((l) => l.status === "occupied").length;
-  const vacantCount = totalUnits - occupiedCount;
-  const occupancyRate = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
-  const potentialMonthlyRent = listingList
-    .filter((l) => (l.rent_period || "month") === "month")
-    .reduce((sum, l) => sum + Number(l.rent_amount || 0), 0);
+  const { storefront } = useStorefrontSettings(workspaceId);
+  const storefrontUrl = storefront?.slug ? `${window.location.origin}/store/${storefront.slug}` : "";
+  const [copied, setCopied] = useState(false);
+  const copyShareLink = async () => {
+    if (!storefrontUrl) return;
+    try {
+      await navigator.clipboard.writeText(storefrontUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable — link is still visible to select manually.
+    }
+  };
 
   const [modalMode, setModalMode] = useState(null); // "add" | "edit" | null
   const [form, setForm] = useState(EMPTY_FORM);
@@ -191,21 +199,47 @@ export default function RentalListingsPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <PortfolioStat label="Total Units" value={totalUnits} />
-        <PortfolioStat label="Occupied" value={occupiedCount} tone="text-emerald-600" />
-        <PortfolioStat label="Vacant" value={vacantCount} tone="text-amber-600" />
-        <PortfolioStat label="Occupancy Rate" value={`${occupancyRate}%`} tone="text-primary" />
+      {/* Share link — the fastest way for a landlord to get their public
+          listings in front of tenants, right where they manage them. */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-gray-900 dark:text-white">Your public storefront</p>
+          {storefrontUrl ? (
+            <p className="truncate font-mono text-xs text-primary">{storefrontUrl}</p>
+          ) : (
+            <p className="text-xs text-gray-500">
+              Set up your storefront link in{" "}
+              <Link to={`/workspace/${workspaceId}/business/storefront`} className="font-semibold text-primary hover:underline">
+                Online Storefront
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+        {storefrontUrl && (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={copyShareLink}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? "Copied" : "Copy link"}
+            </button>
+            <a
+              href={storefrontUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white hover:opacity-90"
+            >
+              <Share2 size={14} /> View public page
+            </a>
+          </div>
+        )}
       </div>
 
-      {potentialMonthlyRent > 0 && (
-        <p className="text-xs text-gray-500">
-          Potential monthly rent across all listed units: {" "}
-          <span className="font-bold text-gray-900 dark:text-white">
-            {formatMoney(potentialMonthlyRent, currency)}
-          </span>
-        </p>
-      )}
+      {/* Occupancy stats — shared with the Business Dashboard so the
+          numbers are computed in exactly one place. */}
+      <RentalOccupancySnapshot workspaceId={workspaceId} currency={currency} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {listingList.length === 0 ? (
@@ -532,11 +566,3 @@ export default function RentalListingsPage() {
   );
 }
 
-function PortfolioStat({ label, value, tone = "text-gray-900 dark:text-white" }) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <p className={`mt-1 text-xl font-extrabold ${tone}`}>{value}</p>
-    </div>
-  );
-}

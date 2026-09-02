@@ -12,7 +12,7 @@ const TABS = [
 
 export default function BottomNav({ activeTab, onChangeTab, cartCount, primaryColor }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-100 bg-white/95 backdrop-blur">
+    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-100 bg-white/95 backdrop-blur lg:hidden">
       <div className="mx-auto flex max-w-3xl items-stretch justify-between px-2">
         {TABS.map(({ key, label, Icon }) => {
           const active = activeTab === key;

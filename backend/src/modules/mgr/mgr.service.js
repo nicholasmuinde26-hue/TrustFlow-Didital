@@ -10,6 +10,19 @@ import mgrEligibilityService from './mgrEligibility.service.js';
 import mgrReconciliationService from './mgrReconciliation.service.js';
 import paymentService from '../../payment/payment.service.js';
 import { PAYMENT_PROVIDER } from '../../payment/payment.constants.js';
+import accountingService from '../finance/accounting/accounting.service.js';
+import { toDecimal } from '../../shared/decimal.js';
+import mongoose from 'mongoose';
+
+const OWNER_TYPE = 'Chama';
+const DISBURSEMENT_METHODS = ['cash', 'bank', 'mpesa'];
+
+// Same replica-set guard used by payout.service.js / financeEngine.service.js -
+// a standalone Mongo (local dev) throws on startTransaction().
+const canUseTransactions = () => {
+  const topology = mongoose.connection?.client?.topology;
+  return topology?.description?.type === 'ReplicaSetWithPrimary' || topology?.description?.type === 'Sharded';
+};
 
 class MgrService {
   /**
@@ -429,20 +442,83 @@ class MgrService {
     round.status = 'disbursing';
     await round.save();
 
-    // Create formal Payout record
-    const payout = await Payout.create({
-      chama_id: round.chama_id,
-      contribution_plan_id: round.contribution_plan_id,
-      round_start: round.due_date,
-      member_id: round.recipient_id,
-      payout_position: round.round_number,
-      amount: round.payout_amount || round.collected_amount,
-      currency: round.policy_id?.currency || 'KES',
-      status: 'paid',
-      disbursement_method: round.payout_proposal?.disbursement_method || 'mpesa',
-      external_reference: `MGR-MPESA-${Date.now()}`,
-      paid_at: new Date(),
-    });
+    const disbursementMethod = round.payout_proposal?.disbursement_method || 'mpesa';
+
+    if (!DISBURSEMENT_METHODS.includes(disbursementMethod)) {
+      throw new Error(
+        `Invalid disbursement method. Supported methods: ${DISBURSEMENT_METHODS.join(', ')}`
+      );
+    }
+
+    const amount = toDecimal(round.payout_amount || round.collected_amount);
+    const currency = round.policy_id?.currency || 'KES';
+
+    // Payout creation + the accounting settlement post are wrapped in one
+    // session so a failed post (missing account, unbalanced entry, etc.)
+    // can't leave a Payout sitting at status "paid" with no backing ledger
+    // entry - same failure mode payout.service.js's markPayoutPaid guards
+    // against.
+    const session = canUseTransactions() ? await mongoose.startSession() : null;
+    let payout;
+
+    try {
+      if (session) session.startTransaction();
+
+      // Create formal Payout record
+      [payout] = await Payout.create(
+        [
+          {
+            chama_id: round.chama_id,
+            contribution_plan_id: round.contribution_plan_id,
+            round_start: round.due_date,
+            member_id: round.recipient_id,
+            payout_position: round.round_number,
+            amount: amount.toFixed(),
+            currency,
+            status: 'paid',
+            disbursement_method: disbursementMethod,
+            external_reference: `MGR-MPESA-${Date.now()}`,
+            paid_at: new Date(),
+          },
+        ],
+        session ? { session } : {}
+      );
+
+      // Post the settlement leg onto the same accounted path payout.service.js
+      // uses (accountingService -> payout.rule.js). MGR contributions already
+      // credited PAYOUT_CLEARING as each member paid in (MgrContributionRule:
+      // DR Cash/Bank/Mpesa, CR PAYOUT_CLEARING) - that's this round's payout
+      // obligation, already booked on collection. Disbursing here only needs
+      // the settlement entry (DR PAYOUT_CLEARING, CR Cash/Bank/Mpesa); posting
+      // a PAYOUT_OBLIGATION on top would double the liability.
+      const posting = await accountingService.post(
+        {
+          referenceType: 'PAYOUT_SETTLEMENT',
+          owner_type: OWNER_TYPE,
+          owner_id: round.chama_id,
+          amount,
+          currency,
+          source_type: 'Payout',
+          source_id: payout._id,
+          disbursement_method: disbursementMethod,
+          description: `MGR payout settled via ${disbursementMethod} for Round #${round.round_number}`,
+          created_by: actorUserId,
+          posted_by: actorUserId,
+          session,
+        },
+        session
+      );
+
+      payout.financial_transaction_id = posting.transactionId;
+      await payout.save(session ? { session } : {});
+
+      if (session) await session.commitTransaction();
+    } catch (error) {
+      if (session) await session.abortTransaction();
+      throw error;
+    } finally {
+      if (session) await session.endSession();
+    }
 
     round.payout_id = payout._id;
     round.status = 'paid';

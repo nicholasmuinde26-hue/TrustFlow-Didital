@@ -165,7 +165,7 @@ export default function CartTab({
         )}
       </div>
 
-      <div className="sticky bottom-14 space-y-3 border-t border-gray-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-8">
+      <div className="sticky bottom-14 space-y-3 border-t border-gray-100 bg-white/95 px-4 py-4 backdrop-blur sm:px-8 lg:bottom-0 lg:rounded-b-2xl lg:border lg:border-t-0">
         <div className="flex items-center justify-between text-sm font-extrabold text-gray-900">
           <span>Total</span>
           <span>{formatMoney(subtotal, currency)}</span>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowRight, Plus, BookOpen, Wallet, CreditCard, Receipt,
@@ -8,6 +9,7 @@ import {
 import useFinanceSummary from "@/modules/finance/hooks/useFinanceSummary";
 import BalanceCard from "@/modules/finance/components/BalanceCard";
 import CashFlowCard from "@/modules/finance/components/CashFlowCard";
+import CreateFundModal from "@/modules/finance/components/CreateFundModal";
 import Spinner from "@/shared/components/ui/Spinner";
 
 // Helper to format KES properly
@@ -25,7 +27,8 @@ const toNumber = (v) => Number(v ?? 0);
 
 export default function FinanceDashboard() {
   const { workspaceId } = useParams();
-  const { summary, loading, error } = useFinanceSummary(workspaceId);
+  const { summary, loading, error, refetch } = useFinanceSummary(workspaceId);
+  const [showCreateFundModal, setShowCreateFundModal] = useState(false);
 
   if (loading) return <Spinner />;
 
@@ -52,15 +55,21 @@ export default function FinanceDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setShowCreateFundModal(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-white hover:bg-indigo-700 font-bold text-sm shadow-sm transition"
+          >
+            <PiggyBank size={18} /> + Create Embedded Fund
+          </button>
           <Link
             to={`/workspace/${workspaceId}/finance/record-contribution`}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-white hover:bg-emerald-700"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-white hover:bg-emerald-700 font-bold text-sm shadow-sm transition"
           >
             <Plus size={18} /> Record Contribution
           </Link>
           <Link
             to={`/workspace/${workspaceId}/finance/payouts/new`}
-            className="inline-flex items-center gap-2 rounded-xl border px-5 py-3 hover:bg-slate-100"
+            className="inline-flex items-center gap-2 rounded-xl border px-5 py-3 hover:bg-slate-100 font-bold text-sm transition"
           >
             <ArrowLeftRight size={18} /> New Payout
           </Link>
@@ -134,6 +143,13 @@ export default function FinanceDashboard() {
           { title: "Cash Flow", icon: BarChart3, color: "text-orange-600", to: `/workspace/${workspaceId}/finance/cash-flow` },
           { title: "Financial Reports", icon: FileText, color: "text-slate-700", to: `/workspace/${workspaceId}/reports` },
         ]}
+      />
+
+      <CreateFundModal
+        isOpen={showCreateFundModal}
+        onClose={() => setShowCreateFundModal(false)}
+        workspaceId={workspaceId}
+        onCreated={() => refetch && refetch()}
       />
     </div>
   );

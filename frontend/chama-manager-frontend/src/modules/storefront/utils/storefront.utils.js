@@ -93,6 +93,37 @@ export function sortItems(items, sortValue) {
   }
 }
 
+/**
+ * Decorative emoji for a category chip/icon when the item itself has
+ * no image/icon set. Purely cosmetic — falls back to a generic box
+ * for anything that doesn't match a known keyword.
+ */
+const CATEGORY_EMOJI = [
+  [/phone|mobile|tablet/i, "📱"],
+  [/electronic|gadget|appliance/i, "🔌"],
+  [/computer|laptop|pc/i, "💻"],
+  [/fashion|cloth|wear|apparel/i, "👕"],
+  [/shoe|footwear/i, "👟"],
+  [/home|kitchen|furniture/i, "🛋️"],
+  [/beauty|cosmetic|skincare/i, "💄"],
+  [/health|pharma|medic/i, "💊"],
+  [/sport|fitness|outdoor/i, "⚽"],
+  [/baby|kid|toy/i, "🧸"],
+  [/automotive|car|vehicle/i, "🚗"],
+  [/book|stationery/i, "📚"],
+  [/food|grocery|drink/i, "🛒"],
+  [/jewel|watch|accessor/i, "⌚"],
+  [/tool|hardware|construction/i, "🛠️"],
+];
+
+export function getCategoryEmoji(category) {
+  const label = String(category || "");
+  for (const [pattern, emoji] of CATEGORY_EMOJI) {
+    if (pattern.test(label)) return emoji;
+  }
+  return "🏷️";
+}
+
 export function computeCartLines(cart, items) {
   return Object.entries(cart)
     .map(([itemId, qty]) => {

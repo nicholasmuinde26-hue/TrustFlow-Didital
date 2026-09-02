@@ -36,8 +36,8 @@ export default function ShopTab({
   }, [items, category, search, sortValue]);
 
   return (
-    <div className="pb-4">
-      <div className="border-b border-gray-100 px-4 py-3 sm:px-8">
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3 sm:px-5 lg:hidden">
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
@@ -58,7 +58,12 @@ export default function ShopTab({
         primaryColor={primaryColor}
       />
 
-      <div className="px-4 py-4 sm:px-8">
+      <div className="px-4 py-4 sm:px-5">
+        <p className="mb-3 text-xs font-semibold text-gray-400">
+          {category === "All" ? "All products" : category}
+          {search ? ` · results for "${search}"` : ""} · {visibleItems.length} item
+          {visibleItems.length === 1 ? "" : "s"}
+        </p>
         {visibleItems.length === 0 ? (
           <p className="py-16 text-center text-sm text-gray-400">
             {search || category !== "All"
@@ -66,7 +71,7 @@ export default function ShopTab({
               : "No products are listed online right now."}
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {visibleItems.map((item) => {
               const itemId = getItemId(item);
               return (

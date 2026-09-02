@@ -15,6 +15,7 @@ const loanService = {
   respondToGuarantee: (chamaId, loanId, decision) => data(loansApi.respondGuarantee(chamaId, loanId, decision)),
   decide: (chamaId, loanId, decision, comment) => data(loansApi.decide(chamaId, loanId, decision, comment)),
   initiateDisbursement: (chamaId, loanId) => data(loansApi.disburse(chamaId, loanId)),
+  confirmDisbursement: (chamaId, loanId, payload) => data(loansApi.confirmDisbursement(chamaId, loanId, payload)),
   startMpesaRepayment: (chamaId, loanId, payload) => data(loansApi.payByMpesa(chamaId, loanId, payload)),
 };
 export default loanService;

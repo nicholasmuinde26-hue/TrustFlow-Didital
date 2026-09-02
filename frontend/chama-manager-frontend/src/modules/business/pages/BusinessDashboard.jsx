@@ -10,8 +10,52 @@ import { RecentSales } from "../components/RecentSales";
 import { SalesChart } from "../components/SalesChart";
 import { QuickActions } from "../components/QuickActions";
 import { RentalOccupancySnapshot } from "../components/RentalOccupancySnapshot";
+import { RetailInventorySnapshot } from "../components/RetailInventorySnapshot";
+import { RestaurantKitchenSnapshot } from "../components/RestaurantKitchenSnapshot";
+import { ServiceJobsSnapshot } from "../components/ServiceJobsSnapshot";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import BusinessMpesaModal from "../components/BusinessMpesaModal";
+
+// Copy + widget per business category — keeps the overview honest about
+// what this specific business actually does, instead of one generic
+// "sales" framing for a landlord, a shopkeeper, a kitchen and a
+// freelancer alike.
+const CATEGORY_CONFIG = {
+  rental: {
+    badge: "Rental Portfolio",
+    tagline: "Collect rent directly via M-Pesa STK Push and track occupancy across your units.",
+    recentListTitle: "Recent Rent Payments",
+    Snapshot: RentalOccupancySnapshot,
+  },
+  retail: {
+    badge: "Retail Operations",
+    tagline: "Collect payments directly via M-Pesa STK Push and monitor real-time sales performance.",
+    recentListTitle: "Recent Sales",
+    Snapshot: RetailInventorySnapshot,
+  },
+  restaurant: {
+    badge: "Restaurant Floor",
+    tagline: "Collect payments directly via M-Pesa STK Push and keep an eye on the kitchen queue.",
+    recentListTitle: "Recent Orders",
+    Snapshot: RestaurantKitchenSnapshot,
+  },
+  service: {
+    badge: "Service Operations",
+    tagline: "Collect payments directly via M-Pesa STK Push and track jobs through to invoice.",
+    recentListTitle: "Recent Jobs",
+    Snapshot: ServiceJobsSnapshot,
+  },
+  other: {
+    badge: "Live Operations",
+    tagline: "Collect payments directly via M-Pesa STK Push and monitor real-time sales performance.",
+    recentListTitle: "Recent Sales",
+    Snapshot: null,
+  },
+};
+
+function getCategoryConfig(category) {
+  return CATEGORY_CONFIG[category] || CATEGORY_CONFIG.other;
+}
 
 export default function BusinessDashboard() {
   const { workspaceId: paramId } = useParams();
@@ -42,6 +86,10 @@ export default function BusinessDashboard() {
   const accounts = data?.accounts || [];
   const recentSales = data?.recentSales || data?.sales || [];
   const chartData = data?.salesChart || data?.chartData || [];
+
+  const category = profile?.category || "other";
+  const config = getCategoryConfig(category);
+  const Snapshot = config.Snapshot;
 
   const handleQuickAction = (action) => {
     const actionKey = String(action).toLowerCase();
@@ -93,14 +141,14 @@ export default function BusinessDashboard() {
         <div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-emerald-500/30 px-2.5 py-0.5 text-xs font-bold text-emerald-200 uppercase tracking-wider">
-              Live Operations
+              {config.badge}
             </span>
           </div>
           <h1 className="mt-2 text-2xl font-black">
             {profile?.name || profile?.businessName || "Business Dashboard"}
           </h1>
           <p className="mt-1 text-xs text-emerald-100">
-            Collect payments directly via M-Pesa STK Push and monitor real-time sales performance.
+            {config.tagline}
           </p>
         </div>
 
@@ -134,9 +182,7 @@ export default function BusinessDashboard() {
 
       <BusinessStatCards stats={stats} />
 
-      {profile?.category === "rental" && (
-        <RentalOccupancySnapshot workspaceId={workspaceId} currency={profile?.currency || "KES"} />
-      )}
+      {Snapshot && <Snapshot workspaceId={workspaceId} currency={profile?.currency || "KES"} />}
 
       <QuickActions
         category={profile?.category}
@@ -149,7 +195,7 @@ export default function BusinessDashboard() {
         <CashAccountsCard accounts={accounts} />
       </div>
 
-      <RecentSales sales={recentSales} />
+      <RecentSales sales={recentSales} title={config.recentListTitle} />
 
       {/* Operational Business M-Pesa STK Modal */}
       <BusinessMpesaModal

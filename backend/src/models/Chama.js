@@ -55,6 +55,28 @@ const chamaSchema = new mongoose.Schema(
 
 
     // ========================================
+    // CHAMA TYPE
+    // ========================================
+    //
+    // 'standard' -> a regular rotating-savings/investment Chama.
+    // 'burial'   -> a burial/welfare Chama, which additionally gets
+    //               a BurialChamaProfile (see modules/burialChama)
+    //               configured through the setup wizard right after
+    //               creation. Chosen once, at creation time.
+    //
+    // ========================================
+
+    chama_type: {
+      type: String,
+      enum: [
+        'standard',
+        'burial'
+      ],
+      default: 'standard'
+    },
+
+
+    // ========================================
     // CHAMA STATUS
     // ========================================
 

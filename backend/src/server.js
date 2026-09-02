@@ -9,6 +9,7 @@ import { initSocket } from "./modules/realtime/socketServer.js";
 
 import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js"; // FIX: was paymentIntentReconciliation.job
 import { startPollAutoCloseJob } from "./jobs/pollAutoClose.job.js";
+import { startSavingsShareoutSchedulerJob } from "./jobs/savingsShareoutScheduler.job.js";
 
 // NEW: Payment Provider Bootstrap
 import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
@@ -54,6 +55,9 @@ async function startServer() {
 
         startPollAutoCloseJob();
         console.log(` Poll Auto-Close Job: Started [60s interval]`);
+
+        startSavingsShareoutSchedulerJob();
+        console.log(` Savings Share-Out Scheduler Job: Started [6h interval]`);
 
         // ============================================================
         // START HTTP SERVER
