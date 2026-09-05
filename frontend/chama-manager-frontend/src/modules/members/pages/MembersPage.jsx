@@ -34,6 +34,7 @@ import { usePresence } from "@/modules/presence/hooks/usePresence";
 import {
   canManageMembers,
   canInviteMembers,
+  canManageMembersAsChairperson,
 } from "@/modules/workspaces/permissions/Permissions";
 
 import {
@@ -89,6 +90,7 @@ export default function MembersPage() {
   const type = workspace?.type || "chama";
 
   const manage = canManageMembers(workspace?.role, type);
+  const chairpersonManage = canManageMembersAsChairperson(workspace?.role, type);
   const canInvite = canInviteMembers(workspace?.role, type);
 
   const { data: members = [], isLoading } = useMembers(type, workspaceId);
@@ -572,95 +574,97 @@ export default function MembersPage() {
                         {/* Actions Column */}
                         <td className="px-6 py-4 text-right relative">
                           <div className="flex items-center justify-end gap-2">
-                            {/* 3-Dots Action Button */}
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={() => setOpenDropdownId(isDropdownOpen ? null : member._id)}
-                                className={`flex h-8 w-8 items-center justify-center rounded-xl border transition ${
-                                  isDropdownOpen
-                                    ? "border-indigo-600 bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:border-indigo-500"
-                                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-                                }`}
-                                title="Member options"
-                              >
-                                <MoreVertical size={16} />
-                              </button>
+                            {/* 3-Dots Action Button - Only show for managers or for self (edit profile) */}
+                            {(manage || isSelf) && (
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenDropdownId(isDropdownOpen ? null : member._id)}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-xl border transition ${
+                                    isDropdownOpen
+                                      ? "border-indigo-600 bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:border-indigo-500"
+                                      : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+                                  }`}
+                                  title="Member options"
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
 
-                              {/* Dropdown Menu */}
-                              {isDropdownOpen && (
-                                <div className="absolute right-0 top-10 z-50 w-52 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900 text-left animate-in fade-in duration-150">
-                                  {manage && (
+                                {/* Dropdown Menu */}
+                                {isDropdownOpen && (
+                                  <div className="absolute right-0 top-10 z-50 w-52 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-800 dark:bg-slate-900 text-left animate-in fade-in duration-150">
+                                    {manage && !isSelf && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenDropdownId(null);
+                                          setReassignRoleMember(member);
+                                          setSelectedRoleToAssign(member.role || "member");
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 dark:text-slate-300 dark:hover:bg-indigo-950 dark:hover:text-indigo-300 transition"
+                                      >
+                                        <Award size={14} className="text-indigo-600 dark:text-indigo-400" />
+                                        Reassign Role
+                                      </button>
+                                    )}
+
                                     <button
                                       type="button"
                                       onClick={() => {
                                         setOpenDropdownId(null);
-                                        setReassignRoleMember(member);
-                                        setSelectedRoleToAssign(member.role || "member");
+                                        setEditingMember(member);
                                       }}
-                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 dark:text-slate-300 dark:hover:bg-indigo-950 dark:hover:text-indigo-300 transition"
+                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition"
                                     >
-                                      <Award size={14} className="text-indigo-600 dark:text-indigo-400" />
-                                      Reassign Role
+                                      <Pencil size={14} className="text-blue-600" />
+                                      Edit Profile
                                     </button>
-                                  )}
 
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setOpenDropdownId(null);
-                                      setEditingMember(member);
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition"
-                                  >
-                                    <Pencil size={14} className="text-blue-600" />
-                                    Edit Profile
-                                  </button>
+                                    {manage && !isSelf && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleStatus(member)}
+                                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${
+                                          isSuspended
+                                            ? "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                                            : "text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950"
+                                        }`}
+                                      >
+                                        {isSuspended ? (
+                                          <>
+                                            <UserCheck size={14} className="text-emerald-600" />
+                                            Activate Member
+                                          </>
+                                        ) : (
+                                          <>
+                                            <ShieldAlert size={14} className="text-amber-600" />
+                                            Suspend Member
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
 
-                                  {manage && !isSelf && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleStatus(member)}
-                                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${
-                                        isSuspended
-                                          ? "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950"
-                                          : "text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950"
-                                      }`}
-                                    >
-                                      {isSuspended ? (
-                                        <>
-                                          <UserCheck size={14} className="text-emerald-600" />
-                                          Activate Member
-                                        </>
-                                      ) : (
-                                        <>
-                                          <ShieldAlert size={14} className="text-amber-600" />
-                                          Suspend Member
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
+                                    {manage && !isSelf && (
+                                      <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                                    )}
 
-                                  {manage && !isSelf && (
-                                    <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-                                  )}
-
-                                  {manage && !isSelf && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenDropdownId(null);
-                                        setRemoveConfirmMember(member);
-                                      }}
-                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950 transition"
-                                    >
-                                      <UserX size={14} />
-                                      Remove Member
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+                                    {manage && !isSelf && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenDropdownId(null);
+                                          setRemoveConfirmMember(member);
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950 transition"
+                                      >
+                                        <UserX size={14} />
+                                        Remove Member
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>

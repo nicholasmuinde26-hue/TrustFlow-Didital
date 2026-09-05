@@ -79,6 +79,11 @@ export const createChamaController = async (
       monthlySavings,
       visibility,
       chamaType,
+      chairpersonInput,
+      chairpersonName,
+      chairpersonPhone,
+      chairpersonEmail,
+      chairpersonUserId,
       treasurerPhone,
       treasurerEmail,
       treasurerUserId,
@@ -103,6 +108,11 @@ export const createChamaController = async (
         visibility,
         chamaType,
         userId,
+        chairpersonInput,
+        chairpersonName,
+        chairpersonPhone,
+        chairpersonEmail,
+        chairpersonUserId,
         treasurerPhone,
         treasurerEmail,
         treasurerUserId,
@@ -114,6 +124,7 @@ export const createChamaController = async (
         patronUserId,
         patronInput,
       });
+
 
 
     // ----------------------------------------

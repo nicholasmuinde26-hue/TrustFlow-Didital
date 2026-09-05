@@ -19,6 +19,19 @@ const announcementsApi = {
     );
   },
 
+  approve(workspaceId, announcementId) {
+    return api.patch(
+      `/workspaces/${workspaceId}/announcements/${announcementId}/approve`
+    );
+  },
+
+  reject(workspaceId, announcementId, reason) {
+    return api.patch(
+      `/workspaces/${workspaceId}/announcements/${announcementId}/reject`,
+      { reason }
+    );
+  },
+
   remove(workspaceId, announcementId) {
     return api.delete(
       `/workspaces/${workspaceId}/announcements/${announcementId}`

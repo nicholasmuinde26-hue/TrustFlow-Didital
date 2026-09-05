@@ -1,10 +1,10 @@
 import { Outlet } from "react-router-dom";
 
 import Logo from "@/shared/components/layout/Logo";
-import ThemeToggle from "@/shared/components/layout/ThemeToggle";
-import NotificationButton from "@/shared/components/layout/NotificationButton";
-import UserMenu from "@/shared/components/layout/UserMenu";
-import WorkspaceSwitcher from "@/shared/components/layout/WorkspaceSwitcher";
+import ThemeToggle from "@/shared/components/layout/ThemeToggle/ThemeToggle";
+import NotificationButton from "@/shared/components/layout/NotificationButton/NotificationButton";
+import UserMenu from "@/shared/components/layout/UserMenu/UserMenu";
+import WorkspaceSwitcher from "@/shared/components/layout/WorkspaceSwitcher/WorkspaceSwitcher";
 
 // The shell for the "User Platform" layer — /home (onboarding, only
 // ever seen by a user with zero workspaces), /workspaces (the hub, for

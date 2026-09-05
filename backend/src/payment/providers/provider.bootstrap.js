@@ -7,6 +7,7 @@
 import providerRegistry from "./provider.registry.js";
 
 import MpesaProvider from "./mpesa/mpesa.provider.js"; // This is already an instance
+import MpesaC2bProvider from "./mpesa/mpesaC2b.provider.js"; // This is already an instance
 import CashProvider from "./cash/cash.provider.js"; // This is already an instance
 
 // Future Providers
@@ -28,6 +29,7 @@ export const initializePaymentProviders = () => {
     }
 
     providerRegistry.register(MpesaProvider); // <-- NO new
+    providerRegistry.register(MpesaC2bProvider); // <-- NO new
     providerRegistry.register(CashProvider); // <-- NO new
 
     /*

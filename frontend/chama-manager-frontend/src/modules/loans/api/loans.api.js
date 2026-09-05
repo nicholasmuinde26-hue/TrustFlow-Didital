@@ -13,7 +13,7 @@ export default {
   payByMpesa: (chamaId, loanId, payload) => api.post(`${base(chamaId)}/${loanId}/repayments/stk`, payload),
   portfolio: (chamaId) => api.get(`${base(chamaId)}/portfolio`),
   review: (chamaId, loanId) => api.get(`${base(chamaId)}/${loanId}/review`),
-  decide: (chamaId, loanId, decision, comment) => api.post(`${base(chamaId)}/${loanId}/decision`, { decision, comment }),
+  decide: (chamaId, loanId, decision, comment, versionToken) => api.post(`${base(chamaId)}/${loanId}/decision`, { decision, comment, versionToken }),
   disburse: (chamaId, loanId) => api.post(`${base(chamaId)}/${loanId}/disburse`),
   confirmDisbursement: (chamaId, loanId, payload) => api.post(`${base(chamaId)}/${loanId}/confirm-disbursement`, payload),
 };

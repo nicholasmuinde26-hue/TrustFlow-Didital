@@ -6,6 +6,7 @@ import {
   LogOut,
   Mail,
   LayoutGrid,
+  ShieldCheck,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -52,6 +53,14 @@ export default function UserMenu() {
     setOpen(false);
     navigate("/invitations");
   }
+
+  function goToAdmin() {
+    setOpen(false);
+    navigate("/admin");
+  }
+
+  const isSuperAdmin = user?.systemRole === "super_admin";
+  const isAdmin = isSuperAdmin || user?.systemRole === "sub_admin";
 
   const name = user?.name || "Account";
   const email = user?.email || "";
@@ -136,6 +145,22 @@ export default function UserMenu() {
               {email && <p className="text-sm text-slate-500">{email}</p>}
             </div>
           </div>
+
+          {isAdmin && (
+            <button
+              onClick={goToAdmin}
+              className="
+              flex w-full items-center gap-3 px-4 py-3 font-bold text-violet-600 transition-colors
+              hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/30 border-b border-slate-100 dark:border-slate-800
+              "
+            >
+              <ShieldCheck size={18} />
+              <span>Admin Panel</span>
+              <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                {isSuperAdmin ? "Super" : "Sub"}
+              </span>
+            </button>
+          )}
 
           <button
             onClick={goToWorkspaces}

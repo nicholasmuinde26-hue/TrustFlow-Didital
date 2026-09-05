@@ -1,5 +1,6 @@
 import express from "express";
 import { protect } from "../../middleware/auth.middleware.js";
+import { requireAdmin } from "../../middleware/admin.middleware.js";
 import {
   createBusiness,
   createExpense,
@@ -38,7 +39,7 @@ import {
 
 const router = express.Router();
 
-router.post("/", protect, createBusiness);
+router.post("/", protect, requireAdmin, createBusiness);
 router.get("/:businessId/summary", protect, getSummary);
 router.get("/:businessId/sales", protect, listSales);
 router.post("/:businessId/sales", protect, createSale);

@@ -12,6 +12,7 @@ import ContributionGroupLayout from "./ContributionGroupLayout";
 import { AiAssistantWidget } from "@/modules/ai";
 import WorkspaceQuickLaunchers from "@/modules/workspaces/components/WorkspaceQuickLaunchers";
 
+
 export default function WorkspaceLayout() {
   const { workspaceId } = useParams();
   const { workspaces, activeWorkspace, loading, selectWorkspace } = useWorkspace();
@@ -62,6 +63,8 @@ export default function WorkspaceLayout() {
         sections={sections}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        workspace={workspace}
+        workspaceId={workspaceId}
       />
 
       {/* Main Area */}

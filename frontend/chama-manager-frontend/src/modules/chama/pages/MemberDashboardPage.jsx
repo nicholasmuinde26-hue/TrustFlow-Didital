@@ -144,12 +144,20 @@ export default function MemberDashboardPage() {
     const loadDashboard = async () => {
       try {
         /*
-         * Both requests are independent, so load them concurrently.
+         * The two requests are independent, but they're not equally
+         * essential: the Command Center feed (role, KYC, goals,
+         * officials) is what makes this "My Chama" at all, while the
+         * loan summary is one widget on it. A role that legitimately
+         * has no loan access (e.g. a Patron, or a Chama whose
+         * permissions haven't been fully configured yet) should still
+         * see the rest of their dashboard rather than a hard error —
+         * so settle both and only require the Command Center call to
+         * succeed.
          */
         const [
-          commandCenterRes,
-          summaryRes,
-        ] = await Promise.all([
+          commandCenterResult,
+          summaryResult,
+        ] = await Promise.allSettled([
           chamaApi.getCommandCenter(
             workspaceId,
             {
@@ -165,6 +173,10 @@ export default function MemberDashboardPage() {
           ),
         ]);
 
+        if (commandCenterResult.status === "rejected") {
+          throw commandCenterResult.reason;
+        }
+
         /*
          * Preserve the API envelope currently used by the project:
          *
@@ -174,10 +186,7 @@ export default function MemberDashboardPage() {
          * }
          */
         const commandCenterData =
-          commandCenterRes?.data?.data;
-
-        const loanSummaryData =
-          summaryRes?.data?.data;
+          commandCenterResult.value?.data?.data;
 
         if (!commandCenterData) {
           throw new Error(
@@ -185,9 +194,23 @@ export default function MemberDashboardPage() {
           );
         }
 
-        if (!loanSummaryData) {
-          throw new Error(
-            "Loan summary data is unavailable."
+        const loanSummaryData =
+          summaryResult.status === "fulfilled"
+            ? summaryResult.value?.data?.data
+            : null;
+
+        if (summaryResult.status === "rejected") {
+          const abortedLoanCall =
+            summaryResult.reason?.name === "AbortError" ||
+            summaryResult.reason?.code === "ERR_CANCELED";
+
+          if (abortedLoanCall) {
+            return;
+          }
+
+          console.warn(
+            "Loan summary unavailable for My Chama dashboard:",
+            summaryResult.reason
           );
         }
 

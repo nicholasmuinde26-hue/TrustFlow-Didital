@@ -2,6 +2,16 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import ProtectedRoute from "./ProtectedRoute";
 import GuestRoute from "./GuestRoute";
+import RequireAdminRoute from "./RequireAdminRoute";
+
+import AdminLayout from "@/modules/admin/layouts/AdminLayout";
+import AdminDashboardPage from "@/modules/admin/pages/AdminDashboardPage";
+import AdminRequestsPage from "@/modules/admin/pages/AdminRequestsPage";
+import AdminSubAdminsPage from "@/modules/admin/pages/AdminSubAdminsPage";
+import AdminCreateEntityPage from "@/modules/admin/pages/AdminCreateEntityPage";
+import AdminDirectoryPage from "@/modules/admin/pages/AdminDirectoryPage";
+import AdminInquiriesPage from "@/modules/admin/pages/AdminInquiriesPage";
+
 
 import PlatformLayout from "@/layouts/PlatformLayout";
 import WorkspaceLayout from "@/layouts/WorkspaceLayout";
@@ -250,6 +260,47 @@ const router = createBrowserRouter([
       },
 
       // ==================================================
+      // ADMIN PANEL (Super Admin & Sub-Admin Shell)
+      // ==================================================
+
+      {
+        path: "/admin",
+        element: <RequireAdminRoute />,
+        children: [
+          {
+            element: <AdminLayout />,
+            children: [
+              {
+                index: true,
+                element: <AdminDashboardPage />,
+              },
+              {
+                path: "requests",
+                element: <AdminRequestsPage />,
+              },
+              {
+                path: "sub-admins",
+                element: <AdminSubAdminsPage />,
+              },
+              {
+                path: "create",
+                element: <AdminCreateEntityPage />,
+              },
+              {
+                path: "inquiries",
+                element: <AdminInquiriesPage />,
+              },
+              {
+                path: "directory",
+                element: <AdminDirectoryPage />,
+              },
+            ],
+
+          },
+        ],
+      },
+
+      // ==================================================
       // WORKSPACE LAYOUT (Scoped Workspace Shell)
       // ==================================================
 
@@ -449,6 +500,15 @@ const router = createBrowserRouter([
           },
           {
             path: "finance/savings",
+            element: <SavingsPage />,
+          },
+          // "Savings Share-Out" is its own sidebar link
+          // (workspaceNavigation.js) but not a separate page — it's the
+          // "shareout" tab of SavingsPage. Route it to the same
+          // component so the URL, the active sidebar highlight, and the
+          // in-page tab all agree with each other.
+          {
+            path: "finance/savings-shareout",
             element: <SavingsPage />,
           },
           {

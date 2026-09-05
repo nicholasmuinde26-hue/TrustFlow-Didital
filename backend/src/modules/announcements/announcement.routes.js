@@ -4,6 +4,8 @@ import {
   listAnnouncements,
   createAnnouncement,
   togglePinAnnouncement,
+  approveAnnouncement,
+  rejectAnnouncement,
   deleteAnnouncement,
 } from "./announcement.controller.js";
 
@@ -16,6 +18,8 @@ router.use(protect);
 router.get("/:workspaceId/announcements", listAnnouncements);
 router.post("/:workspaceId/announcements", createAnnouncement);
 router.patch("/:workspaceId/announcements/:announcementId/pin", togglePinAnnouncement);
+router.patch("/:workspaceId/announcements/:announcementId/approve", approveAnnouncement);
+router.patch("/:workspaceId/announcements/:announcementId/reject", rejectAnnouncement);
 router.delete("/:workspaceId/announcements/:announcementId", deleteAnnouncement);
 
 export default router;

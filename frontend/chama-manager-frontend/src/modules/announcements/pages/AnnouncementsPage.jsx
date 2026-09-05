@@ -6,12 +6,16 @@ import {
   canManageAnnouncements,
   canPinAnnouncement,
   canDeleteAnnouncement,
+  canApproveAnnouncement,
+  announcementNeedsApproval,
 } from "@/modules/workspaces/permissions/Permissions";
 
 import {
   useAnnouncements,
   useCreateAnnouncement,
   useSetAnnouncementPinned,
+  useApproveAnnouncement,
+  useRejectAnnouncement,
   useDeleteAnnouncement,
 } from "../hooks/useAnnouncements";
 
@@ -33,12 +37,18 @@ export default function AnnouncementsPage() {
   const manage = canManageAnnouncements(workspace?.role, type);
   const canPin = canPinAnnouncement(workspace?.role, type);
   const canDelete = canDeleteAnnouncement(workspace?.role, type);
+  const canApprove = canApproveAnnouncement(workspace?.role, type);
+  const needsApproval = announcementNeedsApproval(workspace?.role, type);
+  const approverLabel =
+    type === "contribution-group" ? "the Organizer" : "the Chairperson or Secretary";
 
   const { data: announcements = [], isLoading, isError } =
     useAnnouncements(workspaceId);
 
   const createAnnouncement = useCreateAnnouncement(workspaceId);
   const setPinned = useSetAnnouncementPinned(workspaceId);
+  const approveAnnouncement = useApproveAnnouncement(workspaceId);
+  const rejectAnnouncement = useRejectAnnouncement(workspaceId);
   const removeAnnouncement = useDeleteAnnouncement(workspaceId);
 
   const sorted = [...announcements].sort((a, b) => {
@@ -54,7 +64,9 @@ export default function AnnouncementsPage() {
 
       <p className="mt-2 text-slate-500 dark:text-slate-400">
         {manage
-          ? "Post updates for everyone in this workspace. Members can read but not remove them."
+          ? needsApproval
+            ? `Post updates for everyone in this workspace. Your posts need approval from ${approverLabel} before members see them.`
+            : "Post updates for everyone in this workspace. Members can read but not remove them."
           : "Updates from your organizer."}
       </p>
 
@@ -62,6 +74,9 @@ export default function AnnouncementsPage() {
         {manage && (
           <AnnouncementComposer
             submitting={createAnnouncement.isPending}
+            type={type}
+            needsApproval={needsApproval}
+            approverLabel={approverLabel}
             onSubmit={(payload) => createAnnouncement.mutateAsync(payload)}
           />
         )}
@@ -94,6 +109,7 @@ export default function AnnouncementsPage() {
             announcement={announcement}
             canPin={canPin}
             canDelete={canDelete}
+            canApprove={canApprove}
             onTogglePin={(item) =>
               setPinned.mutate({
                 announcementId: item.id ?? item._id,
@@ -103,6 +119,19 @@ export default function AnnouncementsPage() {
             onDelete={(item) =>
               removeAnnouncement.mutate(item.id ?? item._id)
             }
+            onApprove={(item) =>
+              approveAnnouncement.mutate(item.id ?? item._id)
+            }
+            onReject={(item) => {
+              const reason = window.prompt(
+                "Reason for rejecting this announcement (optional):"
+              );
+              if (reason === null) return;
+              rejectAnnouncement.mutate({
+                announcementId: item.id ?? item._id,
+                reason,
+              });
+            }}
           />
         ))}
       </div>

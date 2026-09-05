@@ -22,6 +22,7 @@ import {
 import {
   protect
 } from '../../middleware/auth.middleware.js';
+import { requireAdmin } from '../../middleware/admin.middleware.js';
 
 import {
   requireChamaMember,
@@ -53,12 +54,13 @@ router.post(
 );
 
 // ========================================
-// CREATE CHAMA
+// CREATE CHAMA (ADMIN ONLY)
 // ========================================
 
 router.post(
   '/',
   protect,
+  requireAdmin,
   createChamaController
 );
 

@@ -7,10 +7,20 @@ import FinancialAccount from "../../models/FinancialAccount.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import LedgerEntry from "../../models/LedgerEntry.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
+import Product from "../../models/Product.js";
+import ProductReview from "../../models/ProductReview.js";
+import RentalListing from "../../models/RentalListing.js";
+import Storefront from "../../models/Storefront.js";
+import StorefrontOrder from "../../models/StorefrontOrder.js";
+import BusinessItem from "../../models/BusinessItem.js";
+import User from "../../models/User.js";
+import { formatPhone } from "../../utils/phone.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import { sendBusinessReceiptEmail } from "../../services/notifications/email.service.js";
+import slugify from "slugify";
 
 const getUserId = (user) => user?._id || user?.id;
+
 
 async function getOwnedBusiness(businessId, user) {
   let business = await Business.findOne({ _id: businessId });
@@ -261,6 +271,52 @@ export async function createBusiness(data, user) {
 
   const category = BUSINESS_CATEGORIES.includes(data.category) ? data.category : "other";
 
+  let ownerId = getUserId(user);
+  const isAdmin = user.systemRole === "super_admin" || user.systemRole === "sub_admin";
+  const ownerInput = (data.ownerInput || data.ownerPhone || data.ownerEmail || data.chairpersonInput || "").trim();
+
+  if (isAdmin && (ownerInput || data.ownerName || data.chairpersonName)) {
+    let clientUser = null;
+    if (ownerInput.includes("@")) {
+      clientUser = await User.findOne({ email: ownerInput.toLowerCase() });
+    } else if (ownerInput) {
+      try {
+        const formatted = formatPhone(ownerInput);
+        clientUser = await User.findOne({ phone: formatted });
+      } catch {
+        // Soft fail
+      }
+    }
+
+    if (!clientUser) {
+      let phoneVal = null;
+      let emailVal = null;
+      if (ownerInput.includes("@")) {
+        emailVal = ownerInput.toLowerCase();
+      } else if (ownerInput) {
+        try {
+          phoneVal = formatPhone(ownerInput);
+        } catch {
+          phoneVal = null;
+        }
+      }
+      if (!phoneVal) {
+        phoneVal = `2547${Math.floor(10000000 + Math.random() * 89999999)}`;
+      }
+
+      clientUser = await User.create({
+        name: data.ownerName || data.chairpersonName || "Business Owner",
+        phone: phoneVal,
+        email: emailVal,
+        status: "unverified",
+        isPhoneVerified: false,
+        systemRole: "user",
+      });
+    }
+
+    ownerId = clientUser._id;
+  }
+
   const business = await Business.create({
     name: data.name,
     category,
@@ -275,19 +331,20 @@ export async function createBusiness(data, user) {
     },
     mpesa_till: data.mPesaTill || null,
     mpesa_paybill: data.mPesaPaybill || null,
-    created_by: getUserId(user),
+    created_by: ownerId,
   });
 
-  await ensureBusinessAccounts(business._id, getUserId(user));
+  await ensureBusinessAccounts(business._id, ownerId);
 
   // Rental businesses manage rooms/plots, not a product catalogue — set up
   // their storefront right away so the landlord can start posting listings.
   if (category === "rental") {
-    await getOrCreateStorefront(business._id, user);
+    await getOrCreateStorefront(business._id, { _id: ownerId });
   }
 
   return business;
 }
+
 
 export async function getSummary(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
@@ -658,12 +715,6 @@ export async function getBusinessAccounts(businessId, user) {
   return Object.values(accountsMap);
 }
 
-import BusinessItem from "../../models/BusinessItem.js";
-import Storefront from "../../models/Storefront.js";
-import StorefrontOrder from "../../models/StorefrontOrder.js";
-import RentalListing from "../../models/RentalListing.js";
-import RentalInquiry from "../../models/RentalInquiry.js";
-
 /**
  * ============================================================
  * INVENTORY & STOCK MANAGEMENT ("One inventory, two faces")
@@ -898,13 +949,6 @@ export async function createPosSale(businessId, user, data) {
  * STOREFRONT CONFIGURATION & PUBLIC E-COMMERCE ENDPOINTS
  * ============================================================
  */
-function slugify(text) {
-  return String(text || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
 
 export async function getOrCreateStorefront(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
@@ -1000,41 +1044,18 @@ export async function getPublicStorefrontBySlug(slug) {
         images: listing.images,
         status: listing.status,
       })),
-      items: [],
+      products: [],
     };
   }
 
-  // Ensure inventory items exist
-  let rawItems = await BusinessItem.find({
+  // Regular businesses show product catalogue
+  const products = await Product.find({
     business_id: business._id,
     status: "active",
-    visible_online: true,
-  }).sort({ createdAt: -1 });
-
-  if (rawItems.length === 0) {
-    const seeded = DEFAULT_INVENTORY_SEED.map((item) => ({
-      ...item,
-      business_id: business._id,
-    }));
-    rawItems = await BusinessItem.insertMany(seeded);
-  }
-
-  const publicItems = rawItems.map((item) => ({
-    _id: item._id,
-    id: item._id,
-    name: item.name,
-    sku: item.sku,
-    category: item.category,
-    description: item.description,
-    price: item.online_price !== null && item.online_price !== undefined ? item.online_price : item.price,
-    in_store_price: item.price,
-    quantity: item.quantity,
-    track_stock: item.track_stock !== false,
-    in_stock: item.track_stock === false ? true : item.quantity > 0,
-    low_stock: item.track_stock !== false && item.quantity > 0 && item.quantity <= 10,
-    icon: item.icon,
-    image_url: item.image_url,
-  }));
+    visibility: "public"
+  })
+  .sort({ is_featured: -1, sales_count: -1, created_at: -1 })
+  .limit(50);
 
   return {
     storefront,
@@ -1044,7 +1065,29 @@ export async function getPublicStorefrontBySlug(slug) {
       category: business.category,
       currency: business.currency,
     },
-    items: publicItems,
+    products: products.map((product) => ({
+      _id: product._id,
+      id: product._id,
+      title: product.title,
+      short_description: product.short_description,
+      description: product.description,
+      category: product.category,
+      subcategory: product.subcategory,
+      base_price: product.base_price,
+      compare_price: product.compare_price,
+      currency: product.currency,
+      stock: product.stock,
+      thumbnail: product.thumbnail,
+      images: product.images,
+      rating: product.rating,
+      review_count: product.review_count,
+      is_featured: product.is_featured,
+      slug: product.slug,
+      has_variants: product.has_variants,
+      variants: product.variants,
+      tags: product.tags
+    })),
+    listings: [],
   };
 }
 

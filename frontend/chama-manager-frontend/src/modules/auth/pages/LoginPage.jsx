@@ -35,12 +35,18 @@ function normalizeType(type) {
 }
 
 export default function LoginPage() {
-  const { login, verifyOtp, getOtpChannels, setSuppressGuestRedirect } = useAuth();
+  const { login, sendOtp, verifyOtp, getOtpChannels, setSuppressGuestRedirect } = useAuth();
   const { selectWorkspace } = useWorkspace();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [step, setStep] = useState("credentials");
+  // "password" (default) verifies identifier + password before sending the
+  // OTP. "otp-only" skips password entirely — for accounts that were
+  // created for someone without setting a password yet (e.g. a treasurer
+  // or committee member added while an admin approved a workspace
+  // request), this is how they get in the first time.
+  const [loginMode, setLoginMode] = useState("password");
 
   const [identifier, setIdentifier] = useState("");
   const [activeIdentifier, setActiveIdentifier] = useState("");
@@ -122,23 +128,30 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const res = await login({ identifier: identifier.trim(), password, channel });
+      const res =
+        loginMode === "otp-only"
+          ? await sendOtp({ identifier: identifier.trim(), channel })
+          : await login({ identifier: identifier.trim(), password, channel });
 
       if (res?.otpRequired) {
         const usedIdentifier = res.channel === "email" ? (res.email || identifier) : (res.phone || res.identifier || identifier);
         setActiveIdentifier(usedIdentifier);
         if (res.channel) setChannel(res.channel);
 
-        setNotice(
-          res?.message || `Password verified! Security OTP sent to ${usedIdentifier}`
-        );
+        let noticeText = res?.message || `Security OTP sent to ${usedIdentifier}`;
+        if (res?.devOtp) {
+          noticeText += ` (Dev Code: ${res.devOtp})`;
+          setOtpCode(res.devOtp);
+        }
+        setNotice(noticeText);
         setStep("otp");
       } else {
         await finishLogin();
       }
     } catch (err) {
       setError(
-        err?.response?.data?.message || "Invalid credentials or password."
+        err?.response?.data?.message ||
+          (loginMode === "otp-only" ? "Couldn't send a code to that phone/email." : "Invalid credentials or password.")
       );
     } finally {
       setSubmitting(false);
@@ -160,7 +173,20 @@ export default function LoginPage() {
     setSuppressGuestRedirect?.(true);
 
     try {
-      await verifyOtp({ identifier: activeIdentifier || identifier, otpCode: otpCode.trim() });
+      const result = await verifyOtp({ identifier: activeIdentifier || identifier, otpCode: otpCode.trim() });
+      const authedUser = result?.user;
+      const isAdmin = authedUser?.systemRole === "super_admin" || authedUser?.systemRole === "sub_admin";
+
+      if (hasExplicitRedirect) {
+        navigate(redirectTo, { replace: true });
+        return;
+      }
+
+      if (isAdmin) {
+        navigate("/admin", { replace: true });
+        return;
+      }
+
       await finishLogin();
     } catch (err) {
       setError(
@@ -204,8 +230,13 @@ export default function LoginPage() {
       }
 
       setMyWorkspaces(items);
+      if (items.length > 0) {
+        setSelectedWorkspaceId(items[0].id ?? items[0]._id);
+        setSelectedType(normalizeType(items[0].type));
+      }
       setStep("workspace");
     } catch {
+
       // Couldn't fetch the list — fall back to the resolver, which
       // will fetch again and route the person in on its own.
       navigate("/home", { replace: true });
@@ -246,7 +277,10 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const res = await login({ identifier: activeIdentifier || identifier, password, channel });
+      const res =
+        loginMode === "otp-only"
+          ? await sendOtp({ identifier: activeIdentifier || identifier, channel })
+          : await login({ identifier: activeIdentifier || identifier, password, channel });
       const usedDest = channel === "email" ? (res.email || activeIdentifier) : (res.phone || activeIdentifier);
       setNotice(res?.message || `A new OTP code has been sent to ${usedDest}`);
     } catch (err) {
@@ -302,7 +336,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* STEP 1 FORM: Phone Number or Email + Password */}
+        {/* STEP 1 FORM: Phone Number or Email + Password (or OTP-only) */}
         {step === "credentials" && (
           <form onSubmit={handleCredentialsSubmit} className="mt-6 space-y-4">
             <Input
@@ -316,17 +350,19 @@ export default function LoginPage() {
               required
             />
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
-              <PasswordInput
-                name="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                required
-              />
-            </div>
+            {loginMode === "password" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Password</label>
+                <PasswordInput
+                  name="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+            )}
 
             <OtpChannelSelect
               channels={availableChannels}
@@ -336,8 +372,42 @@ export default function LoginPage() {
             />
 
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Verifying Credentials..." : "Continue to Verification"}
+              {submitting
+                ? "Sending Code..."
+                : loginMode === "otp-only"
+                ? "Send Login Code"
+                : "Continue to Verification"}
             </Button>
+
+            <p className="text-center text-xs text-slate-500">
+              {loginMode === "password" ? (
+                <>
+                  New to the platform, or don&apos;t have a password yet (e.g. you were just added as a
+                  treasurer, secretary, or committee member)?{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginMode("otp-only");
+                      setError("");
+                    }}
+                    className="font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    Log in with a one-time code instead
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMode("password");
+                    setError("");
+                  }}
+                  className="font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                >
+                  Have a password? Log in with it instead
+                </button>
+              )}
+            </p>
           </form>
         )}
 
@@ -389,64 +459,82 @@ export default function LoginPage() {
             are fully verified, and only when the person wasn't
             already headed somewhere specific. Type dropdown first;
             the workspace dropdown only appears (and is only
-            populated) once a type is chosen. */}
+        {/* STEP 3: WORKSPACE PICKER — appears once credentials
+            and OTP are verified, listing all assigned Chamas / Workspaces. */}
         {step === "workspace" && (
           <form onSubmit={handleOpenWorkspace} className="mt-6 space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Workspace Type</label>
+              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                Select Your Chama / Workspace
+              </label>
               <select
-                value={selectedType}
+                value={selectedWorkspaceId}
                 onChange={(e) => {
-                  setSelectedType(e.target.value);
-                  setSelectedWorkspaceId("");
+                  const wid = e.target.value;
+                  setSelectedWorkspaceId(wid);
+                  const match = myWorkspaces.find((w) => String(w.id ?? w._id) === String(wid));
+                  if (match) setSelectedType(normalizeType(match.type));
                   setError("");
                 }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-violet-500 dark:bg-slate-900 text-sm font-medium"
                 required
               >
                 <option value="" disabled>
-                  Select Chama, Business, or Contribution Group
+                  -- Choose Your Chama or Workspace --
                 </option>
-                {availableTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {TYPE_META[type].label}
-                  </option>
-                ))}
+                {myWorkspaces.map((workspace) => {
+                  const wid = workspace.id ?? workspace._id;
+                  const typeLabel = TYPE_META[normalizeType(workspace.type)]?.label || "Chama";
+                  const roleLabel = workspace.role ? ` — ${workspace.role.replace(/_/g, " ")}` : "";
+                  return (
+                    <option key={wid} value={wid}>
+                      [{typeLabel}] {workspace.name}{roleLabel}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
-            {selectedType && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Which {TYPE_META[selectedType].label}?
-                </label>
-                <select
-                  value={selectedWorkspaceId}
-                  onChange={(e) => {
-                    setSelectedWorkspaceId(e.target.value);
-                    setError("");
+            {availableTypes.length > 1 && (
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="text-[11px] font-bold text-slate-400">Filter:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedType("");
                   }}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
-                  required
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                    !selectedType ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  }`}
                 >
-                  <option value="" disabled>
-                    Choose a workspace
-                  </option>
-                  {workspacesOfSelectedType.map((workspace) => (
-                    <option key={workspace.id ?? workspace._id} value={workspace.id ?? workspace._id}>
-                      {workspace.name}
-                    </option>
-                  ))}
-                </select>
+                  All ({myWorkspaces.length})
+                </button>
+                {availableTypes.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => {
+                      setSelectedType(type);
+                      const firstOfType = myWorkspaces.find((w) => normalizeType(w.type) === type);
+                      if (firstOfType) setSelectedWorkspaceId(firstOfType.id ?? firstOfType._id);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                      selectedType === type ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    }`}
+                  >
+                    {TYPE_META[type].label}
+                  </button>
+                ))}
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={!selectedWorkspaceId}>
-              Open Workspace
+            <Button type="submit" className="w-full mt-2" disabled={!selectedWorkspaceId}>
+              Enter Workspace
               <ArrowRight size={16} />
             </Button>
           </form>
         )}
+
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Don&apos;t have an account?{" "}

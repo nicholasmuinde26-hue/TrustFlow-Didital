@@ -24,6 +24,7 @@
     "nodemon": "^3.1.14",
     "react-hot-toast": "^2.6.0",
     "resend": "^6.20.0",
+    "slugify": "^1.6.9",
     "socket.io": "^4.8.3"
   }
 }

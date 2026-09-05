@@ -1,4 +1,6 @@
+import Chama from "../../models/Chama.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
+import ContributionGroup from "../../models/ContributionGroup.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
 import Business from "../../models/Business.js";
 
@@ -185,4 +187,110 @@ function sortWorkspaces(a, b) {
 
     return a.name.localeCompare(b.name);
 
+}
+
+/**
+ * ==========================================================
+ * Get Public/Platform Directory Workspaces by Type
+ * Used by new users post-OTP to discover existing workspaces.
+ * ==========================================================
+ */
+export async function getDirectoryWorkspaces(type, query = '') {
+    const normalizedType = String(type || '').toLowerCase();
+    const results = {
+        chamas: [],
+        businesses: [],
+        contributionGroups: [],
+    };
+
+    const searchRegex = query ? new RegExp(query.trim(), 'i') : null;
+
+    if (!normalizedType || normalizedType === 'chama') {
+        const chamaFilter = { status: 'active' };
+        if (searchRegex) {
+            chamaFilter.$or = [
+                { name: searchRegex },
+                { description: searchRegex },
+            ];
+        }
+
+        const chamas = await Chama.find(chamaFilter)
+            .select('name monthly_savings chama_type status visibility join_code created_by createdAt')
+            .populate('created_by', 'name phone email')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const chamaIds = chamas.map(c => c._id);
+        const memberCounts = await ChamaMembership.aggregate([
+            { $match: { chama_id: { $in: chamaIds }, status: 'active' } },
+            { $group: { _id: '$chama_id', count: { $sum: 1 } } }
+        ]);
+        const countsMap = new Map(memberCounts.map(m => [String(m._id), m.count]));
+
+        results.chamas = chamas.map(c => ({
+            ...c,
+            id: c._id,
+            type: 'chama',
+            memberCount: countsMap.get(String(c._id)) || 0,
+        }));
+    }
+
+    if (!normalizedType || normalizedType === 'business') {
+        const bizFilter = {};
+        if (searchRegex) {
+            bizFilter.$or = [
+                { name: searchRegex },
+                { category: searchRegex },
+                { location: searchRegex },
+            ];
+        }
+
+        const businesses = await Business.find(bizFilter)
+            .select('name category category_label currency location created_by createdAt')
+            .populate('created_by', 'name phone email')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        results.businesses = businesses.map(b => ({
+            ...b,
+            id: b._id,
+            type: 'business',
+        }));
+    }
+
+    if (!normalizedType || normalizedType === 'contribution_group' || normalizedType === 'contribution') {
+        const groupFilter = { status: 'active' };
+        if (searchRegex) {
+            groupFilter.$or = [
+                { name: searchRegex },
+                { group_type: searchRegex },
+            ];
+        }
+
+        const groups = await ContributionGroup.find(groupFilter)
+            .select('name group_type target_amount created_by createdAt')
+            .populate('created_by', 'name phone email')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const groupIds = groups.map(g => g._id);
+        const memberCounts = await ContributionGroupMember.aggregate([
+            { $match: { contribution_group_id: { $in: groupIds }, status: 'active' } },
+            { $group: { _id: '$contribution_group_id', count: { $sum: 1 } } }
+        ]);
+        const countsMap = new Map(memberCounts.map(m => [String(m._id), m.count]));
+
+        results.contributionGroups = groups.map(g => ({
+            ...g,
+            id: g._id,
+            type: 'contribution-group',
+            memberCount: countsMap.get(String(g._id)) || 0,
+        }));
+    }
+
+    if (normalizedType === 'chama') return results.chamas;
+    if (normalizedType === 'business') return results.businesses;
+    if (normalizedType === 'contribution_group' || normalizedType === 'contribution') return results.contributionGroups;
+
+    return results;
 }

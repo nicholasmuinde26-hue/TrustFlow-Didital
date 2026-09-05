@@ -57,6 +57,45 @@ const announcementSchema = new mongoose.Schema(
     },
 
     // ========================================
+    // APPROVAL WORKFLOW (Chama)
+    // ========================================
+    // Chairperson/Secretary posts go live immediately ("approved").
+    // Other management roles (e.g. Treasurer) create a "pending"
+    // announcement that only becomes visible workspace-wide once a
+    // Chairperson or Secretary approves it. Not used for
+    // contribution-group / business workspaces, which stay "approved".
+    // ========================================
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "approved",
+      index: true,
+    },
+    approved_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    approved_at: {
+      type: Date,
+      default: null,
+    },
+    rejected_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    rejected_at: {
+      type: Date,
+      default: null,
+    },
+    rejection_reason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    // ========================================
     // CHAMA TASTE: TRUST & TRANSPARENCY
     // ========================================
     chama_details: {

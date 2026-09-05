@@ -249,6 +249,32 @@ const initiateB2cPayment = async ({ amount, phoneNumber, remarks, occasion, comm
 };
 
 /**
+ * REGISTER C2B URLs - one-time setup per Paybill shortcode/environment.
+ * Tells Safaricom where to send ValidationURL + ConfirmationURL calls for
+ * unprompted Paybill payments. Safe to re-run; Safaricom just overwrites
+ * whatever was previously registered for this shortcode.
+ */
+const registerC2bUrls = async ({ validationURL, confirmationURL, responseType = 'Completed' } = {}) => {
+  validateConfiguration();
+  if (!validationURL) throw new Error('validationURL is required');
+  if (!confirmationURL) throw new Error('confirmationURL is required');
+
+  try {
+    const accessToken = await getAccessToken();
+    const payload = {
+      ShortCode: MPESA_SHORTCODE,
+      ResponseType: responseType, // 'Completed' or 'Cancelled' - what to do if ValidationURL is unreachable
+      ConfirmationURL: confirmationURL,
+      ValidationURL: validationURL,
+    };
+    const response = await axios.post(`${MPESA_BASE_URL}/mpesa/c2b/v1/registerurl`, payload, {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: MPESA_TIMEOUT,
+    });
+    return { success: true, rawResponse: response.data };
+  } catch (error) { throw createMpesaError(error, "Failed to register M-Pesa C2B URLs"); }
+};
+
+/**
  * PARSE CALLBACK - Never throws
  */
 const parseStkCallback = (callbackBody) => {
@@ -366,5 +392,6 @@ export default {
   mapResultCode, 
   normalizePhoneNumber, 
   validateAmount,
-  initiateB2cPayment
+  initiateB2cPayment,
+  registerC2bUrls
 };

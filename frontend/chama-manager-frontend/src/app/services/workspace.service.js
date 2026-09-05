@@ -18,6 +18,14 @@ const workspaceService = {
     const { data } = await api.get(`/workspaces/${workspaceId}`);
     return data.data || data;
   },
+
+  async getDirectory(type = "", query = "") {
+    const params = {};
+    if (type) params.type = type;
+    if (query) params.query = query;
+    const { data } = await api.get("/workspaces/directory", { params });
+    return data.data || [];
+  },
 };
 
 export default workspaceService;

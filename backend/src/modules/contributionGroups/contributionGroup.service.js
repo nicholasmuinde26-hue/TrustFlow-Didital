@@ -23,10 +23,12 @@ import FinancialAccount
 
 import AppError
   from '../../utils/AppError.js';
+import { formatPhone } from '../../utils/phone.js';
 
 import {
   createAuditLog
 } from '../../services/audit.service.js';
+
 
 import {
   AUDIT_ACTIONS
@@ -247,56 +249,91 @@ const validateGroupCreator = async (
   // 4. BLOCK SECOND ACTIVE GROUP
   // ======================================
 
-  if (
+  const creatorUser = await User.findById(userId);
+  const isSystemAdmin =
+    creatorUser?.systemRole === 'super_admin' ||
+    creatorUser?.systemRole === 'sub_admin';
 
-    existingGroup
-
-  ) {
-
+  if (!isSystemAdmin && existingGroup) {
     throw new AppError(
-
       `You already have an active contribution group: ${existingGroup.name}`,
-
       409
-
     );
-
   }
 
 };
 
 
-// ========================================
-// CREATE CONTRIBUTION GROUP
-// ========================================
-
 export const createContributionGroup = async ({
-
   actorUserId,
-
+  user,
   name,
-
   description,
-
   type,
-
   event_date,
-
   location,
-
-  visibility
-
+  visibility,
+  organizerInput,
+  organizerName,
+  organizerPhone,
+  organizerEmail,
 }) => {
+  let resolvedOrganizerId = actorUserId;
+  const isAdmin = user?.systemRole === 'super_admin' || user?.systemRole === 'sub_admin';
+  const orgQuery = (organizerInput || organizerPhone || organizerEmail || '').trim();
+
+  if (isAdmin && (orgQuery || organizerName)) {
+    let clientUser = null;
+    if (orgQuery.includes('@')) {
+      clientUser = await User.findOne({ email: orgQuery.toLowerCase() });
+    } else if (orgQuery) {
+      try {
+        const formatted = formatPhone(orgQuery);
+        clientUser = await User.findOne({ phone: formatted });
+      } catch {
+        // Soft fail
+      }
+    }
+
+    if (!clientUser) {
+      let phoneVal = null;
+      let emailVal = null;
+      if (orgQuery.includes('@')) {
+        emailVal = orgQuery.toLowerCase();
+      } else if (orgQuery) {
+        try {
+          phoneVal = formatPhone(orgQuery);
+        } catch {
+          phoneVal = null;
+        }
+      }
+      if (!phoneVal) {
+        phoneVal = `2547${Math.floor(10000000 + Math.random() * 89999999)}`;
+      }
+
+      clientUser = await User.create({
+        name: organizerName || 'Group Organizer',
+        phone: phoneVal,
+        email: emailVal,
+        status: 'unverified',
+        isPhoneVerified: false,
+        systemRole: 'user',
+      });
+    }
+
+    resolvedOrganizerId = clientUser._id;
+  }
 
   // ======================================
-  // 1. VALIDATE ACTOR
+  // 1. VALIDATE ACTOR (or designated client)
   // ======================================
 
-  await validateGroupCreator(
+  if (!isAdmin) {
+    await validateGroupCreator(
+      resolvedOrganizerId
+    );
+  }
 
-    actorUserId
-
-  );
 
 
   // ======================================
@@ -328,19 +365,15 @@ export const createContributionGroup = async ({
   // 3. VALIDATE GROUP TYPE
   // ======================================
 
-  const groupType =
-
-    type || 'other';
-
+  let groupType = (type || 'other').toString().trim().toLowerCase();
+  if (groupType === 'standard' || groupType === 'rotational') {
+    groupType = 'community';
+  }
 
   if (
-
     !ALLOWED_GROUP_TYPES.includes(
-
       groupType
-
     )
-
   ) {
 
     throw new AppError(
@@ -467,27 +500,21 @@ export const createContributionGroup = async ({
           description?.trim() || null,
 
         type:
-
           groupType,
 
         created_by:
-
-          actorUserId,
+          resolvedOrganizerId,
 
         status:
-
           'active',
 
         visibility:
-
           groupVisibility,
 
         event_date:
-
           parsedEventDate,
 
         location:
-
           location?.trim() || null
 
       });
@@ -513,32 +540,22 @@ export const createContributionGroup = async ({
     // ====================================
 
     if (
-
       error?.code === 11000
-
     ) {
-
       throw new AppError(
-
-        'You already have an active contribution group. A user can create only one active contribution group.',
-
+        'The specified organizer already has an active contribution group. A user can create only one active contribution group.',
         409
-
       );
-
     }
 
-
     throw error;
-
   }
-
 
   // ======================================
   // 7. CREATE ORGANIZER MEMBERSHIP
   // ======================================
   //
-  // The creator automatically becomes an
+  // The client organizer automatically becomes an
   // active organizer MEMBER of the group.
   //
   // IMPORTANT:
@@ -554,16 +571,12 @@ export const createContributionGroup = async ({
 
   let organizerMembership;
 
-
   try {
-
     organizerMembership =
-
       await ContributionGroupMember.create({
-
         user_id:
+          resolvedOrganizerId,
 
-          actorUserId,
 
         contribution_group_id:
 

@@ -9,6 +9,10 @@ import helmet from "helmet";
 // Authentication
 import authRoutes from "./modules/auth/auth.routes.js";
 
+// Admin & Workspace Requests
+import adminRoutes from "./modules/admin/admin.routes.js";
+import workspaceRequestRoutes from "./modules/workspaces/workspaceRequest.routes.js";
+
 // Workspace
 import workspaceRoutes from "./modules/workspaces/workspace.routes.js";
 
@@ -25,6 +29,7 @@ import contributionGroupPlanRoutes from "./modules/contributionPlan/contribution
 import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
 import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
 import mpesaRoutes from "./payment/providers/mpesa/mpesa.routes.js";
+import mpesaC2bRoutes from "./modules/mpesaC2b/c2b.routes.js";
 
 // Finance
 import financeRoutes from "./modules/finance/finance.routes.js";
@@ -48,11 +53,17 @@ import pollRoutes from "./modules/polls/poll.routes.js";
 // Audit
 import auditRoutes from "./modules/audit/audit.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
+import productRoutes from "./modules/business/product.routes.js";
+import cartRoutes from "./modules/business/cart.routes.js";
 import storefrontPublicRoutes from "./modules/business/storefront.public.routes.js";
 import loanRoutes from "./modules/loans/loan.routes.js";
 
 // Notifications
 import notificationRoutes from "./modules/notifications/notifications.routes.js";
+import notificationEventHandler from "./services/notificationEventHandler.service.js";
+
+// Action Safety Engine
+import actionSafetyRoutes from "./routes/actionSafety.routes.js";
 
 // AI Assistant
 import aiRoutes from "./modules/ai/ai.routes.js";
@@ -61,10 +72,23 @@ import aiRoutes from "./modules/ai/ai.routes.js";
 import mgrRoutes from "./modules/mgr/mgr.routes.js";
 import approvalRoutes from "./modules/approval/approval.routes.js";
 
+// Committee System
+import committeeRoutes from "./modules/committee/committee.routes.js";
+
 // Burial Chama
 import burialChamaRoutes from "./modules/burialChama/burialChama.routes.js";
 
+// USSD (general — standard chamas)
+import ussdRoutes from "./modules/ussd/ussd.routes.js";
+
+// Chairperson Loan Settings
+import chairpersonLoanSettingsRoutes from "./modules/chairperson/chairpersonLoanSettings.routes.js";
+
+// Platform Inquiries & Support
+import inquiryRoutes, { adminInquiryRouter } from "./modules/inquiries/inquiry.routes.js";
+
 import "./modules/finance/financeEngine.service.js";
+
 
 // ============================================================================
 // ERROR MIDDLEWARE
@@ -126,6 +150,35 @@ app.use(
 );
 
 // ============================================================================
+// ADMIN PANEL & INQUIRIES
+// ============================================================================
+
+app.use(
+    "/api/v1/admin/inquiries",
+    adminInquiryRouter
+);
+
+app.use(
+    "/api/v1/admin",
+    adminRoutes
+);
+
+app.use(
+    "/api/v1/inquiries",
+    inquiryRoutes
+);
+
+// ============================================================================
+// WORKSPACE REQUESTS
+// ============================================================================
+
+
+app.use(
+    "/api/v1/workspace-requests",
+    workspaceRequestRoutes
+);
+
+// ============================================================================
 // WORKSPACES
 // ============================================================================
 
@@ -168,6 +221,7 @@ app.use(
     savingsShareoutRoutes
 );
 app.use("/api/v1/chamas", loanRoutes);
+app.use("/api/v1/chamas", chairpersonLoanSettingsRoutes);
 
 // ============================================================================
 // CONTRIBUTION GROUPS
@@ -216,8 +270,23 @@ app.use(
 );
 
 app.use(
+    "/api/v1/mpesa/c2b",
+    mpesaC2bRoutes
+);
+
+app.use(
     "/api/v1/businesses",
     businessRoutes
+);
+
+app.use(
+    "/api/v1/businesses",
+    productRoutes
+);
+
+app.use(
+    "/api/v1",
+    cartRoutes
 );
 
 // ============================================================================
@@ -351,12 +420,30 @@ app.use(
     notificationRoutes
 );
 
+// ============================================================================
+// ACTION SAFETY ENGINE
+// ============================================================================
+
+app.use(
+    "/api/v1/actions",
+    actionSafetyRoutes
+);
+
 // MGR Workflow & Approvals Engine
 app.use("/api/v1/mgr", mgrRoutes);
 app.use("/api/v1/approvals", approvalRoutes);
 
+// Committee System
+app.use("/api/v1/committees", committeeRoutes);
+
 // Burial Chama
 app.use("/api/v1/burial-chama", burialChamaRoutes);
+
+// USSD (general — standard chamas)
+app.use("/api/v1/ussd", ussdRoutes);
+
+// Initialize notification event listeners
+notificationEventHandler.initializeEventListeners();
 
 // ============================================================================
 // 404 HANDLER

@@ -6,6 +6,9 @@ import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from './Loan.constants.js';
 import { assessRisk } from './Loanrisk.service.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
+import domainEventEmitter from '../../services/domainEvent.emitter.js';
+import actionSafetyEngine from '../../services/actionSafety.service.js';
+import confirmationDialogService from '../../services/confirmationDialog.service.js';
 
 /**
  * Everything an official needs to review a loan before deciding —
@@ -43,7 +46,58 @@ export async function getReviewPacket(chamaId, loanId) {
   return { loan, priorLoans, risk };
 }
 
-export async function decide({ chama, loanId, membership, userId, decision, comment, ipAddress }) {
+/**
+ * Assess loan approval risk using Action Safety Engine
+ * Returns detailed risk assessment and confirmation requirements
+ */
+export async function assessLoanApprovalRisk({ chamaId, loanId, membershipId }) {
+  const loan = await ChamaLoan.findOne({ _id: loanId, chama_id: chamaId })
+    .populate({ path: 'membership_id', populate: { path: 'user_id', select: 'name phone' } });
+
+  if (!loan) {
+    throw new AppError('Loan not found', 404);
+  }
+
+  const membership = await ChamaMembership.findById(membershipId);
+  if (!membership) {
+    throw new AppError('Membership not found', 404);
+  }
+
+  // Use Action Safety Engine for comprehensive risk assessment
+  const riskAssessment = await actionSafetyEngine.assessActionRisk({
+    action: 'loan.approve',
+    membershipId: membership._id,
+    chamaId,
+    actionData: {
+      loanId: loan._id,
+      amount: loan.amount,
+      memberName: loan.membership_id?.user_id?.name || 'Member',
+      loanReference: loan.reference,
+      versionToken: loan.updatedAt?.toString() // Use timestamp as version token
+    }
+  });
+
+  return {
+    loan,
+    riskAssessment,
+    confirmationDialog: riskAssessment.allowed 
+      ? await confirmationDialogService.generateConfirmationDialog({
+          action: 'loan.approve',
+          membershipId: membership._id,
+          chamaId,
+          actionData: {
+            loanId: loan._id,
+            amount: loan.amount,
+            memberName: loan.membership_id?.user_id?.name || 'Member',
+            loanReference: loan.reference,
+            versionToken: loan.updatedAt?.toString()
+          }
+        })
+      : null
+  };
+}
+
+export async function decide({ chama, loanId, membership, userId, decision, comment, ipAddress, versionToken }) {
   if (!['approved', 'rejected'].includes(decision)) {
     throw new AppError('Decision must be approved or rejected', 400);
   }
@@ -53,6 +107,40 @@ export async function decide({ chama, loanId, membership, userId, decision, comm
 
   if (loan.status === LOAN_STATUS.APPROVED || loan.status === 'approved') {
     return loan;
+  }
+
+  // ========================================
+  // ACTION SAFETY ENGINE - Re-validation
+  // ========================================
+  // The frontend confirmation is NOT authorization. The backend must
+  // re-validate permissions, risk, and record version before execution.
+  
+  // 1. Stale record detection
+  if (versionToken && versionToken !== loan.updatedAt?.toString()) {
+    throw new AppError(
+      'This loan was modified after you opened it. Please review the updated loan before proceeding.',
+      409
+    );
+  }
+
+  // 2. Re-validate action safety for approvals
+  if (decision === 'approved') {
+    const revalidation = await actionSafetyEngine.revalidateAction({
+      action: 'loan.approve',
+      membershipId: membership._id,
+      chamaId: chama._id,
+      actionData: {
+        loanId: loan._id,
+        amount: loan.amount,
+        memberName: loan.membership_id?.user_id?.name || 'Member',
+        loanReference: loan.reference,
+        versionToken: loan.updatedAt?.toString()
+      }
+    });
+
+    if (!revalidation.valid) {
+      throw new AppError(revalidation.message || 'Action not allowed after re-validation', 403);
+    }
   }
 
   const awaitingStatuses = [
@@ -150,6 +238,31 @@ export async function decide({ chama, loanId, membership, userId, decision, comm
     resourceId: loan._id,
     after: { status: loan.status, decided_by: membership._id, role: membership.role },
   }).catch(() => null);
+
+  // Emit domain event for notifications
+  if (decision === 'approved' && loan.status === LOAN_STATUS.APPROVED) {
+    domainEventEmitter.emitLoanApproved({
+      chamaId: chama._id,
+      loanId: loan._id,
+      amount: loan.amount,
+      memberName: membership.user_id?.name || 'Member',
+      membershipId: loan.membership_id,
+      sentBy: membership._id,
+      entityType: 'ChamaLoan',
+      entityId: loan._id
+    });
+  } else if (decision === 'rejected') {
+    domainEventEmitter.emitLoanRejected({
+      chamaId: chama._id,
+      loanId: loan._id,
+      amount: loan.amount,
+      memberName: membership.user_id?.name || 'Member',
+      membershipId: loan.membership_id,
+      sentBy: membership._id,
+      entityType: 'ChamaLoan',
+      entityId: loan._id
+    });
+  }
 
   return loan;
 }

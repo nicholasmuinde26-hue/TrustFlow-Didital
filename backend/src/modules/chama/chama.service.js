@@ -6,6 +6,8 @@ import ChamaMembership from '../../models/ChamaMembership.js';
 
 import AppError from '../../utils/AppError.js';
 import { generateUniqueJoinCode } from '../../utils/joinCode.js';
+import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
+import permissionService from '../../services/permission.service.js';
 
 
 // ========================================
@@ -38,6 +40,11 @@ export const createChama = async ({
   visibility,
   chamaType,
   userId,
+  chairpersonInput,
+  chairpersonName,
+  chairpersonPhone,
+  chairpersonEmail,
+  chairpersonUserId,
   treasurerPhone,
   treasurerEmail,
   treasurerUserId,
@@ -49,6 +56,7 @@ export const createChama = async ({
   patronUserId,
   patronInput,
 }) => {
+
 
   // ----------------------------------------
   // 1. Validate User ID (Chairperson)
@@ -115,7 +123,16 @@ export const createChama = async ({
     throw new AppError('Your user account is not active', 403);
   }
 
-  const assignedUserIds = new Set([user._id.toString()]);
+  const isAdminCreator = user.systemRole === 'super_admin' || user.systemRole === 'sub_admin';
+  const hasChairpersonParam = Boolean(
+    chairpersonUserId ||
+    chairpersonInput ||
+    chairpersonPhone ||
+    chairpersonEmail ||
+    chairpersonName
+  );
+
+  const assignedUserIds = new Set();
 
   // Helper to resolve & verify a user for a governance role
   const resolveRoleUser = async (idVal, inputVal, roleTitle, isRequired = true) => {
@@ -136,19 +153,45 @@ export const createChama = async ({
     }
 
     if (!foundUser) {
-      if (isRequired) {
+      if (isAdminCreator) {
+        let phoneVal = null;
+        let emailVal = null;
+        if (query.includes('@')) {
+          emailVal = query.toLowerCase();
+        } else if (query) {
+          try {
+            phoneVal = formatPhone(query);
+          } catch {
+            phoneVal = null;
+          }
+        }
+
+        if (!phoneVal) {
+          phoneVal = `2547${Math.floor(10000000 + Math.random() * 89999999)}`;
+        }
+
+        foundUser = await User.create({
+          name: roleTitle,
+          phone: phoneVal,
+          email: emailVal,
+          status: 'unverified',
+          isPhoneVerified: false,
+          systemRole: 'user',
+        });
+      } else if (isRequired) {
         throw new AppError(`A valid registered user is required for ${roleTitle}.`, 400);
+      } else {
+        return null;
       }
-      return null;
     }
 
-    if (foundUser.status !== 'active') {
-      throw new AppError(`The user specified for ${roleTitle} is not active.`, 400);
+    if (foundUser.status === 'blocked' || foundUser.status === 'suspended') {
+      throw new AppError(`The user specified for ${roleTitle} is suspended or blocked.`, 400);
     }
 
     const uidStr = foundUser._id.toString();
     if (assignedUserIds.has(uidStr)) {
-      throw new AppError(`Each governance role must be assigned to a distinct user. (${foundUser.name || foundUser.email} is assigned multiple roles).`, 400);
+      throw new AppError(`Each governance role must be assigned to a distinct user. (${foundUser.name || foundUser.email || foundUser.phone} is assigned multiple roles).`, 400);
     }
 
     assignedUserIds.add(uidStr);
@@ -159,13 +202,27 @@ export const createChama = async ({
   // 5. Resolve & Verify Governance Officials
   // ----------------------------------------
 
-  // A. Treasurer (Required)
+  // A. Chairperson (Resolved for clients when admin creates, or defaults to user)
+  let chairUser;
+  if (isAdminCreator || hasChairpersonParam) {
+    chairUser = await resolveRoleUser(
+      chairpersonUserId,
+      chairpersonInput || chairpersonPhone || chairpersonEmail || chairpersonName,
+      'Chairperson',
+      true
+    );
+  } else {
+    chairUser = user;
+    assignedUserIds.add(chairUser._id.toString());
+  }
+
+  // B. Treasurer (Required)
   const treasurerUser = await resolveRoleUser(treasurerUserId, treasurerInput || treasurerPhone || treasurerEmail, 'Treasurer', true);
 
-  // B. Secretary (Required)
+  // C. Secretary (Required)
   const secretaryUser = await resolveRoleUser(secretaryUserId, secretaryInput, 'Secretary', true);
 
-  // C. Committee Members (3 to 5 Required)
+  // D. Committee Members (3 to 5 Required)
   const rawCommitteeList = Array.isArray(committeeUserIds) && committeeUserIds.length > 0 
     ? committeeUserIds.map((id, idx) => ({ id, input: committeeInputs[idx] || '' }))
     : Array.isArray(committeeInputs) ? committeeInputs.map((input) => ({ id: null, input })) : [];
@@ -181,7 +238,7 @@ export const createChama = async ({
     committeeUsers.push(cUser);
   }
 
-  // D. Patron (Optional)
+  // E. Patron (Optional)
   const patronUser = await resolveRoleUser(patronUserId, patronInput, 'Patron', false);
 
 
@@ -196,7 +253,7 @@ export const createChama = async ({
   const chama = await Chama.create({
     name: chamaName,
     monthly_savings: savings,
-    created_by: user._id,
+    created_by: chairUser._id,
     status: 'active',
     visibility: chamaVisibility,
     chama_type: resolvedChamaType,
@@ -211,14 +268,15 @@ export const createChama = async ({
   try {
     let position = 1;
 
-    // 1. Creator = Chairperson (Position 1)
+    // 1. Designated Chairperson (Position 1)
     await ChamaMembership.create({
-      user_id: user._id,
+      user_id: chairUser._id,
       chama_id: chama._id,
       role: 'chairperson',
       status: 'active',
       payout_position: position++
     });
+
 
     // 2. Verified User = Treasurer (Position 2)
     await ChamaMembership.create({
@@ -266,9 +324,32 @@ export const createChama = async ({
     throw error;
   }
 
+  // ----------------------------------------
+  // 8. Initialize Default Permissions
+  // ----------------------------------------
+  
+  try {
+    // Use the chairperson membership to initialize permissions
+    const chairpersonMembership = await ChamaMembership.findOne({
+      user_id: user._id,
+      chama_id: chama._id,
+      role: 'chairperson'
+    });
+
+    if (chairpersonMembership) {
+      await permissionService.initializeDefaultPermissions(
+        chama._id,
+        chairpersonMembership._id
+      );
+    }
+  } catch (permissionError) {
+    // Log permission initialization error but don't fail chama creation
+    console.error('Failed to initialize default permissions:', permissionError.message);
+    // Note: Chama is still created successfully, permissions can be initialized later via seed script
+  }
 
   // ----------------------------------------
-  // 8. Return populated Chama
+  // 10. Return populated Chama
   // ----------------------------------------
 
   const populatedChama = await Chama.findById(chama._id).populate('created_by', 'name phone status');

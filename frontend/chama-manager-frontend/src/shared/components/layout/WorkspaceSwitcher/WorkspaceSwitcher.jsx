@@ -36,9 +36,6 @@ function iconFor(type) {
 // place — surfaced from inside the switcher so it's reachable from
 // any screen in the app shell without ever routing back through /home.
 const CREATE_ACTIONS = [
-  { to: "/chamas/new", icon: Building2, label: "New Chama" },
-  { to: "/contribution-groups/new", icon: Wallet, label: "New Contribution Group" },
-  { to: "/business/new", icon: Store, label: "New Business" },
   { to: "/chamas/join", icon: UserPlus, label: "Join a Chama" },
 ];
 
@@ -248,7 +245,7 @@ export default function WorkspaceSwitcher() {
               "
             >
               <Plus size={16} className={`transition-transform ${createOpen ? "rotate-45" : ""}`} />
-              Create or Join a Workspace
+              Join a Workspace
             </button>
 
             {createOpen && (

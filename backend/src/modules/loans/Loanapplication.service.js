@@ -7,6 +7,7 @@ import { resolveApprovalPlan } from './Loanconflict.service.js';
 import { loanReference, LOAN_STATUS, LOAN_TYPE } from './Loan.constants.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
+import domainEventEmitter from '../../services/domainEvent.emitter.js';
 
 const REQUIRED_FIELDS_MESSAGE = 'Amount, purpose, repayment period, and repayment frequency are required';
 
@@ -128,6 +129,18 @@ export async function applyForLoan({ chama, membership, userId, data }) {
     resourceId: loan._id,
     after: { amount: loan.amount, status: loan.status, reference: loan.reference },
   }).catch(() => null);
+
+  // Emit domain event for loan submission
+  domainEventEmitter.emitLoanSubmitted({
+    chamaId: chama._id,
+    loanId: loan._id,
+    amount: loan.amount,
+    memberName: membership.user_id?.name || 'Member',
+    membershipId: membership._id,
+    sentBy: membership._id,
+    entityType: 'ChamaLoan',
+    entityId: loan._id
+  });
 
   return loan;
 }

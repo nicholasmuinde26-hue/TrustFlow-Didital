@@ -49,3 +49,16 @@ export async function getWorkspaceDashboard(req, res, next) {
     next(error);
   }
 }
+
+export async function getWorkspaceDirectory(req, res, next) {
+  try {
+    const { type, query, search } = req.query;
+    const directory = await WorkspaceService.getDirectoryWorkspaces(type, query || search || '');
+    res.status(200).json({
+      success: true,
+      data: directory,
+    });
+  } catch (error) {
+    next(error);
+  }
+}

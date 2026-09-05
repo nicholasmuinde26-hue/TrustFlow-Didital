@@ -43,6 +43,7 @@ import {
   Users2,
   Tent,
   Megaphone,
+  Vote,
 } from "lucide-react";
 
 import { canViewCommandCenter, canViewAdministration } from "../permissions/Permissions";
@@ -254,6 +255,11 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           to: `${base}/meetings`,
         },
         {
+          title: "Polls",
+          icon: Vote,
+          to: `${base}/polls`,
+        },
+        {
           title: "Schedule",
           icon: CalendarClock,
           to: `${base}/schedule`,
@@ -302,32 +308,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       ],
     },
 
-    {
-      title: "Burial Chama",
-      items: [
-        {
-          title: "Setup Wizard",
-          icon: ShieldCheck,
-          to: `${base}/burial-chama-setup`,
-        },
-        {
-          title: "Beneficiaries",
-          icon: UserPlus,
-          to: `${base}/beneficiaries`,
-        },
-        {
-          title: "Burial Cases",
-          icon: HeartPulse,
-          to: `${base}/burial-cases`,
-        },
-        {
-          title: "Member Statement",
-          icon: FileText,
-          to: `${base}/member-statement`,
-        },
-      ],
-    },
-
+   
     {
       title: "Chama Operations",
       items: [
@@ -345,6 +326,16 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           title: "Meeting Records",
           icon: Video,
           to: `${base}/meetings`,
+        },
+        {
+          title: "Polls",
+          icon: Vote,
+          to: `${base}/polls`,
+        },
+        {
+          title: "Announcements",
+          icon: Megaphone,
+          to: `${base}/announcements`,
         },
       ],
     },
@@ -587,6 +578,11 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           title: "Meeting Records",
           icon: Video,
           to: `${base}/meetings`,
+        },
+        {
+          title: "Polls",
+          icon: Vote,
+          to: `${base}/polls`,
         },
         {
           title: "Announcements",

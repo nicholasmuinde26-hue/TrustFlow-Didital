@@ -9,6 +9,10 @@ export const PAYMENT_STATUS = Object.freeze({
 
 export const PAYMENT_PROVIDER = Object.freeze({
     MPESA: "mpesa",
+    // Unprompted Paybill payments (C2B). Money has already landed by the
+    // time this provider is invoked - see mpesaC2b.provider.js - so it
+    // settles the PaymentIntent/Payment immediately, same idea as CASH.
+    MPESA_C2B: "mpesa_c2b",
     AIRTEL: "airtel",
     BANK: "bank",
     WALLET: "wallet",

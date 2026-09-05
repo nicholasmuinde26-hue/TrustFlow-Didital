@@ -37,6 +37,7 @@ import {
 import {
   protect
 } from '../../middleware/auth.middleware.js';
+import { requireAdmin } from '../../middleware/admin.middleware.js';
 
 import {
   requireContributionGroupMember,
@@ -76,6 +77,8 @@ router.post(
   '/',
 
   protect,
+
+  requireAdmin,
 
   createContributionGroupController
 

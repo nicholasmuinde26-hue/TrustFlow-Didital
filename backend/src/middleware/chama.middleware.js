@@ -38,6 +38,50 @@ const getChamaId = async (req) => {
     if (approval) return String(approval.chama_id);
   }
 
+  if (req.params.committeeId && mongoose.Types.ObjectId.isValid(req.params.committeeId)) {
+    const Committee = (await import('../models/Committee.js')).default;
+    const committee = await Committee.findById(req.params.committeeId).lean();
+    if (committee) return String(committee.chama_id);
+  }
+
+  if (req.params.membershipId && mongoose.Types.ObjectId.isValid(req.params.membershipId)) {
+    const membership = await ChamaMembership.findById(req.params.membershipId).lean();
+    if (membership) return String(membership.chama_id);
+  }
+
+  if (req.params.beneficiaryId && mongoose.Types.ObjectId.isValid(req.params.beneficiaryId)) {
+    const Beneficiary = (await import('../models/Beneficiary.js')).default;
+    const beneficiary = await Beneficiary.findById(req.params.beneficiaryId).lean();
+    if (beneficiary) return String(beneficiary.chama_id);
+  }
+
+  if (req.params.householdId && mongoose.Types.ObjectId.isValid(req.params.householdId)) {
+    const Household = (await import('../models/Household.js')).default;
+    const household = await Household.findById(req.params.householdId).lean();
+    if (household) return String(household.chama_id);
+  }
+
+  if (req.params.caseId && mongoose.Types.ObjectId.isValid(req.params.caseId)) {
+    const BurialCase = (await import('../models/BurialCase.js')).default;
+    const burialCase = await BurialCase.findById(req.params.caseId).lean();
+    if (burialCase) return String(burialCase.chama_id);
+  }
+
+  if (req.params.waiverId && mongoose.Types.ObjectId.isValid(req.params.waiverId)) {
+    const PenaltyWaiver = (await import('../models/PenaltyWaiver.js')).default;
+    const waiver = await PenaltyWaiver.findById(req.params.waiverId).lean();
+    if (waiver) return String(waiver.chama_id);
+  }
+
+  const burialChamaProfileId =
+    req.body?.burial_chama_profile_id || req.query?.burial_chama_profile_id;
+
+  if (burialChamaProfileId && mongoose.Types.ObjectId.isValid(burialChamaProfileId)) {
+    const BurialChamaProfile = (await import('../models/BurialChamaProfile.js')).default;
+    const profile = await BurialChamaProfile.findById(burialChamaProfileId).lean();
+    if (profile) return String(profile.chama_id);
+  }
+
   return null;
 };
 
@@ -363,12 +407,23 @@ export const requireChamaMember = async (
     // --------------------------------------
 
     if (!membership) {
+      if (req.user?.systemRole === 'super_admin' || req.user?.systemRole === 'sub_admin') {
+        req.chama = chama;
+        req.membership = {
+          _id: chama._id,
+          user_id: req.user._id,
+          chama_id: chama._id,
+          role: 'chairperson',
+          status: 'active',
+          isSystemAdmin: true,
+        };
+        return next();
+      }
 
       throw new AppError(
         'You are not a member of this Chama',
         403
       );
-
     }
 
 
@@ -433,11 +488,12 @@ export const requireChamaTreasurer = async (
 
     validateChamaContext(req);
 
+    const isSystemAdmin = req.user?.systemRole === 'super_admin' || req.user?.systemRole === 'sub_admin';
     const isCreator = String(req.chama?.created_by) === String(req.user?._id);
     const isAllowedRole = ['treasurer', 'chairperson', 'organizer', 'admin'].includes(req.membership?.role);
 
     if (
-      !isAllowedRole && !isCreator
+      !isAllowedRole && !isCreator && !isSystemAdmin
     ) {
 
       throw new AppError(
@@ -485,9 +541,10 @@ export const requireChamaChairperson = async (
 
     validateChamaContext(req);
 
+    const isSystemAdmin = req.user?.systemRole === 'super_admin' || req.user?.systemRole === 'sub_admin';
 
     if (
-      req.membership.role !== 'chairperson'
+      req.membership.role !== 'chairperson' && !isSystemAdmin
     ) {
 
       throw new AppError(
@@ -533,6 +590,7 @@ export const requireChamaTreasurerOrChairperson = async (
 
     validateChamaContext(req);
 
+    const isSystemAdmin = req.user?.systemRole === 'super_admin' || req.user?.systemRole === 'sub_admin';
 
     const allowedRoles = [
 
@@ -546,7 +604,7 @@ export const requireChamaTreasurerOrChairperson = async (
     if (
       !allowedRoles.includes(
         req.membership.role
-      )
+      ) && !isSystemAdmin
     ) {
 
       throw new AppError(
@@ -696,7 +754,7 @@ export const requireAuditAccess = async (
     // --------------------------------------
 
     const chamaId =
-      getChamaId(req);
+      await getChamaId(req);
 
 
     // --------------------------------------
@@ -854,6 +912,90 @@ export const requireAuditAccess = async (
     // --------------------------------------
     // 12. Continue
     // --------------------------------------
+
+    next();
+
+  } catch (error) {
+
+    next(error);
+
+  }
+
+};
+
+// ========================================
+// REQUIRE GROUP AUDIT ACCESS
+// ========================================
+//
+// Authorization for /:groupId/group-audit-logs.
+//
+// Contribution Groups are not Chama documents,
+// so this is self-contained and does not use
+// getChamaId/Chama.findById. It:
+//
+// 1. Validates authenticated user
+// 2. Finds the Contribution Group
+// 3. Finds the user's membership in that group
+// 4. Allows only the group's creator or a
+//    member with role "organizer"
+//
+// ========================================
+
+export const requireGroupAuditAccess = async (
+  req,
+  res,
+  next
+) => {
+
+  try {
+
+    validateAuthenticatedUser(req);
+
+    const { groupId } = req.params;
+
+    if (
+      !groupId ||
+      !mongoose.Types.ObjectId.isValid(groupId)
+    ) {
+
+      throw new AppError(
+        'Invalid Group ID',
+        400
+      );
+
+    }
+
+    const group = await ContributionGroup.findById(groupId);
+
+    if (!group) {
+
+      throw new AppError(
+        'Contribution group not found',
+        404
+      );
+
+    }
+
+    const groupMember = await ContributionGroupMember.findOne({
+      user_id: req.user._id,
+      contribution_group_id: group._id,
+    });
+
+    const isOrganizer =
+      String(group.created_by) === String(req.user._id) ||
+      groupMember?.role === 'organizer';
+
+    if (!isOrganizer) {
+
+      throw new AppError(
+        'Only the group organizer can access audit logs',
+        403
+      );
+
+    }
+
+    req.group = group;
+    req.groupMembership = groupMember;
 
     next();
 

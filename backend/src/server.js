@@ -10,9 +10,11 @@ import { initSocket } from "./modules/realtime/socketServer.js";
 import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js"; // FIX: was paymentIntentReconciliation.job
 import { startPollAutoCloseJob } from "./jobs/pollAutoClose.job.js";
 import { startSavingsShareoutSchedulerJob } from "./jobs/savingsShareoutScheduler.job.js";
+import { startUssdSessionCleanupJob } from "./jobs/ussdSessionCleanup.job.js";
 
 // NEW: Payment Provider Bootstrap
 import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
+import { bootstrapSuperAdmin } from "./config/bootstrapAdmin.js";
 
 // ============================================================================
 // CREATE HTTP SERVER
@@ -39,6 +41,7 @@ async function startServer() {
         // ============================================================
 
         await connectDatabase();
+        await bootstrapSuperAdmin();
 
         // ============================================================
         // REGISTER PAYMENT PROVIDERS
@@ -58,6 +61,9 @@ async function startServer() {
 
         startSavingsShareoutSchedulerJob();
         console.log(` Savings Share-Out Scheduler Job: Started [6h interval]`);
+
+        startUssdSessionCleanupJob();
+        console.log(` USSD Session Cleanup Job: Started [2m interval]`);
 
         // ============================================================
         // START HTTP SERVER
@@ -138,7 +144,8 @@ async function startServer() {
                 console.log(" ✓ Workspace Rooms");
                 console.log(" ✓ Chat Events");
                 console.log(" ✓ Presence Tracking");
-                console.log(" ✓ Notifications Ready");
+                console.log(" ✓ Real-time Notifications");
+                console.log(" ✓ Toast Notifications");
                 console.log(" ✓ Live Contributions Ready");
 
                 console.log("");

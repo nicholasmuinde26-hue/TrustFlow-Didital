@@ -21,6 +21,7 @@ import useWorkspace from "@/app/hooks/useWorkspace";
 import loanService from "../services/loan.service";
 import memberService from "@/modules/members/services/members.service";
 import { isLoanOfficial, canDisburseLoan } from "@/modules/workspaces/permissions/Permissions";
+import ActionConfirmationDialog from "@/modules/actionSafety/components/ActionConfirmationDialog";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -185,10 +186,37 @@ export default function LoansPage() {
   }
 
   async function handleApprovalDecision(loanId, decision) {
+    // Show confirmation dialog for loan approval/rejection
+    const loan = allLoans.find(l => l._id === loanId);
+    if (!loan) {
+      setActionMessage({ text: "Loan not found", isError: true });
+      return;
+    }
+
+    setConfirmationAction(decision === 'approved' ? 'loan.approve' : 'loan.reject');
+    setConfirmationLoan(loan);
+    setConfirmationDecision(decision);
+    setShowConfirmationDialog(true);
+  }
+
+  async function handleConfirmAction(dialog) {
+    setShowConfirmationDialog(false);
     setActionMessage({ text: "", isError: false });
+
     try {
-      await loanService.decide(workspaceId, loanId, decision, `Decision recorded`);
-      setActionMessage({ text: `Loan decision recorded (${decision === "approved" ? "Approved" : "Rejected"}).`, isError: false });
+      if (confirmationAction === 'loan.approve' || confirmationAction === 'loan.reject') {
+        await loanService.decide(
+          workspaceId, 
+          confirmationLoan._id, 
+          confirmationDecision, 
+          `Decision recorded`,
+          dialog?.versionToken || confirmationLoan.updatedAt?.toString()
+        );
+        setActionMessage({ text: `Loan decision recorded (${confirmationDecision === "approved" ? "Approved" : "Rejected"}).`, isError: false });
+      } else if (confirmationAction === 'loan.disburse') {
+        await loanService.initiateDisbursement(workspaceId, confirmationLoan._id);
+        setActionMessage({ text: "Loan disbursement initiated successfully!", isError: false });
+      }
       loadData();
     } catch (err) {
       setActionMessage({ text: err?.response?.data?.message || "Action failed.", isError: true });
@@ -201,15 +229,23 @@ export default function LoansPage() {
   const [manualReference, setManualReference] = useState("");
   const [confirmingDisburse, setConfirmingDisburse] = useState(false);
 
+  // Action Safety Confirmation Dialog State
+  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
+  const [confirmationAction, setConfirmationAction] = useState(null);
+  const [confirmationLoan, setConfirmationLoan] = useState(null);
+  const [confirmationDecision, setConfirmationDecision] = useState(null);
+
   async function handleDisburseLoan(loanId) {
-    setActionMessage({ text: "", isError: false });
-    try {
-      await loanService.initiateDisbursement(workspaceId, loanId);
-      setActionMessage({ text: "Loan disbursement initiated successfully!", isError: false });
-      loadData();
-    } catch (err) {
-      setActionMessage({ text: err?.response?.data?.message || "Disbursement failed.", isError: true });
+    // Show confirmation dialog for loan disbursement
+    const loan = allLoans.find(l => l._id === loanId);
+    if (!loan) {
+      setActionMessage({ text: "Loan not found", isError: true });
+      return;
     }
+
+    setConfirmationAction('loan.disburse');
+    setConfirmationLoan(loan);
+    setShowConfirmationDialog(true);
   }
 
   async function handleConfirmManualDisbursementSubmit(e) {
@@ -866,6 +902,24 @@ export default function LoansPage() {
           </div>
         </div>
       )}
+
+      {/* Action Safety Confirmation Dialog */}
+      <ActionConfirmationDialog
+        isOpen={showConfirmationDialog}
+        onClose={() => setShowConfirmationDialog(false)}
+        onConfirm={handleConfirmAction}
+        action={confirmationAction}
+        chamaId={workspaceId}
+        actionData={
+          confirmationLoan ? {
+            loanId: confirmationLoan._id,
+            amount: confirmationLoan.amount,
+            memberName: confirmationLoan.member_name || confirmationLoan.membership_id?.user_id?.name || 'Member',
+            loanReference: confirmationLoan.reference,
+            versionToken: confirmationLoan.updatedAt?.toString()
+          } : {}
+        }
+      />
     </div>
   );
 }

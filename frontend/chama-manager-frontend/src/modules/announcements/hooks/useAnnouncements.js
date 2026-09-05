@@ -48,6 +48,36 @@ export function useSetAnnouncementPinned(workspaceId) {
   });
 }
 
+export function useApproveAnnouncement(workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (announcementId) =>
+      announcementsService.approve(workspaceId, announcementId),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: announcementsKey(workspaceId),
+      });
+    },
+  });
+}
+
+export function useRejectAnnouncement(workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ announcementId, reason }) =>
+      announcementsService.reject(workspaceId, announcementId, reason),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: announcementsKey(workspaceId),
+      });
+    },
+  });
+}
+
 export function useDeleteAnnouncement(workspaceId) {
   const queryClient = useQueryClient();
 

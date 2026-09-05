@@ -21,6 +21,13 @@ import {
   requireChamaTreasurerOrChairperson
 } from '../../middleware/chama.middleware.js';
 
+import { applyPrivacyToField } from '../../middleware/privacyWall.middleware.js';
+
+import {
+  requirePermission,
+  requireResourceOwnership
+} from '../../middleware/permission.middleware.js';
+
 
 // ========================================
 // ROUTER
@@ -73,6 +80,7 @@ router.post(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('members.create'),
   addMemberController
 );
 
@@ -120,6 +128,7 @@ router.patch(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('roles.assign'),
   transferTreasurerController
 );
 
@@ -159,6 +168,7 @@ router.patch(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('settings.manage'),
   reorderPayoutPositionsController
 );
 
@@ -186,6 +196,7 @@ router.get(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('members.view'),
   getChamaJoinRequestsController
 );
 
@@ -215,6 +226,8 @@ router.get(
   '/:chamaId/members/:memberId',
   protect,
   requireChamaMember,
+  requirePermission('members.view'),
+  applyPrivacyToField('member'),
   getMemberController
 );
 
@@ -251,6 +264,8 @@ router.patch(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('roles.assign'),
+  applyPrivacyToField('member'),
   updateMemberRoleController
 );
 
@@ -292,6 +307,8 @@ router.patch(
   '/:chamaId/members/:memberId/profile',
   protect,
   requireChamaMember,
+  requireResourceOwnership('members.update', 'memberId'),
+  applyPrivacyToField('member'),
   updateMemberProfileController
 );
 
@@ -305,7 +322,7 @@ router.patch(
 //
 // Requirements:
 //
-// 1. User must be authenticated
+// 1.User must be authenticated
 // 2. User must be an active Chama member
 // 3. User must be the Treasurer or Chairperson
 //
@@ -329,6 +346,7 @@ router.patch(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('members.suspend'),
   updateMemberStatusController
 );
 
@@ -367,6 +385,7 @@ router.patch(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requirePermission('members.remove'),
   removeMemberController
 );
 

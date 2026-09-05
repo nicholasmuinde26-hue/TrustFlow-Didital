@@ -12,6 +12,7 @@ import {
 
 import AppError from '../../utils/AppError.js';
 import { PROFILE_UPDATE_FIELDS } from '../../utils/Userprofile.js';
+import { filterResponseData } from '../../middleware/privacyWall.middleware.js';
 
 
 // ========================================
@@ -189,10 +190,16 @@ export const getMemberController = async (
         actorUserId
       });
 
+    // Apply privacy wall to member data
+    const filteredMember = await filterResponseData(membership, req, {
+      maskSensitive: true,
+      includeMetadata: false
+    });
+
     res.status(200).json({
       success: true,
       data: {
-        member: membership
+        member: filteredMember
       }
     });
 
@@ -268,12 +275,18 @@ export const updateMemberRoleController = async (
         role
       });
 
+    // Apply privacy wall to member data
+    const filteredMember = await filterResponseData(membership, req, {
+      maskSensitive: true,
+      includeMetadata: false
+    });
+
     res.status(200).json({
       success: true,
       message:
         'Member role updated successfully',
       data: {
-        member: membership
+        member: filteredMember
       }
     });
 
@@ -349,12 +362,18 @@ export const updateMemberStatusController = async (
         status
       });
 
+    // Apply privacy wall to member data
+    const filteredMember = await filterResponseData(membership, req, {
+      maskSensitive: true,
+      includeMetadata: false
+    });
+
     res.status(200).json({
       success: true,
       message:
         'Member status updated successfully',
       data: {
-        member: membership
+        member: filteredMember
       }
     });
 
@@ -390,12 +409,18 @@ export const removeMemberController = async (
         actorUserId
       });
 
+    // Apply privacy wall to member data
+    const filteredMember = await filterResponseData(membership, req, {
+      maskSensitive: true,
+      includeMetadata: false
+    });
+
     res.status(200).json({
       success: true,
       message:
         'Member removed from Chama successfully',
       data: {
-        member: membership
+        member: filteredMember
       }
     });
 
@@ -479,12 +504,18 @@ export const updateMemberProfileController = async (
         updates: req.body
       });
 
+    // Apply privacy wall to member data
+    const filteredMember = await filterResponseData(membership, req, {
+      maskSensitive: true,
+      includeMetadata: false
+    });
+
     res.status(200).json({
       success: true,
       message:
         'Member profile updated successfully',
       data: {
-        member: membership
+        member: filteredMember
       }
     });
 

@@ -92,21 +92,39 @@ export const resolveOtpChannel = (requestedChannel, user) => {
 export const deliverOtp = async ({ channel, user, otpCode, expiryMinutes }) => {
   switch (channel) {
     case OTP_CHANNELS.EMAIL: {
-      if (!isEmailChannelConfigured() && isDev()) {
-        logOtpToConsole({ label: 'EMAIL', destination: user.email, otpCode });
-        return { channel, delivered: false, dev: true };
+      try {
+        if (!isEmailChannelConfigured() && isDev()) {
+          logOtpToConsole({ label: 'EMAIL', destination: user.email, otpCode });
+          return { channel, delivered: false, dev: true };
+        }
+        await sendOtpEmail({ to: user.email, otpCode, expiryMinutes });
+        return { channel, delivered: true };
+      } catch (err) {
+        console.warn(`[OTP Delivery] Email sending failed: ${err.message}. Falling back to console in development.`);
+        if (isDev()) {
+          logOtpToConsole({ label: 'EMAIL-DEV-FALLBACK', destination: user.email, otpCode });
+          return { channel, delivered: false, dev: true };
+        }
+        throw err;
       }
-      await sendOtpEmail({ to: user.email, otpCode, expiryMinutes });
-      return { channel, delivered: true };
     }
 
     case OTP_CHANNELS.WHATSAPP: {
-      if (!isWhatsappChannelConfigured() && isDev()) {
-        logOtpToConsole({ label: 'WHATSAPP', destination: user.phone, otpCode });
-        return { channel, delivered: false, dev: true };
+      try {
+        if (!isWhatsappChannelConfigured() && isDev()) {
+          logOtpToConsole({ label: 'WHATSAPP', destination: user.phone, otpCode });
+          return { channel, delivered: false, dev: true };
+        }
+        await sendOtpWhatsapp({ to: user.phone, otpCode, expiryMinutes });
+        return { channel, delivered: true };
+      } catch (err) {
+        console.warn(`[OTP Delivery] WhatsApp sending failed: ${err.message}. Falling back to console in development.`);
+        if (isDev()) {
+          logOtpToConsole({ label: 'WHATSAPP-DEV-FALLBACK', destination: user.phone, otpCode });
+          return { channel, delivered: false, dev: true };
+        }
+        throw err;
       }
-      await sendOtpWhatsapp({ to: user.phone, otpCode, expiryMinutes });
-      return { channel, delivered: true };
     }
 
     case OTP_CHANNELS.SMS:

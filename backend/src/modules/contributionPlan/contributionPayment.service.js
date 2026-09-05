@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import ContributionPayment from "../../models/ContributionPayment.js";
 import contributionObligationService from "./contributionObligation.service.js";
 import { toDecimal, isMoneyPositive } from "../../shared/decimal.js";
+import domainEventEmitter from "../../services/domainEvent.emitter.js";
 
 const PAYMENT_STATUS = { PROCESSING: "pending", COMPLETED: "completed", FAILED: "failed" };
 const DEFAULT_CURRENCY = "KES";
@@ -104,6 +105,18 @@ class ContributionPaymentService {
       toDecimal(contributionPayment.amount),
       session
     );
+
+    // Emit domain event for contribution received
+    domainEventEmitter.emitContributionReceived({
+      chamaId: obligation.owner_id,
+      contributionPaymentId: contributionPayment._id,
+      amount: Number(contributionPayment.amount),
+      participantId: contributionPayment.participant_id,
+      contributionPeriod: obligation.period || 'Current',
+      sentBy: contributionPayment.created_by,
+      entityType: 'ContributionPayment',
+      entityId: contributionPayment._id
+    });
 
     if (obligation.owner_type === 'Chama') {
       const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');

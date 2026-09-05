@@ -148,6 +148,59 @@ export const initiateSavingsDeposit = async ({ chama, membership, userId, amount
 };
 
 // ---------------------------------------------------------
+// Record an already-settled Paybill (C2B) contribution
+// ---------------------------------------------------------
+// Unlike initiateSavingsDeposit, there is no STK push here - the money
+// already landed via Paybill before this is called (see
+// modules/mpesaC2b/c2bReconciliation.service.js). This just books the
+// same obligation + ledger entries through the standard PaymentService
+// pipeline, using MpesaC2bProvider's "immediate" settlement.
+export const recordC2bContribution = async ({ chama, membership, amount, phoneNumber, mpesaReceiptNumber }) => {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) throw new AppError("Amount must be a positive number of KES", 400);
+  if (!mpesaReceiptNumber) throw new AppError("M-Pesa receipt number is required", 400);
+
+  const plan = await getOrCreateSavingsPlan({ chama, userId: membership.user_id });
+  const obligation = await getOrCreateObligation({
+    plan, membership, amount: Math.max(value, Number(plan.amount.toString())), period: periodFor("monthly"), notes: "Savings deposit (Paybill)",
+  });
+
+  const displayRef = "CHAMA-C2B".slice(0, 20);
+
+  // Stable idempotency key derived from the M-Pesa receipt number itself
+  // (unique on Safaricom's side) - a retried ConfirmationURL delivery for
+  // the same receipt hits PaymentIntent's unique idempotency_key index
+  // and is rejected rather than double-posted.
+  const result = await paymentService.initiate({
+    amount: value,
+    currency: "KES",
+    type: "savings",
+    chamaId: chama._id,
+    obligationId: obligation._id,
+    planId: plan._id,
+    participantId: membership._id,
+    participantType: "ChamaMembership",
+    phoneNumber,
+    actorId: membership.user_id,
+    provider: PAYMENT_PROVIDER.MPESA_C2B,
+    reference: `C2B-${mpesaReceiptNumber}`,
+    displayReference: displayRef,
+    description: "Chama savings deposit via M-Pesa Paybill",
+    idempotencyKey: `c2b-${mpesaReceiptNumber}`,
+    metadata: {
+      productType: "savings",
+      chamaId: chama._id,
+      obligationId: obligation._id,
+      payment_method: PAYMENT_PROVIDER.MPESA_C2B,
+      mpesaReceiptNumber,
+      source: "c2b",
+    },
+  });
+
+  return { paymentIntentId: result.paymentIntentId, paymentId: result.paymentId, obligationId: obligation._id };
+};
+
+// ---------------------------------------------------------
 // Reconcile savings callback - DELEGATE TO PAYMENT SERVICE
 // ---------------------------------------------------------
 export const reconcileSavingsCallback = async (callback) => {

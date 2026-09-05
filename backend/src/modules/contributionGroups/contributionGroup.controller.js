@@ -105,22 +105,20 @@ export const createContributionGroupController = async (
     // ======================================
 
     const {
-
       name,
-
       description,
-
       type,
-
+      group_type,
       event_date,
-
       location,
-
-      visibility
-
-    } =
-
-      req.body;
+      visibility,
+      organizerInput,
+      organizerName,
+      organizerPhone,
+      organizerEmail,
+      chairpersonInput,
+      chairpersonName,
+    } = req.body;
 
 
     // ======================================
@@ -128,24 +126,21 @@ export const createContributionGroupController = async (
     // ======================================
 
     const result =
-
       await createContributionGroup({
-
         actorUserId,
-
+        user: req.user,
         name,
-
         description,
-
-        type,
-
+        type: type || group_type,
         event_date,
-
         location,
-
-        visibility
-
+        visibility,
+        organizerInput: organizerInput || chairpersonInput,
+        organizerName: organizerName || chairpersonName,
+        organizerPhone,
+        organizerEmail,
       });
+
 
 
     // ======================================

@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Building2, Store, Wallet, ArrowRight } from "lucide-react";
+import {
+  Building2,
+  Store,
+  Wallet,
+  ArrowRight,
+  PlusCircle,
+  KeyRound,
+  Users,
+  Sparkles,
+} from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
 import useWorkspace from "@/app/hooks/useWorkspace";
@@ -12,6 +21,7 @@ import PasswordInput from "@/modules/auth/components/PasswordInput";
 import OtpChannelSelect from "@/modules/auth/components/OtpChannelSelect";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
+import WorkspaceRequestModal from "@/modules/workspaces/components/WorkspaceRequestModal";
 
 /* ============================================================
    WORKSPACE TYPE HELPERS — same normalization used on LoginPage
@@ -60,6 +70,13 @@ export default function RegisterPage() {
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [selectedType, setSelectedType] = useState("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
+
+  // Post-OTP Onboarding & Discovery State
+  const [onboardingType, setOnboardingType] = useState("chama");
+  const [directoryItems, setDirectoryItems] = useState([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -209,21 +226,52 @@ export default function RegisterPage() {
     setWorkspacesLoading(true);
 
     try {
-      const items = await workspaceService.getWorkspaces();
-
-      if (!items.length) {
-        navigate("/home", { replace: true });
-        return;
-      }
+      const [items, dir] = await Promise.all([
+        workspaceService.getWorkspaces().catch(() => []),
+        workspaceService.getDirectory("chama").catch(() => []),
+      ]);
 
       setMyWorkspaces(items);
-      setStep("workspace");
+      setDirectoryItems(dir);
+      if (items.length > 0) {
+        setSelectedWorkspaceId(items[0].id ?? items[0]._id);
+        setSelectedType(normalizeType(items[0].type));
+        setStep("workspace");
+      } else {
+        setOnboardingType("chama");
+        setStep("onboarding");
+      }
     } catch {
-      // Couldn't fetch the list — fall back to the resolver, which
-      // will fetch again and route the person in on its own.
-      navigate("/home", { replace: true });
+      setStep("onboarding");
     } finally {
+
       setWorkspacesLoading(false);
+    }
+  }
+
+  async function handleOnboardingTypeChange(newType) {
+    setOnboardingType(newType);
+    setDirectorySearch("");
+    setDirectoryLoading(true);
+    try {
+      const items = await workspaceService.getDirectory(newType);
+      setDirectoryItems(items);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDirectoryLoading(false);
+    }
+  }
+
+  async function handleSearchDirectory(query) {
+    setDirectoryLoading(true);
+    try {
+      const items = await workspaceService.getDirectory(onboardingType, query);
+      setDirectoryItems(items);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDirectoryLoading(false);
     }
   }
 
@@ -292,7 +340,9 @@ export default function RegisterPage() {
             ? channel === "email"
               ? "Email Verification"
               : "Phone Verification"
-            : "Choose a Workspace"}
+            : step === "workspace"
+            ? "Your Assigned Chama"
+            : "Discover & Join Workspaces"}
         </h2>
 
         <p className="mt-1 text-slate-500">
@@ -300,8 +350,11 @@ export default function RegisterPage() {
             ? "Start managing your Chama today"
             : step === "otp"
             ? `Enter the 6-digit security code sent to ${channel === "email" ? form.email : form.phone}`
-            : "Pick which workspace you'd like to open."}
+            : step === "workspace"
+            ? "You have been set as management for the workspace below. Select your Chama to enter:"
+            : "Select an entity type to discover verified workspaces or submit a creation request for your committee."}
         </p>
+
 
         {/* Status Alerts & Notifications */}
         {notice && (
@@ -432,67 +485,280 @@ export default function RegisterPage() {
           </form>
         )}
 
-        {/* STEP 3: WORKSPACE PICKER — appears only once the account is
-            fully verified, and only when the person wasn't already
-            headed somewhere specific. Type dropdown first; the
-            workspace dropdown only appears (and is only populated)
-            once a type is chosen. Same shape as LoginPage's picker. */}
+        {/* STEP 3 (IF PRE-ASSIGNED): WORKSPACE PICKER FOR DESIGNATED MANAGEMENT */}
         {step === "workspace" && (
           <form onSubmit={handleOpenWorkspace} className="mt-6 space-y-4">
+            <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-4 dark:border-violet-900/50 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/20">
+              <div className="flex items-center gap-2 text-violet-700 dark:text-violet-300 mb-1">
+                <Building2 size={18} />
+                <h3 className="text-xs font-black uppercase tracking-wider">
+                  Assigned Chama / Workspace Found!
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                You have been set as management for the workspace below by the Platform Admin. Select your Chama to enter directly:
+              </p>
+            </div>
+
             <div className="space-y-2">
-              <label className="text-sm font-medium">Workspace Type</label>
+              <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                Your Assigned Chama / Workspace
+              </label>
               <select
-                value={selectedType}
+                value={selectedWorkspaceId}
                 onChange={(e) => {
-                  setSelectedType(e.target.value);
-                  setSelectedWorkspaceId("");
+                  const wid = e.target.value;
+                  setSelectedWorkspaceId(wid);
+                  const match = myWorkspaces.find((w) => String(w.id ?? w._id) === String(wid));
+                  if (match) setSelectedType(normalizeType(match.type));
                   setError("");
                 }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-violet-500 dark:bg-slate-900 text-sm font-medium"
                 required
               >
-                <option value="" disabled>
-                  Select Chama, Business, or Contribution Group
-                </option>
-                {availableTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {TYPE_META[type].label}
-                  </option>
-                ))}
+                <option value="" disabled>-- Select Your Chama or Workspace --</option>
+                {myWorkspaces.map((workspace) => {
+                  const wid = workspace.id ?? workspace._id;
+                  const typeLabel = TYPE_META[normalizeType(workspace.type)]?.label || "Chama";
+                  const roleLabel = workspace.role ? ` (${workspace.role.replace(/_/g, " ")})` : "";
+                  return (
+                    <option key={wid} value={wid}>
+                      [{typeLabel}] {workspace.name}{roleLabel}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
-            {selectedType && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Which {TYPE_META[selectedType].label}?
-                </label>
-                <select
-                  value={selectedWorkspaceId}
-                  onChange={(e) => {
-                    setSelectedWorkspaceId(e.target.value);
-                    setError("");
-                  }}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
-                  required
-                >
-                  <option value="" disabled>
-                    Choose a workspace
-                  </option>
-                  {workspacesOfSelectedType.map((workspace) => (
-                    <option key={workspace.id ?? workspace._id} value={workspace.id ?? workspace._id}>
-                      {workspace.name}
-                    </option>
+            <Button type="submit" className="w-full mt-2" disabled={!selectedWorkspaceId}>
+              Enter Chama Workspace
+              <ArrowRight size={16} />
+            </Button>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setStep("onboarding")}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              >
+                Or explore public directory / request new workspace
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* STEP 3: POST-OTP ONBOARDING & ACCESS SELECTION */}
+        {step === "onboarding" && (
+
+          <div className="mt-6 space-y-6">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                What would you like to access?
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Choose an organization type to discover verified workspaces or submit a creation request
+              </p>
+            </div>
+
+            {/* Access Cards: Chama, Business, Contribution Group */}
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              {[
+                {
+                  type: "chama",
+                  title: "Join a Chama",
+                  desc: "Join an existing chama or request a new chama workspace",
+                  icon: Building2,
+                  color: "violet",
+                },
+                {
+                  type: "business",
+                  title: "Join a Business",
+                  desc: "Access a business that has already been registered on Vericircle",
+                  icon: Store,
+                  color: "blue",
+                },
+                {
+                  type: "contribution_group",
+                  title: "Join a Group",
+                  desc: "Join an existing contribution or fundraising group",
+                  icon: Wallet,
+                  color: "emerald",
+                },
+              ].map((card) => {
+                const Icon = card.icon;
+                const isSelected = onboardingType === card.type;
+                return (
+                  <button
+                    key={card.type}
+                    type="button"
+                    onClick={() => handleOnboardingTypeChange(card.type)}
+                    className={`flex flex-col items-start rounded-2xl border p-3.5 text-left transition ${
+                      isSelected
+                        ? "border-violet-600 bg-violet-50/50 dark:border-violet-500 dark:bg-violet-950/40 shadow-sm"
+                        : "border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700 bg-white dark:bg-slate-900"
+                    }`}
+                  >
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center rounded-xl mb-2 ${
+                        isSelected
+                          ? "bg-violet-600 text-white"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      <Icon size={16} />
+                    </div>
+                    <span className="text-xs font-black text-slate-900 dark:text-white">
+                      {card.title}
+                    </span>
+                    <span className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                      {card.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Search Chamas / Workspaces */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Select your {onboardingType === "chama" ? "Chama" : onboardingType === "business" ? "Business" : "Contribution Group"}
+                </h4>
+                {directoryLoading && (
+                  <span className="text-[10px] font-bold text-violet-600">Searching...</span>
+                )}
+              </div>
+
+              <input
+                type="text"
+                placeholder={`Search ${onboardingType === "chama" ? "Chamas (e.g. Umoja, Machakos...)" : "workspaces"}...`}
+                value={directorySearch}
+                onChange={(e) => {
+                  setDirectorySearch(e.target.value);
+                  handleSearchDirectory(e.target.value);
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+
+              {/* Workspaces List */}
+              {directoryLoading ? (
+                <div className="py-6 text-center text-xs text-slate-400">
+                  Fetching verified {onboardingType}s...
+                </div>
+              ) : directoryItems.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 p-5 text-center dark:border-slate-800">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    No existing {onboardingType}s found matching your search.
+                  </p>
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                  {directoryItems.map((item) => (
+                    <div
+                      key={item.id || item._id}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 transition hover:border-violet-300 hover:bg-violet-50/20 dark:border-slate-800 dark:bg-slate-800/40"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-black text-slate-900 dark:text-white">
+                            {item.name}
+                          </p>
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black uppercase text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                            Active
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                          <span>{item.location || item.county || item.chama_type || "Standard"}</span>
+                          {item.memberCount !== undefined && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-0.5">
+                                <Users size={12} />
+                                {item.memberCount} members
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <Link
+                        to="/chamas/join"
+                        className="inline-flex items-center gap-1 rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-violet-700 transition"
+                      >
+                        Request to Join
+                      </Link>
+                    </div>
                   ))}
-                </select>
+                </div>
+              )}
+            </div>
+
+            {/* Can't find your Chama? Request Workspace Card */}
+            <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-4 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/20">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                    Can't find your {onboardingType === "chama" ? "Chama" : onboardingType === "business" ? "Business" : "Group"}?
+                  </h4>
+                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    Submit your committee details and Vericircle platform administration will create your workspace.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsRequestModalOpen(true)}
+                  className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-violet-700 transition"
+                >
+                  <PlusCircle size={14} />
+                  Request Workspace
+                </button>
+              </div>
+            </div>
+
+            {/* If user belongs to an existing workspace, offer opening it */}
+            {myWorkspaces.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 space-y-2">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Your Pre-Assigned Workspaces:
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedWorkspaceId}
+                    onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  >
+                    <option value="">Select workspace</option>
+                    {myWorkspaces.map((w) => (
+                      <option key={w.id ?? w._id} value={w.id ?? w._id}>
+                        {w.name} ({w.type})
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    onClick={handleOpenWorkspace}
+                    disabled={!selectedWorkspaceId}
+                    className="px-4 py-2 text-xs font-bold"
+                  >
+                    Open
+                  </Button>
+                </div>
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={!selectedWorkspaceId}>
-              Open Workspace
-              <ArrowRight size={16} />
-            </Button>
-          </form>
+            {/* Continue to Platform */}
+            <div>
+              <button
+                type="button"
+                onClick={() => navigate("/home", { replace: true })}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 transition"
+              >
+                Continue to App Home
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
         )}
 
         <p className="mt-6 text-center text-sm text-slate-500">
@@ -502,6 +768,15 @@ export default function RegisterPage() {
           </Link>
         </p>
       </AuthCard>
+
+      <WorkspaceRequestModal
+        isOpen={isRequestModalOpen}
+        onClose={() => setIsRequestModalOpen(false)}
+        initialType={onboardingType}
+        onSuccess={() => {
+          setNotice("Your workspace request has been submitted to the Admin team for setup!");
+        }}
+      />
     </AuthLayout>
   );
 }

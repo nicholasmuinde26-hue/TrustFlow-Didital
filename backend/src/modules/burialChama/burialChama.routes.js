@@ -1,4 +1,3 @@
-
 import express from 'express';
 
 import BurialChamaController from './burialChama.controller.js';
@@ -260,7 +259,6 @@ router.post(
 router.get(
   '/wizard/template',
   protect,
-  requireChamaMember,
   BurialChamaController.getWizardTemplate
 );
 
@@ -268,7 +266,6 @@ router.get(
 router.post(
   '/wizard/validate/:stepNumber',
   protect,
-  requireChamaMember,
   BurialChamaController.validateWizardStep
 );
 
@@ -285,7 +282,6 @@ router.post(
 router.get(
   '/wizard/presets',
   protect,
-  requireChamaMember,
   BurialChamaController.getPresetConfigurations
 );
 
@@ -310,4 +306,3 @@ router.get(
 // ======================================================
 
 export default router;
-

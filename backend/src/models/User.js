@@ -166,6 +166,17 @@ const userSchema = new mongoose.Schema(
       enum: ['active', 'inactive', 'suspended', 'unverified'],
       default: 'unverified',
     },
+
+    // ========================================
+    // SYSTEM ROLE (SUPER ADMIN / SUB ADMIN / USER)
+    // ========================================
+
+    systemRole: {
+      type: String,
+      enum: ['user', 'sub_admin', 'super_admin'],
+      default: 'user',
+      index: true,
+    },
   },
   {
     timestamps: true,

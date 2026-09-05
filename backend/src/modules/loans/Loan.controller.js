@@ -146,6 +146,15 @@ export const getReviewPacket = send((req) => {
   return loanApproval.getReviewPacket(req.chama._id, req.params.loanId);
 });
 
+export const assessLoanApprovalRisk = send((req) => {
+  requireOfficial(req);
+  return loanApproval.assessLoanApprovalRisk({
+    chamaId: req.chama._id,
+    loanId: req.params.loanId,
+    membershipId: req.membership._id
+  });
+});
+
 export const decideLoan = send((req) => {
   requireOfficial(req);
   return loanApproval.decide({
@@ -156,6 +165,7 @@ export const decideLoan = send((req) => {
     decision: req.body.decision,
     comment: req.body.comment,
     ipAddress: req.ip,
+    versionToken: req.body.versionToken
   });
 });
 

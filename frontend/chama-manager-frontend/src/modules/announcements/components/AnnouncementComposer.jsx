@@ -4,21 +4,44 @@ import { Pin } from "lucide-react";
 import Button from "@/shared/components/ui/Button";
 import Input from "@/shared/components/ui/Input/Input";
 
-export default function AnnouncementComposer({ onSubmit, submitting }) {
+export default function AnnouncementComposer({
+  onSubmit,
+  submitting,
+  type = "chama",
+  needsApproval = false,
+  approverLabel = "an approver",
+}) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [pinned, setPinned] = useState(false);
+  const [transparencyReason, setTransparencyReason] = useState("");
+  const [penaltyDetails, setPenaltyDetails] = useState("");
+
+  const isChama = type === "chama";
+  const isContributionGroup = type === "contribution-group";
 
   async function handleSubmit(event) {
     event.preventDefault();
 
     if (!title.trim() || !content.trim()) return;
+    if (isChama && !transparencyReason.trim()) return;
+    if (isContributionGroup && !penaltyDetails.trim()) return;
 
-    await onSubmit({ title: title.trim(), content: content.trim(), pinned });
+    const payload = { title: title.trim(), content: content.trim(), pinned };
+    if (isChama) {
+      payload.chamaDetails = { transparencyReason: transparencyReason.trim() };
+    }
+    if (isContributionGroup) {
+      payload.contributionDetails = { penaltyDetails: penaltyDetails.trim() };
+    }
+
+    await onSubmit(payload);
 
     setTitle("");
     setContent("");
     setPinned(false);
+    setTransparencyReason("");
+    setPenaltyDetails("");
   }
 
   return (
@@ -51,6 +74,30 @@ export default function AnnouncementComposer({ onSubmit, submitting }) {
             dark:border-slate-700 dark:bg-slate-800 dark:text-white
           "
         />
+
+        {isChama && (
+          <Input
+            placeholder="Transparency reason (why members should know this)"
+            value={transparencyReason}
+            onChange={(event) => setTransparencyReason(event.target.value)}
+            required
+          />
+        )}
+
+        {isContributionGroup && (
+          <Input
+            placeholder="Penalty details (accountability for missed action)"
+            value={penaltyDetails}
+            onChange={(event) => setPenaltyDetails(event.target.value)}
+            required
+          />
+        )}
+
+        {needsApproval && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            This will be sent to {approverLabel} for approval before members see it.
+          </p>
+        )}
 
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">

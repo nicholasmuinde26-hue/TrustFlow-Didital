@@ -1,8 +1,9 @@
 import { X } from "lucide-react";
 import Logo from "../Logo";
 import SidebarSection from "./SidebarSection";
+import AdminInquiryBottomPanel from "@/modules/workspaces/components/AdminInquiryBottomPanel";
 
-export default function Sidebar({ sections = [], isOpen, onClose }) {
+export default function Sidebar({ sections = [], isOpen, onClose, workspace, workspaceId }) {
   return (
     <>
       {/* Mobile Backdrop Overlay */}
@@ -64,31 +65,26 @@ export default function Sidebar({ sections = [], isOpen, onClose }) {
           ))}
         </nav>
 
-        {/* Footer */}
+        {/* Footer — pinned to the bottom of the sidebar's own flex
+            column (nav above is flex-1 + overflow-y-auto, so this
+            never scrolls out of view). Admin & Support gets its own
+            row, stacked above the promo card rather than squeezed
+            beside it, the way help/support entries sit in most
+            sidebar-based apps. */}
         <div
           className="
             border-t
             border-slate-200
-            p-5
+            p-4
             dark:border-slate-800
+            flex
+            flex-col
+            gap-3
           "
         >
-          <div
-            className="
-              rounded-xl
-              bg-gradient-to-r
-              from-primary
-              to-blue-700
-              p-4
-              text-white
-            "
-          >
-            <p className="text-sm font-semibold">VeriCircle Pro</p>
+          <AdminInquiryBottomPanel workspace={workspace} workspaceId={workspaceId} />
 
-            <p className="mt-1 text-xs text-blue-100">
-              Manage multiple workspaces effortlessly.
-            </p>
-          </div>
+          
         </div>
       </aside>
     </>

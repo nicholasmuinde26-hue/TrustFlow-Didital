@@ -25,6 +25,12 @@ function toAnnouncementDTO(announcement) {
     },
     isPinned: announcement.is_pinned,
     pinnedAt: announcement.pinned_at,
+    status: announcement.status,
+    approvedBy: announcement.approved_by || null,
+    approvedAt: announcement.approved_at || null,
+    rejectedBy: announcement.rejected_by || null,
+    rejectedAt: announcement.rejected_at || null,
+    rejectionReason: announcement.rejection_reason || null,
     createdAt: announcement.createdAt,
     updatedAt: announcement.updatedAt,
     chamaDetails: announcement.workspace_type === "chama" && announcement.chama_details ? {
@@ -49,6 +55,39 @@ function toAnnouncementDTO(announcement) {
 }
 
 // ==========================================================
+// ANNOUNCEMENT APPROVAL ROLES
+// ==========================================================
+// For workspace types listed here, only the roles in the array can
+// post an announcement directly. Any other manage-eligible role has
+// their announcement land as "pending" until one of these roles
+// approves or rejects it. Business has no entry, so it always
+// publishes immediately (single owner — nobody to approve against).
+//
+//   chama:               Chairperson / Secretary approve; Treasurer's
+//                         posts need sign-off.
+//   contribution-group:  Organizer approves; a Co-organizer's posts
+//                         need sign-off (Organizer is the sole primary
+//                         owner — see canManageMembers comments).
+const ANNOUNCEMENT_APPROVER_ROLES = {
+  chama: ["chairperson", "secretary"],
+  "contribution-group": ["organizer"],
+};
+
+function getApproverRoles(workspaceType) {
+  return ANNOUNCEMENT_APPROVER_ROLES[workspaceType] || null;
+}
+
+function isApprover(context) {
+  const approverRoles = getApproverRoles(context.workspaceType);
+  return !approverRoles || approverRoles.includes(context.role);
+}
+
+function announcementNeedsApproval(context) {
+  const approverRoles = getApproverRoles(context.workspaceType);
+  return !!approverRoles && !approverRoles.includes(context.role);
+}
+
+// ==========================================================
 // WORKSPACE AUTHORIZATION & CONTEXT HELPER
 // ==========================================================
 async function getWorkspaceContext(workspaceId, userId) {
@@ -69,7 +108,7 @@ async function getWorkspaceContext(workspaceId, userId) {
     // Chairperson, Secretary, and Treasurer can manage announcements
     const allowedRoles = ["chairperson", "secretary", "treasurer"];
     const canManage = allowedRoles.includes(membership.role);
-    return { workspaceType: "chama", canManage };
+    return { workspaceType: "chama", canManage, role: membership.role };
   }
 
   // 2. Check if it's a Contribution Group
@@ -85,7 +124,7 @@ async function getWorkspaceContext(workspaceId, userId) {
     // Organizer and Co-organizer can manage announcements
     const allowedRoles = ["organizer", "co_organizer"];
     const canManage = allowedRoles.includes(membership.role);
-    return { workspaceType: "contribution-group", canManage };
+    return { workspaceType: "contribution-group", canManage, role: membership.role };
   }
 
   // 3. Check if it's a Business
@@ -96,7 +135,7 @@ async function getWorkspaceContext(workspaceId, userId) {
       throw new AppError("You do not have access to this Business workspace", 403);
     }
     // The business owner/creator has full management access
-    return { workspaceType: "business", canManage: true };
+    return { workspaceType: "business", canManage: true, role: "owner" };
   }
 
   throw new AppError("Workspace not found", 404);
@@ -113,9 +152,19 @@ async function getWorkspaceContext(workspaceId, userId) {
 export async function listAnnouncements(req, res, next) {
   try {
     const { workspaceId } = req.params;
-    await getWorkspaceContext(workspaceId, req.user._id);
+    const context = await getWorkspaceContext(workspaceId, req.user._id);
 
-    const announcements = await Announcement.find({ workspace_id: workspaceId })
+    const filter = { workspace_id: workspaceId };
+
+    // Pending/rejected announcements are only visible to that
+    // workspace's approvers (see ANNOUNCEMENT_APPROVER_ROLES) and to
+    // whoever authored them. Everyone else only ever sees announcements
+    // that have been approved.
+    if (!isApprover(context)) {
+      filter.$or = [{ status: "approved" }, { created_by: req.user._id }];
+    }
+
+    const announcements = await Announcement.find(filter)
       .sort({ is_pinned: -1, createdAt: -1 })
       .populate("created_by", "name");
 
@@ -216,10 +265,132 @@ export async function createAnnouncement(req, res, next) {
       };
     }
 
+    // Approval gate: an approver role for this workspace type (see
+    // ANNOUNCEMENT_APPROVER_ROLES) publishes immediately; anyone else
+    // with manage rights (Treasurer in a Chama, Co-organizer in a
+    // Contribution Group) needs an approver to sign off first.
+    const needsApproval = announcementNeedsApproval(context);
+
+    if (needsApproval) {
+      announcementData.status = "pending";
+    } else {
+      announcementData.status = "approved";
+      announcementData.approved_by = req.user._id;
+      announcementData.approved_at = new Date();
+    }
+
     let announcement = await Announcement.create(announcementData);
     announcement = await announcement.populate("created_by", "name");
 
     res.status(201).json({
+      success: true,
+      message: needsApproval
+        ? "Announcement submitted for approval."
+        : "Announcement posted.",
+      data: {
+        announcement: toAnnouncementDTO(announcement),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Approve a pending announcement.
+ * Restricted to that workspace type's approver role(s) — see
+ * ANNOUNCEMENT_APPROVER_ROLES.
+ */
+export async function approveAnnouncement(req, res, next) {
+  try {
+    const { workspaceId, announcementId } = req.params;
+    const context = await getWorkspaceContext(workspaceId, req.user._id);
+
+    if (!getApproverRoles(context.workspaceType) || !isApprover(context)) {
+      throw new AppError("You do not have authorization to approve announcements in this workspace", 403);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(announcementId)) {
+      throw new AppError("Invalid announcement ID", 400);
+    }
+
+    const announcement = await Announcement.findOne({
+      _id: announcementId,
+      workspace_id: workspaceId,
+    });
+
+    if (!announcement) {
+      throw new AppError("Announcement not found in this workspace", 404);
+    }
+
+    if (announcement.status !== "pending") {
+      throw new AppError("Only pending announcements can be approved", 400);
+    }
+
+    announcement.status = "approved";
+    announcement.approved_by = req.user._id;
+    announcement.approved_at = new Date();
+    announcement.rejected_by = null;
+    announcement.rejected_at = null;
+    announcement.rejection_reason = null;
+    await announcement.save();
+    await announcement.populate("created_by", "name");
+
+    res.json({
+      success: true,
+      data: {
+        announcement: toAnnouncementDTO(announcement),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Reject a pending announcement.
+ * Restricted to that workspace type's approver role(s) — see
+ * ANNOUNCEMENT_APPROVER_ROLES.
+ */
+export async function rejectAnnouncement(req, res, next) {
+  try {
+    const { workspaceId, announcementId } = req.params;
+    const context = await getWorkspaceContext(workspaceId, req.user._id);
+
+    if (!getApproverRoles(context.workspaceType) || !isApprover(context)) {
+      throw new AppError("You do not have authorization to reject announcements in this workspace", 403);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(announcementId)) {
+      throw new AppError("Invalid announcement ID", 400);
+    }
+
+    const { reason } = req.body || {};
+
+    const announcement = await Announcement.findOne({
+      _id: announcementId,
+      workspace_id: workspaceId,
+    });
+
+    if (!announcement) {
+      throw new AppError("Announcement not found in this workspace", 404);
+    }
+
+    if (announcement.status !== "pending") {
+      throw new AppError("Only pending announcements can be rejected", 400);
+    }
+
+    announcement.status = "rejected";
+    announcement.rejected_by = req.user._id;
+    announcement.rejected_at = new Date();
+    announcement.rejection_reason =
+      typeof reason === "string" && reason.trim().length > 0 ? reason.trim() : null;
+    announcement.approved_by = null;
+    announcement.approved_at = null;
+    await announcement.save();
+    await announcement.populate("created_by", "name");
+
+    res.json({
       success: true,
       data: {
         announcement: toAnnouncementDTO(announcement),
@@ -253,6 +424,10 @@ export async function togglePinAnnouncement(req, res, next) {
 
     if (!announcement) {
       throw new AppError("Announcement not found in this workspace", 404);
+    }
+
+    if (announcement.status !== "approved") {
+      throw new AppError("Only approved announcements can be pinned", 400);
     }
 
     announcement.is_pinned = !announcement.is_pinned;

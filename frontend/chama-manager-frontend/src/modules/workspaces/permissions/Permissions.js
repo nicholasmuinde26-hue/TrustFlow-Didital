@@ -53,6 +53,10 @@ export function assignableRoles(type) {
 }
 
 function isManager(role, type) {
+  if (role === "super_admin" || role === "sub_admin") {
+    return true;
+  }
+
   if (isChamaBacked(type)) {
     return role === "treasurer" || role === "chairperson";
   }
@@ -66,6 +70,14 @@ function isManager(role, type) {
 
 export function canManageMembers(role, type) {
   return isManager(role, type);
+}
+
+// Restrict member management (role reassignment, suspension, removal) to chairperson only
+export function canManageMembersAsChairperson(role, type) {
+  if (!isChamaBacked(type)) {
+    return false;
+  }
+  return role === "chairperson";
 }
 
 // Chama-specific: updating core Chama settings (name, monthly savings,
@@ -104,6 +116,31 @@ export function canDeleteAnnouncement(role, type) {
     return ["chairperson", "treasurer", "secretary"].includes(role);
   }
   return isManager(role, type);
+}
+
+// Announcement approval — mirrors ANNOUNCEMENT_APPROVER_ROLES in
+// backend/src/modules/announcements/announcement.controller.js.
+// For a gated type, only these roles can post an announcement
+// directly; anyone else with manage rights (Treasurer in a Chama,
+// Co-organizer in a Contribution Group — Organizer is the sole
+// primary owner, see the header comment above) has their post held
+// as "pending" until an approver role signs off. Business has no
+// entry, so it always publishes immediately.
+const ANNOUNCEMENT_APPROVER_ROLES = {
+  chama: ["chairperson", "secretary"],
+  "contribution-group": ["organizer"],
+};
+
+export function canApproveAnnouncement(role, type) {
+  const approverRoles = ANNOUNCEMENT_APPROVER_ROLES[type];
+  return !!approverRoles && approverRoles.includes(role);
+}
+
+// Does creating an announcement as this role require an approver's
+// sign-off before it's visible to the workspace?
+export function announcementNeedsApproval(role, type) {
+  const approverRoles = ANNOUNCEMENT_APPROVER_ROLES[type];
+  return !!approverRoles && !approverRoles.includes(role);
 }
 
 export function canManageMeetings(role, type) {

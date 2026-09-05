@@ -224,6 +224,98 @@ export const sendBusinessReceiptEmail = async ({
   }
 };
 
+// ========================================
+// SEND WORKSPACE REQUEST STATUS EMAIL (Approved / Rejected)
+// ========================================
+
+export const sendWorkspaceRequestStatusEmail = async ({
+  to,
+  contactName,
+  entityName,
+  entityType = "chama",
+  status, // 'APPROVED' | 'REJECTED'
+  rejectionReason = "",
+  loginPhone = "",
+  requestNumber = "",
+}) => {
+  if (!to || !to.includes("@") || !isConfigured()) return null;
+
+  const entityLabel =
+    entityType === "business" ? "business" : entityType === "contribution_group" ? "contribution group" : "chama";
+  const isApproved = String(status).toUpperCase() === "APPROVED";
+
+  const subject = isApproved
+    ? `Your ${entityLabel} "${entityName}" is ready`
+    : `Update on your ${entityLabel} request "${entityName}"`;
+
+  const text = isApproved
+    ? `Good news, ${contactName || "there"}! Your ${entityLabel} "${entityName}" has been reviewed and fully created. You can log in now${
+        loginPhone ? ` using ${loginPhone}` : ""
+      } to get started. Reference: ${requestNumber || "N/A"}.`
+    : `Hello ${contactName || "there"}, your request to create the ${entityLabel} "${entityName}" was not approved. Reason: ${
+        rejectionReason || "Not specified."
+      } You're welcome to submit a new request with the corrected details. Reference: ${requestNumber || "N/A"}.`;
+
+  const html = isApproved
+    ? `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 480px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+      <div style="background-color: #065f46; padding: 24px; text-align: center; color: #ffffff;">
+        <h1 style="margin: 0; font-size: 18px; font-weight: 800;">You're all set!</h1>
+      </div>
+      <div style="padding: 24px;">
+        <p style="color: #334155; font-size: 14px;">Hi <strong>${contactName || "there"}</strong>,</p>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+          Your ${entityLabel} <strong>"${entityName}"</strong> has been reviewed and is now <strong>fully created</strong>.
+        </p>
+        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px; margin: 16px 0; text-align: center;">
+          <div style="font-size: 13px; color: #166534; font-weight: 700;">You can log in now to get started${
+            loginPhone ? ` with ${loginPhone}` : ""
+          }.</div>
+        </div>
+        <p style="color: #94a3b8; font-size: 11px;">Reference: ${requestNumber || "N/A"}</p>
+      </div>
+    </div>`
+    : `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 480px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+      <div style="background-color: #7f1d1d; padding: 24px; text-align: center; color: #ffffff;">
+        <h1 style="margin: 0; font-size: 18px; font-weight: 800;">Request not approved</h1>
+      </div>
+      <div style="padding: 24px;">
+        <p style="color: #334155; font-size: 14px;">Hi <strong>${contactName || "there"}</strong>,</p>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+          Your request to create the ${entityLabel} <strong>"${entityName}"</strong> was not approved.
+        </p>
+        <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin: 16px 0;">
+          <div style="font-size: 11px; text-transform: uppercase; color: #991b1b; font-weight: 700;">Reason</div>
+          <div style="font-size: 14px; color: #7f1d1d; margin-top: 4px;">${rejectionReason || "Not specified."}</div>
+        </div>
+        <p style="color: #64748b; font-size: 13px;">You're welcome to submit a new request with the corrected details.</p>
+        <p style="color: #94a3b8; font-size: 11px;">Reference: ${requestNumber || "N/A"}</p>
+      </div>
+    </div>`;
+
+  try {
+    if (isResendConfigured()) {
+      const fromEmail = env.smtp.resendFromEmail || "onboarding@resend.dev";
+      const fromName = env.smtp.fromName || "VeriCircle";
+      await getResendClient().emails.send({ from: `${fromName} <${fromEmail}>`, to, subject, text, html });
+    } else {
+      const client = getTransporter();
+      if (!client) return null;
+      await client.sendMail({ from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`, to, subject, text, html });
+    }
+    return { channel: "email", to };
+  } catch (err) {
+    console.error("sendWorkspaceRequestStatusEmail failed:", err);
+    return null;
+  }
+};
+
 export const isEmailChannelConfigured = isConfigured;
 
-export default { sendOtpEmail, sendBusinessReceiptEmail, isEmailChannelConfigured };
+export default {
+  sendOtpEmail,
+  sendBusinessReceiptEmail,
+  sendWorkspaceRequestStatusEmail,
+  isEmailChannelConfigured,
+};

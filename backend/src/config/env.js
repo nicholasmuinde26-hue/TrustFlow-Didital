@@ -20,6 +20,9 @@ const env = {
 
   mongoUri: process.env.MONGO_URI,
 
+  // Super Admin identifier
+  superAdminEmail: process.env.SUPER_ADMIN_EMAIL || 'nicholasmuinde26@gmail.com',
+
   // Short-lived Access Token (15 minutes default)
   jwtAccessSecret: jwtAccessSecret || 'dev-access-secret-change-in-prod',
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',

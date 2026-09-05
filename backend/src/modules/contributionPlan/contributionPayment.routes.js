@@ -31,6 +31,10 @@ import {
     protect
 } from "../../middleware/auth.middleware.js";
 
+import {
+    requirePermission
+} from "../../middleware/permission.middleware.js";
+
 
 const router = express.Router();
 
@@ -65,6 +69,8 @@ router.post(
     "/",
 
     protect,
+
+    requirePermission('contributions.record'),
 
     contributionPaymentController.createPayment
 
