@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ============================================================================
  * FINANCE ENGINE
  * ============================================================================
@@ -34,7 +34,7 @@ import ContributionPayment from "../../models/ContributionPayment.js";
 
 import savingsDepositRule from "./accounting/rules/savingsPayment.rule.js";
 import contributionPaymentRule from "./accounting/rules/contributionPayment.rule.js";
-import mgrContributionRule from "./accounting/rules/Mgrcontribution.rule.js";
+import mgrContributionRule from "./accounting/rules/mgrContribution.rule.js";
 
 
 // ============================================================================
@@ -49,7 +49,7 @@ const RULES = [
 
 
 // ============================================================================
-// RULE → FINANCIAL TRANSACTION TYPE
+// RULE â†’ FINANCIAL TRANSACTION TYPE
 // ============================================================================
 //
 // Accounting rule names are internal accounting identifiers.
@@ -59,11 +59,11 @@ const RULES = [
 // Example:
 //
 // SAVINGS_DEPOSIT
-//        ↓
+//        â†“
 // deposit
 //
 // CONTRIBUTION_PAYMENT
-//        ↓
+//        â†“
 // contribution_payment
 //
 // ============================================================================
