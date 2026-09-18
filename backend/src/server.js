@@ -119,6 +119,13 @@ async function startServer() {
                     ` Environment : ${env.nodeEnv}`
                 );
 
+                if (env.demoOtpAutofill) {
+                    console.log("");
+                    console.log(" ⚠️  DEMO_OTP_AUTOFILL IS ON — real OTPs are being echoed back in the");
+                    console.log("    send-otp API response for autofill. Unset DEMO_OTP_AUTOFILL (or set");
+                    console.log("    it to anything other than 'true') as soon as this demo is done.");
+                }
+
                 console.log(
                     ` HTTP Server : http://localhost:${env.port}`
                 );

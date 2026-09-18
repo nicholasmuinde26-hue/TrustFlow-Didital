@@ -16,6 +16,22 @@ if ((!jwtAccessSecret || !jwtRefreshSecret) && nodeEnv !== 'development') {
 const env = {
   nodeEnv,
 
+  // ========================================
+  // DEMO OTP AUTOFILL — off by default, everywhere.
+  // ========================================
+  // Must be explicitly set to the string 'true' in the deployment's own
+  // env vars (Render/Railway/etc dashboard) to do anything. It is NOT
+  // tied to NODE_ENV, so it stays off in a normal production deploy by
+  // default, and stays off in local dev unless you also opt in there.
+  // When on, OTP is still randomly generated and still actually
+  // verified server-side exactly as normal, and is still actually
+  // delivered over email/WhatsApp — this only additionally echoes the
+  // real code back in the send-otp response so the login/register
+  // pages can fill it in for you instead of you typing it. Turn this
+  // off (unset the var, or set it to anything other than 'true') the
+  // moment the live demo is over.
+  demoOtpAutofill: process.env.DEMO_OTP_AUTOFILL === 'true',
+
   port: Number(process.env.PORT) || 5000,
 
   mongoUri: process.env.MONGO_URI,

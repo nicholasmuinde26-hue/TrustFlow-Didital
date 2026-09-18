@@ -162,9 +162,12 @@ export default function RegisterPage() {
         if (res.channel) setChannel(res.channel);
 
         const dest = res.channel === "email" ? (res.email || form.email) : (res.phone || form.phone);
-        setNotice(
-          res?.message || `Account created! Security OTP code sent to ${dest}`
-        );
+        let noticeText = res?.message || `Account created! Security OTP code sent to ${dest}`;
+        if (res?.devOtp) {
+          noticeText += res?.demoAutofill ? " (code auto-filled for this demo)" : ` (Dev Code: ${res.devOtp})`;
+          setOtpCode(res.devOtp);
+        }
+        setNotice(noticeText);
         setStep("otp");
       } else {
         await finishRegistration();
@@ -310,7 +313,12 @@ export default function RegisterPage() {
       const identifier = channel === "email" && form.email.trim() ? form.email.trim() : form.phone;
       const res = await sendOtp({ identifier, phone: form.phone, email: form.email, channel });
       const dest = channel === "email" ? form.email : form.phone;
-      setNotice(res?.message || `A new OTP code has been sent to ${dest}`);
+      let noticeText = res?.message || `A new OTP code has been sent to ${dest}`;
+      if (res?.devOtp) {
+        noticeText += res?.demoAutofill ? " (code auto-filled for this demo)" : ` (Dev Code: ${res.devOtp})`;
+        setOtpCode(res.devOtp);
+      }
+      setNotice(noticeText);
     } catch (err) {
       setError(
         err?.response?.data?.message || "Failed to resend OTP code."

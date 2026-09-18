@@ -140,7 +140,12 @@ export default function LoginPage() {
 
         let noticeText = res?.message || `Security OTP sent to ${usedIdentifier}`;
         if (res?.devOtp) {
-          noticeText += ` (Dev Code: ${res.devOtp})`;
+          // demoAutofill (deployed demo, via DEMO_OTP_AUTOFILL) shows a
+          // clean "auto-filled" notice with no raw code on screen — fine
+          // for a recorded/presented demo in front of an audience.
+          // Plain local dev keeps printing the code, since only the
+          // developer sees it.
+          noticeText += res?.demoAutofill ? " (code auto-filled for this demo)" : ` (Dev Code: ${res.devOtp})`;
           setOtpCode(res.devOtp);
         }
         setNotice(noticeText);
@@ -282,7 +287,12 @@ export default function LoginPage() {
           ? await sendOtp({ identifier: activeIdentifier || identifier, channel })
           : await login({ identifier: activeIdentifier || identifier, password, channel });
       const usedDest = channel === "email" ? (res.email || activeIdentifier) : (res.phone || activeIdentifier);
-      setNotice(res?.message || `A new OTP code has been sent to ${usedDest}`);
+      let noticeText = res?.message || `A new OTP code has been sent to ${usedDest}`;
+      if (res?.devOtp) {
+        noticeText += res?.demoAutofill ? " (code auto-filled for this demo)" : ` (Dev Code: ${res.devOtp})`;
+        setOtpCode(res.devOtp);
+      }
+      setNotice(noticeText);
     } catch (err) {
       setError(
         err?.response?.data?.message || "Failed to resend OTP code."
