@@ -1,21 +1,18 @@
+import { cn } from "@/shared/utils/cn";
+
 export default function Card({
   children,
   className = "",
+  as: Component = "section",
 }) {
   return (
-    <div
-      className={`
-      rounded-2xl
-      border
-      border-slate-200
-      bg-white
-      shadow-sm
-      dark:border-slate-800
-      dark:bg-slate-900
-      ${className}
-      `}
+    <Component
+      className={cn(
+        "rounded-[var(--radius-panel)] border border-slate-200 bg-white shadow-[var(--shadow-panel)] dark:border-obsidian-border dark:bg-obsidian-card",
+        className
+      )}
     >
       {children}
-    </div>
+    </Component>
   );
 }

@@ -8,6 +8,9 @@ import { getWorkspaceDashboard } from "../workspaces/workspaceDashboard.service.
 import financeService from "../finance/finance.service.js";
 import loanDashboardService from "../loans/Loandashboard.service.js";
 import { getSummary as getBusinessSummary } from "../business/business.service.js";
+import contributionObligationService from "../contributionPlan/contributionObligation.service.js";
+import { findRecentAnomalies } from "../finance/anomalyDetection.service.js";
+import { checkGlBalance } from "../finance/accounting/glBalance.service.js";
 import AppError from "../../utils/AppError.js";
 
 const toNumber = (val) => {
@@ -58,6 +61,9 @@ export async function buildAiContext({ workspaceId, userId }) {
     finance: null,
     loanHealth: null,
     business: null,
+    contributionHistory: [],
+    recentAnomalies: [],
+    glBalance: null,
   };
 
   if (dashboard.type === "business") {
@@ -101,6 +107,28 @@ export async function buildAiContext({ workspaceId, userId }) {
     } catch {
       context.loanHealth = null;
     }
+  }
+
+  try {
+    context.contributionHistory = await contributionObligationService.getPeriodHistory(
+      ownerType,
+      workspaceId,
+      6
+    );
+  } catch {
+    context.contributionHistory = [];
+  }
+
+  try {
+    context.recentAnomalies = await findRecentAnomalies({ ownerType, ownerId: workspaceId });
+  } catch {
+    context.recentAnomalies = [];
+  }
+
+  try {
+    context.glBalance = await checkGlBalance(ownerType, workspaceId);
+  } catch {
+    context.glBalance = null;
   }
 
   return context;

@@ -12,7 +12,7 @@ export default function CardHeader({
       border-b
       border-slate-200
       p-6
-      dark:border-slate-800
+      dark:border-obsidian-border
       "
     >
       <div>

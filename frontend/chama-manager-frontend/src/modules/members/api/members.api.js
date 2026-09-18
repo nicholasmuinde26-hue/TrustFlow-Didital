@@ -44,7 +44,7 @@ const membersApi = {
   // uses DELETE. This is the backend's own inconsistency, not a typo.
   remove(type, workspaceId, memberId) {
     if (isChamaType(type)) {
-      return api.patch(`/chamas/${workspaceId}/members/${memberId}/remove`);
+      return api.post(`/chamas/${workspaceId}/members/${memberId}/exit`, {});
     }
 
     return api.delete(`/contribution-groups/${workspaceId}/members/${memberId}`);
@@ -64,6 +64,16 @@ const membersApi = {
   // Chama-only: Chama also supports suspending/reactivating a member and
   // transferring the Treasurer role. Contribution Groups have no
   // equivalent backend routes for either.
+  assessExit(type, workspaceId, memberId) {
+    if (isChamaType(type)) return api.get(`/chamas/${workspaceId}/members/${memberId}/exit-assessment`);
+    throw new Error("Exit assessment is only supported for Chamas");
+  },
+
+  disburseExit(type, workspaceId, exitRequestId, payload) {
+    if (isChamaType(type)) return api.post(`/chamas/${workspaceId}/member-exits/${exitRequestId}/disburse`, payload);
+    throw new Error("Member exit disbursement is only supported for Chamas");
+  },
+
   updateStatus(type, workspaceId, memberId, status) {
     if (isChamaType(type)) {
       return api.patch(`/chamas/${workspaceId}/members/${memberId}/status`, { status });

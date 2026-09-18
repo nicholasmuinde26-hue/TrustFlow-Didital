@@ -23,8 +23,8 @@ export default function Topbar({ onMenuToggle }) {
       sm:px-8
       backdrop-blur-xl
 
-      dark:border-slate-800
-      dark:bg-slate-900/80
+      dark:border-obsidian-border
+      dark:bg-obsidian/80
       "
     >
       <div className="flex items-center gap-3 sm:gap-4">
@@ -37,8 +37,8 @@ export default function Topbar({ onMenuToggle }) {
             text-slate-500
             hover:bg-slate-100
             focus:outline-none
-            dark:text-slate-400
-            dark:hover:bg-slate-800
+            dark:text-mist-muted
+            dark:hover:bg-obsidian-card
             lg:hidden
           "
           aria-label="Open sidebar"

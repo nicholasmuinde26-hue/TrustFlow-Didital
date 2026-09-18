@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import {
   Users,
   Building2,
@@ -13,15 +13,46 @@ import {
   AlertCircle,
   PlusCircle,
   MessageSquare,
+  Banknote,
+  ShieldAlert,
+  BadgeCheck,
+  Receipt,
 } from "lucide-react";
 import useAuth from "@/app/hooks/useAuth";
 import adminService from "../services/admin.service";
 import inquiryService from "@/app/services/inquiry.service";
 import Spinner from "@/shared/components/ui/Spinner";
+import useAdminProfile from "../hooks/useAdminProfile";
+import { ComplianceWorkspacePage, FinanceWorkspacePage, SupportWorkspacePage } from "./CategoryWorkspacePages";
 
 export default function AdminDashboardPage() {
+  const { profile, loading } = useAdminProfile();
+
+  if (loading) return <Spinner />;
+
+  // Category is assigned and permission-scoped on the server. These entry
+  // routes intentionally lead with the work that matters to each operator,
+  // while the Super Admin keeps the whole-platform executive overview.
+  switch (profile?.category) {
+    case "security":
+      return <Navigate to="/admin/security" replace />;
+    case "finance":
+      return <FinanceWorkspacePage />;
+    case "support":
+      return <SupportWorkspacePage />;
+    case "compliance":
+      return <ComplianceWorkspacePage />;
+    case "onboarding":
+      return <Navigate to="/admin/requests" replace />;
+    default:
+      return <PlatformOverviewDashboard />;
+  }
+}
+
+function PlatformOverviewDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [execStats, setExecStats] = useState(null);
   const [inqStats, setInqStats] = useState(null);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,12 +62,14 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [overview, requests, inqs] = await Promise.all([
+        const [overview, executive, requests, inqs] = await Promise.all([
           adminService.getOverview(),
+          adminService.getExecutiveOverview().catch(() => null),
           adminService.getWorkspaceRequests("pending"),
           inquiryService.getAdminInquiryStats().catch(() => null),
         ]);
         setStats(overview);
+        setExecStats(executive);
         setInqStats(inqs);
         setPendingRequests(requests.slice(0, 5));
       } catch (err) {
@@ -106,6 +139,59 @@ export default function AdminDashboardPage() {
     },
   ];
 
+  const money = (n) =>
+    `KES ${Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
+
+  const execCards = execStats && [
+    {
+      title: "Groups",
+      value: execStats.groups ?? 0,
+      icon: Building2,
+      color: "violet",
+    },
+    {
+      title: "Members",
+      value: execStats.members ?? 0,
+      icon: Users,
+      color: "indigo",
+    },
+    {
+      title: "Transactions",
+      value: execStats.transactions ?? 0,
+      icon: Receipt,
+      color: "blue",
+    },
+    {
+      title: "Money Processed",
+      value: money(execStats.moneyProcessed),
+      icon: Banknote,
+      color: "emerald",
+    },
+    {
+      title: "Verified Transactions",
+      value:
+        execStats.verifiedTransactionPercent != null
+          ? `${execStats.verifiedTransactionPercent}%`
+          : "—",
+      icon: BadgeCheck,
+      color: "teal",
+    },
+    {
+      title: "Risk Alerts",
+      value: execStats.riskAlerts ?? 0,
+      icon: ShieldAlert,
+      color: "rose",
+      to: "/admin/directory",
+    },
+    {
+      title: "Pending Approvals",
+      value: execStats.pendingApprovals ?? 0,
+      icon: Clock,
+      color: "amber",
+      to: "/admin/requests",
+    },
+  ];
+
   return (
     <div className="space-y-8">
       {/* Welcome banner */}
@@ -142,6 +228,49 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Executive Snapshot — cross-platform numbers: money processed, verified
+          transactions, live risk signals. Distinct from the directory-count
+          cards below, which are per-entity totals rather than financial/risk
+          signals. */}
+      {execCards && (
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Executive Snapshot
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
+            {execCards.map((card, idx) => {
+              const Icon = card.icon;
+              const content = (
+                <div className="group flex h-full flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {card.title}
+                    </span>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-violet-100 group-hover:text-violet-700 dark:bg-slate-800 dark:text-slate-300">
+                      <Icon size={16} />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <span className="text-xl font-black text-slate-950 dark:text-white">
+                      {card.value}
+                    </span>
+                  </div>
+                </div>
+              );
+              return card.to ? (
+                <Link key={idx} to={card.to}>
+                  {content}
+                </Link>
+              ) : (
+                <div key={idx}>{content}</div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">

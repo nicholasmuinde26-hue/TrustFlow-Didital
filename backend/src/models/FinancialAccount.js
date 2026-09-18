@@ -97,6 +97,33 @@ const financialAccountSchema = new Schema(
     closed_at: {
       type: Date,
       default: null
+    },
+
+    // ========================================
+    // CASH-IN-HAND DEPOSIT CLOCK
+    // ========================================
+    // Only meaningful for the CASH system account (account_code: 'CASH').
+    // Chama policy: physical cash a treasurer records must not sit
+    // un-banked for more than a fixed window (default 48h, see
+    // cashDeposit.service.js) - it must be deposited into the BANK
+    // account. This block tracks that clock at the account level:
+    //   - held_since is set the moment the CASH balance first moves
+    //     above zero (i.e. cash starts accumulating) and is left
+    //     untouched by later cash receipts, so it always reflects the
+    //     OLDEST un-banked cash, not the most recent.
+    //   - held_since (and the rest of this block) is cleared the moment
+    //     the CASH balance returns to zero or below - fully deposited.
+    //   - due_at / is_overdue / reminders are maintained by
+    //     financeAccountService + the cashDepositEnforcement job.
+    cash_deposit_tracking: {
+      held_since: { type: Date, default: null },
+      due_at: { type: Date, default: null },
+      is_overdue: { type: Boolean, default: false },
+      overdue_since: { type: Date, default: null },
+      last_reminder_sent_at: { type: Date, default: null },
+      reminder_count: { type: Number, default: 0 },
+      last_broadcast_sent_at: { type: Date, default: null },
+      inflow_locked: { type: Boolean, default: false }
     }
   },
   { timestamps: true }

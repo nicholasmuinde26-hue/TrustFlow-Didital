@@ -60,6 +60,8 @@ const TRANSACTION_TYPES = [
   'contribution_payment',
   'contribution_reversal',
   'mgr_contribution',
+  'chama_contribution_payment',
+  'chama_contrib_payout_settlement',
   'payout',
   'payout_obligation',
   'payout_settlement',

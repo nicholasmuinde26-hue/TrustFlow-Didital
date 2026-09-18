@@ -589,8 +589,10 @@ export const getChamaMembers = async (
       chama_id:
         chamaId,
 
-      status:
-        'active'
+      // Keep suspended members visible in the directory.
+      status: {
+        $in: ['active', 'suspended']
+      }
     })
       .populate(
         'user_id',
@@ -962,6 +964,74 @@ export const joinWithCode = async (userId, joinCode) => {
   });
 
   await membership.populate("chama_id", "name");
+
+  return membership;
+};
+
+
+// ========================================
+// REQUEST TO JOIN A PUBLIC CHAMA
+// (NO INVITATION CODE REQUIRED)
+// ========================================
+//
+// For a Chama with visibility: 'public', anyone can already SEE it in
+// getPublicChamas() above. This lets them request to join it directly
+// from that listing with a single click — no join_code, invite link,
+// or token needed, since public visibility itself is what makes the
+// Chama discoverable/joinable in the first place.
+//
+// Same end state as joinWithCode()/acceptInvite(): a ChamaMembership
+// with status 'pending'. It does NOT grant membership immediately —
+// the Treasurer or Chairperson still reviews it via
+// GET /chamas/:chamaId/members/join-requests and approves/declines it
+// through updateMemberStatus() in member.service.js.
+//
+// ========================================
+
+export const requestToJoinPublicChama = async (userId, chamaId) => {
+  if (!chamaId || !mongoose.Types.ObjectId.isValid(chamaId)) {
+    throw new AppError('Invalid Chama ID', 400);
+  }
+
+  const chama = await Chama.findOne({
+    _id: chamaId,
+    status: 'active'
+  });
+
+  if (!chama) {
+    throw new AppError('Chama not found', 404);
+  }
+
+  // Deliberately not exposed for private Chamas — those still require
+  // a join_code or invite link so they stay undiscoverable to anyone
+  // who wasn't given one directly.
+  if (chama.visibility !== 'public') {
+    throw new AppError('This Chama is not open to public join requests', 403);
+  }
+
+  const existingMembership = await ChamaMembership.findOne({
+    user_id: userId,
+    chama_id: chama._id
+  });
+
+  if (existingMembership) {
+    if (existingMembership.status === 'active') {
+      throw new AppError('You are already a member of this Chama', 409);
+    }
+    if (existingMembership.status === 'pending') {
+      throw new AppError('Your request to join this Chama is already pending approval', 409);
+    }
+  }
+
+  const membership = await ChamaMembership.create({
+    user_id: userId,
+    chama_id: chama._id,
+    role: 'member',
+    status: 'pending',
+    joined_at: new Date()
+  });
+
+  await membership.populate('chama_id', 'name');
 
   return membership;
 };

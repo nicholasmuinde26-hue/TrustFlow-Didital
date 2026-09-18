@@ -1,9 +1,21 @@
 import api from '@/app/services/api';
 
 const adminService = {
+  async getMyProfile() {
+    const { data } = await api.get('/admin/me');
+    return data.data || null;
+  },
+
   // Stats overview
   async getOverview() {
     const { data } = await api.get('/admin/overview');
+    return data.data || {};
+  },
+
+  // Cross-workspace executive snapshot: groups, members, transactions,
+  // money processed, verified %, risk alerts, pending approvals
+  async getExecutiveOverview() {
+    const { data } = await api.get('/admin/overview/executive');
     return data.data || {};
   },
 
@@ -18,19 +30,33 @@ const adminService = {
     const { data } = await api.get('/admin/sub-admins');
     return data.data || [];
   },
+  async getAdminActivity(params = {}) {
+    const { data } = await api.get('/admin/activity', { params });
+    return data.data || { logs: [] };
+  },
+  async requestStepUp(password) {
+    const { data } = await api.post('/admin/step-up', { password });
+    const token = data.data?.token;
+    if (token) sessionStorage.setItem('adminStepUpToken', token);
+    return token;
+  },
+  async getSessions() { const { data } = await api.get('/admin/sessions'); return data.data || []; },
+  async revokeSession(sessionId) { const { data } = await api.delete(`/admin/sessions/${sessionId}`); return data.data; },
 
-  async promoteSubAdmin(userId, permissions = {}) {
-    const { data } = await api.post('/admin/sub-admins', { userId, permissions });
+  stepUpConfig() { return { headers: { 'X-Admin-Step-Up': sessionStorage.getItem('adminStepUpToken') || '' } }; },
+
+  async promoteSubAdmin(userId, permissions = {}, category = 'operations', notes = '') {
+    const { data } = await api.post('/admin/sub-admins', { userId, permissions, category, notes }, this.stepUpConfig());
     return data;
   },
 
   async updateSubAdminPermissions(userId, permissions) {
-    const { data } = await api.patch(`/admin/sub-admins/${userId}`, { permissions });
+    const { data } = await api.patch(`/admin/sub-admins/${userId}`, { permissions }, this.stepUpConfig());
     return data;
   },
 
   async demoteSubAdmin(userId) {
-    const { data } = await api.delete(`/admin/sub-admins/${userId}`);
+    const { data } = await api.delete(`/admin/sub-admins/${userId}`, this.stepUpConfig());
     return data;
   },
 
@@ -59,6 +85,25 @@ const adminService = {
   async rejectWorkspaceRequest(requestId, adminNotes) {
     const { data } = await api.post(`/admin/workspace-requests/${requestId}/reject`, { adminNotes });
     return data;
+  },
+
+  // Entity directory drill-down (chama / business / contribution_group detail)
+  async getEntityDetail(type, id) {
+    const { data } = await api.get(`/admin/entities/${type}/${id}`);
+    return data.data || null;
+  },
+
+  // Admin override of a chama membership — role change (incl. chairperson
+  // handover) and/or status change (suspend/reactivate)
+  async updateChamaMember(chamaId, membershipId, payload) {
+    const { data } = await api.patch(`/admin/chamas/${chamaId}/members/${membershipId}`, payload);
+    return data;
+  },
+
+  // Global "who is who where" people search
+  async searchPeople(params = {}) {
+    const { data } = await api.get('/admin/people', { params });
+    return data.data || { people: [], total: 0 };
   },
 };
 

@@ -13,6 +13,7 @@ import {
   RefreshCw,
   AlertTriangle,
   TrendingUp,
+  Clock,
 } from "lucide-react";
 
 import chamaApi from "../api/chama.api";
@@ -246,8 +247,16 @@ export default function MemberDashboardPage() {
 
     loadDashboard();
 
+    // The savings/loan snapshot (loanSummary.savings_balance) is fetched
+    // once per workspace load with no other refresh trigger, so a
+    // completed STK never showed up here until a full remount. Reload the
+    // same dashboard data on the "finance:updated" signal MpesaStkModal /
+    // usePaymentWatcher dispatch on a successful payment.
+    window.addEventListener("finance:updated", loadDashboard);
+
     return () => {
       controller.abort();
+      window.removeEventListener("finance:updated", loadDashboard);
     };
   }, [workspaceId]);
 
@@ -359,7 +368,7 @@ function MemberDashboardView({ data, loanSummary }) {
     : 0;
 
   const loanOutstanding = activeLoan
-    ? toNumber(activeLoan.outstanding_balance ?? activeLoan.balance ?? 0)
+    ? toNumber(activeLoan.outstanding ?? activeLoan.outstanding_balance ?? activeLoan.balance ?? 0)
     : 0;
 
   const loanRepaidPct =
@@ -369,6 +378,14 @@ function MemberDashboardView({ data, loanSummary }) {
           Math.min(100, Math.round(((loanPrincipal - loanOutstanding) / loanPrincipal) * 100))
         )
       : 0;
+
+  // Statuses before real money has moved — show approval-chain progress
+  // instead of a repayment bar, since there's nothing to repay yet.
+  const loanAwaitingDecision = Boolean(
+    activeLoan && ["submitted", "pending_approval"].includes(String(activeLoan.status).toLowerCase())
+  );
+  const loanApprovalRoles = activeLoan?.required_approval_roles || [];
+  const loanApprovals = activeLoan?.approvals || [];
 
   const kycAccent =
     kycStatus === MEMBER_DASHBOARD_CONFIG.kycStatuses.approved
@@ -494,7 +511,10 @@ function MemberDashboardView({ data, loanSummary }) {
           <div className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Metric label="Loan amount" value={money(loanPrincipal)} />
-              <Metric label="Outstanding" value={money(loanOutstanding)} />
+              <Metric
+                label="Outstanding"
+                value={loanAwaitingDecision ? "—" : money(loanOutstanding)}
+              />
               <Metric
                 label="Next payment"
                 value={nextPayment?.amount ? money(nextPayment.amount) : "—"}
@@ -502,21 +522,61 @@ function MemberDashboardView({ data, loanSummary }) {
               <Metric label="Due date" value={nextPaymentDate} />
             </div>
 
-            {loanPrincipal > 0 && (
+            {loanAwaitingDecision ? (
               <div>
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
-                  <span>Repaid</span>
-                  <span>{loanRepaidPct}%</span>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
+                  <span>Approval progress</span>
+                  <span>
+                    {loanApprovals.filter((a) => a.decision === "approved").length} of{" "}
+                    {loanApprovalRoles.length || 2} approved
+                  </span>
                 </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${loanRepaidPct}%` }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                  />
+                <div className="flex flex-wrap gap-2">
+                  {(loanApprovalRoles.length ? loanApprovalRoles : ["chairperson", "treasurer"]).map(
+                    (role) => {
+                      const decision = loanApprovals.find((a) => a.role === role)?.decision;
+                      const isApproved = decision === "approved";
+                      const isRejected = decision === "rejected";
+                      return (
+                        <span
+                          key={role}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                            isApproved
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                              : isRejected
+                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                          }`}
+                        >
+                          {isApproved ? (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5" />
+                          )}
+                          {role.charAt(0).toUpperCase() + role.slice(1).replace("_", " ")}
+                        </span>
+                      );
+                    }
+                  )}
                 </div>
               </div>
+            ) : (
+              loanPrincipal > 0 && (
+                <div>
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
+                    <span>Repaid</span>
+                    <span>{loanRepaidPct}%</span>
+                  </div>
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${loanRepaidPct}%` }}
+                      transition={{ duration: 0.6, ease: "easeOut" }}
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                    />
+                  </div>
+                </div>
+              )
             )}
           </div>
         ) : (
@@ -683,34 +743,90 @@ function LoanStatusBadge({ loan }) {
   ).toLowerCase();
 
   const statusConfig = {
-    active: {
-      label: "Active",
-      className:
-        "bg-emerald-100 text-emerald-700",
+    submitted: {
+      label: "Submitted",
+      className: "bg-amber-100 text-amber-700",
     },
 
-    pending: {
-      label: "Pending",
-      className:
-        "bg-amber-100 text-amber-700",
+    pending_approval: {
+      label: "Awaiting Approval",
+      className: "bg-amber-100 text-amber-700",
     },
 
     approved: {
       label: "Approved",
-      className:
-        "bg-blue-100 text-blue-700",
+      className: "bg-blue-100 text-blue-700",
+    },
+
+    disbursement_pending: {
+      label: "Disbursement Pending",
+      className: "bg-blue-100 text-blue-700",
+    },
+
+    disbursed: {
+      label: "Disbursed",
+      className: "bg-emerald-100 text-emerald-700",
+    },
+
+    active: {
+      label: "Active",
+      className: "bg-emerald-100 text-emerald-700",
+    },
+
+    partially_repaid: {
+      label: "Partially Repaid",
+      className: "bg-teal-100 text-teal-700",
+    },
+
+    overdue: {
+      label: "Overdue",
+      className: "bg-orange-100 text-orange-700",
     },
 
     defaulted: {
       label: "Defaulted",
-      className:
-        "bg-red-100 text-red-700",
+      className: "bg-red-100 text-red-700",
+    },
+
+    rejected: {
+      label: "Rejected",
+      className: "bg-red-100 text-red-700",
+    },
+
+    eligibility_failed: {
+      label: "Not Eligible",
+      className: "bg-red-100 text-red-700",
+    },
+
+    blocked_conflict: {
+      label: "Blocked",
+      className: "bg-red-100 text-red-700",
+    },
+
+    cancelled: {
+      label: "Cancelled",
+      className: "bg-slate-100 text-slate-600",
+    },
+
+    recovered: {
+      label: "Recovered",
+      className: "bg-slate-100 text-slate-600",
+    },
+
+    closed: {
+      label: "Closed",
+      className: "bg-slate-100 text-slate-600",
+    },
+
+    // Legacy/short aliases some records may still carry.
+    pending: {
+      label: "Pending",
+      className: "bg-amber-100 text-amber-700",
     },
 
     completed: {
       label: "Completed",
-      className:
-        "bg-slate-100 text-slate-600",
+      className: "bg-slate-100 text-slate-600",
     },
   };
 

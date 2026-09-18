@@ -15,6 +15,23 @@ import ChamaInvitation from "../../models/ChamaInvitation.js";
 // roles are governance/voting and advisory respectively, not general
 // management officials.
 export const officialRoles = ["chairperson", "treasurer", "secretary"];
+
+export async function assertActiveTreasurer(chamaId) {
+  const treasurer = await ChamaMembership.findOne({
+    chama_id: chamaId,
+    role: "treasurer",
+    status: "active",
+  }).select("_id").lean();
+
+  if (!treasurer) {
+    throw new AppError(
+      "This Chama cannot operate without an active Treasurer. Please promote an active member to Treasurer before continuing.",
+      403
+    );
+  }
+
+  return treasurer;
+}
 export const canManage = (membership) => officialRoles.includes(membership.role);
 export const requireRole = (membership, roles) => { if (!roles.includes(membership.role)) throw new AppError("You do not have permission for this Chama action", 403); };
 
@@ -46,7 +63,48 @@ export async function getProfile(chamaId) {
 }
 
 export async function updateProfile(chamaId, data) { return ChamaProfile.findOneAndUpdate({ chama_id: chamaId }, { $set: { ...data, chama_id: chamaId } }, { new: true, upsert: true, runValidators: true }); }
-export async function assignOfficial(chamaId, membershipId, role) { if (!ASSIGNABLE_ROLES.includes(role)) throw new AppError(`Role must be one of: ${ASSIGNABLE_ROLES.join(", ")}`, 400); const update = { role, ...(role === "patron" ? { payout_position: null } : {}) }; const member = await ChamaMembership.findOneAndUpdate({ _id: membershipId, chama_id: chamaId, status: "active" }, update, { new: true }); if (!member) throw new AppError("Active member not found", 404); return member; }
+export async function assignOfficial(chamaId, membershipId, role) {
+  if (!ASSIGNABLE_ROLES.includes(role)) {
+    throw new AppError(`Role must be one of: ${ASSIGNABLE_ROLES.join(", ")}`, 400);
+  }
+
+  const member = await ChamaMembership.findOne({
+    _id: membershipId,
+    chama_id: chamaId,
+    status: "active",
+  });
+
+  if (!member) throw new AppError("Active member not found", 404);
+
+  const restrictedRoles = ["treasurer", "secretary", "auditor", "chairperson", "committee_member", "patron"];
+  if (
+    restrictedRoles.includes(role) &&
+    member.management_restriction_until &&
+    new Date(member.management_restriction_until) > new Date()
+  ) {
+    throw new AppError(
+      `This member cannot be promoted to a management role until ${new Date(member.management_restriction_until).toLocaleDateString("en-KE")}.`,
+      403
+    );
+  }
+
+  if (role === "treasurer") {
+    const existingTreasurer = await ChamaMembership.findOne({
+      chama_id: chamaId,
+      role: "treasurer",
+      status: "active",
+      _id: { $ne: membershipId },
+    });
+    if (existingTreasurer) {
+      throw new AppError("This Chama already has an active Treasurer", 409);
+    }
+  }
+
+  member.role = role;
+  if (role === "patron") member.payout_position = null;
+  await member.save();
+  return member;
+}
 export async function createGoal(chamaId, userId, data) { if (!data.name || Number(data.target_amount) <= 0) throw new AppError("Goal name and target amount are required", 400); return ChamaGoal.create({ chama_id: chamaId, name: data.name, target_amount: data.target_amount, target_date: data.target_date || null, created_by: userId }); }
 export async function submitKyc(chamaId, membershipId, data) { if (!data.id_number || !data.selfie_url || !data.id_document_url) throw new AppError("ID number, ID document URL, and selfie URL are required", 400); return ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { $set: { id_number: data.id_number, selfie_url: data.selfie_url, id_document_url: data.id_document_url, status: "pending", reviewed_by: null, reviewed_at: null } }, { upsert: true, new: true, runValidators: true }); }
 export async function reviewKyc(chamaId, membershipId, userId, status) { if (!["verified", "rejected"].includes(status)) throw new AppError("Invalid KYC review status", 400); const kyc = await ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { status, reviewed_by: userId, reviewed_at: new Date() }, { new: true }); if (!kyc) throw new AppError("KYC submission not found", 404); return kyc; }

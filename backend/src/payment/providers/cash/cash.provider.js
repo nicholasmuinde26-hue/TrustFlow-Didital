@@ -21,11 +21,22 @@
  */
 
 import { PAYMENT_PROVIDER } from '../../payment.constants.js';
+import { assertCashInflowAllowed } from '../../../modules/finance/cashDeposit.service.js';
 
 class CashProvider {
   name = PAYMENT_PROVIDER.CASH;
 
   async initiate(context) {
+    // Policy enforcement: every cash payment in the app (contribution
+    // payments, ad-hoc chip-ins, etc) funnels through here, since this is
+    // the one provider that ever handles cash. If this workspace's
+    // previously-recorded cash-in-hand has gone overdue for deposit
+    // (see cashDepositEnforcement.job.js), block any NEW cash from being
+    // accepted until the treasurer deposits what's already outstanding -
+    // otherwise the deposit deadline could be dodged forever by just
+    // keeping the money "in transit" as new cash receipts.
+    await assertCashInflowAllowed(context.ownerType, context.ownerId);
+
     return {
       checkoutRequestId: context.reference,
       merchantRequestId: context.reference,

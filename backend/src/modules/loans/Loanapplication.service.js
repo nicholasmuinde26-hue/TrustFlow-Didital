@@ -11,7 +11,7 @@ import domainEventEmitter from '../../services/domainEvent.emitter.js';
 
 const REQUIRED_FIELDS_MESSAGE = 'Amount, purpose, repayment period, and repayment frequency are required';
 
-export async function applyForLoan({ chama, membership, userId, data }) {
+export async function applyForLoan({ chama, membership, userId, applicantPhone, data }) {
   const amount = Number(data.amount);
   const repaymentPeriodMonths = Number(data.repayment_period_months);
   const loanType = data.loan_type && Object.values(LOAN_TYPE).includes(data.loan_type) ? data.loan_type : LOAN_TYPE.STANDARD;
@@ -51,7 +51,12 @@ export async function applyForLoan({ chama, membership, userId, data }) {
     repayment_period_months: loanType === LOAN_TYPE.EMERGENCY ? 1 : repaymentPeriodMonths,
     repayment_frequency: data.repayment_frequency || 'monthly',
     disbursement_method: data.disbursement_method || 'mpesa',
-    phone_number: data.phone_number || null,
+    // The applicant's own account phone (auth is phone-based, so every user
+    // has one) is a reasonable default when they don't type a different
+    // disbursement number into the form — leaving this null was the reason
+    // approved loans with the default 'mpesa' method were later blocked at
+    // disbursement time for a field the applicant simply left blank.
+    phone_number: data.phone_number || applicantPhone || null,
     disbursement_account: data.disbursement_account || null,
     status: LOAN_STATUS.DRAFT,
     interest_rate_percent: policy.interest_rate_percent,
@@ -86,6 +91,15 @@ export async function applyForLoan({ chama, membership, userId, data }) {
     return loan;
   }
 
+  const requestedGuarantors = Array.isArray(data.guarantors) ? data.guarantors : [];
+  const minGuarantorsRequired = Number(policy.min_guarantors_required || 0);
+  if (minGuarantorsRequired > 0 && requestedGuarantors.length < minGuarantorsRequired) {
+    throw new AppError(
+      `This loan requires at least ${minGuarantorsRequired} guarantor(s) — only ${requestedGuarantors.length} provided`,
+      400
+    );
+  }
+
   loan.submitted_at = new Date();
   if (!loan.reference) loan.reference = loanReference();
 
@@ -111,10 +125,22 @@ export async function applyForLoan({ chama, membership, userId, data }) {
     return loan;
   }
 
-  loan.status = LOAN_STATUS.PENDING_APPROVAL;
-
-  if (Array.isArray(data.guarantors) && data.guarantors.length) {
-    await requestGuarantors({ chama, policy, loan, guarantors: data.guarantors }).catch(() => null);
+  // A loan with guarantors attached is NOT yet ready for the approval
+  // queue — it must sit in `submitted` (guarantors pending) until every
+  // guarantor explicitly accepts (see Loanguarantor.service.js). Setting
+  // status straight to `pending_approval` here would let an official
+  // approve a loan whose guarantors never confirmed, which
+  // Loandisbursement.service.js's own guarantor check shows was never the
+  // intent. Guarantor validation errors are also allowed to propagate
+  // (rather than being swallowed) so a bad guarantor selection blocks the
+  // application with a clear reason instead of silently submitting with
+  // no guarantors at all.
+  if (requestedGuarantors.length) {
+    loan.status = LOAN_STATUS.SUBMITTED;
+    await requestGuarantors({ chama, policy, loan, guarantors: requestedGuarantors });
+    await maybeAutoSubmit(loan, policy, { chama, membership });
+  } else {
+    loan.status = LOAN_STATUS.PENDING_APPROVAL;
   }
 
   await loan.save();

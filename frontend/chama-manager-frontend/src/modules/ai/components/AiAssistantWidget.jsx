@@ -52,7 +52,7 @@ export default function AiAssistantWidget({ workspaceId, workspaceType, workspac
     <>
       {open && (
         <div
-          className="fixed bottom-24 right-4 z-50 flex h-[70vh] max-h-[600px] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:right-6 sm:w-[380px]"
+          className="fixed bottom-40 right-4 z-50 flex h-[65vh] max-h-[600px] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-obsidian-border bg-white shadow-2xl dark:bg-obsidian-card lg:bottom-24 sm:right-6 sm:w-[380px]"
           role="dialog"
           aria-label="AI Assistant"
         >
@@ -126,7 +126,7 @@ export default function AiAssistantWidget({ workspaceId, workspaceType, workspac
       {/* Launcher */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-600/30 transition-transform hover:scale-105 sm:right-6"
+        className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-mint text-obsidian-rail shadow-lg shadow-black/30 transition-transform hover:scale-105 lg:bottom-6 sm:right-6"
         aria-label={open ? "Close AI assistant" : "Open AI assistant"}
       >
         {open ? (

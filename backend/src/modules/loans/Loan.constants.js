@@ -45,6 +45,18 @@ export const AWAITING_DECISION_STATUSES = [
   LOAN_STATUS.PENDING_APPROVAL,
 ];
 
+// Every status where the member effectively already has a loan "in
+// play" — either still awaiting an official's decision, or carrying
+// real money. Used to (a) stop a member submitting a second parallel
+// application before the first is even decided (Loaneligibility.service.js),
+// and (b) let the member's dashboard surface the loan the moment it's
+// submitted rather than only once it's been fully approved
+// (Loandashboard.service.js getMemberLoanSummary). Deliberately excludes
+// terminal outcomes (rejected, eligibility_failed, blocked_conflict,
+// closed, cancelled) — those are resolved and shouldn't block or
+// surface as "your current loan" anymore.
+export const LOAN_IN_PROGRESS_STATUSES = [...AWAITING_DECISION_STATUSES, ...OPEN_LOAN_STATUSES];
+
 export const GUARANTOR_STATUS = Object.freeze({
   PENDING: 'pending',
   ACCEPTED: 'accepted',

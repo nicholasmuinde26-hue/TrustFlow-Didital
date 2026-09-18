@@ -25,6 +25,7 @@ export default function AdminSubAdminsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [appointmentCategory, setAppointmentCategory] = useState("operations");
 
   const [actionLoading, setActionLoading] = useState(false);
   const [alertMsg, setAlertMsg] = useState({ text: "", type: "" });
@@ -64,7 +65,8 @@ export default function AdminSubAdminsPage() {
     setActionLoading(true);
     setAlertMsg({ text: "", type: "" });
     try {
-      const res = await adminService.promoteSubAdmin(targetUserId);
+      if (!await requireStepUp()) return;
+      const res = await adminService.promoteSubAdmin(targetUserId, {}, appointmentCategory);
       setAlertMsg({
         text: res.message || "User promoted to Sub-Admin successfully",
         type: "success",
@@ -95,6 +97,7 @@ export default function AdminSubAdminsPage() {
     setActionLoading(true);
     setAlertMsg({ text: "", type: "" });
     try {
+      if (!await requireStepUp()) return;
       const res = await adminService.demoteSubAdmin(targetUserId);
       setAlertMsg({
         text: res.message || "Sub-Admin privileges revoked",
@@ -115,6 +118,7 @@ export default function AdminSubAdminsPage() {
     const newVal = !currentVal;
     setActionLoading(true);
     try {
+      if (!await requireStepUp()) return;
       await adminService.updateSubAdminPermissions(targetUserId, { [permKey]: newVal });
       setAdmins((prev) =>
         prev.map((adm) =>
@@ -131,6 +135,13 @@ export default function AdminSubAdminsPage() {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  async function requireStepUp() {
+    const password = window.prompt("Confirm your password to authorize this administrative change (valid for 5 minutes):");
+    if (!password) return false;
+    try { await adminService.requestStepUp(password); return true; }
+    catch (error) { setAlertMsg({ text: error?.response?.data?.message || "Password verification failed", type: "error" }); return false; }
   }
 
   if (!isSuperAdmin) {
@@ -229,6 +240,11 @@ export default function AdminSubAdminsPage() {
                         >
                           {isTargetSuper ? "Super Admin" : "Sub-Admin"}
                         </span>
+                        {!isTargetSuper && (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {admin.category || "operations"}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-4 text-xs text-slate-500 mt-0.5">
                         <span className="flex items-center gap-1">
@@ -299,8 +315,24 @@ export default function AdminSubAdminsPage() {
             Appoint a New Sub-Admin
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Search for registered users by phone, email, or name to promote them to Sub-Admin
+            Choose a functional workspace, then appoint a registered user with only the permissions needed for that function.
           </p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            ["finance", "Finance", "Treasury, reconciliation & reporting"],
+            ["security", "Security", "Risk signals & audit investigation"],
+            ["support", "Support", "Member and workspace assistance"],
+            ["operations", "Operations", "Daily platform operations"],
+            ["compliance", "Compliance", "Controls & evidence review"],
+            ["onboarding", "Onboarding", "Workspace activation"],
+          ].map(([value, label, description]) => (
+            <button key={value} type="button" onClick={() => setAppointmentCategory(value)} className={`rounded-xl border p-3 text-left transition ${appointmentCategory === value ? "border-violet-500 bg-violet-50 ring-1 ring-violet-500 dark:bg-violet-950/30" : "border-slate-200 bg-slate-50 hover:border-violet-200 dark:border-slate-700 dark:bg-slate-800/50"}`}>
+              <span className="block text-xs font-black text-slate-900 dark:text-white">{label}</span>
+              <span className="mt-1 block text-[10px] leading-4 text-slate-500">{description}</span>
+            </button>
+          ))}
         </div>
 
         <form onSubmit={handleSearch} className="flex gap-3">

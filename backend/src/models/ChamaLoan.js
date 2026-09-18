@@ -93,6 +93,19 @@ const disbursementSchema = new mongoose.Schema(
     originator_conversation_id: { type: String, default: null },
     disbursed_at: { type: Date, default: null },
     failure_reason: { type: String, default: null },
+    // Backstop reconciliation bookkeeping (loanDisbursementReconciliation.job.js).
+    // The B2C result webhook is the primary path; these fields only get
+    // touched when that webhook never arrives and we have to actively poll
+    // M-Pesa's Transaction Status API instead.
+    last_status_check_at: { type: Date, default: null },
+    status_check_attempts: { type: Number, default: 0 },
+    // Set once a disbursement has been stuck in "processing" past the
+    // sweep's max-age window. Deliberately does NOT roll the loan back to
+    // `approved` automatically — we can't tell from here whether the money
+    // already left, so auto-retry risks a double disbursement. This just
+    // stops the sweep from re-querying it every cycle and marks it for a
+    // human (treasurer/chairperson) to check manually.
+    stuck_flagged_at: { type: Date, default: null },
   },
   { _id: false }
 );

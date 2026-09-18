@@ -34,6 +34,12 @@ class ConfirmationDialogService {
     // Generate dialog based on confirmation level
     const dialog = this.buildDialog(action, riskAssessment, actionData);
 
+    // Always hand back the authoritative version token that was just read
+    // fresh from the DB during the risk/policy check, so the client's later
+    // confirm step re-submits a value that's actually current — not whatever
+    // (possibly stale) token it happened to have when the dialog was opened.
+    dialog.versionToken = riskAssessment.currentVersionToken ?? actionData.versionToken;
+
     return {
       allowed: true,
       dialog,

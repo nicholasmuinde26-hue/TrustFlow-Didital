@@ -11,10 +11,14 @@ export default function LoanPortfolio({ portfolio, onDecision, onDisburse, onCon
     (l) => l.status === "pending_approval" || l.status === "eligible" || l.status === "approved"
   );
 
+  const summary = portfolio.summary || {};
+  const repaymentRate = summary.repayment_rate_percent;
+  const hasRepaymentRate = typeof repaymentRate === "number";
+
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6">
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card space-y-6">
       {/* Official Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-obsidian-border pb-4">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400">
             <ShieldCheck className="h-6 w-6" />
@@ -23,17 +27,46 @@ export default function LoanPortfolio({ portfolio, onDecision, onDisburse, onCon
             <span className="inline-block rounded-full bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 text-[10px] font-bold dark:bg-sky-950 dark:text-sky-300">
               OFFICIAL TREASURER / CHAIR DASHBOARD
             </span>
-            <h2 className="text-xl font-black text-slate-900 dark:text-white mt-0.5">
+            <h2 className="text-xl font-black text-slate-900 dark:text-mist mt-0.5">
               Member Loan Approvals & B2C Payouts
             </h2>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-right dark:border-slate-800 dark:bg-slate-800">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-right dark:border-obsidian-border dark:bg-obsidian-raised">
           <span className="text-[10px] font-bold text-slate-500 uppercase block">Pending Review</span>
           <b className="text-xl font-black text-amber-600 dark:text-amber-400">
             {portfolio.summary?.awaiting_decision_count || pendingLoans.length} Applications
           </b>
+        </div>
+      </div>
+
+      {/* Portfolio Health Strip */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4 dark:border-obsidian-border dark:bg-obsidian-raised/50">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Loan Book</span>
+          <p className="mt-1 text-lg font-black text-slate-900 dark:text-mist font-mono">
+            {money(summary.total_outstanding)}
+          </p>
+          <p className="text-xs text-slate-500">{summary.loan_count || 0} loan(s) total</p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4 dark:border-obsidian-border dark:bg-obsidian-raised/50">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Repayment Rate</span>
+          <p className="mt-1 text-lg font-black text-slate-900 dark:text-mist font-mono">
+            {hasRepaymentRate ? `${repaymentRate}%` : "—"}
+          </p>
+          <p className={`text-xs font-bold ${summary.all_loans_current ? "text-emerald-600 dark:text-mint" : "text-amber-600 dark:text-amber-400"}`}>
+            {summary.all_loans_current ? "All loans current" : "Some loans overdue"}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4 dark:border-obsidian-border dark:bg-obsidian-raised/50">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Overdue / Defaulted</span>
+          <p className="mt-1 text-lg font-black text-slate-900 dark:text-mist font-mono">
+            {money((summary.overdue || 0) + (summary.defaulted || 0))}
+          </p>
+          <p className="text-xs text-slate-500">Interest earned: {money(summary.interest_earned)}</p>
         </div>
       </div>
 
@@ -43,18 +76,18 @@ export default function LoanPortfolio({ portfolio, onDecision, onDisburse, onCon
           pendingLoans.map((loan) => (
             <div
               key={loan.id || loan._id}
-              className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/60"
+              className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-obsidian-border dark:bg-obsidian-raised/60"
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-3">
-                  <h4 className="font-extrabold text-slate-900 dark:text-white text-base">
+                  <h4 className="font-extrabold text-slate-900 dark:text-mist text-base">
                     {loan.member_name || "Chama Member"}
                   </h4>
                   <span className="font-black text-emerald-700 dark:text-emerald-400 text-base">
                     {money(loan.outstanding || loan.amount)}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Purpose: {loan.purpose || "Personal Credit"}</p>
+                <p className="text-xs text-slate-500 dark:text-mist-muted">Purpose: {loan.purpose || "Personal Credit"}</p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -93,7 +126,7 @@ export default function LoanPortfolio({ portfolio, onDecision, onDisburse, onCon
                       <button
                         disabled={busy}
                         onClick={() => onConfirmManual(loan.id || loan._id)}
-                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 transition"
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist-muted transition"
                       >
                         Confirm Cash/Bank
                       </button>
@@ -104,9 +137,9 @@ export default function LoanPortfolio({ portfolio, onDecision, onDisburse, onCon
             </div>
           ))
         ) : (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-10 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-800/40">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-10 text-center text-slate-500 dark:border-obsidian-border dark:bg-obsidian-raised/40">
             <Users className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-            <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">No Pending Member Approvals</p>
+            <p className="font-bold text-slate-800 dark:text-mist text-sm">No Pending Member Approvals</p>
             <p className="text-xs text-slate-500 mt-1">When members request credit, approval cards will appear here.</p>
           </div>
         )}

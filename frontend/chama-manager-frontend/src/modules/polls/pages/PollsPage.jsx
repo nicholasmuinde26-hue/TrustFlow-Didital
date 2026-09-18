@@ -56,11 +56,11 @@ export default function PollsPage() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold text-slate-900 dark:text-white">
-            <Vote className="text-violet-600" />
+          <h1 className="flex items-center gap-2 text-3xl font-bold text-slate-900 dark:text-mist">
+            <Vote className="text-violet-600 dark:text-mint" />
             Polls & Voting
           </h1>
-          <p className="mt-2 text-slate-500 dark:text-slate-400">
+          <p className="mt-2 text-slate-500 dark:text-mist-muted">
             Call a vote on loans, expenditure, new members, elections, or any other
             chama decision — and see results tally live.
           </p>
@@ -85,8 +85,8 @@ export default function PollsPage() {
               onClick={() => setStatus(f.value)}
               className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                 status === f.value
-                  ? "bg-violet-600 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  ? "bg-violet-600 text-white dark:bg-mint dark:text-obsidian-rail"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-obsidian-raised dark:text-mist-muted"
               }`}
             >
               {f.label}
@@ -105,9 +105,9 @@ export default function PollsPage() {
         )}
 
         {!isLoading && !isError && polls.length === 0 && (
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 py-16 text-center dark:border-slate-700">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 py-16 text-center dark:border-obsidian-border">
             <Vote size={28} className="text-slate-400" />
-            <p className="text-slate-500 dark:text-slate-400">
+            <p className="text-slate-500 dark:text-mist-muted">
               No polls {status !== "all" ? `in "${status}"` : "yet"}.
             </p>
           </div>

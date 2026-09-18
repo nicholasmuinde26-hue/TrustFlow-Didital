@@ -86,7 +86,7 @@ export default function UserMenu() {
         className="
         flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2
         transition-all hover:bg-slate-50
-        dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700
+        dark:border-obsidian-border dark:bg-obsidian-raised dark:hover:bg-slate-700
         "
       >
         {/* AVATAR: Photo or Initials */}
@@ -109,7 +109,7 @@ export default function UserMenu() {
         </div>
 
         <div className="hidden text-left lg:block">
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">{name}</p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-mist">{name}</p>
           {email && <p className="text-xs text-slate-500">{email}</p>}
         </div>
 
@@ -123,11 +123,11 @@ export default function UserMenu() {
         <div
           className="
           absolute right-0 mt-3 w-64 overflow-hidden rounded-2xl border border-slate-200
-          bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 z-50
+          bg-white shadow-xl dark:border-obsidian-border dark:bg-obsidian-card z-50
           "
         >
           {/* Header with photo */}
-          <div className="flex items-center gap-3 border-b border-slate-200 p-4 dark:border-slate-700">
+          <div className="flex items-center gap-3 border-b border-slate-200 p-4 dark:border-obsidian-border">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-primary font-semibold text-white">
               {photo? (
                 <img
@@ -151,12 +151,12 @@ export default function UserMenu() {
               onClick={goToAdmin}
               className="
               flex w-full items-center gap-3 px-4 py-3 font-bold text-violet-600 transition-colors
-              hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/30 border-b border-slate-100 dark:border-slate-800
+              hover:bg-violet-50 dark:text-mint dark:hover:bg-violet-950/30 border-b border-slate-100 dark:border-obsidian-border
               "
             >
               <ShieldCheck size={18} />
               <span>Admin Panel</span>
-              <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+              <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-violet-700 dark:bg-mint-deep dark:text-mint">
                 {isSuperAdmin ? "Super" : "Sub"}
               </span>
             </button>
@@ -166,7 +166,7 @@ export default function UserMenu() {
             onClick={goToWorkspaces}
             className="
             flex w-full items-center gap-3 px-4 py-3 transition-colors
-            hover:bg-slate-100 dark:hover:bg-slate-800
+            hover:bg-slate-100 dark:hover:bg-obsidian-raised
             "
           >
             <LayoutGrid size={18} />
@@ -177,7 +177,7 @@ export default function UserMenu() {
             onClick={goToInvitations}
             className="
             flex w-full items-center gap-3 px-4 py-3 transition-colors
-            hover:bg-slate-100 dark:hover:bg-slate-800
+            hover:bg-slate-100 dark:hover:bg-obsidian-raised
             "
           >
             <Mail size={18} />
@@ -188,14 +188,14 @@ export default function UserMenu() {
             onClick={goToProfile}
             className="
             flex w-full items-center gap-3 px-4 py-3 transition-colors
-            hover:bg-slate-100 dark:hover:bg-slate-800
+            hover:bg-slate-100 dark:hover:bg-obsidian-raised
             "
           >
             <User size={18} />
             Profile & Settings
           </button>
 
-          <div className="border-t border-slate-200 dark:border-slate-700">
+          <div className="border-t border-slate-200 dark:border-obsidian-border">
             <button
               onClick={handleSignOut}
               className="

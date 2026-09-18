@@ -161,12 +161,12 @@ export default function NotificationButton() {
           hover:bg-slate-100
           hover:text-slate-900
 
-          dark:border-slate-800
-          dark:bg-slate-900
-          dark:text-slate-300
+          dark:border-obsidian-border
+          dark:bg-obsidian-card
+          dark:text-mist-muted
           dark:hover:border-slate-700
-          dark:hover:bg-slate-800
-          dark:hover:text-white
+          dark:hover:bg-obsidian-raised
+          dark:hover:text-mist
         "
       >
         <Bell size={19} />
@@ -197,16 +197,16 @@ export default function NotificationButton() {
             shadow-2xl
             backdrop-blur-xl
 
-            dark:border-slate-800
-            dark:bg-slate-900
+            dark:border-obsidian-border
+            dark:bg-obsidian-card
           "
         >
           {/* Drawer Header */}
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 dark:border-slate-800">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5 dark:border-obsidian-border">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">Notifications</h3>
+              <h3 className="text-sm font-black text-slate-900 dark:text-mist">Notifications</h3>
               {unreadCount > 0 && (
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:bg-violet-900/40 dark:text-mint">
                   {unreadCount} new
                 </span>
               )}
@@ -217,7 +217,7 @@ export default function NotificationButton() {
                 type="button"
                 onClick={handleMarkAllRead}
                 disabled={markAllReadMutation.isPending}
-                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+                className="flex items-center gap-1 text-[11px] font-bold text-violet-600 hover:text-violet-700 dark:text-mint dark:hover:text-violet-300"
               >
                 <CheckCheck size={14} />
                 Mark all read
@@ -226,7 +226,7 @@ export default function NotificationButton() {
           </div>
 
           {/* Category Tabs */}
-          <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50/80 px-3 py-1.5 overflow-x-auto scrollbar-none dark:border-slate-800/80 dark:bg-slate-950/40">
+          <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50/80 px-3 py-1.5 overflow-x-auto scrollbar-none dark:border-obsidian-border/80 dark:bg-obsidian/40">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -236,8 +236,8 @@ export default function NotificationButton() {
                   rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all whitespace-nowrap
                   ${
                     activeTab === tab.id
-                      ? "bg-white text-slate-900 shadow-sm border border-slate-200 dark:bg-slate-800 dark:text-white dark:border-slate-700"
-                      : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                      ? "bg-white text-slate-900 shadow-sm border border-slate-200 dark:bg-obsidian-raised dark:text-mist dark:border-obsidian-border"
+                      : "text-slate-500 hover:text-slate-900 dark:text-mist-muted dark:hover:text-mist"
                   }
                 `}
               >
@@ -247,13 +247,13 @@ export default function NotificationButton() {
           </div>
 
           {/* Notifications List */}
-          <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+          <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-obsidian-border/60">
             {isLoading ? (
               <div className="p-8 text-center text-xs text-slate-400">Loading notifications...</div>
             ) : notificationList.length === 0 ? (
               <div className="p-8 text-center">
                 <Bell size={24} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No notifications</p>
+                <p className="text-xs font-bold text-slate-700 dark:text-mist-muted">No notifications</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">You're all caught up!</p>
               </div>
             ) : (
@@ -265,18 +265,18 @@ export default function NotificationButton() {
                     group flex cursor-pointer items-start gap-3 p-3.5 transition-colors
                     ${
                       item.state === 'read'
-                        ? "bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/60 opacity-80"
-                        : "bg-violet-50/40 hover:bg-violet-50/80 dark:bg-violet-950/20 dark:hover:bg-violet-950/40"
+                        ? "bg-white hover:bg-slate-50 dark:bg-obsidian-card dark:hover:bg-obsidian-raised/60 opacity-80"
+                        : "bg-violet-50/40 hover:bg-violet-50/80 dark:bg-mint-deep/20 dark:hover:bg-violet-950/40"
                     }
                   `}
                 >
-                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-obsidian-raised">
                     {item.icon || getCategoryIcon(item.category)}
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      <p className="text-xs font-bold text-slate-900 dark:text-mist truncate">
                         {item.title}
                       </p>
                       <div className="flex items-center gap-1 shrink-0">
@@ -287,7 +287,7 @@ export default function NotificationButton() {
                       </div>
                     </div>
 
-                    <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300 line-clamp-2 mt-0.5">
+                    <p className="text-[11px] leading-relaxed text-slate-600 dark:text-mist-muted line-clamp-2 mt-0.5">
                       {item.message}
                     </p>
 
@@ -314,10 +314,10 @@ export default function NotificationButton() {
           </div>
 
           {/* Footer link */}
-          <div className="border-t border-slate-100 bg-slate-50/50 p-2.5 text-center dark:border-slate-800 dark:bg-slate-950/30">
+          <div className="border-t border-slate-100 bg-slate-50/50 p-2.5 text-center dark:border-obsidian-border dark:bg-obsidian/30">
             <button
               onClick={() => setIsOpen(false)}
-              className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-slate-200"
             >
               Close
             </button>

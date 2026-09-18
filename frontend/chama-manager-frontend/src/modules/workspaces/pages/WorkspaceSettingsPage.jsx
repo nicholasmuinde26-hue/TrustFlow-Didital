@@ -18,6 +18,7 @@ import {
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 import Spinner from "@/shared/components/ui/Spinner";
+import loanService from "@/modules/loans/services/loan.service";
 
 import {
   useChamaSettings,
@@ -53,6 +54,7 @@ export default function WorkspaceSettingsPage() {
   const navigate = useNavigate();
 
   const canEdit = ["treasurer", "chairperson"].includes(activeWorkspace?.role);
+  const canEditLoanPolicy = activeWorkspace?.role === "chairperson";
   const canDelete = activeWorkspace?.role === "treasurer";
 
   const { data, isLoading, isError } = useChamaSettings(workspaceId, isChama);
@@ -79,6 +81,32 @@ export default function WorkspaceSettingsPage() {
   });
 
   const [saved, setSaved] = useState(false);
+  const [loanPolicyLoading, setLoanPolicyLoading] = useState(true);
+  const [loanPolicy, setLoanPolicy] = useState({
+    loan_multiplier: 3,
+    interest_rate_percent: 10,
+    interest_type: "flat",
+    min_membership_months: 3,
+    max_active_loans_per_member: 1,
+    allowed_purposes: [],
+    allowed_repayment_periods_months: [1, 2, 3, 6, 12],
+    allowed_repayment_frequencies: ["weekly", "monthly"],
+    grace_period_days: 7,
+    default_after_days: 30,
+    penalty_type: "flat_per_week",
+    penalty_amount: 100,
+    repayment_waterfall: ["penalty", "interest", "principal"],
+    guarantor_capacity_ratio: 0.5,
+    allow_guarantor_recovery: true,
+    min_guarantors_required: 0,
+    recusal_quorum_size: 2,
+    emergency_loan_enabled: true,
+    emergency_loan_limit: 5000,
+    emergency_loan_approval_roles: ["treasurer"],
+    topup_enabled: true,
+    group_loans_enabled: true,
+    approval_matrix: [{ max_amount: null, required_roles: ["chairperson", "treasurer"] }]
+  });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
@@ -109,9 +137,55 @@ export default function WorkspaceSettingsPage() {
     });
   }, [data]);
 
+  useEffect(() => {
+    if (!workspaceId || !isChama) return;
+    let cancelled = false;
+    setLoanPolicyLoading(true);
+    loanService.getPolicy(workspaceId)
+      .then((policy) => {
+        if (!cancelled && policy) setLoanPolicy((prev) => ({ ...prev, ...policy }));
+      })
+      .catch((err) => console.warn("Could not load loan policy", err))
+      .finally(() => { if (!cancelled) setLoanPolicyLoading(false); });
+    return () => { cancelled = true; };
+  }, [workspaceId, isChama]);
+
   const handleChange = (field) => (e) => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
     if (saved) setSaved(false);
+  };
+
+  const handleLoanPolicyChange = (field, value) => {
+    setLoanPolicy((prev) => ({ ...prev, [field]: value }));
+    if (saved) setSaved(false);
+  };
+
+  const handleLoanListChange = (field) => (e) => {
+    const values = e.target.value.split(",").map((v) => v.trim()).filter(Boolean);
+    handleLoanPolicyChange(field, values);
+  };
+
+  const handleApprovalMatrixChange = (index, field, value) => {
+    setLoanPolicy((prev) => {
+      const next = [...(prev.approval_matrix || [])];
+      next[index] = { ...next[index], [field]: value };
+      return { ...prev, approval_matrix: next };
+    });
+    if (saved) setSaved(false);
+  };
+
+  const addApprovalTier = () => {
+    setLoanPolicy((prev) => ({
+      ...prev,
+      approval_matrix: [...(prev.approval_matrix || []), { max_amount: null, required_roles: ["chairperson", "treasurer"] }]
+    }));
+  };
+
+  const removeApprovalTier = (index) => {
+    setLoanPolicy((prev) => ({
+      ...prev,
+      approval_matrix: (prev.approval_matrix || []).filter((_, i) => i !== index)
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -131,10 +205,10 @@ export default function WorkspaceSettingsPage() {
       approval_threshold: Number(form.approval_threshold) || 0,
       required_payout_approvals: Number(form.required_payout_approvals) || 1,
       loan_policy: {
-        min_savings_months: Number(form.min_savings_months) || 0,
-        max_multiple: Number(form.max_multiple) || 1,
-        interest_rate: Number(form.interest_rate) || 0,
-        repayment_months: Number(form.repayment_months) || 1,
+        min_savings_months: Number(loanPolicy.min_membership_months) || 0,
+        max_multiple: Number(loanPolicy.loan_multiplier) || 1,
+        interest_rate: Number(loanPolicy.interest_rate_percent) || 0,
+        repayment_months: Number(loanPolicy.allowed_repayment_periods_months?.[0]) || 1,
       },
       mpesa_shortcode: form.mpesa_shortcode?.trim() || null,
       mpesa_account_reference: form.mpesa_account_reference?.trim() || null,
@@ -145,6 +219,34 @@ export default function WorkspaceSettingsPage() {
 
     try {
       await updateSettings.mutateAsync({ chamaUpdates, profileUpdates });
+      if (canEditLoanPolicy) {
+        const updatedPolicy = await loanService.updatePolicy(workspaceId, {
+          loan_multiplier: Number(loanPolicy.loan_multiplier),
+          interest_rate_percent: Number(loanPolicy.interest_rate_percent),
+          interest_type: loanPolicy.interest_type,
+          min_membership_months: Number(loanPolicy.min_membership_months),
+          max_active_loans_per_member: Number(loanPolicy.max_active_loans_per_member),
+          allowed_purposes: loanPolicy.allowed_purposes,
+          allowed_repayment_periods_months: loanPolicy.allowed_repayment_periods_months.map(Number),
+          allowed_repayment_frequencies: loanPolicy.allowed_repayment_frequencies,
+          grace_period_days: Number(loanPolicy.grace_period_days),
+          default_after_days: Number(loanPolicy.default_after_days),
+          penalty_type: loanPolicy.penalty_type,
+          penalty_amount: Number(loanPolicy.penalty_amount),
+          repayment_waterfall: loanPolicy.repayment_waterfall,
+          guarantor_capacity_ratio: Number(loanPolicy.guarantor_capacity_ratio),
+          allow_guarantor_recovery: Boolean(loanPolicy.allow_guarantor_recovery),
+          min_guarantors_required: Number(loanPolicy.min_guarantors_required),
+          approval_matrix: loanPolicy.approval_matrix,
+          recusal_quorum_size: Number(loanPolicy.recusal_quorum_size),
+          emergency_loan_enabled: Boolean(loanPolicy.emergency_loan_enabled),
+          emergency_loan_limit: Number(loanPolicy.emergency_loan_limit),
+          emergency_loan_approval_roles: loanPolicy.emergency_loan_approval_roles,
+          topup_enabled: Boolean(loanPolicy.topup_enabled),
+          group_loans_enabled: Boolean(loanPolicy.group_loans_enabled),
+        });
+        if (updatedPolicy) setLoanPolicy((prev) => ({ ...prev, ...updatedPolicy }));
+      }
       setSaved(true);
       toast.success("Chama settings saved");
       setTimeout(() => setSaved(false), 3000);
@@ -345,7 +447,7 @@ export default function WorkspaceSettingsPage() {
       {!canEdit && (
         <div className="flex items-center gap-2.5 rounded-xl border border-amber-200/60 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
           <Lock size={15} />
-          Only the treasurer or chairperson can change these settings. You can view them here.
+          Only the treasurer or chairperson can change general Chama settings. Loan policy rules are controlled by the chairperson.
         </div>
       )}
 
@@ -425,84 +527,70 @@ export default function WorkspaceSettingsPage() {
 
         {/* ================= CONTRIBUTION & LOAN POLICY ================= */}
         <SectionCard icon={Coins} title="Contribution & Loan Policy">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={LABEL_CLASS}>Contribution Cycle</label>
-              <select
-                value={form.contribution_cycle}
-                onChange={handleChange("contribution_cycle")}
-                disabled={!canEdit}
-                className={FIELD_CLASS}
-              >
-                {CONTRIBUTION_CYCLES.map((cycle) => (
-                  <option key={cycle} value={cycle}>
-                    {cycle.charAt(0).toUpperCase() + cycle.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS}>Late Fine Amount (KES)</label>
-              <input
-                type="number"
-                min="0"
-                value={form.fine_amount}
-                onChange={handleChange("fine_amount")}
-                disabled={!canEdit}
-                className={FIELD_CLASS}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS}>Min. Savings Before Loan (months)</label>
-              <input
-                type="number"
-                min="0"
-                value={form.min_savings_months}
-                onChange={handleChange("min_savings_months")}
-                disabled={!canEdit}
-                className={FIELD_CLASS}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS}>Max Loan Multiple (of savings)</label>
-              <input
-                type="number"
-                min="1"
-                value={form.max_multiple}
-                onChange={handleChange("max_multiple")}
-                disabled={!canEdit}
-                className={FIELD_CLASS}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS}>Loan Interest Rate (%)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={form.interest_rate}
-                onChange={handleChange("interest_rate")}
-                disabled={!canEdit}
-                className={FIELD_CLASS}
-              />
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS}>Loan Repayment Period (months)</label>
-              <input
-                type="number"
-                min="1"
-                value={form.repayment_months}
-                onChange={handleChange("repayment_months")}
-                disabled={!canEdit}
-                className={FIELD_CLASS}
-              />
-            </div>
+          <div className="mb-2 rounded-xl border border-violet-200 bg-violet-50/70 p-3 text-[11px] text-violet-800 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-200">
+            <strong>Loan policy:</strong> The Loans page reads these rules directly from the Chama loan policy, so changes take effect there automatically. Interest-rate and other sensitive rule changes trigger a management-first notification.
           </div>
+          {!canEditLoanPolicy && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+              <Lock size={14} /> Only the chairperson can edit loan policy rules.
+            </div>
+          )}
+          {loanPolicyLoading ? (
+            <div className="flex items-center gap-2 py-6 text-xs text-slate-500"><Loader2 size={15} className="animate-spin" /> Loading loan policy...</div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div><label className={LABEL_CLASS}>Loan Multiplier (× savings)</label><input type="number" min="0" step="0.1" value={loanPolicy.loan_multiplier} onChange={(e) => handleLoanPolicyChange("loan_multiplier", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Interest Rate (%)</label><input type="number" min="0" max="100" step="0.1" value={loanPolicy.interest_rate_percent} onChange={(e) => handleLoanPolicyChange("interest_rate_percent", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Interest Type</label><select value={loanPolicy.interest_type} onChange={(e) => handleLoanPolicyChange("interest_type", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS}><option value="flat">Flat</option><option value="reducing_balance">Reducing balance</option></select></div>
+                <div><label className={LABEL_CLASS}>Minimum Membership (months)</label><input type="number" min="0" value={loanPolicy.min_membership_months} onChange={(e) => handleLoanPolicyChange("min_membership_months", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Max Active Loans / Member</label><input type="number" min="1" value={loanPolicy.max_active_loans_per_member} onChange={(e) => handleLoanPolicyChange("max_active_loans_per_member", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Min Guarantors</label><input type="number" min="0" value={loanPolicy.min_guarantors_required} onChange={(e) => handleLoanPolicyChange("min_guarantors_required", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Guarantor Capacity (% savings)</label><input type="number" min="0" max="100" step="1" value={Number(loanPolicy.guarantor_capacity_ratio) * 100} onChange={(e) => handleLoanPolicyChange("guarantor_capacity_ratio", Number(e.target.value) / 100)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Grace Period (days)</label><input type="number" min="0" value={loanPolicy.grace_period_days} onChange={(e) => handleLoanPolicyChange("grace_period_days", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Default After (days)</label><input type="number" min="0" value={loanPolicy.default_after_days} onChange={(e) => handleLoanPolicyChange("default_after_days", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Penalty Type</label><select value={loanPolicy.penalty_type} onChange={(e) => handleLoanPolicyChange("penalty_type", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS}><option value="flat_per_week">Flat per week</option><option value="percentage_of_due">Percentage of due</option></select></div>
+                <div><label className={LABEL_CLASS}>Penalty Amount / Rate</label><input type="number" min="0" step="0.1" value={loanPolicy.penalty_amount} onChange={(e) => handleLoanPolicyChange("penalty_amount", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Recusal Quorum</label><input type="number" min="1" value={loanPolicy.recusal_quorum_size} onChange={(e) => handleLoanPolicyChange("recusal_quorum_size", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div><label className={LABEL_CLASS}>Allowed Loan Purposes (comma separated)</label><input value={(loanPolicy.allowed_purposes || []).join(", ")} onChange={handleLoanListChange("allowed_purposes")} disabled={!canEditLoanPolicy} className={FIELD_CLASS} placeholder="Business, Education, Medical" /></div>
+                <div><label className={LABEL_CLASS}>Repayment Periods (months, comma separated)</label><input value={(loanPolicy.allowed_repayment_periods_months || []).join(", ")} onChange={handleLoanListChange("allowed_repayment_periods_months")} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Repayment Frequencies (comma separated)</label><input value={(loanPolicy.allowed_repayment_frequencies || []).join(", ")} onChange={handleLoanListChange("allowed_repayment_frequencies")} disabled={!canEditLoanPolicy} className={FIELD_CLASS} placeholder="weekly, monthly" /></div>
+                <div><label className={LABEL_CLASS}>Repayment Waterfall (comma separated)</label><input value={(loanPolicy.repayment_waterfall || []).join(", ")} onChange={handleLoanListChange("repayment_waterfall")} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+                <div><label className={LABEL_CLASS}>Emergency Approval Roles</label><input value={(loanPolicy.emergency_loan_approval_roles || []).join(", ")} onChange={handleLoanListChange("emergency_loan_approval_roles")} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {[
+                  ["emergency_loan_enabled", "Enable emergency loans"],
+                  ["topup_enabled", "Enable loan top-ups"],
+                  ["group_loans_enabled", "Enable group loans"],
+                  ["allow_guarantor_recovery", "Allow guarantor recovery"]
+                ].map(([field, label]) => (
+                  <label key={field} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-xs font-semibold dark:border-slate-800">
+                    <input type="checkbox" checked={Boolean(loanPolicy[field])} onChange={(e) => handleLoanPolicyChange(field, e.target.checked)} disabled={!canEditLoanPolicy} /> {label}
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div><label className={LABEL_CLASS}>Emergency Loan Limit (KES)</label><input type="number" min="0" value={loanPolicy.emergency_loan_limit} onChange={(e) => handleLoanPolicyChange("emergency_loan_limit", e.target.value)} disabled={!canEditLoanPolicy} className={FIELD_CLASS} /></div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between"><div><p className="text-xs font-bold text-slate-800 dark:text-slate-200">Approval Matrix</p><p className="text-[11px] text-slate-500">Each tier can require independent Chama officials to approve loans up to the specified amount.</p></div>{canEditLoanPolicy && <button type="button" onClick={addApprovalTier} className="rounded-lg border px-3 py-2 text-[11px] font-bold">Add tier</button>}</div>
+                {(loanPolicy.approval_matrix || []).map((tier, index) => (
+                  <div key={index} className="grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_2fr_auto] dark:border-slate-800">
+                    <input type="number" min="0" placeholder="Max amount (blank = no limit)" value={tier.max_amount ?? ""} onChange={(e) => handleApprovalMatrixChange(index, "max_amount", e.target.value === "" ? null : Number(e.target.value))} disabled={!canEditLoanPolicy} className={FIELD_CLASS} />
+                    <input value={(tier.required_roles || []).join(", ")} onChange={(e) => handleApprovalMatrixChange(index, "required_roles", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} disabled={!canEditLoanPolicy} className={FIELD_CLASS} placeholder="chairperson, treasurer" />
+                    {canEditLoanPolicy && <button type="button" onClick={() => removeApprovalTier(index)} className="rounded-lg border border-red-200 px-3 py-2 text-[11px] font-bold text-red-600">Remove</button>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </SectionCard>
 
         {/* ================= MEETINGS & APPROVALS ================= */}

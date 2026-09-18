@@ -21,13 +21,13 @@ export default function InviteMemberForm({ onSubmit, submitting }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-      <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-obsidian-border dark:bg-obsidian-card">
+      <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-mist">
         <Mail size={18} />
         Invite Someone
       </h3>
 
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-2 text-xs text-slate-500 dark:text-mist-muted">
         Send an invitation using the phone number they used to register.
       </p>
 

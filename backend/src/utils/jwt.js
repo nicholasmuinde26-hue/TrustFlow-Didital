@@ -84,6 +84,15 @@ export const verifyOtpToken = (token) => {
   return jwt.verify(token, JWT_ACCESS_SECRET);
 };
 
+// Deliberately separate from the ordinary login token: this proves the
+// administrator re-entered their password immediately before a control-plane
+// mutation. It is short-lived and scoped so it cannot authorize normal APIs.
+export const generateAdminStepUpToken = (userId) => jwt.sign(
+  { id: userId, type: 'admin_step_up' },
+  JWT_ACCESS_SECRET,
+  { expiresIn: '5m' }
+);
+
 // ========================================
 // BACKWARD COMPATIBILITY ALIASES
 // ========================================

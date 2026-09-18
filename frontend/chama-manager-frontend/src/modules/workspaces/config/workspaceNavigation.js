@@ -19,6 +19,7 @@ import {
   BarChart3,
   TrendingUp,
   LineChart,
+  HeartHandshake,
 
   // Business Specific Icons
   ShoppingCart,
@@ -40,13 +41,27 @@ import {
   Smartphone,
   MessageSquare,
   ShieldCheck,
+  ShieldQuestion,
+  Gavel,
+  Star,
   Users2,
   Tent,
   Megaphone,
   Vote,
 } from "lucide-react";
 
-import { canViewCommandCenter, canViewAdministration } from "../permissions/Permissions";
+import { canViewAdministration, canViewFullBooks, canViewLeadershipDesk } from "../permissions/Permissions";
+
+// Nav items inside "Books & Reports" that expose the chama's raw
+// double-entry books rather than a member-facing statement - gated by
+// canViewFullBooks() in filterByRole() below. Transactions is
+// deliberately NOT here: the backend now scopes it down to "your own"
+// transactions for a plain member instead of blocking it outright (see
+// finance.controller.js#getFinanceTransactions), so it stays visible to
+// everyone. Balance Sheet / Income Statement / Cash Flow / Reports also
+// stay visible to everyone - they're the member-facing statements
+// ReportsPage.jsx already marks as not management-only.
+const CHAMA_BOOKS_OFFICIAL_ONLY_TITLES = ["General Ledger", "Chama Wallet", "Trial Balance", "Bank Accounts"];
 
 export function getWorkspaceNavigation(workspaceId, type, role, category) {
   const base = `/workspace/${workspaceId}`;
@@ -68,9 +83,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Tenant Inquiries", icon: ClipboardList, to: `${base}/business/rental-inquiries` },
       { title: "Rent Collections", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Maintenance & Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
-      // Landlords need this link too — it's how they get the public
-      // /store/:slug URL to actually share their vacant rooms/plots.
-      { title: "Online Storefront", icon: Globe, to: `${base}/business/storefront` }
+      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   } else if (isRestaurant) {
     operationsItems.push(
@@ -78,14 +91,16 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Point of Sale (POS)", icon: ShoppingBag, to: `${base}/business/pos` },
       { title: "Orders & Sales", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Kitchen & Food Prep", icon: ClipboardList, to: `${base}/business/kitchen` },
-      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` }
+      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
+      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   } else if (isService) {
     operationsItems.push(
       { title: "Services", icon: Package, to: `${base}/business/inventory` },
       { title: "Appointments & Jobs", icon: ClipboardList, to: `${base}/business/sales` },
       { title: "Invoices & Billing", icon: ShoppingCart, to: `${base}/business/sales` },
-      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` }
+      { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
+      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   } else {
     // Retail & Other
@@ -94,7 +109,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Sales & Invoicing", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Inventory & Stock", icon: Package, to: `${base}/business/inventory` },
       { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
-      { title: "Online Storefront", icon: Globe, to: `${base}/business/storefront` }
+      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   }
 
@@ -312,10 +327,14 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     {
       title: "Chama Operations",
       items: [
+        // The Command Center used to sit right here next to the
+        // Leadership Desk — two links, same permission check, doing
+        // overlapping things. It's now a set of tabs inside the desk,
+        // so there is exactly one way in.
         {
-          title: "Command Center",
-          icon: Settings,
-          to: `${base}/command-center`,
+          title: "Leadership Desk",
+          icon: Users2,
+          to: `${base}/leadership`,
         },
         {
           title: "Loans",
@@ -324,7 +343,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
         },
         {
           title: "Meeting Records",
-          icon: Video,
+          icon: CalendarClock,
           to: `${base}/meetings`,
         },
         {
@@ -336,6 +355,11 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           title: "Announcements",
           icon: Megaphone,
           to: `${base}/announcements`,
+        },
+        {
+          title: "Messages",
+          icon: MessageSquare,
+          to: `${base}/chat`,
         },
       ],
     },
@@ -349,9 +373,13 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           to: `${base}/finance`,
         },
         {
+          // Was pointing at `${base}/contributions`, which is actually
+          // the Contribution-Group module's route reused by path
+          // coincidence — wrong page for a Chama workspace. The real
+          // Chama contributions view lives under /finance.
           title: "Contributions",
           icon: Coins,
-          to: `${base}/contributions`,
+          to: `${base}/finance/contributions`,
         },
         {
           title: "Record Contribution",
@@ -369,6 +397,11 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           to: `${base}/mgr`,
         },
         {
+          title: "Chama Contributions",
+          icon: HeartHandshake,
+          to: `${base}/chama-contributions`,
+        },
+        {
           title: "Payouts",
           icon: ArrowLeftRight,
           to: `${base}/finance/payouts`,
@@ -382,27 +415,12 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
-      title: "Books & Reports",
+      title: "Books",
       items: [
         {
           title: "Transactions",
           icon: Receipt,
           to: `${base}/finance/transactions`,
-        },
-        {
-          title: "General Ledger",
-          icon: BookOpen,
-          to: `${base}/finance/ledger`,
-        },
-        {
-          title: "Chart of Accounts",
-          icon: Landmark,
-          to: `${base}/finance/accounts`,
-        },
-        {
-          title: "Trial Balance",
-          icon: Scale,
-          to: `${base}/finance/trial-balance`,
         },
         {
           title: "Balance Sheet",
@@ -424,6 +442,26 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           icon: FileBarChart2,
           to: `${base}/reports`,
         },
+        {
+          title: "Trust Timeline",
+          icon: ShieldCheck,
+          to: `${base}/trust-timeline`,
+        },
+        {
+          title: "Trust Score",
+          icon: ShieldQuestion,
+          to: `${base}/trust-score`,
+        },
+        {
+          title: "Disputes",
+          icon: Gavel,
+          to: `${base}/disputes`,
+        },
+        {
+          title: "Official Accountability",
+          icon: Star,
+          to: `${base}/officials`,
+        },
       ],
     },
 
@@ -442,21 +480,35 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
   // =====================================================
   // ROLE-BASED FILTERING
   //
-  // Command Center and Administration/Settings are management-only
-  // areas — plain members shouldn't see a link to them at all, not
-  // just be blocked once they get there. Sections that end up with
-  // no items after filtering are dropped entirely.
+  // The Leadership Desk is a management-only area — plain members
+  // shouldn't see a link to it at all, not just be blocked once they
+  // get there. Sections that end up with no items after filtering are
+  // dropped entirely.
+  //
+  // "Administration" is now only rendered for workspace types that
+  // still have a standalone settings page (Contribution Groups,
+  // Business). For a Chama it is the desk's Governance Settings tab,
+  // and showing both would rebuild the collision this merge removed.
   // =====================================================
   function filterByRole(sections) {
+    const chamaBacked = type === "chama" || type === "burial-chama";
+
     return sections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
-          if (item.title === "Command Center") {
-            return canViewCommandCenter(role, type);
+          if (item.title === "Leadership Desk") {
+            return canViewLeadershipDesk(role, type);
           }
           if (section.title === "Administration") {
+            if (chamaBacked) return false;
             return canViewAdministration(role, type);
+          }
+          if (
+            section.title === "Books & Reports" &&
+            CHAMA_BOOKS_OFFICIAL_ONLY_TITLES.includes(item.title)
+          ) {
+            return canViewFullBooks(role, type);
           }
           return true;
         }),
@@ -606,9 +658,14 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
           to: `${base}/finance/ledger`,
         },
         {
-          title: "Chart of Accounts",
+          title: "Chama Wallet",
           icon: Landmark,
           to: `${base}/finance/accounts`,
+        },
+        {
+          title: "Bank Accounts",
+          icon: Building2,
+          to: `${base}/finance/bank-accounts`,
         },
         {
           title: "Trial Balance",
@@ -638,18 +695,17 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       ],
     },
 
+    // Titled "Chama Operations", not "Administration": the filter below
+    // drops the Administration section outright for Chama-backed
+    // workspaces (their settings are a tab in the desk), and this item
+    // would be swept away with it.
     {
-      title: "Administration",
+      title: "Chama Operations",
       items: [
         {
-          title: "Command Center",
-          icon: Settings,
-          to: `${base}/command-center`,
-        },
-        {
-          title: "Settings",
-          icon: Settings,
-          to: `${base}/settings`,
+          title: "Leadership Desk",
+          icon: Users2,
+          to: `${base}/leadership`,
         },
       ],
     },

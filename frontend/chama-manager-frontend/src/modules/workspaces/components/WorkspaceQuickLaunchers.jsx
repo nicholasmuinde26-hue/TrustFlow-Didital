@@ -55,7 +55,7 @@ export default function WorkspaceQuickLaunchers({ workspaceId, workspaceType }) 
         Icon={Megaphone}
         count={announcementCount}
         onClick={() => navigate(`/workspace/${workspaceId}/announcements`)}
-        className="bottom-40 bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-500/30"
+        className="bottom-56 lg:bottom-40 bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-500/30"
       />
 
       <QuickLauncher
@@ -63,7 +63,7 @@ export default function WorkspaceQuickLaunchers({ workspaceId, workspaceType }) 
         Icon={MessageCircle}
         count={chatCount}
         onClick={() => navigate(`/workspace/${workspaceId}/chat`)}
-        className="bottom-24 bg-gradient-to-br from-emerald-500 to-teal-500 shadow-emerald-500/30"
+        className="bottom-40 lg:bottom-24 bg-gradient-to-br from-emerald-500 to-teal-500 shadow-emerald-500/30"
       />
     </>
   );

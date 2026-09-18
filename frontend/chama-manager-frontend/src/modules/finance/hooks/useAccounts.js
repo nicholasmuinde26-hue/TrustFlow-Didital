@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import financeService from "../services/finance.service";
 
@@ -12,32 +12,43 @@ export default function useAccounts(workspaceId) {
   const [error, setError] =
     useState(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!workspaceId) return;
 
-    async function load() {
-      setLoading(true);
+    setLoading(true);
 
-      try {
-        const data =
-          await financeService.getAccounts(
-            workspaceId
-          );
+    try {
+      const data =
+        await financeService.getAccounts(
+          workspaceId
+        );
 
-        setAccounts(data);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
+      setAccounts(data);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
     }
-
-    load();
   }, [workspaceId]);
+
+  useEffect(() => {
+    load();
+
+    // Account balances (MEMBER_SAVINGS, MPESA_CLEARING, etc.) change the
+    // moment a payment posts to the ledger - refetch immediately instead
+    // of waiting for the next mount/navigation, same pattern as
+    // useFinanceSummary. See MpesaStkModal / usePaymentWatcher, which
+    // dispatch this event once a payment intent completes.
+    window.addEventListener("finance:updated", load);
+    return () => {
+      window.removeEventListener("finance:updated", load);
+    };
+  }, [load]);
 
   return {
     accounts,
     loading,
     error,
+    refetch: load,
   };
 }

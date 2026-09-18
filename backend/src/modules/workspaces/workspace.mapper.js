@@ -27,6 +27,12 @@ export function mapChamaWorkspace(
 
         role:membership.role,
 
+        // The viewer's own membership id within this workspace — the
+        // frontend needs this to tell "is this loan/action mine?" apart
+        // from "is this someone else's?" (e.g. conflict-of-interest
+        // recusal checks on the loan approvals queue).
+        membershipId:membership._id,
+
         currency:chama.currency,
 
         status:chama.status,
@@ -65,6 +71,10 @@ export function mapContributionWorkspace(
         description:group.description,
 
         role:membership.role,
+
+        // See mapChamaWorkspace — the viewer's own membership id in this
+        // workspace, used by the frontend for "is this mine?" checks.
+        membershipId:membership._id,
 
         currency:group.currency,
 

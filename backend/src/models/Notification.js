@@ -368,7 +368,14 @@ notificationSchema.index({
 // VALIDATION HOOKS
 // ========================================
 
-notificationSchema.pre('save', function(next) {
+// FIX: this used to declare `function(next)` and call `next()` at the end,
+// which crashed every notification creation with "TypeError: next is not a
+// function" (Kareem wasn't supplying a callback for this hook in the
+// installed mongoose version). The body is fully synchronous - it just
+// mutates `this` - so there's nothing to wait on. A zero-argument pre hook
+// is treated by Mongoose as synchronous and completes automatically as soon
+// as it returns, no callback required.
+notificationSchema.pre('save', function() {
   // Auto-expire notifications
   if (this.expires_at && this.expires_at < new Date() && this.state === 'unread') {
     this.state = 'archived';
@@ -395,8 +402,6 @@ notificationSchema.pre('save', function(next) {
     };
     this.action_deadline = new Date(Date.now() + (deadlines[this.priority] || deadlines.normal));
   }
-  
-  next();
 });
 
 // ========================================

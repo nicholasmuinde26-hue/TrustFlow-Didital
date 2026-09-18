@@ -18,6 +18,62 @@ class ChatService {
   }
 
   // ==========================================================
+  // SEND DIRECT MESSAGE
+  // ==========================================================
+
+  async sendDirectMessage(data) {
+
+    const message = await ChatMessage.create({
+      ...data,
+      conversation_type: "direct",
+    });
+
+    return message.populate(
+      "sender_id",
+      "name phone avatar"
+    );
+
+  }
+
+  // ==========================================================
+  // GET DIRECT MESSAGES (thread between two users, paginated)
+  // ==========================================================
+
+  async getDirectMessages(
+    userAId,
+    userBId,
+    {
+      limit = 50,
+      before,
+    } = {}
+  ) {
+
+    const [a, b] = [String(userAId), String(userBId)].sort();
+    const query = {
+      conversation_type: "direct",
+      thread_key: `${a}_${b}`,
+      deleted_at: null,
+    };
+
+    if (before) {
+      query.createdAt = {
+        $lt: new Date(before),
+      };
+    }
+
+    return ChatMessage.find(query)
+      .sort({
+        createdAt: -1,
+      })
+      .limit(limit)
+      .populate(
+        "sender_id",
+        "name phone avatar"
+      );
+
+  }
+
+  // ==========================================================
   // GET MESSAGES (Pagination)
   // ==========================================================
 

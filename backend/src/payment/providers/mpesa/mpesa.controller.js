@@ -7,7 +7,8 @@ import Business from '../../../models/Business.js';
 import PaymentIntent from '../../../models/PaymentIntent.js';
 import AppError from '../../../utils/AppError.js';
 
-import { reconcileB2cResult } from '../../../modules/business/business.service.js';
+import { reconcileB2cResult, reconcileStkCallback } from '../../../modules/business/business.service.js';
+import { confirmMpesaDisbursement } from '../../../modules/loans/Loandisbursement.service.js';
 import { maybeCreateMgrPayoutForChama } from '../../../modules/chama/chamaFinance.service.js'; 
 import MpesaAttempt from '../../../models/MpesaAttempt.js';
 import paymentService from '../../../payment/payment.service.js';
@@ -178,6 +179,22 @@ export const handleMpesaCallback = async (req, res) => {
             result_description: stk.ResultDesc
         }
       ).catch(() => {});
+
+      // 2b. Business POS sales don't go through PaymentIntent at all (see
+      // business.service.js) - paymentService.handleCallback() above is a
+      // no-op for them. This is the only place their STK callback ever
+      // reconciles, so try it unconditionally; it's a safe no-op when the
+      // CheckoutRequestID doesn't belong to a pending BusinessTransaction.
+      const amount = stk.CallbackMetadata?.Item?.find(i => i.Name === 'Amount')?.Value ?? null;
+      await reconcileStkCallback({
+        checkoutRequestId: stk.CheckoutRequestID,
+        amount,
+        success,
+        mpesaReceiptNumber: receipt,
+        reason: stk.ResultDesc,
+      }).catch((error) => {
+        console.error("Business STK callback reconciliation error:", error.message);
+      });
     }
 
     // 3. Legacy: Check if MGR round is complete and trigger payout
@@ -197,11 +214,71 @@ export const handleMpesaCallback = async (req, res) => {
 
 export const handleB2cResult = async (req, res) => {
   try {
-    await reconcileB2cResult(req.body);
+    const result = req.body;
+    const conversationId = result?.Result?.ConversationID;
+    const success = Number(result?.Result?.ResultCode) === 0;
+    const failureReason = result?.Result?.ResultDesc;
+
+    // A single B2C ResultURL is shared by business/MGR payouts and loan
+    // disbursements — Safaricom has no way to tell us which domain a given
+    // payout belongs to, so we try the business-transaction match first and
+    // fall back to the loan match when it doesn't hit. Without this fallback
+    // a loan disbursement's B2C confirmation was silently dropped and the
+    // loan stayed stuck in "disbursement_pending" (Processing...) forever,
+    // even though Safaricom had already settled the payout.
+    const handledAsBusinessPayout = await reconcileB2cResult(result);
+    if (!handledAsBusinessPayout && conversationId) {
+      await confirmMpesaDisbursement({ conversationId, success, failureReason }).catch((error) => {
+        console.error("M-Pesa B2C loan disbursement reconciliation error:", error);
+      });
+    }
   } catch (error) {
     console.error("M-Pesa B2C result processing error:", error);
   }
   return res.status(200).json({ ResultCode: 0, ResultDesc: "Result received" });
+};
+
+/**
+ * Result callback for queryTransactionStatus() (mpesa.service.js). Only the
+ * loan disbursement reconciliation sweep (loanDisbursementReconciliation.job.js)
+ * ever triggers that query today, so this only needs to resolve loans — but
+ * the same ResultParameters.ConversationID trick would work for business
+ * B2C payouts too if that ever needs the same backstop.
+ */
+export const handleTransactionStatusResult = async (req, res) => {
+  try {
+    const result = req.body?.Result;
+    const params = result?.ResultParameters?.ResultParameter || [];
+    const findParam = (key) => params.find((p) => p.Key === key)?.Value;
+
+    // The original B2C transaction's own ConversationID is nested inside
+    // ResultParameters here, not at the top level (the top-level
+    // ConversationID/OriginatorConversationID belong to this status QUERY,
+    // not the transaction being queried) — this is what actually matches
+    // `loan.disbursement.provider_reference`.
+    const originalConversationId = findParam('ConversationID');
+    const transactionStatus = findParam('TransactionStatus'); // e.g. "Completed"
+    const queryResultCode = Number(result?.ResultCode);
+
+    if (originalConversationId) {
+      const success = queryResultCode === 0 && transactionStatus === 'Completed';
+      const failureReason = !success
+        ? (transactionStatus ? `M-Pesa reports transaction status: ${transactionStatus}` : result?.ResultDesc || 'Transaction status query indicates the disbursement did not complete')
+        : undefined;
+
+      await confirmMpesaDisbursement({ conversationId: originalConversationId, success, failureReason }).catch((error) => {
+        console.error("M-Pesa transaction-status loan reconciliation error:", error);
+      });
+    }
+  } catch (error) {
+    console.error("M-Pesa transaction status result processing error:", error);
+  }
+  return res.status(200).json({ ResultCode: 0, ResultDesc: "Result received" });
+};
+
+/** Safaricom hits this if the transaction-status query itself times out in the queue. Nothing to reconcile from a timeout — the sweep will simply retry this loan on its next pass. */
+export const handleTransactionStatusTimeout = async (_req, res) => {
+  return res.status(200).json({ ResultCode: 0, ResultDesc: "Timeout received" });
 };
 
 export const queryMpesaPayment = async (req, res, next) => {

@@ -8,13 +8,16 @@ import { connectDatabase } from "./config/database.js";
 import { initSocket } from "./modules/realtime/socketServer.js";
 
 import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js"; // FIX: was paymentIntentReconciliation.job
+import { startLoanDisbursementReconciliationJob } from "./jobs/loanDisbursementReconciliation.job.js";
 import { startPollAutoCloseJob } from "./jobs/pollAutoClose.job.js";
 import { startSavingsShareoutSchedulerJob } from "./jobs/savingsShareoutScheduler.job.js";
 import { startUssdSessionCleanupJob } from "./jobs/ussdSessionCleanup.job.js";
+import { startCashDepositEnforcementJob } from "./jobs/cashDepositEnforcement.job.js";
 
 // NEW: Payment Provider Bootstrap
 import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
 import { bootstrapSuperAdmin } from "./config/bootstrapAdmin.js";
+import { runBackfillChairpersonWalletView } from "./scripts/backfillChairpersonWalletView.js";
 
 // ============================================================================
 // CREATE HTTP SERVER
@@ -44,6 +47,23 @@ async function startServer() {
         await bootstrapSuperAdmin();
 
         // ============================================================
+        // PERMISSION BACKFILLS
+        // ============================================================
+        // Self-healing: grants chairpersons `finance.accounts.view` (Chama
+        // Wallet, view-only) on chamas whose RolePermission rows were
+        // seeded before this key existed. Idempotent - safe on every boot.
+        try {
+            const backfillResult = await runBackfillChairpersonWalletView({ silent: true });
+            console.log(
+                ` Chairperson Wallet View Backfill: granted ${backfillResult.granted}, ` +
+                `already covered/no chairperson ${backfillResult.skippedNoChairperson}, ` +
+                `failed ${backfillResult.failed} (of ${backfillResult.total} chamas)`
+            );
+        } catch (error) {
+            console.error(" Chairperson Wallet View Backfill failed (non-fatal):", error.message);
+        }
+
+        // ============================================================
         // REGISTER PAYMENT PROVIDERS
         // ============================================================
         const paymentRegistry = initializePaymentProviders();
@@ -56,6 +76,9 @@ async function startServer() {
         startPaymentIntentReconciliationJob();
         console.log(` Payment Intent Reconciliation Job: Started [30s interval]`);
 
+        startLoanDisbursementReconciliationJob();
+        console.log(` Loan Disbursement Reconciliation Job: Started [60s interval]`);
+
         startPollAutoCloseJob();
         console.log(` Poll Auto-Close Job: Started [60s interval]`);
 
@@ -64,6 +87,9 @@ async function startServer() {
 
         startUssdSessionCleanupJob();
         console.log(` USSD Session Cleanup Job: Started [2m interval]`);
+
+        startCashDepositEnforcementJob();
+        console.log(` Cash Deposit Enforcement Job: Started [5m interval]`);
 
         // ============================================================
         // START HTTP SERVER

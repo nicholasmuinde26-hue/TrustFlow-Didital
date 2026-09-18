@@ -130,8 +130,8 @@ export default function JoinChamaPage() {
     }
   }
 
-  async function handleJoinWithCode(codeToUse, chamaId) {
-    const code = codeToUse || inputCode.trim();
+  async function handleJoinWithCode() {
+    const code = inputCode.trim();
     if (!code) {
       setCodeError("Please enter a valid invitation code.");
       return;
@@ -142,32 +142,10 @@ export default function JoinChamaPage() {
       return;
     }
 
-    // Known target (clicked from the public directory) — check
-    // membership locally before sending anything to the backend.
-    if (chamaId && myChamaIds.has(String(chamaId))) {
-      setCodeError("You're already a member of this Chama.");
-      return;
-    }
-
-    // Known target (clicked from the public directory) — check
-    // membership/pending state locally before sending anything to the
-    // backend.
-    if (chamaId && myChamaIds.has(String(chamaId))) {
-      setCodeError("You're already a member of this Chama.");
-      return;
-    }
-    if (chamaId && pendingChamaIds.has(String(chamaId))) {
-      setCodeError("You already have a request pending approval for this Chama.");
-      return;
-    }
-
     try {
       setCodeSubmitting(true);
       setCodeError("");
       const membership = await chamaService.joinWithCode(code);
-      if (chamaId) {
-        setPendingChamaIds((prev) => new Set(prev).add(String(chamaId)));
-      }
       setRequestState("submitted");
       setRequestMessage(
         membership?.status === "pending"
@@ -180,6 +158,51 @@ export default function JoinChamaPage() {
       );
     } finally {
       setCodeSubmitting(false);
+    }
+  }
+
+  // "Request to Join" on a public directory card — no invitation code
+  // needed at all, since the Chama is already publicly visible. Tracks
+  // its own per-card loading state (joiningChamaId) separately from the
+  // manual code form above.
+  const [joiningChamaId, setJoiningChamaId] = useState(null);
+  const [directoryError, setDirectoryError] = useState("");
+
+  async function handleRequestToJoinPublic(chamaId) {
+    setDirectoryError("");
+
+    if (!isAuthenticated) {
+      navigate("/login", { state: authRedirectState });
+      return;
+    }
+
+    // Check membership/pending state locally before sending anything
+    // to the backend.
+    if (myChamaIds.has(String(chamaId))) {
+      setDirectoryError("You're already a member of this Chama.");
+      return;
+    }
+    if (pendingChamaIds.has(String(chamaId))) {
+      setDirectoryError("You already have a request pending approval for this Chama.");
+      return;
+    }
+
+    try {
+      setJoiningChamaId(chamaId);
+      const membership = await chamaService.requestToJoinPublicChama(chamaId);
+      setPendingChamaIds((prev) => new Set(prev).add(String(chamaId)));
+      setRequestState("submitted");
+      setRequestMessage(
+        membership?.status === "pending"
+          ? "Your request to join has been sent successfully. The chairperson or treasurer will review it shortly."
+          : "You have joined the Chama."
+      );
+    } catch (err) {
+      setDirectoryError(
+        err.response?.data?.message || "Unable to submit your request to join."
+      );
+    } finally {
+      setJoiningChamaId(null);
     }
   }
 
@@ -403,6 +426,12 @@ export default function JoinChamaPage() {
               </div>
             </div>
 
+            {directoryError && (
+              <p className="mb-3 text-xs font-semibold text-red-600 dark:text-red-400 text-center">
+                {directoryError}
+              </p>
+            )}
+
             {loadingPublic ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <Spinner />
@@ -472,11 +501,17 @@ export default function JoinChamaPage() {
                         <Button
                           variant="secondary"
                           className="mt-4 w-full py-2 text-xs font-bold"
-                          disabled={codeSubmitting}
-                          onClick={() => handleJoinWithCode(chama.join_code, chama._id)}
+                          disabled={joiningChamaId === chama._id}
+                          onClick={() => handleRequestToJoinPublic(chama._id)}
                         >
-                          Request to Join
-                          <ArrowRight size={13} />
+                          {joiningChamaId === chama._id ? (
+                            "Submitting request..."
+                          ) : (
+                            <>
+                              Request to Join
+                              <ArrowRight size={13} />
+                            </>
+                          )}
                         </Button>
                       )}
                     </div>

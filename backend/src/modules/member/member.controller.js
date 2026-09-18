@@ -7,7 +7,10 @@ import {
   transferTreasurerRole,
   updateMemberProfile,
   reorderPayoutPositions,
-  getChamaJoinRequests
+  getChamaJoinRequests,
+  assessMemberExit,
+  initiateMemberExit,
+  completeMemberExit
 } from './member.service.js';
 
 import AppError from '../../utils/AppError.js';
@@ -382,6 +385,42 @@ export const updateMemberStatusController = async (
   }
 };
 
+
+// ========================================
+// MEMBER EXIT / WITHDRAWAL PROCESS
+// ========================================
+
+export const assessMemberExitController = async (req, res, next) => {
+  try {
+    const result = await assessMemberExit({ chamaId: req.params.chamaId, memberId: req.params.memberId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) { next(error); }
+};
+
+export const initiateMemberExitController = async (req, res, next) => {
+  try {
+    const result = await initiateMemberExit({
+      chamaId: req.params.chamaId,
+      memberId: req.params.memberId,
+      actorUserId: req.user._id,
+      reason: req.body?.reason || '',
+    });
+    return res.status(202).json({ success: true, message: 'Member exit process initiated. Financial clearance and approvals are required before any savings are disbursed.', data: result });
+  } catch (error) { next(error); }
+};
+
+export const completeMemberExitController = async (req, res, next) => {
+  try {
+    const result = await completeMemberExit({
+      chamaId: req.params.chamaId,
+      exitRequestId: req.params.exitRequestId,
+      actorUserId: req.user._id,
+      disbursement_method: req.body?.disbursement_method,
+      external_reference: req.body?.external_reference || null,
+    });
+    return res.status(200).json({ success: true, message: 'Member savings refund disbursed and membership closed.', data: result });
+  } catch (error) { next(error); }
+};
 
 // ========================================
 // REMOVE MEMBER FROM CHAMA

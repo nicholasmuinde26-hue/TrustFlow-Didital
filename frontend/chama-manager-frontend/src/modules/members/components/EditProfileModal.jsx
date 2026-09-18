@@ -83,7 +83,7 @@ export default function EditProfileModal({ open, onClose, initial = {}, onSave, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 dark:bg-slate-900">
+      <div className="w-full max-w-md rounded-xl bg-white p-6 dark:bg-obsidian-card">
         <h2 className="text-lg font-semibold">Edit profile</h2>
 
         <form className="mt-4 space-y-4" onSubmit={handleSubmit}>

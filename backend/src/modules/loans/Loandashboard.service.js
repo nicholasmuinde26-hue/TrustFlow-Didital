@@ -3,7 +3,7 @@ import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import { getOrCreatePolicy } from './Loanpolicy.service.js';
 import { getMemberSavings, getExistingOutstanding } from './loanSavings.service.js';
-import { OPEN_LOAN_STATUSES } from './Loan.constants.js';
+import { OPEN_LOAN_STATUSES, LOAN_IN_PROGRESS_STATUSES, AWAITING_DECISION_STATUSES } from './Loan.constants.js';
 
 const round2 = (n) => Math.round((n || 0) * 100) / 100;
 
@@ -13,10 +13,15 @@ export async function getMemberLoanSummary({ chama, membership }) {
   const savings = await getMemberSavings(chama._id, membership._id);
   const loanLimit = round2(savings * Number(policy.loan_multiplier || 0));
 
+  // LOAN_IN_PROGRESS_STATUSES (not just OPEN_LOAN_STATUSES) so the
+  // member's dashboard already shows this loan while it's still
+  // submitted/pending_approval — not only once an official has fully
+  // approved it. The status field on the returned object is what lets
+  // the UI distinguish "awaiting approval" from "disbursed" etc.
   const activeLoan = await ChamaLoan.findOne({
     chama_id: chama._id,
     membership_id: membership._id,
-    status: { $in: OPEN_LOAN_STATUSES },
+    status: { $in: LOAN_IN_PROGRESS_STATUSES },
   }).sort({ createdAt: -1 });
 
   const outstanding = activeLoan
@@ -38,6 +43,19 @@ export async function getMemberLoanSummary({ chama, membership }) {
     'guarantors.status': 'pending',
   }).select('reference amount purpose guarantors membership_id');
 
+  // Approval-chain progress — only meaningful while the loan is still
+  // awaiting a decision, but harmless to include either way. Lets the
+  // dashboard show "1 of 2 approvals in" instead of just a status word.
+  const isAwaitingDecision = activeLoan && AWAITING_DECISION_STATUSES.includes(activeLoan.status);
+  const requiredApprovalRoles = activeLoan?.required_approval_roles?.length
+    ? activeLoan.required_approval_roles
+    : ['chairperson', 'treasurer'];
+  const approvals = (activeLoan?.approvals || []).map((a) => ({
+    role: a.role,
+    decision: a.decision,
+    decided_at: a.decided_at,
+  }));
+
   return {
     savings_balance: savings,
     loan_limit: loanLimit,
@@ -47,11 +65,17 @@ export async function getMemberLoanSummary({ chama, membership }) {
           id: activeLoan._id,
           reference: activeLoan.reference,
           amount: activeLoan.amount,
+          purpose: activeLoan.purpose,
           status: activeLoan.status,
           outstanding,
           next_payment: nextInstallment
             ? { amount: round2(nextInstallment.total_due - nextInstallment.principal_paid - nextInstallment.interest_paid), due_date: nextInstallment.due_date }
             : null,
+          // Only populated while awaiting a decision — a disbursed/active
+          // loan has already cleared its approval chain, so there's
+          // nothing left to track here.
+          required_approval_roles: isAwaitingDecision ? requiredApprovalRoles : [],
+          approvals: isAwaitingDecision ? approvals : [],
         }
       : null,
     outstanding_total: totalOutstandingAcrossLoans,
@@ -83,6 +107,15 @@ export async function getPortfolio({ chama }) {
   let defaulted = 0;
   let interestEarned = 0;
 
+  // Repayment rate: of everything that has fallen due across the
+  // portfolio's repayment schedules so far, what fraction has actually
+  // been collected. Installments that aren't due yet don't count either
+  // way — a loan that's still mid-term with no missed payments should
+  // read as "on track", not drag the rate down for money not yet owed.
+  let amountDueToDate = 0;
+  let amountCollectedOfDue = 0;
+
+  const now = new Date();
   const openStatuses = new Set(OPEN_LOAN_STATUSES);
 
   for (const loan of loans) {
@@ -98,7 +131,20 @@ export async function getPortfolio({ chama }) {
 
     const interestPaid = loan.repayment_schedule.reduce((s, i) => s + (i.interest_paid || 0), 0);
     interestEarned = round2(interestEarned + interestPaid);
+
+    for (const installment of loan.repayment_schedule) {
+      const isDue = installment.status !== 'pending' || new Date(installment.due_date) <= now;
+      if (!isDue) continue;
+      amountDueToDate += installment.total_due || 0;
+      amountCollectedOfDue += (installment.principal_paid || 0) + (installment.interest_paid || 0);
+    }
   }
+
+  // No installments due yet anywhere in the portfolio (e.g. a brand-new
+  // book) reads as 100% rather than 0/0 — nothing has been missed.
+  const repaymentRatePercent = amountDueToDate > 0
+    ? round2(Math.min(100, (amountCollectedOfDue / amountDueToDate) * 100))
+    : 100;
 
   const awaitingDecision = loans.filter((l) => ['submitted', 'pending_approval', 'eligible', 'draft'].includes(l.status));
 
@@ -112,11 +158,18 @@ export async function getPortfolio({ chama }) {
       interest_earned: interestEarned,
       loan_count: loans.length,
       awaiting_decision_count: awaitingDecision.length,
+      repayment_rate_percent: repaymentRatePercent,
+      all_loans_current: overdue === 0 && defaulted === 0,
     },
     loans: loans.map((loan) => ({
       id: loan._id,
       _id: loan._id,
       reference: loan.reference,
+      // Applicant's own membership id — required by the frontend to
+      // determine "is the current viewer the applicant?" (conflict-of-
+      // interest recusal). Without this the check silently falls back to
+      // comparing undefined to undefined and misfires for every viewer.
+      membership_id: loan.membership_id?._id || loan.membership_id,
       member_name: loan.membership_id?.user_id?.name || 'Unknown',
       member_phone: loan.membership_id?.user_id?.phone || loan.phone_number || '',
       principal: loan.amount,
@@ -127,12 +180,37 @@ export async function getPortfolio({ chama }) {
       disbursement_method: loan.disbursement_method,
       required_approval_roles: loan.required_approval_roles,
       approvals: loan.approvals || [],
+      // Conflict-of-interest routing data (spec section 5) — needed so the
+      // approvals queue can show the real recusal state instead of it
+      // being derived incorrectly on the frontend.
+      conflict_of_interest: loan.conflict_of_interest || false,
+      recused_roles: loan.recused_roles || [],
+      recusal_quorum_required: loan.recusal_quorum_required || 0,
       outstanding: round2(
         loan.balances.principal_outstanding + loan.balances.interest_outstanding + loan.balances.penalty_outstanding
       ),
       days_late: loan.default_info?.days_late || 0,
       status: loan.status,
       createdAt: loan.createdAt,
+      // Decision + disbursement audit trail — needed so the dashboard can
+      // show approved/rejected/disbursed loans as a clear, read-only
+      // history instead of those loans just disappearing from view once
+      // they leave the active approvals queue.
+      rejected_at: loan.rejected_at || null,
+      rejection_reason: loan.rejection_reason || null,
+      approved_at: loan.approved_at || null,
+      disbursement: {
+        status: loan.disbursement?.status || null,
+        provider: loan.disbursement?.provider || null,
+        provider_reference: loan.disbursement?.provider_reference || null,
+        disbursed_at: loan.disbursement?.disbursed_at || null,
+        failure_reason: loan.disbursement?.failure_reason || null,
+      },
+      // Needed as the optimistic-concurrency "versionToken" the approve/
+      // reject confirmation flow sends back with the decision — without it
+      // the frontend had nothing to send, so decide()'s stale-record check
+      // was silently never triggered.
+      updatedAt: loan.updatedAt,
     })),
   };
 }

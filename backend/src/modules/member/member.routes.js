@@ -9,7 +9,10 @@ import {
   transferTreasurerController,
   updateMemberProfileController,
   reorderPayoutPositionsController,
-  getChamaJoinRequestsController
+  getChamaJoinRequestsController,
+  assessMemberExitController,
+  initiateMemberExitController,
+  completeMemberExitController
 } from './member.controller.js';
 
 import {
@@ -18,10 +21,17 @@ import {
 
 import {
   requireChamaMember,
-  requireChamaTreasurerOrChairperson
+  requireChamaTreasurerOrChairperson,
+  requireChamaChairperson
 } from '../../middleware/chama.middleware.js';
 
 import { applyPrivacyToField } from '../../middleware/privacyWall.middleware.js';
+
+import {
+  requireLeadershipSession,
+  requireLeadershipStepUp,
+  STEP_UP_ACTIONS
+} from '../../middleware/leadershipSession.middleware.js';
 
 import {
   requirePermission,
@@ -75,11 +85,16 @@ const router =
 //
 // ========================================
 
+// Member management now lives exclusively behind the Leadership Desk,
+// so these mutations require an unlocked desk in addition to the role.
+// The read routes below deliberately do NOT — every member can browse
+// the directory.
 router.post(
   '/:chamaId/members',
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requireLeadershipSession,
   requirePermission('members.create'),
   addMemberController
 );
@@ -96,7 +111,8 @@ router.post(
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the Treasurer or Chairperson
+// 3. User must be the Chairperson
+//    (Treasurer cannot change member roles)
 //
 // Body:
 //
@@ -128,6 +144,7 @@ router.patch(
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requireLeadershipStepUp(STEP_UP_ACTIONS.CHANGE_MEMBER_ROLE),
   requirePermission('roles.assign'),
   transferTreasurerController
 );
@@ -243,7 +260,8 @@ router.get(
 //
 // 1. User must be authenticated
 // 2. User must be an active Chama member
-// 3. User must be the Treasurer or Chairperson
+// 3. User must be the Chairperson
+//    (Treasurer cannot change member roles)
 //
 // Body:
 //
@@ -259,11 +277,15 @@ router.get(
 //
 // ========================================
 
+// Handing someone the Treasurer or Chairperson seat is how an attacker
+// would make their access permanent, so this is one of the few actions
+// that asks for the PIN again even inside an unlocked desk.
 router.patch(
   '/:chamaId/members/:memberId/role',
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requireLeadershipStepUp(STEP_UP_ACTIONS.CHANGE_MEMBER_ROLE),
   requirePermission('roles.assign'),
   applyPrivacyToField('member'),
   updateMemberRoleController
@@ -345,7 +367,8 @@ router.patch(
   '/:chamaId/members/:memberId/status',
   protect,
   requireChamaMember,
-  requireChamaTreasurerOrChairperson,
+  requireChamaChairperson,
+  requireLeadershipSession,
   requirePermission('members.suspend'),
   updateMemberStatusController
 );
@@ -380,12 +403,33 @@ router.patch(
 //
 // ========================================
 
+router.get(
+  '/:chamaId/members/:memberId/exit-assessment',
+  protect,
+  requireChamaMember,
+  assessMemberExitController
+);
+
+router.post(
+  '/:chamaId/members/:memberId/exit',
+  protect,
+  requireChamaMember,
+  initiateMemberExitController
+);
+
+router.post(
+  '/:chamaId/member-exits/:exitRequestId/disburse',
+  protect,
+  requireChamaMember,
+  completeMemberExitController
+);
+
 router.patch(
   '/:chamaId/members/:memberId/remove',
   protect,
   requireChamaMember,
-  requireChamaTreasurerOrChairperson,
-  requirePermission('members.remove'),
+  requireChamaChairperson,
+  requireLeadershipSession,
   removeMemberController
 );
 

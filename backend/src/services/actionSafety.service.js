@@ -2,7 +2,7 @@ import ChamaMembership from '../models/ChamaMembership.js';
 import Chama from '../models/Chama.js';
 import ChamaLoan from '../models/ChamaLoan.js';
 import permissionService from './permission.service.js';
-import { LOAN_STATUS } from '../modules/loans/Loan.constants.js';
+import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from '../modules/loans/Loan.constants.js';
 
 // ========================================
 // ACTION SAFETY ENGINE
@@ -96,11 +96,23 @@ class ActionSafetyEngine {
       warnings,
       confirmationLevel,
       requiredApprovals: approvalCheck.requiredApprovals,
-      riskFactors: riskAssessment,
+      // riskAssessment is { riskLevel, riskFactors } — this was assigning
+      // the whole object here instead of just the array, so
+      // confirmationDialog.service.js's buildDialog() (which destructures
+      // `riskFactors` off this same return value) received that object in
+      // place of an array, and buildCriticalDialog's riskFactors.map(...)
+      // blew up with "riskFactors.map is not a function" on every single
+      // CRITICAL-level action (loan.approve included).
+      riskFactors: riskAssessment.riskFactors,
       permissionCheck,
       roleCheck,
       policyCheck,
-      limitCheck
+      limitCheck,
+      // The freshest known version token for the record this action targets,
+      // read straight from the DB during the policy check above (not trusted
+      // from whatever the client submitted). Undefined for actions whose
+      // policy check doesn't resolve one.
+      currentVersionToken: policyCheck.currentVersionToken
     };
   }
 
@@ -109,20 +121,27 @@ class ActionSafetyEngine {
    */
   async checkPermission(action, membership, chamaId) {
     const permissionKey = this.getActionPermissionKey(action);
-    
-    try {
-      const hasPermission = await permissionService.checkPermission({
-        userId: membership.user_id._id,
-        chamaId,
-        permission: permissionKey,
-        resourceId: membership._id
-      });
 
-      if (!hasPermission) {
+    try {
+      // permissionService exposes hasPermission(membershipId, permissionKey,
+      // resource, scope) -> { granted, reason }. This used to call a
+      // permissionService.checkPermission(...) method that doesn't exist,
+      // which threw on every invocation and was silently swallowed below as
+      // "Permission check failed" — meaning this always returned
+      // allowed:false, for every role, on every gated action (loan.approve
+      // included). That's the actual reason loan approvals never went
+      // through even for a legitimate chairperson/treasurer.
+      const permissionResult = await permissionService.hasPermission(
+        membership._id,
+        permissionKey,
+        { type: 'action', id: chamaId }
+      );
+
+      if (!permissionResult.granted) {
         return {
           allowed: false,
           reason: 'INSUFFICIENT_PERMISSION',
-          message: `You do not have permission to perform this action (${permissionKey})`
+          message: permissionResult.reason || `You do not have permission to perform this action (${permissionKey})`
         };
       }
 
@@ -346,7 +365,11 @@ class ActionSafetyEngine {
       return { allowed: false, reason: 'SELF_APPROVAL', message: 'You cannot approve your own loan' };
     }
 
-    return { allowed: true };
+    // Surface the loan's true current updatedAt here (freshly read from the DB)
+    // so callers can pass it back to the client as the authoritative version
+    // token, rather than relying on whatever (possibly stale) value the client
+    // originally submitted in actionData.
+    return { allowed: true, currentVersionToken: loan.updatedAt?.toString() };
   }
 
   async checkLoanApprovalLimits(membership, chama, actionData) {
@@ -455,16 +478,21 @@ class ActionSafetyEngine {
   // ========================================
 
   getActionPermissionKey(action) {
+    // Must match the permission_key values actually seeded in
+    // DEFAULT_ROLE_PERMISSIONS (permission.service.js) — these were
+    // singular ("loan.approve") while every seeded key is plural
+    // ("loans.approve"), so hasPermission() could never find a match and
+    // every gated action fell back to "role does not have this
+    // permission" denial regardless of the actor's real role.
     const permissionMap = {
-      'loan.approve': 'loan.approve',
-      'loan.reject': 'loan.reject',
-      'loan.disburse': 'loan.disburse',
-      'payment.reverse': 'payment.reverse',
-      'member.remove': 'member.remove',
-      'member.suspend': 'member.suspend',
-      'role.change': 'role.change',
-      'contribution.change_amount': 'contribution.change_amount',
-      'withdrawal.approve': 'withdrawal.approve'
+      'loan.approve': 'loans.approve',
+      // There's no separate "reject" permission seeded — the same
+      // officials who can approve a loan can reject it.
+      'loan.reject': 'loans.approve',
+      'loan.disburse': 'loans.disburse',
+      'member.remove': 'members.remove',
+      'member.suspend': 'members.suspend',
+      'role.change': 'roles.assign',
     };
 
     return permissionMap[action] || action;
@@ -472,8 +500,14 @@ class ActionSafetyEngine {
 
   getRequiredRolesForAction(action) {
     const roleMap = {
-      'loan.approve': ['chairperson', 'treasurer', 'committee_member'],
-      'loan.reject': ['chairperson', 'treasurer', 'committee_member'],
+      // Must match LOAN_OFFICIAL_ROLES (Loan.constants.js) — secretary and
+      // auditor are also valid recusal-quorum fillers when the
+      // chairperson/treasurer is the applicant (see Loanconflict.service.js
+      // / Loanapproval.service.js's decide()), so hardcoding just
+      // chairperson/treasurer/committee_member here rejected them before
+      // that quorum logic ever ran.
+      'loan.approve': LOAN_OFFICIAL_ROLES,
+      'loan.reject': LOAN_OFFICIAL_ROLES,
       'loan.disburse': ['treasurer'],
       'payment.reverse': ['treasurer', 'auditor'],
       'member.remove': ['chairperson', 'secretary'],

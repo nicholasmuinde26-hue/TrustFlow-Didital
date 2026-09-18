@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 import {
   User,
   Phone,
@@ -115,13 +116,15 @@ export default function AccountSettingsPage() {
       });
 
       setSaved(true);
+      toast.success("Changes saved");
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setSaveError(
+      const message =
         err?.response?.data?.message ||
           err?.message ||
-          "Couldn't save your changes. Please try again."
-      );
+          "Couldn't save your changes. Please try again.";
+      setSaveError(message);
+      toast.error(message);
     }
   };
 

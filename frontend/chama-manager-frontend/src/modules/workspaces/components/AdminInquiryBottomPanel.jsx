@@ -12,6 +12,8 @@ import {
   Radio,
   HelpCircle,
   LifeBuoy,
+  ShieldCheck,
+  Zap,
 } from "lucide-react";
 import inquiryService from "@/app/services/inquiry.service";
 import useAuth from "@/app/hooks/useAuth";
@@ -135,13 +137,13 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-label={isOpen ? "Close Admin Panel & Support" : "Open Admin Panel & Support"}
-        className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition select-none ${
+        className={`group flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left shadow-sm transition select-none ${
           isOpen
-            ? "border-violet-300 bg-violet-50 dark:border-violet-800 dark:bg-violet-950/40"
-            : "border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50/60 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+            ? "border-violet-300 bg-violet-50 shadow-violet-100 dark:border-violet-800 dark:bg-violet-950/40"
+            : "border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/60 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
         }`}
       >
-        <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-md shadow-violet-500/25">
           <LifeBuoy size={17} />
           {/* Online indicator */}
           <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-white dark:ring-slate-900" />
@@ -149,10 +151,10 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-bold text-slate-700 dark:text-slate-200">
-           Need Help? Contact Platform Admins
+           Support Center
           </span>
           <span className="block truncate text-[10px] text-slate-400 dark:text-slate-500">
-            Visit our Help Center
+            Direct line to Platform Administration
           </span>
         </span>
 
@@ -171,23 +173,23 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
       {isOpen && (
         <div
           aria-label="Platform Admin Inquiries Panel"
-          className="absolute bottom-full left-0 z-50 mb-3 flex h-[520px] max-h-[70vh] w-[min(92vw,420px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          className="absolute bottom-full left-0 z-50 mb-3 flex h-[560px] max-h-[75vh] w-[min(92vw,440px)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 dark:border-slate-800 dark:bg-slate-900"
         >
           {/* Header */}
-          <div className="flex items-center justify-between bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 px-4 py-3 text-white shrink-0">
+          <div className="flex items-center justify-between bg-gradient-to-r from-[#17114a] via-[#312e81] to-[#0f3d5e] px-5 py-4 text-white shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-600/60 border border-violet-400/40 text-violet-200">
                 <LifeBuoy size={15} />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black tracking-tight">Admin Panel & Support</span>
+                  <span className="text-sm font-black tracking-tight">Support Center</span>
                   <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-1.5 py-0.2 text-[9px] font-bold text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Listening
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-300">Submit inquiries & reports directly to Platform Admins</p>
+                <p className="text-[10px] text-slate-300">A secure, tracked line to Platform Administration</p>
               </div>
             </div>
 
@@ -199,6 +201,11 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
             >
               <X size={16} />
             </button>
+          </div>
+
+          <div className="flex items-center gap-2 border-t border-white/10 bg-slate-950/15 px-5 py-2 text-[10px] text-indigo-100">
+            <ShieldCheck size={12} className="text-emerald-300" /> Every request is logged to your workspace history
+            <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-cyan-200"><Zap size={11} /> Priority routing</span>
           </div>
 
           {/* Subheader & Tabs */}
@@ -246,6 +253,10 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
           {/* Tab 1: Submit New Inquiry */}
           {activeTab === "new" && (
             <form onSubmit={handleSubmitInquiry} className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs">
+              <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-slate-900">
+                <p className="font-black text-slate-900 dark:text-white">How can we help?</p>
+                <p className="mt-1 text-[11px] leading-4 text-slate-500">Tell us what happened. The right Platform Admin receives your request based on its category and priority.</p>
+              </div>
               {notice && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                   {notice}
@@ -328,7 +339,7 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-violet-600 py-2.5 font-bold text-white shadow-md shadow-violet-600/20 hover:bg-violet-700 disabled:opacity-50 transition"
               >
                 <Send size={13} />
-                {submitting ? "Sending Inquiry..." : "Submit Inquiry to Admin"}
+                {submitting ? "Creating support request..." : "Create support request"}
               </button>
             </form>
           )}

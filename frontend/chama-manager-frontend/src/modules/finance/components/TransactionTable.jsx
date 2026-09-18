@@ -2,11 +2,11 @@ export default function TransactionTable({
   transactions,
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border bg-white">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-obsidian-border dark:bg-obsidian-card">
 
       <table className="min-w-full">
 
-        <thead className="bg-slate-100">
+        <thead className="bg-slate-100 dark:bg-obsidian-raised text-slate-700 dark:text-mist-muted">
 
           <tr>
 
@@ -40,7 +40,7 @@ export default function TransactionTable({
 
             <tr
               key={transaction._id}
-              className="border-t"
+              className="border-t border-slate-200 dark:border-obsidian-border text-slate-700 dark:text-mist"
             >
 
               <td className="p-4">

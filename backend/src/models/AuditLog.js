@@ -32,8 +32,36 @@ const auditLogSchema = new mongoose.Schema(
       ref:
         'User',
 
+      // Not required for system-generated entries (background jobs/sweeps
+      // acting with no human actor) — see isSystemGenerated below. Human-
+      // initiated audit logs must still always carry a real actor.
       required:
-        true,
+        function () { return !this.isSystemGenerated; },
+
+      default:
+        null,
+
+      index:
+        true
+
+    },
+
+
+    // ======================================
+    // SYSTEM-GENERATED FLAG
+    // ======================================
+    // True for audit entries raised by a background job/sweep rather than
+    // a person taking an action (e.g. the loan disbursement reconciliation
+    // sweep flagging a stuck disbursement). actorUserId is null in that
+    // case, not a fabricated/borrowed user ID.
+
+    isSystemGenerated: {
+
+      type:
+        Boolean,
+
+      default:
+        false,
 
       index:
         true
@@ -219,6 +247,65 @@ const auditLogSchema = new mongoose.Schema(
 
       default:
         null
+
+    },
+
+
+    // ======================================
+    // HASH CHAIN
+    // ======================================
+    //
+    // Turns "we log everything" into "tampering is cryptographically
+    // detectable". Each scope (a chama, or a contribution group) has its
+    // own independent chain. `sequence` is this entry's 1-based position
+    // in that chain. `prevHash` is the hash of the entry immediately
+    // before it (see AuditChainState) - GENESIS for the first entry.
+    // `hash` = sha256(prevHash + this entry's own content), computed
+    // once at creation by audit.service.js#createAuditLog and never
+    // touched again.
+    //
+    // Re-walking a chain and recomputing every hash from the stored
+    // content (see audit.service.js#verifyAuditChain) reproduces this
+    // exact value if and only if nothing in the chain has been edited,
+    // reordered, or removed - an edited `after` field, a deleted entry,
+    // or two entries swapped all break the recomputed hash from that
+    // point forward, not just at the tampered row.
+    //
+    // ======================================
+
+    sequence: {
+
+      type:
+        Number,
+
+      required:
+        true,
+
+      index:
+        true
+
+    },
+
+    prevHash: {
+
+      type:
+        String,
+
+      default:
+        null
+
+    },
+
+    hash: {
+
+      type:
+        String,
+
+      required:
+        true,
+
+      index:
+        true
 
     }
 
@@ -483,6 +570,37 @@ auditLogSchema.index({
     -1
 
 });
+
+
+// ========================================
+// CHAMA CHAIN ORDER
+// ========================================
+//
+// Backs both chain verification (walk a scope's entries in sequence
+// order) and a hard guarantee that two entries in the same chama chain
+// can never be written with the same sequence number.
+// ========================================
+
+auditLogSchema.index(
+  { scopeType: 1, chamaId: 1, sequence: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { scopeType: 'CHAMA' },
+  }
+);
+
+
+// ========================================
+// CONTRIBUTION GROUP CHAIN ORDER
+// ========================================
+
+auditLogSchema.index(
+  { scopeType: 1, contributionGroupId: 1, sequence: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { scopeType: 'CONTRIBUTION_GROUP' },
+  }
+);
 
 
 // ========================================

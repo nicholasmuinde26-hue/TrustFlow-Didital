@@ -10,3 +10,4 @@ export { default as ThemeToggle } from "./ThemeToggle";
 export { default as NotificationButton } from "./NotificationButton";
 export { default as WorkspaceSwitcher } from "./WorkspaceSwitcher";
 export { default as UserMenu } from "./UserMenu";
+export { default as MobileBottomNav } from "./MobileBottomNav";

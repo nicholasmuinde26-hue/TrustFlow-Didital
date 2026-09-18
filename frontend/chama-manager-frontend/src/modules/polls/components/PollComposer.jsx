@@ -7,7 +7,7 @@ import Input from "@/shared/components/ui/Input/Input";
 import { POLL_CATEGORIES, POLL_TYPES, POLL_ELIGIBILITY, categoryDefaults } from "../constants/pollMeta";
 
 const fieldClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary dark:border-slate-700 dark:bg-slate-800 dark:text-white";
+  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist";
 
 function defaultState() {
   const defaults = categoryDefaults("general");
@@ -87,9 +87,9 @@ export default function PollComposer({ onSubmit, submitting, canPublish }) {
   const needsOptions = form.pollType !== "yes_no";
 
   return (
-    <form className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-      <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
-        <Vote size={18} className="text-violet-600" />
+    <form className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-obsidian-border dark:bg-obsidian-card">
+      <h3 className="flex items-center gap-2 font-semibold text-slate-900 dark:text-mist">
+        <Vote size={18} className="text-violet-600 dark:text-mint" />
         Call a Vote
       </h3>
 
@@ -170,7 +170,7 @@ export default function PollComposer({ onSubmit, submitting, canPublish }) {
             <button
               type="button"
               onClick={addOption}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-700 dark:text-mint"
             >
               <Plus size={14} /> Add option
             </button>
@@ -235,8 +235,8 @@ export default function PollComposer({ onSubmit, submitting, canPublish }) {
           </div>
         )}
 
-        <div className="sm:col-span-2 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-800/50">
-          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <div className="sm:col-span-2 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 dark:bg-obsidian-raised/50">
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-mist-muted">
             <input
               type="checkbox"
               checked={form.anonymous}
@@ -247,8 +247,8 @@ export default function PollComposer({ onSubmit, submitting, canPublish }) {
           </label>
         </div>
 
-        <div className="sm:col-span-2 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-800/50">
-          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <div className="sm:col-span-2 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 dark:bg-obsidian-raised/50">
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-mist-muted">
             <input
               type="checkbox"
               checked={form.revealResults === "after_close"}

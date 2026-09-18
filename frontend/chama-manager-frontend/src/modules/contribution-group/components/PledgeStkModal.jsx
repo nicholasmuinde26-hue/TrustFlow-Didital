@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
-import { X, Smartphone, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { X, Smartphone, Loader2, CheckCircle2, XCircle, Clock, RefreshCcw } from "lucide-react";
 import contributionGroupApi from "../api/contributionGroup.api";
+import useStkPushFlow from "@/shared/hooks/useStkPushFlow";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -9,6 +10,12 @@ const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 // endpoint — POST /contribution-groups/:groupId/fund/pledges/:pledgeId/payments/stk.
 // This is deliberately separate from BusinessMpesaModal, which talks to
 // /businesses/:id/mpesa/stkpush and has no concept of a ContributionGroup.
+//
+// Uses the shared useStkPushFlow hook (same one MpesaStkModal and the MGR
+// contribution modal use) so this gets the same real sending -> awaiting_pin
+// -> processing phases, the same Socket.IO-first / polling-fallback instant
+// detection, and the same specific M-Pesa failure reason (insufficient
+// funds, cancelled, timed out) instead of a generic "not completed" message.
 export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onSuccess }) {
   const balance = myPledge
     ? Math.max(0, Number(myPledge.pledged_amount || 0) - Number(myPledge.obligation_id?.paid_amount || 0))
@@ -16,91 +23,69 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
 
   const [amount, setAmount] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [state, setState] = useState("form"); // form | sending | waiting | success | failed
-  const [error, setError] = useState("");
-  const [countdown, setCountdown] = useState(40);
+  const [formError, setFormError] = useState("");
 
-  const pollRef = useRef(null);
-  const countdownRef = useRef(null);
-
-  // Declared before the effect (and before the early return below) so
-  // it's always initialized by the time either the effect's cleanup
-  // or the early "isOpen is false" render needs it — defining it after
-  // an early return meant a render with isOpen=false never reached
-  // this line, leaving `clearTimers` in the temporal dead zone when
-  // that render's cleanup later fired.
-  const clearTimers = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
+  const fetchStatus = async (paymentIntentId) => {
+    const { data } = await contributionGroupApi.getPaymentIntentStatus(paymentIntentId);
+    const intent = data?.data;
+    if (!intent) return null;
+    return { status: intent.status, failureReason: intent.failure_reason, raw: intent };
   };
+
+  const { phase, failureReason, secondsLeft, startSending, beginWaiting, cancel, reset } = useStkPushFlow({
+    fetchStatus,
+    onResolved: (status) => {
+      if (status === "completed") {
+        onSuccess?.();
+      }
+    },
+  });
 
   useEffect(() => {
     if (isOpen) {
       setAmount(balance ? String(balance) : "");
       setPhoneNumber("");
-      setState("form");
-      setError("");
-      setCountdown(40);
+      setFormError("");
+      reset();
     }
-    return () => clearTimers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const startPolling = (paymentIntentId) => {
-    setState("waiting");
-    setCountdown(40);
+  const isLocked = phase === "sending" || phase === "awaiting_pin" || phase === "processing";
+  const isDone = phase === "completed";
+  const isTerminalError = ["failed", "cancelled", "timeout"].includes(phase);
 
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
-    }, 1000);
-
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await contributionGroupApi.getPaymentIntentStatus(paymentIntentId);
-        const status = res.data?.data?.status;
-        if (status === "completed") {
-          clearTimers();
-          setState("success");
-          onSuccess?.();
-        } else if (["failed", "cancelled"].includes(status)) {
-          clearTimers();
-          setError("The M-Pesa prompt was not completed.");
-          setState("failed");
-        }
-      } catch {
-        // transient poll error — keep waiting until countdown expires
-      }
-    }, 3000);
-
-    setTimeout(() => {
-      clearTimers();
-      setState((current) => (current === "waiting" ? "failed" : current));
-      setError((current) => current || "Timed out waiting for confirmation. Check your phone or try again.");
-    }, 40000);
-  };
+  const errorText =
+    formError ||
+    (isTerminalError
+      ? failureReason ||
+        (phase === "timeout"
+          ? "Timed out waiting for confirmation. Check your phone or try again."
+          : "The M-Pesa prompt was not completed.")
+      : null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setFormError("");
 
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0) {
-      setError("Enter a valid amount greater than KES 0.");
+      setFormError("Enter a valid amount greater than KES 0.");
       return;
     }
     if (balance != null && numericAmount > balance) {
-      setError(`Amount can't exceed your outstanding balance of ${money(balance)}.`);
+      setFormError(`Amount can't exceed your outstanding balance of ${money(balance)}.`);
       return;
     }
     if (!phoneNumber.trim()) {
-      setError("Enter the M-Pesa phone number to charge.");
+      setFormError("Enter the M-Pesa phone number to charge.");
       return;
     }
 
     try {
-      setState("sending");
+      startSending();
 
       let pledgeId = myPledge?._id;
       if (!pledgeId) {
@@ -116,15 +101,18 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
       });
 
       const paymentIntentId = stkRes.data?.data?.paymentIntentId;
+      const checkoutRequestId = stkRes.data?.data?.checkoutRequestId;
       if (!paymentIntentId) {
         throw new Error("M-Pesa did not return a payment reference");
       }
-      startPolling(paymentIntentId);
+      beginWaiting(paymentIntentId, checkoutRequestId);
     } catch (err) {
-      setError(err?.response?.data?.message || err.message || "Could not start the M-Pesa payment.");
-      setState("form");
+      reset();
+      setFormError(err?.response?.data?.message || err.message || "Could not start the M-Pesa payment.");
     }
   };
+
+  const handleCancel = () => cancel("Payment cancelled by user");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
@@ -137,22 +125,31 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">Pay Your Pledge</h3>
               <p className="text-xs text-slate-500">
-                {balance != null ? `Outstanding: ${money(balance)}` : "M-Pesa STK push"}
+                {phase === "sending" && "Sending STK push..."}
+                {phase === "awaiting_pin" && "Awaiting M-Pesa PIN..."}
+                {phase === "processing" && "Processing payment..."}
+                {(phase === "idle" || isTerminalError) &&
+                  (balance != null ? `Outstanding: ${money(balance)}` : "M-Pesa STK push")}
+                {isDone && "Payment confirmed"}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <button
+            onClick={onClose}
+            disabled={isLocked}
+            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+          >
             <X size={18} />
           </button>
         </div>
 
-        {error && (
+        {errorText && (phase === "idle" || isTerminalError) && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-400">
-            {error}
+            {errorText}
           </div>
         )}
 
-        {(state === "form" || state === "sending") && (
+        {(phase === "idle" || isTerminalError) && (
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Amount (KES)</label>
@@ -178,23 +175,52 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
             </div>
             <button
               type="submit"
-              disabled={state === "sending"}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-3.5 text-xs font-black text-white shadow-xl hover:bg-emerald-600 transition-all disabled:opacity-50"
             >
-              {state === "sending" ? <Loader2 size={18} className="animate-spin" /> : <>Send STK Push</>}
+              {isTerminalError ? (
+                <>
+                  <RefreshCcw size={16} /> Try Again
+                </>
+              ) : (
+                <>Send STK Push</>
+              )}
             </button>
           </form>
         )}
 
-        {state === "waiting" && (
+        {phase === "sending" && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <Clock size={32} className="text-amber-500 animate-pulse" />
-            <p className="text-sm font-bold text-slate-900 dark:text-white">Check your phone for the M-Pesa PIN prompt</p>
-            <p className="text-xs text-slate-500">Waiting for confirmation… {countdown}s</p>
+            <Loader2 size={32} className="animate-spin text-emerald-600" />
+            <p className="text-sm font-bold text-slate-900 dark:text-white">Sending STK push...</p>
+            <p className="text-xs text-slate-500">Contacting M-Pesa for {phoneNumber}</p>
           </div>
         )}
 
-        {state === "success" && (
+        {(phase === "awaiting_pin" || phase === "processing") && (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <Clock size={32} className="text-amber-500 animate-pulse" />
+            {phase === "awaiting_pin" ? (
+              <>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Check your phone for the M-Pesa PIN prompt</p>
+                <p className="text-xs text-slate-500">Sent to {phoneNumber}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Processing payment...</p>
+                <p className="text-xs text-slate-500">Confirming with M-Pesa, this won't take long</p>
+              </>
+            )}
+            <p className="text-xs text-slate-500">Waiting for confirmation… {secondsLeft}s</p>
+            <button
+              onClick={handleCancel}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+            >
+              <XCircle size={14} /> Cancel
+            </button>
+          </div>
+        )}
+
+        {isDone && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <CheckCircle2 size={32} className="text-emerald-500" />
             <p className="text-sm font-bold text-slate-900 dark:text-white">Payment confirmed!</p>
@@ -203,19 +229,6 @@ export default function PledgeStkModal({ isOpen, onClose, groupId, myPledge, onS
               className="mt-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-600"
             >
               Done
-            </button>
-          </div>
-        )}
-
-        {state === "failed" && (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <XCircle size={32} className="text-rose-500" />
-            <p className="text-sm font-bold text-slate-900 dark:text-white">Payment not completed</p>
-            <button
-              onClick={() => setState("form")}
-              className="mt-2 rounded-xl bg-slate-100 px-5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Try Again
             </button>
           </div>
         )}

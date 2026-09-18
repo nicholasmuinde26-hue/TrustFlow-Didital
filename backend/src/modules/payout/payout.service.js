@@ -5,6 +5,7 @@ import ChamaMembership from "../../models/ChamaMembership.js";
 import Chama from "../../models/Chama.js";
 
 import AppError from "../../utils/AppError.js";
+import { ingestEvent as ingestSecurityEvent } from "../security/security.service.js";
 
 import accountingService
     from "../finance/accounting/accounting.service.js";
@@ -788,6 +789,26 @@ export const startPayout = async ({
 
             await session.commitTransaction();
 
+        }
+
+        // TrustOS observes the payout as it happens. Security telemetry must
+        // never make a legitimate accounting operation unavailable, so an
+        // ingestion failure is isolated; the event pipeline can retry from
+        // audit/accounting records when a production event bus is attached.
+        try {
+            await ingestSecurityEvent({
+                eventType: "PAYOUT.CREATED",
+                actor: { userId: created_by, role: "TREASURER" },
+                workspace: { type: "CHAMA", id: chamaId },
+                transaction: {
+                    amount: Number(amount.toString()),
+                    currency: "KES",
+                    recipientId: String(recipient.user_id || recipient._id),
+                },
+                metadata: { payoutId: String(payout._id) },
+            });
+        } catch (securityTelemetryError) {
+            console.error("TrustOS telemetry failed for payout", securityTelemetryError.message);
         }
 
 

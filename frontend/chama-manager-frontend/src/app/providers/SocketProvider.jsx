@@ -1,4 +1,3 @@
-
 import React, {
   createContext,
   useCallback,
@@ -8,147 +7,135 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { io as ioClient } from "socket.io-client";
 
 const SocketContext = createContext(null);
 
-function getSocketUrl() {
+/**
+ * The backend runs a real Socket.IO server (see
+ * modules/realtime/socketServer.js on the backend - `new Server(server, ...)`
+ * from the "socket.io" package). Socket.IO is NOT plain WebSocket: it has
+ * its own handshake/framing (Engine.IO) on top of it, plus auth, rooms,
+ * automatic reconnection with backoff, etc.
+ *
+ * This provider previously opened a raw browser `WebSocket` directly to
+ * the API host. That connection could never actually complete a Socket.IO
+ * handshake, and the object it exposed had no `.on()`/`.off()` - so every
+ * consumer that expected a socket.io-client instance (see
+ * shared/hooks/useStkPushFlow.js) silently detected "no on/off" and fell
+ * straight back to HTTP polling. Nothing was actually broken loudly; the
+ * app just never got any real-time event, ever, from any STK push,
+ * notification, or chat feature that depends on this provider.
+ */
+
+function getSocketOrigin() {
   const apiUrl =
     import.meta.env.VITE_API_URL ||
     import.meta.env.VITE_BACKEND_URL ||
     "";
 
   if (!apiUrl) {
-    return null;
+    // Same-origin deployments (API and frontend behind the same host/proxy).
+    return undefined;
   }
 
   try {
-    const url = new URL(apiUrl);
-
-    // Convert HTTP API URL to WebSocket URL.
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-
-    // Remove /api/v1 or similar API path.
-    url.pathname = "";
-
-    return url.toString().replace(/\/$/, "");
+    const url = new URL(apiUrl, window.location.origin);
+    // Socket.IO is mounted on the same HTTP server as the REST API, at its
+    // own default path ("/socket.io"), not under "/api/v1" or whatever
+    // path prefix the REST API uses - so only the origin (protocol + host
+    // + port) is relevant here. socket.io-client handles the ws(s)://
+    // upgrade itself; it wants an http(s):// origin, not ws(s)://.
+    return `${url.protocol}//${url.host}`;
   } catch {
-    return null;
+    return undefined;
   }
+}
+
+function getStoredToken() {
+  return (
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("access_token") ||
+    null
+  );
 }
 
 export default function SocketProvider({ children }) {
   const socketRef = useRef(null);
-  const reconnectTimerRef = useRef(null);
-  const reconnectAttemptsRef = useRef(0);
   const mountedRef = useRef(false);
 
   const [status, setStatus] = useState("disconnected");
 
-  const socketUrl = useMemo(() => getSocketUrl(), []);
+  const socketOrigin = useMemo(() => getSocketOrigin(), []);
 
   const disconnect = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-
     if (socketRef.current) {
-      socketRef.current.close();
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
       socketRef.current = null;
     }
-
     setStatus("disconnected");
   }, []);
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
 
-    if (!socketUrl) {
-      setStatus("unavailable");
-      return;
-    }
-
-    if (
-      socketRef.current &&
-      (socketRef.current.readyState === WebSocket.OPEN ||
-        socketRef.current.readyState === WebSocket.CONNECTING)
-    ) {
+    if (socketRef.current?.connected) {
       return;
     }
 
     setStatus("connecting");
 
     try {
-      const socket = new WebSocket(socketUrl);
+      const socket = ioClient(socketOrigin, {
+        // Reads the token fresh on every (re)connection attempt, so a
+        // login that happens after this provider first mounts - or a
+        // token refresh - is picked up on the next reconnect without
+        // needing to tear down and recreate the whole provider.
+        auth: (callback) => callback({ token: getStoredToken() }),
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 30000,
+        withCredentials: true,
+      });
 
       socketRef.current = socket;
 
-      socket.onopen = () => {
-        reconnectAttemptsRef.current = 0;
+      socket.on("connect", () => {
         setStatus("connected");
-      };
+      });
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          window.dispatchEvent(
-            new CustomEvent("chamamanager:socket-message", {
-              detail: data,
-            })
-          );
-        } catch {
-          window.dispatchEvent(
-            new CustomEvent("chamamanager:socket-message", {
-              detail: event.data,
-            })
-          );
-        }
-      };
-
-      socket.onerror = () => {
-        setStatus("error");
-      };
-
-      socket.onclose = () => {
-        socketRef.current = null;
-
-        if (!mountedRef.current) {
-          setStatus("disconnected");
-          return;
-        }
-
+      socket.on("disconnect", () => {
+        if (!mountedRef.current) return;
         setStatus("disconnected");
+      });
 
-        const attempt = reconnectAttemptsRef.current;
-        const delay = Math.min(1000 * 2 ** attempt, 30000);
+      socket.on("connect_error", (error) => {
+        console.warn("[SocketProvider] Connection error:", error?.message);
+        setStatus("error");
+      });
 
-        reconnectAttemptsRef.current += 1;
-
-        reconnectTimerRef.current = setTimeout(() => {
-          connect();
-        }, delay);
-      };
+      socket.onAny((event, payload) => {
+        window.dispatchEvent(
+          new CustomEvent("chamamanager:socket-message", {
+            detail: { event, payload },
+          })
+        );
+      });
     } catch (error) {
       console.error("[SocketProvider] Connection failed:", error);
       setStatus("error");
     }
-  }, [socketUrl]);
+  }, [socketOrigin]);
 
-  const send = useCallback((message) => {
+  const send = useCallback((event, payload) => {
     const socket = socketRef.current;
-
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!socket || !socket.connected) {
       return false;
     }
-
     try {
-      socket.send(
-        typeof message === "string"
-          ? message
-          : JSON.stringify(message)
-      );
-
+      socket.emit(event, payload);
       return true;
     } catch (error) {
       console.error("[SocketProvider] Send failed:", error);
@@ -163,17 +150,13 @@ export default function SocketProvider({ children }) {
 
     return () => {
       mountedRef.current = false;
-
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-
       if (socketRef.current) {
-        socketRef.current.close();
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
         socketRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connect]);
 
   const value = useMemo(
@@ -182,12 +165,12 @@ export default function SocketProvider({ children }) {
       status,
       connected: status === "connected",
       connecting: status === "connecting",
-      unavailable: status === "unavailable",
+      unavailable: !socketOrigin && status === "error",
       connect,
       disconnect,
       send,
     }),
-    [status, connect, disconnect, send]
+    [status, socketOrigin, connect, disconnect, send]
   );
 
   return (

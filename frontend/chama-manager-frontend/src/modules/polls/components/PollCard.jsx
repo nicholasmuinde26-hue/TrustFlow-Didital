@@ -30,8 +30,8 @@ function statusBadge(status) {
 function ResultBar({ optionText, count, percent, approved, isWinner }) {
   return (
     <div>
-      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-        <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-200">
+      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-mist-muted">
+        <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-mist">
           {optionText}
           {isWinner && <CheckCircle2 size={13} className="text-emerald-600" />}
           {approved === true && <CheckCircle2 size={13} className="text-emerald-600" />}
@@ -41,9 +41,9 @@ function ResultBar({ optionText, count, percent, approved, isWinner }) {
           {count} vote{count === 1 ? "" : "s"} ({percent}%)
         </span>
       </div>
-      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-obsidian-raised">
         <div
-          className="h-full rounded-full bg-violet-600 transition-all"
+          className="h-full rounded-full bg-violet-600 dark:bg-mint transition-all"
           style={{ width: `${Math.max(percent, count > 0 ? 3 : 0)}%` }}
         />
       </div>
@@ -76,11 +76,11 @@ export default function PollCard({ poll, canManage, onVote, onPublish, onClose, 
   const votingBlocked = poll.status !== "open" || !poll.canVote;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-obsidian-border dark:bg-obsidian-card">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-slate-900 dark:text-white">{poll.title}</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-mist">{poll.title}</h3>
             <Badge variant={badge.variant}>{badge.label}</Badge>
             {poll.anonymous && (
               <span className="inline-flex items-center gap-1 text-xs text-slate-400">
@@ -88,7 +88,7 @@ export default function PollCard({ poll, canManage, onVote, onPublish, onClose, 
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-violet-600 dark:text-violet-400">
+          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-violet-600 dark:text-mint">
             {categoryLabel(poll.category)}
           </p>
         </div>
@@ -99,10 +99,10 @@ export default function PollCard({ poll, canManage, onVote, onPublish, onClose, 
       </div>
 
       {poll.description && (
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{poll.description}</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-mist-muted">{poll.description}</p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-mist-muted">
         {poll.closesAt && poll.status === "open" && (
           <span className="flex items-center gap-1">
             <Clock size={13} /> Closes {formatDeadline(poll.closesAt)}
@@ -127,8 +127,8 @@ export default function PollCard({ poll, canManage, onVote, onPublish, onClose, 
               key={option.id}
               className={`flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition-colors ${
                 selected.includes(option.id)
-                  ? "border-violet-500 bg-violet-50 dark:bg-violet-950/30"
-                  : "border-slate-200 dark:border-slate-700"
+                  ? "border-violet-500 bg-violet-50 dark:bg-mint-deep/30 dark:border-mint"
+                  : "border-slate-200 dark:border-obsidian-border"
               }`}
             >
               <input
@@ -162,7 +162,7 @@ export default function PollCard({ poll, canManage, onVote, onPublish, onClose, 
 
       {/* Results */}
       {showResults && (
-        <div className="mt-4 space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="mt-4 space-y-2 border-t border-slate-100 pt-3 dark:border-obsidian-border">
           {poll.result.tally.map((t) => (
             <ResultBar
               key={t.optionId}
@@ -182,14 +182,14 @@ export default function PollCard({ poll, canManage, onVote, onPublish, onClose, 
       )}
 
       {poll.status === "open" && !showResults && (
-        <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400 dark:border-slate-800">
+        <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-400 dark:border-obsidian-border">
           Results are hidden until voting closes.
         </p>
       )}
 
       {/* Official controls */}
       {canManage && (
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3 dark:border-obsidian-border">
           {poll.status === "draft" && (
             <>
               <Button size="sm" disabled={busy} onClick={() => onPublish(poll.id)}>

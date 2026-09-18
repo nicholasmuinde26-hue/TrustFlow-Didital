@@ -16,6 +16,45 @@ import {
   resolveOtpChannel,
   deliverOtp,
 } from '../../services/notifications/otpDelivery.service.js';
+import { ingestEvent as ingestSecurityEvent } from '../security/security.service.js';
+
+// ========================================
+// SECURITY TELEMETRY (failed logins / OTP attempts)
+// ========================================
+//
+// TrustOS observes authentication as it happens so the Security console's
+// risk-signal dashboard has real failed-login and OTP-retry data to show,
+// not just the transaction telemetry the payments/payouts modules emit.
+// Same isolation pattern as payout.service.js: telemetry must never make
+// a login attempt fail or succeed differently, so every call here is
+// fire-and-forget and swallows its own errors.
+const recordFailedLogin = async (reason, user, context) => {
+  try {
+    await ingestSecurityEvent({
+      eventType: 'AUTH.LOGIN_FAILED',
+      actor: user ? { userId: user._id, role: user.systemRole || user.role } : undefined,
+      device: context?.deviceId ? { deviceId: context.deviceId } : undefined,
+      network: context?.ip ? { ip: context.ip } : undefined,
+      metadata: { reason, userAgent: context?.userAgent },
+    });
+  } catch (telemetryError) {
+    console.error('TrustOS telemetry failed for login attempt', telemetryError.message);
+  }
+};
+
+const recordFailedOtp = async (reason, user, context) => {
+  try {
+    await ingestSecurityEvent({
+      eventType: 'AUTH.OTP_FAILED',
+      actor: user ? { userId: user._id, role: user.systemRole || user.role } : undefined,
+      device: context?.deviceId ? { deviceId: context.deviceId } : undefined,
+      network: context?.ip ? { ip: context.ip } : undefined,
+      metadata: { reason, userAgent: context?.userAgent },
+    });
+  } catch (telemetryError) {
+    console.error('TrustOS telemetry failed for OTP attempt', telemetryError.message);
+  }
+};
 
 // ========================================
 // INTERNAL HELPERS
@@ -269,7 +308,7 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
 // LOGIN USER (Password + Mandatory OTP)
 // ========================================
 
-export const loginUser = async ({ phone, email, identifier, password, channel }) => {
+export const loginUser = async ({ phone, email, identifier, password, channel, context }) => {
   const term = (identifier || email || phone || '').trim();
 
   // 1. Input validations
@@ -307,22 +346,43 @@ export const loginUser = async ({ phone, email, identifier, password, channel })
   }
 
   if (!user) {
+    await recordFailedLogin('unknown_identifier', null, context);
     throw new AppError('Invalid login credentials', 401);
   }
 
   // Check account status
   if (user.status === 'inactive') {
+    await recordFailedLogin('account_inactive', user, context);
     throw new AppError('This user account is inactive', 403);
   }
 
   if (user.status === 'suspended') {
+    await recordFailedLogin('account_suspended', user, context);
     throw new AppError('This user account has been suspended', 403);
+  }
+
+  // Some accounts are created without a password at all — e.g. a
+  // treasurer/chairperson adding a member by phone number
+  // (chama.service.js), a business/contribution-group client
+  // placeholder, an admin-created account, or a USSD registration.
+  // Those are left in 'unverified' status with password unset until
+  // the person completes registerUser() themselves. Calling
+  // bcrypt.compare() with an undefined hash throws a raw "Illegal
+  // arguments" error and 500s the request, so check for this case
+  // explicitly first and point them at the actual fix.
+  if (!user.password) {
+    await recordFailedLogin('password_not_configured', user, context);
+    throw new AppError(
+      'This account has not set up a password yet. Please complete registration with this phone number or email to set one.',
+      401
+    );
   }
 
   // Compare password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
   if (!isPasswordCorrect) {
+    await recordFailedLogin('invalid_password', user, context);
     throw new AppError('Invalid login credentials', 401);
   }
 
@@ -352,7 +412,7 @@ export const loginUser = async ({ phone, email, identifier, password, channel })
 // VERIFY OTP AND ISSUE TOKENS (Gatekeeper)
 // ========================================
 
-export const verifyOtp = async ({ phone, email, identifier, otpCode }) => {
+export const verifyOtp = async ({ phone, email, identifier, otpCode, context }) => {
   const term = (identifier || email || phone || '').trim();
 
   if (!term) {
@@ -377,11 +437,13 @@ export const verifyOtp = async ({ phone, email, identifier, otpCode }) => {
   }
 
   if (!user || !user.otpCode) {
+    await recordFailedOtp('no_pending_otp', user, context);
     throw new AppError('No pending OTP request found for this account', 400);
   }
 
   // Check OTP expiration
   if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+    await recordFailedOtp('expired_otp', user, context);
     throw new AppError('OTP code has expired. Please log in again to receive a new code.', 400);
   }
 
@@ -390,6 +452,7 @@ export const verifyOtp = async ({ phone, email, identifier, otpCode }) => {
 
   // Check OTP match
   if (!isDevBypass && user.otpCode !== otpCode.trim()) {
+    await recordFailedOtp('invalid_otp', user, context);
     throw new AppError('Invalid OTP code. Please try again.', 400);
   }
 

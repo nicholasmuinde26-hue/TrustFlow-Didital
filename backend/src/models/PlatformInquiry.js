@@ -149,12 +149,19 @@ const platformInquirySchema = new mongoose.Schema(
 );
 
 // Pre-save hook to generate sequential / formatted inquiryNumber (e.g. INQ-654321)
-platformInquirySchema.pre('save', async function (next) {
+// NOTE: declared with ZERO parameters on purpose. Mongoose decides whether a
+// hook is callback-style (needs `next()`) or promise/sync-style by inspecting
+// the function's declared arity. Taking a `next` param at all — even in a
+// plain non-async function — puts you at the mercy of that detection, and it
+// can misfire in some setups ("next is not a function" even though the
+// function isn't async). Since this hook does no async work, dropping the
+// parameter entirely removes the ambiguity: Mongoose just runs it and moves
+// on once it returns. No `next()` call needed, ever.
+platformInquirySchema.pre('save', function () {
   if (!this.inquiryNumber) {
     const randomSuffix = Math.floor(100000 + Math.random() * 900000);
     this.inquiryNumber = `INQ-${randomSuffix}`;
   }
-  next();
 });
 
 export default mongoose.models.PlatformInquiry ||

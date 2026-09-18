@@ -165,7 +165,13 @@ const contributionPaymentSchema = new mongoose.Schema(
         provider_response: mongoose.Schema.Types.Mixed
       }
     ],
-    notes: { type: String, trim: true, maxlength: 1000, default: '' }
+    notes: { type: String, trim: true, maxlength: 1000, default: '' },
+    // FIX: payment.store.js has always set paymentDoc.metadata = context.metadata,
+    // but with no field declared here, Mongoose's strict mode silently stripped
+    // it before save - so event.payment.metadata was always undefined downstream
+    // (financeEngine, accounting rules). This is what carries custom routing data
+    // like chama_contribution_id/account_code through the payment-event pipeline.
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   { timestamps: true }
 );

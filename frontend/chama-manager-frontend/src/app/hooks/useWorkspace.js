@@ -18,11 +18,20 @@ export function useWorkspace() {
   const workspaceId = currentWorkspace?._id || currentWorkspace?.id || context.workspaceId || null;
   const workspaceType = (currentWorkspace?.type || context.workspaceType || "").toLowerCase();
 
+  // The viewer's own membership within the active workspace (chama /
+  // contribution group). Several screens — e.g. the loan approvals queue's
+  // conflict-of-interest recusal check — need to know "is this the current
+  // viewer's own record?" and compare against membership._id, so this must
+  // reflect the real membership id rather than being left undefined.
+  const membershipId = currentWorkspace?.membershipId || context.membership?._id || null;
+  const membership = membershipId ? { ...context.membership, _id: membershipId } : context.membership;
+
   return {
     ...context,
     currentWorkspace,
     workspaceId,
     workspaceType,
+    membership,
     // Burial chamas are still Chama documents underneath (same
     // governance/settings/membership model) — just with an extra
     // BurialChamaProfile layered on top — so anything gated on "is

@@ -58,11 +58,11 @@ export default function AnnouncementsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-mist">
         Announcements
       </h1>
 
-      <p className="mt-2 text-slate-500 dark:text-slate-400">
+      <p className="mt-2 text-slate-500 dark:text-mist-muted">
         {manage
           ? needsApproval
             ? `Post updates for everyone in this workspace. Your posts need approval from ${approverLabel} before members see them.`
@@ -94,10 +94,10 @@ export default function AnnouncementsPage() {
         )}
 
         {!isLoading && !isError && sorted.length === 0 && (
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 py-16 text-center dark:border-slate-700">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 py-16 text-center dark:border-obsidian-border">
             <Megaphone size={28} className="text-slate-400" />
 
-            <p className="text-slate-500 dark:text-slate-400">
+            <p className="text-slate-500 dark:text-mist-muted">
               No announcements yet.
             </p>
           </div>

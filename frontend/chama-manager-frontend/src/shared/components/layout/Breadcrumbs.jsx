@@ -121,13 +121,13 @@ export default function Breadcrumbs() {
                 <ChevronRight className="mx-1 h-4 w-4 text-slate-400 dark:text-slate-600" />
               )}
               {isLast ? (
-                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                <span className="text-sm font-semibold text-slate-800 dark:text-mist">
                   {crumb.title}
                 </span>
               ) : (
                 <Link
                   to={crumb.to}
-                  className="inline-flex items-center text-sm font-medium text-slate-500 hover:text-primary dark:text-slate-400 dark:hover:text-primary transition-colors"
+                  className="inline-flex items-center text-sm font-medium text-slate-500 hover:text-primary dark:text-mist-muted dark:hover:text-primary transition-colors"
                 >
                   {crumb.isRoot && (
                     <Home className="mr-1.5 h-3.5 w-3.5 shrink-0" />

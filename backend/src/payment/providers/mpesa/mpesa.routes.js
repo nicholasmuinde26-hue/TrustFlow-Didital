@@ -4,6 +4,8 @@ import {
   initiateStkPush, // RENAMED: was initiateContributionStkPush
   handleMpesaCallback,
   handleB2cResult,
+  handleTransactionStatusResult,
+  handleTransactionStatusTimeout,
   queryMpesaPayment,
   getPaymentIntentStatus,
 } from './mpesa.controller.js';
@@ -62,6 +64,21 @@ router.post(
   "/b2c/result",
   express.json({ limit: '1mb' }),
   handleB2cResult
+);
+
+// Result/timeout callbacks for the Transaction Status API — only used by
+// the loan disbursement reconciliation sweep as a backstop when the
+// /b2c/result webhook above never arrives (see jobs/loanDisbursementReconciliation.job.js).
+router.post(
+  "/transactionstatus/result",
+  express.json({ limit: '1mb' }),
+  handleTransactionStatusResult
+);
+
+router.post(
+  "/transactionstatus/timeout",
+  express.json({ limit: '1mb' }),
+  handleTransactionStatusTimeout
 );
 
 // ============================================================

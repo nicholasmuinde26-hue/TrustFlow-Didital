@@ -23,7 +23,7 @@ const approvalRequestSchema = new mongoose.Schema(
 
     resource_type: {
       type: String,
-      enum: ['MGR_PAYOUT', 'LOAN_DISBURSEMENT', 'WITHDRAWAL', 'EXPENSE', 'INVESTMENT', 'POLICY_CHANGE'],
+      enum: ['MGR_PAYOUT', 'LOAN_DISBURSEMENT', 'WITHDRAWAL', 'EXPENSE', 'INVESTMENT', 'POLICY_CHANGE', 'CHAMA_CONTRIBUTION_PAYOUT'],
       required: true,
       index: true,
     },

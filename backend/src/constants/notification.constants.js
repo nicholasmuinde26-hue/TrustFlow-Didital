@@ -85,6 +85,51 @@ export const NOTIFICATION_TYPES = {
     defaultChannels: ['in-app']
   },
   
+  // Cash-in-hand must be deposited to the bank within the chama's deposit
+  // window (default 48h) - see cashDeposit.service.js.
+  CASH_DEPOSIT_DUE_SOON: {
+    type: 'CASH_DEPOSIT_DUE_SOON',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '⏳',
+    title: 'Cash deposit due soon',
+    priority: 'high',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push']
+  },
+  
+  CASH_DEPOSIT_OVERDUE: {
+    type: 'CASH_DEPOSIT_OVERDUE',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '🚨',
+    title: 'Cash deposit overdue',
+    priority: 'urgent',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push', 'sms']
+  },
+  
+  // Broadcast to the WHOLE chama, not just officials - transparency is the
+  // enforcement mechanism once the treasurer's own reminders have been
+  // missed (see cashDepositEnforcement.job.js).
+  CASH_DEPOSIT_OVERDUE_ALERT: {
+    type: 'CASH_DEPOSIT_OVERDUE_ALERT',
+    category: NOTIFICATION_CATEGORIES.ALERT,
+    icon: '🚨',
+    title: 'Chama cash-in-hand overdue for deposit',
+    priority: 'high',
+    requiresAction: false,
+    defaultChannels: ['in-app', 'push']
+  },
+  
+  CASH_DEPOSITED_TO_BANK: {
+    type: 'CASH_DEPOSITED_TO_BANK',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '🏦',
+    title: 'Cash deposited to bank',
+    priority: 'normal',
+    requiresAction: false,
+    defaultChannels: ['in-app']
+  },
+  
   LOAN_SUBMITTED: {
     type: 'LOAN_SUBMITTED',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
@@ -133,6 +178,26 @@ export const NOTIFICATION_TYPES = {
     priority: 'normal',
     requiresAction: false,
     defaultChannels: ['in-app']
+  },
+
+  LOAN_POLICY_SENSITIVE_UPDATE: {
+    type: 'LOAN_POLICY_SENSITIVE_UPDATE',
+    category: NOTIFICATION_CATEGORIES.GOVERNANCE,
+    icon: '⚠️',
+    title: 'Sensitive loan policy change',
+    priority: 'high',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  LOAN_POLICY_UPDATED: {
+    type: 'LOAN_POLICY_UPDATED',
+    category: NOTIFICATION_CATEGORIES.GOVERNANCE,
+    icon: '📢',
+    title: 'Loan policy updated',
+    priority: 'normal',
+    requiresAction: false,
+    defaultChannels: ['in-app', 'toast']
   },
   
   LOAN_REPAYMENT_OVERDUE: {
@@ -689,6 +754,7 @@ export const ROLE_NOTIFICATION_RULES = {
   // Normal Members - receive personal notifications only
   member: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
       'CONTRIBUTION_RECEIVED',
       'CONTRIBUTION_MISSED',
       'CONTRIBUTION_OVERDUE',
@@ -724,7 +790,8 @@ export const ROLE_NOTIFICATION_RULES = {
       'MPESA_PAYMENT_SUCCESSFUL',
       'MPESA_PAYMENT_FAILED',
       'NEW_DEVICE_LOGIN',
-      'PASSWORD_CHANGED'
+      'PASSWORD_CHANGED',
+      'CASH_DEPOSIT_OVERDUE_ALERT'
     ],
     cannotReceive: [
       'PAYMENT_REVERSED',
@@ -739,6 +806,8 @@ export const ROLE_NOTIFICATION_RULES = {
   // Treasurer - financial notifications and approvals
   treasurer: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
+      'LOAN_POLICY_SENSITIVE_UPDATE',
       'CONTRIBUTION_RECEIVED',
       'CONTRIBUTION_MISSED',
       'CONTRIBUTION_OVERDUE',
@@ -779,7 +848,11 @@ export const ROLE_NOTIFICATION_RULES = {
       'EMERGENCY_CONTRIBUTION_OPENED',
       'MPESA_PAYMENT_SUCCESSFUL',
       'MPESA_PAYMENT_FAILED',
-      'NEW_DEVICE_LOGIN'
+      'NEW_DEVICE_LOGIN',
+      'CASH_DEPOSIT_DUE_SOON',
+      'CASH_DEPOSIT_OVERDUE',
+      'CASH_DEPOSIT_OVERDUE_ALERT',
+      'CASH_DEPOSITED_TO_BANK'
     ],
     cannotReceive: []
   },
@@ -787,6 +860,8 @@ export const ROLE_NOTIFICATION_RULES = {
   // Secretary - membership and governance notifications
   secretary: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
+      'LOAN_POLICY_SENSITIVE_UPDATE',
       'MEMBER_JOINED',
       'MEMBER_INVITED',
       'INVITATION_ACCEPTED',
@@ -816,7 +891,8 @@ export const ROLE_NOTIFICATION_RULES = {
       'CLAIM_REJECTED',
       'EMERGENCY_CONTRIBUTION_OPENED',
       'SECURITY_ALERT',
-      'NEW_DEVICE_LOGIN'
+      'NEW_DEVICE_LOGIN',
+      'CASH_DEPOSIT_OVERDUE_ALERT'
     ],
     cannotReceive: [
       'PAYMENT_REVERSED',
@@ -826,10 +902,11 @@ export const ROLE_NOTIFICATION_RULES = {
       'ROLE_PERMISSION_CHANGED'
     ]
   },
-  
-  // Chairperson - approvals and governance
   chairperson: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
+      'LOAN_POLICY_SENSITIVE_UPDATE',
+      'LOAN_SUBMITTED',
       'LOAN_REQUIRES_APPROVAL',
       'EXPENSE_REQUIRES_APPROVAL',
       'WITHDRAWAL_REQUIRES_APPROVAL',
@@ -866,7 +943,10 @@ export const ROLE_NOTIFICATION_RULES = {
       'BURIAL_CONTRIBUTION_REQUIRED',
       'EMERGENCY_CONTRIBUTION_OPENED',
       'MPESA_PAYMENT_FAILED',
-      'NEW_DEVICE_LOGIN'
+      'NEW_DEVICE_LOGIN',
+      'CASH_DEPOSIT_OVERDUE',
+      'CASH_DEPOSIT_OVERDUE_ALERT',
+      'CASH_DEPOSITED_TO_BANK'
     ],
     cannotReceive: [
       'PAYMENT_RECONCILED',
@@ -878,6 +958,8 @@ export const ROLE_NOTIFICATION_RULES = {
   // Auditor - audit and security notifications
   auditor: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
+      'LOAN_POLICY_SENSITIVE_UPDATE',
       'PAYMENT_REVERSED',
       'PAYMENT_RECONCILED',
       'LOAN_APPROVED',
@@ -903,7 +985,10 @@ export const ROLE_NOTIFICATION_RULES = {
       'CLAIM_REJECTED',
       'BENEFIT_PAYMENT_APPROVED',
       'BENEFIT_PAYMENT_DISBURSED',
-      'NEW_DEVICE_LOGIN'
+      'NEW_DEVICE_LOGIN',
+      'CASH_DEPOSIT_OVERDUE',
+      'CASH_DEPOSIT_OVERDUE_ALERT',
+      'CASH_DEPOSITED_TO_BANK'
     ],
     cannotReceive: [
       'CONTRIBUTION_MISSED',
@@ -939,6 +1024,8 @@ export const ROLE_NOTIFICATION_RULES = {
   // Committee Member - committee-specific notifications
   committee_member: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
+      'LOAN_POLICY_SENSITIVE_UPDATE',
       'MEETING_SCHEDULED',
       'MEETING_REMINDER',
       'MEETING_STARTED',
@@ -959,7 +1046,8 @@ export const ROLE_NOTIFICATION_RULES = {
       'BURIAL_CASE_OPENED',
       'CLAIM_APPROVED',
       'CLAIM_REJECTED',
-      'EMERGENCY_CONTRIBUTION_OPENED'
+      'EMERGENCY_CONTRIBUTION_OPENED',
+      'CASH_DEPOSIT_OVERDUE_ALERT'
     ],
     cannotReceive: [
       'PAYMENT_REVERSED',
@@ -1002,6 +1090,8 @@ export const ROLE_NOTIFICATION_RULES = {
   // Patron - limited notifications
   patron: {
     canReceive: [
+      'LOAN_POLICY_UPDATED',
+      'LOAN_POLICY_SENSITIVE_UPDATE',
       'MEETING_SCHEDULED',
       'MEETING_REMINDER',
       'MINUTES_PUBLISHED',
@@ -1014,7 +1104,8 @@ export const ROLE_NOTIFICATION_RULES = {
       'BURIAL_CASE_OPENED',
       'CLAIM_APPROVED',
       'EMERGENCY_CONTRIBUTION_OPENED',
-      'SECURITY_ALERT'
+      'SECURITY_ALERT',
+      'CASH_DEPOSIT_OVERDUE_ALERT'
     ],
     cannotReceive: [
       'CONTRIBUTION_MISSED',

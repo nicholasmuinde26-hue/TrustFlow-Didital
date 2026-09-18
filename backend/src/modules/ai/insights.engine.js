@@ -13,6 +13,8 @@
  * ============================================================
  */
 
+import { forecastNextPeriod } from "./forecast.engine.js";
+
 const money = (n) =>
   Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
 
@@ -222,6 +224,61 @@ function meetingInsights(ctx, insights) {
   });
 }
 
+function forecastInsights(ctx, insights) {
+  const forecast = forecastNextPeriod(ctx.contributionHistory || []);
+  if (!forecast?.available) return;
+
+  if (forecast.projectedShortfall > 0) {
+    pushInsight(insights, {
+      type: "forecast",
+      severity:
+        forecast.projectedCollectionRatePercent < 60
+          ? "critical"
+          : forecast.projectedCollectionRatePercent < 85
+          ? "warning"
+          : "info",
+      title: `Projected shortfall next period: KES ${money(forecast.projectedShortfall)}`,
+      message: `Based on the last ${forecast.periodsUsed} contribution periods (collection trend: ${forecast.trendDirection}), we project around ${forecast.projectedCollectionRatePercent}% collection next period — confidence: ${forecast.confidence}.`,
+    });
+  } else {
+    pushInsight(insights, {
+      type: "forecast",
+      severity: "good",
+      title: "On track for full collection next period",
+      message: `Based on the last ${forecast.periodsUsed} contribution periods, collection trend is ${forecast.trendDirection} with no projected shortfall (confidence: ${forecast.confidence}).`,
+    });
+  }
+}
+
+function anomalyInsights(ctx, insights) {
+  const anomalies = ctx.recentAnomalies || [];
+  for (const a of anomalies) {
+    const direction = a.reason === "unusually_small" ? "smaller" : "larger";
+    pushInsight(insights, {
+      type: "anomaly",
+      severity: "warning",
+      title: `Unusual transaction: KES ${money(a.amount)}`,
+      message: `This payment is notably ${direction} than this member's typical contribution (around KES ${money(
+        a.average
+      )} on average)${a.zScore != null ? ` — z-score ${a.zScore}` : ""}. Worth a second look before reconciling.`,
+    });
+  }
+}
+
+function glBalanceInsights(ctx, insights) {
+  const gl = ctx.glBalance;
+  if (!gl || gl.balanced) return;
+
+  pushInsight(insights, {
+    type: "gl_balance",
+    severity: "critical",
+    title: "General ledger is out of balance",
+    message: `Total debits (KES ${money(gl.totalDebits)}) don't match total credits (KES ${money(
+      gl.totalCredits
+    )}) — a difference of KES ${money(Math.abs(gl.difference))}. This should never happen in a working double-entry system and means a transaction was posted incorrectly or incompletely. Do not rely on any balance figures until this is investigated and corrected.`,
+  });
+}
+
 /**
  * Build the full insights list for a workspace context.
  */
@@ -235,6 +292,9 @@ export function generateInsights(ctx) {
     loanInsights(ctx, insights);
     cashInsights(ctx, insights);
     meetingInsights(ctx, insights);
+    forecastInsights(ctx, insights);
+    anomalyInsights(ctx, insights);
+    glBalanceInsights(ctx, insights);
   }
 
   const rank = { critical: 0, warning: 1, info: 2, good: 3 };

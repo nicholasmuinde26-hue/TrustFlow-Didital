@@ -2,6 +2,7 @@ import ApprovalRequest from '../../models/ApprovalRequest.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import Committee from '../../models/Committee.js';
 import permissionService from '../../services/permission.service.js';
+import MemberExitRequest from '../../models/MemberExitRequest.js';
 
 class ApprovalService {
   /**
@@ -96,7 +97,7 @@ class ApprovalService {
       },
       {
         type: 'financial_benefit',
-        shouldBlock: ['LOAN_DISBURSEMENT', 'MGR_PAYOUT', 'WITHDRAWAL'].includes(request.resource_type)
+        shouldBlock: ['LOAN_DISBURSEMENT', 'MGR_PAYOUT', 'WITHDRAWAL', 'CHAMA_CONTRIBUTION_PAYOUT'].includes(request.resource_type)
       }
     ];
 
@@ -121,7 +122,7 @@ class ApprovalService {
     if (!initiator) return;
 
     // Check for self-initiated financial benefit
-    if (['LOAN_DISBURSEMENT', 'MGR_PAYOUT', 'WITHDRAWAL'].includes(request.resource_type)) {
+    if (['LOAN_DISBURSEMENT', 'MGR_PAYOUT', 'WITHDRAWAL', 'CHAMA_CONTRIBUTION_PAYOUT'].includes(request.resource_type)) {
       await request.addConflict({
         membership_id: initiatorId,
         role: initiator.role,
@@ -271,6 +272,14 @@ class ApprovalService {
     }
 
     await request.save();
+
+    if (request.resource_type === 'WITHDRAWAL' && request.status === 'approved') {
+      await MemberExitRequest.findOneAndUpdate(
+        { _id: request.resource_id, approval_request_id: request._id, status: 'pending_approval' },
+        { $set: { status: 'approved', approved_at: new Date() } }
+      );
+    }
+
     return request;
   }
 

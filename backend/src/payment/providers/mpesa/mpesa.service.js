@@ -21,6 +21,8 @@ const MPESA_PASSKEY = process.env.MPESA_PASSKEY?.trim();
 const MPESA_CALLBACK_URL = process.env.MPESA_CALLBACK_URL?.trim();
 const MPESA_B2C_RESULT_URL = process.env.MPESA_B2C_RESULT_URL?.trim();
 const MPESA_B2C_TIMEOUT_URL = process.env.MPESA_B2C_TIMEOUT_URL?.trim();
+const MPESA_TRANSACTION_STATUS_RESULT_URL = process.env.MPESA_TRANSACTION_STATUS_RESULT_URL?.trim();
+const MPESA_TRANSACTION_STATUS_TIMEOUT_URL = process.env.MPESA_TRANSACTION_STATUS_TIMEOUT_URL?.trim();
 const MPESA_INITIATOR_NAME = process.env.MPESA_INITIATOR_NAME?.trim();
 const MPESA_SECURITY_CREDENTIAL = process.env.MPESA_SECURITY_CREDENTIAL?.trim();
 const MPESA_TIMEOUT = Number(process.env.MPESA_TIMEOUT) || 20000;
@@ -249,6 +251,72 @@ const initiateB2cPayment = async ({ amount, phoneNumber, remarks, occasion, comm
 };
 
 /**
+ * TRANSACTION STATUS QUERY - secondary reconciliation mechanism for when a
+ * B2C (or other) result callback never arrives. Safaricom docs: "can be
+ * used as a secondary reconciliation mechanism when Callbacks are not
+ * received." Also asynchronous — the actual status is delivered later to
+ * `resultURL`, this call just gets an acknowledgement that the query was
+ * queued. Pass ONE of transactionId (M-Pesa receipt number) or
+ * originatorConversationId (the OriginatorConversationID returned when the
+ * original transaction was submitted) — for loan B2C disbursements we
+ * generally only have the latter, since we never captured a receipt number
+ * before the original result callback went missing.
+ */
+const queryTransactionStatus = async ({ transactionId, originatorConversationId, remarks, occasion, resultURL, timeoutURL }) => {
+  validateConfiguration();
+
+  if (!MPESA_INITIATOR_NAME || !MPESA_SECURITY_CREDENTIAL) {
+    throw new Error("M-Pesa initiator name and security credential required");
+  }
+  if (!transactionId && !originatorConversationId) {
+    throw new Error("Either transactionId or originatorConversationId is required to query transaction status");
+  }
+  const resolvedResultURL = resultURL || MPESA_TRANSACTION_STATUS_RESULT_URL;
+  const resolvedTimeoutURL = timeoutURL || MPESA_TRANSACTION_STATUS_TIMEOUT_URL;
+  if (!resolvedResultURL || !resolvedTimeoutURL) {
+    throw new Error("M-Pesa transaction status result and timeout URLs required");
+  }
+
+  try {
+    const accessToken = await getAccessToken();
+    const payload = {
+      Initiator: MPESA_INITIATOR_NAME,
+      SecurityCredential: MPESA_SECURITY_CREDENTIAL,
+      CommandID: "TransactionStatusQuery",
+      TransactionID: transactionId || "",
+      OriginalConversationID: originatorConversationId || "",
+      PartyA: MPESA_SHORTCODE,
+      IdentifierType: "4",
+      ResultURL: resolvedResultURL,
+      QueueTimeOutURL: resolvedTimeoutURL,
+      Remarks: String(remarks || "Reconciliation").substring(0, 100),
+      Occasion: String(occasion || "").substring(0, 100),
+    };
+
+    const response = await axios.post(`${MPESA_BASE_URL}/mpesa/transactionstatus/v1/query`, payload, {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      timeout: MPESA_TIMEOUT,
+    });
+
+    const data = response.data || {};
+    if (data.ResponseCode !== '0') {
+      throw createMpesaError({ response: { status: 400, data } }, "M-Pesa transaction status query was rejected");
+    }
+
+    return {
+      success: true,
+      originatorConversationId: data.OriginatorConversationID,
+      conversationId: data.ConversationID,
+      responseCode: data.ResponseCode,
+      responseDescription: data.ResponseDescription,
+      rawResponse: data,
+    };
+  } catch (error) {
+    throw createMpesaError(error, "Failed to query M-Pesa transaction status");
+  }
+};
+
+/**
  * REGISTER C2B URLs - one-time setup per Paybill shortcode/environment.
  * Tells Safaricom where to send ValidationURL + ConfirmationURL calls for
  * unprompted Paybill payments. Safe to re-run; Safaricom just overwrites
@@ -393,5 +461,6 @@ export default {
   normalizePhoneNumber, 
   validateAmount,
   initiateB2cPayment,
+  queryTransactionStatus,
   registerC2bUrls
 };

@@ -179,6 +179,24 @@ class MgrService {
     policy.status = 'active';
     await policy.save();
 
+    // Everything below this point can throw (validation, a duplicate key,
+    // a transient DB error). Without a transaction, a failure here used to
+    // leave the policy permanently stuck "active" with zero rounds/plan/
+    // obligations ever created - members could see the MGR as active but
+    // could never actually pay into it (see the self-heal in
+    // getDashboardOverview above, which recovers chamas already stuck this
+    // way). Revert the policy back to draft on any failure here so a retry
+    // is possible instead of a silent half-activated state.
+    try {
+      return await this._createRoundsForActivation({ chamaId, policy, userId });
+    } catch (err) {
+      policy.status = 'draft';
+      await policy.save().catch(() => {});
+      throw err;
+    }
+  }
+
+  async _createRoundsForActivation({ chamaId, policy, userId }) {
     // Create associated ContributionPlan
     const amountVal = policy.contribution_rule?.uniform_amount || 5000;
     const plan = await ContributionPlan.create({
@@ -211,6 +229,12 @@ class MgrService {
         dueDate.setMonth(startDate.getMonth() + i);
       } else if (policy.frequency === 'weekly') {
         dueDate.setDate(startDate.getDate() + i * 7);
+      } else if (policy.frequency === 'biweekly') {
+        dueDate.setDate(startDate.getDate() + i * 14);
+      } else if (policy.frequency === 'daily') {
+        dueDate.setDate(startDate.getDate() + i);
+      } else if (policy.frequency === 'quarterly') {
+        dueDate.setMonth(startDate.getMonth() + i * 3);
       } else {
         dueDate.setMonth(startDate.getMonth() + i);
       }
@@ -286,13 +310,91 @@ class MgrService {
       };
     }
 
-    const rounds = await MgrRound.find({ chama_id: chamaId, policy_id: policy._id })
+    let rounds = await MgrRound.find({ chama_id: chamaId, policy_id: policy._id })
       .populate({
         path: 'recipient_id',
         populate: { path: 'user_id', select: 'name email phone' },
       })
       .populate('approval_request_id')
       .sort({ round_number: 1 });
+
+    // Self-heal: activatePolicy() flips policy.status to 'active' and saves
+    // it BEFORE creating the ContributionPlan/MgrRounds/obligations (see
+    // activatePolicy above), with no transaction and no rollback on
+    // failure. If that later part ever throws partway through, the policy
+    // is left permanently "active" with zero rounds - and every dashboard
+    // load since has been unable to attach real obligations to anything
+    // (there's no round to attach them to), which is why members could
+    // never actually pay into this MGR. Bootstrap round 1 here exactly as
+    // activatePolicy would have, so a chama stuck in this state recovers
+    // on the next dashboard load instead of staying stuck forever.
+    if (rounds.length === 0 && Array.isArray(policy.participants) && policy.participants.length > 0) {
+      const amountVal = policy.contribution_rule?.uniform_amount || 5000;
+      const rawAmount = amountVal?.toString ? Number(amountVal.toString()) : Number(amountVal);
+
+      const plan = await ContributionPlan.create({
+        owner_type: 'Chama',
+        owner_id: chamaId,
+        participant_type: 'ChamaMembership',
+        created_by: policy.created_by,
+        name: `MGR Plan - ${policy.name}`,
+        description: `Contribution plan for MGR Policy v${policy.version}`,
+        currency: policy.currency,
+        contribution_type: 'merry_go_round',
+        frequency: policy.frequency,
+        amount: rawAmount,
+        start_date: policy.start_date,
+        status: 'active',
+        merry_go_round: { enabled: true, payout_interval: policy.frequency },
+      });
+
+      const dueDate = new Date(policy.start_date);
+      const recipientId = policy.participants[0];
+
+      const round1 = await MgrRound.create({
+        chama_id: chamaId,
+        policy_id: policy._id,
+        round_number: 1,
+        recipient_id: recipientId,
+        due_date: dueDate,
+        expected_amount: rawAmount * policy.participants.length,
+        collected_amount: 0,
+        status: 'collecting',
+        contribution_plan_id: plan._id,
+      });
+
+      await ContributionObligation.insertMany(
+        policy.participants.map((part) => ({
+          plan_id: plan._id,
+          owner_type: 'Chama',
+          owner_id: chamaId,
+          participant_type: 'ChamaMembership',
+          participant_id: part._id || part,
+          expected_amount: rawAmount,
+          currency: policy.currency,
+          due_date: dueDate,
+          status: 'pending',
+        })),
+        { ordered: false }
+      );
+
+      await MgrAuditLog.create({
+        chama_id: chamaId,
+        policy_id: policy._id,
+        actor_id: policy.created_by,
+        event_type: 'POLICY_ACTIVATED',
+        summary: `MGR Policy v${policy.version} round 1 auto-recovered (was active with no rounds)`,
+        details: { roundId: round1._id, planId: plan._id },
+      });
+
+      rounds = await MgrRound.find({ chama_id: chamaId, policy_id: policy._id })
+        .populate({
+          path: 'recipient_id',
+          populate: { path: 'user_id', select: 'name email phone' },
+        })
+        .populate('approval_request_id')
+        .sort({ round_number: 1 });
+    }
 
     const currentRound = rounds.find((r) => ['collecting', 'target_reached', 'eligibility_checking', 'payout_proposed', 'pending_approval', 'approved', 'disbursing', 'on_hold'].includes(r.status)) || rounds[0];
 
@@ -310,23 +412,69 @@ class MgrService {
         });
     }
 
-    // Fallback: If no obligations found for this round yet, generate obligations for all policy participants
-    if (obligations.length === 0 && policy && Array.isArray(policy.participants) && policy.participants.length > 0) {
-      const expectedPerMember = Number(policy.contribution_rule?.uniform_amount || 0);
-      const dueDate = currentRound?.due_date || new Date();
+    // Fallback: If no obligations exist yet for this round (e.g. a round
+    // just became "collecting" without its obligations having been
+    // generated), CREATE real ContributionObligation documents rather than
+    // handing back throwaway plain objects.
+    //
+    // Previously this returned in-memory stubs with `_id: part._id` (the
+    // participant/member id). The frontend renders those exactly like real
+    // obligations and lets the member pay against them, POSTing that fake
+    // id as `obligationId` to /contributions. Since no ContributionObligation
+    // with that _id actually exists, requireChamaMember's obligationId
+    // lookup (chama.middleware.js) always came back empty, and every MGR
+    // payment failed with "Invalid Chama ID" - the round could never
+    // actually be paid into.
+    if (obligations.length === 0 && currentRound && currentRound.contribution_plan_id && Array.isArray(policy.participants) && policy.participants.length > 0) {
+      // policy.contribution_rule.uniform_amount is a Decimal128 on the live
+      // Mongoose document (not the toJSON-transformed string). Number() on
+      // a BSON Decimal128 relies on its toString() via implicit coercion,
+      // which works, but go through the explicit .toString() so this can't
+      // silently become NaN/0 if the underlying BSON type ever changes.
+      const rawUniformAmount = policy.contribution_rule?.uniform_amount;
+      const expectedPerMember = rawUniformAmount != null ? Number(rawUniformAmount.toString()) : 0;
+      const dueDate = currentRound.due_date || new Date();
 
-      obligations = policy.participants.map((part) => ({
-        _id: part._id || part,
-        plan_id: currentRound?.contribution_plan_id,
-        participant_id: part,
-        member_id: part,
-        expected_amount: expectedPerMember,
-        amount_due: expectedPerMember,
-        paid_amount: 0,
-        amount_paid: 0,
-        status: 'pending',
-        due_date: dueDate,
-      }));
+      try {
+        await ContributionObligation.insertMany(
+          policy.participants.map((part) => ({
+            plan_id: currentRound.contribution_plan_id,
+            owner_type: 'Chama',
+            owner_id: chamaId,
+            participant_type: 'ChamaMembership',
+            participant_id: part._id || part,
+            expected_amount: expectedPerMember,
+            currency: policy.currency,
+            due_date: dueDate,
+            status: 'pending',
+          })),
+          // ordered:false so a duplicate from a concurrent request (two tabs
+          // loading the overview at once) doesn't abort the whole batch -
+          // the unique index on (plan_id, participant_type, participant_id,
+          // period_start, period_end) only kicks in when periods are set,
+          // which MGR obligations don't use, but this stays safe either way.
+          { ordered: false }
+        );
+      } catch (err) {
+        // Don't let a validation/duplicate error here take down the whole
+        // overview request - but DO log it. Silently swallowing this was
+        // exactly how the original bug (fake, unpayable obligations) stayed
+        // invisible: insertMany failing silently left `obligations` empty,
+        // and the frontend's own synthetic-obligation fallback quietly took
+        // over, reproducing the same "Invalid Chama ID" payment failure.
+        console.error('[mgr] Failed to auto-generate ContributionObligations for round', String(currentRound._id), err);
+      }
+
+      obligations = await ContributionObligation.find({
+        $or: [
+          { plan_id: currentRound.contribution_plan_id },
+          { contribution_plan_id: currentRound.contribution_plan_id },
+        ],
+      })
+        .populate({
+          path: 'participant_id',
+          populate: { path: 'user_id', select: 'name email phone' },
+        });
     }
 
     const auditLogs = await MgrAuditLog.find({ chama_id: chamaId })

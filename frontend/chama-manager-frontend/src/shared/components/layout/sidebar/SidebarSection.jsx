@@ -48,7 +48,7 @@ export default function SidebarSection({
             text-left
             transition
             hover:bg-slate-100
-            dark:hover:bg-slate-800
+            dark:hover:bg-obsidian-card
           "
         >
           <div className="flex items-center gap-2">
@@ -60,7 +60,7 @@ export default function SidebarSection({
                 uppercase
                 tracking-wider
                 text-slate-500
-                dark:text-slate-400
+                dark:text-mist-muted
               "
             >
               {title}
@@ -75,8 +75,8 @@ export default function SidebarSection({
                 text-[10px]
                 font-bold
                 text-slate-600
-                dark:bg-slate-700
-                dark:text-slate-300
+                dark:bg-obsidian-raised
+                dark:text-mist-muted
               "
             >
               {items.length}

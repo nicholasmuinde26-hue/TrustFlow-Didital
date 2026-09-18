@@ -36,8 +36,20 @@ export async function initiateDisbursement({ chama, loanId, userId }) {
     throw new AppError('Cannot disburse loan: All requested guarantors must accept their guarantee requests first.', 400);
   }
 
+  // The applicant may not have typed a phone number into the loan application
+  // form (it was an optional field there), but the borrower's own account
+  // phone is already known — chama auth is phone-based, every membership's
+  // user record has one. Fall back to it here instead of hard-blocking a
+  // legitimately approved loan on a field the applicant simply left blank.
   if (loan.disbursement_method === 'mpesa' && !loan.phone_number) {
-    throw new AppError('An approved loan with a member phone number is required for M-Pesa disbursement', 400);
+    const borrowerMembership = await ChamaMembership.findById(loan.membership_id).populate('user_id', 'phone');
+    const borrowerPhone = borrowerMembership?.user_id?.phone;
+
+    if (!borrowerPhone) {
+      throw new AppError('An approved loan with a member phone number is required for M-Pesa disbursement', 400);
+    }
+
+    loan.phone_number = borrowerPhone;
   }
 
   loan.status = LOAN_STATUS.DISBURSEMENT_PENDING;
@@ -51,7 +63,7 @@ export async function initiateDisbursement({ chama, loanId, userId }) {
   }
 
   try {
-    const result = await mpesaService.initiateB2c({
+    const result = await mpesaService.initiateB2cPayment({
       amount: loan.amount,
       phoneNumber: loan.phone_number,
       remarks: `Chama loan ${loan.reference}`,

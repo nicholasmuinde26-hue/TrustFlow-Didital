@@ -25,6 +25,14 @@ export const handleUssdRequest = async (req, res) => {
 
     const { message, endSession } = await UssdMenuService.handle({ sessionId, phoneNumber, text });
 
+    // Completion is audit metadata only. Never let an audit write turn a
+    // successful USSD interaction into a failed handset response.
+    if (endSession) {
+      UssdMenuService.completeSession(sessionId).catch((err) => {
+        console.error('[ussd] failed to complete session:', err.message);
+      });
+    }
+
     res.set('Content-Type', 'text/plain');
     return res.status(200).send(`${endSession ? 'END' : 'CON'} ${message}`);
   } catch (error) {

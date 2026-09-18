@@ -19,6 +19,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'members.create', scope: 'all' },
     { key: 'members.update', scope: 'all' },
     { key: 'members.suspend', scope: 'all' },
+    { key: 'members.remove', scope: 'all' },
     { key: 'meetings.view', scope: 'all' },
     { key: 'meetings.create', scope: 'all' },
     { key: 'meetings.manage', scope: 'all' },
@@ -35,6 +36,12 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'expenses.create', scope: 'all' },
     { key: 'finance.summary.view', scope: 'all' },
     { key: 'finance.transactions.view', scope: 'all' },
+    // Chairperson can see the chama wallet - every account balance,
+    // contribution, and savings figure - the same as the treasurer.
+    // Deliberately view-only: no finance.transactions.create,
+    // finance.reconcile, or any account-edit key, so the chairperson
+    // can never post or alter a balance, only look at it.
+    { key: 'finance.accounts.view', scope: 'all' },
     { key: 'welfare.view', scope: 'all' },
     { key: 'reports.view', scope: 'all' },
     { key: 'reports.generate', scope: 'all' },
@@ -49,13 +56,20 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'members.view_sensitive', scope: 'all' },
     { key: 'members.create', scope: 'all' },
     { key: 'members.update', scope: 'all' },
-    { key: 'members.suspend', scope: 'all' },
-    { key: 'members.remove', scope: 'all' },
     { key: 'contributions.view', scope: 'all' },
     { key: 'contributions.record', scope: 'all' },
     { key: 'contributions.reconcile', scope: 'all' },
     { key: 'loans.view', scope: 'all' },
     { key: 'loans.apply', scope: 'own' },
+    // Treasurer is one of the two roles required to approve a loan by
+    // default (Loanapproval.service.js's requiredRoles fallback is
+    // ['chairperson', 'treasurer']) and sits in LOAN_OFFICIAL_ROLES
+    // (Loan.constants.js) alongside chairperson/secretary/auditor/
+    // committee_member — all of whom already have these two keys below.
+    // Treasurer was the one role missing them, so requirePermission()
+    // 403'd every treasurer approval attempt before decide() ever ran.
+    { key: 'loans.review', scope: 'all' },
+    { key: 'loans.approve', scope: 'all' },
     { key: 'loans.disburse', scope: 'all' },
     { key: 'expenses.view', scope: 'all' },
     { key: 'expenses.create', scope: 'all' },
@@ -69,7 +83,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'reports.generate', scope: 'all' },
     { key: 'reports.export', scope: 'all' },
     { key: 'roles.view', scope: 'all' },
-    { key: 'roles.assign', scope: 'all' },
+    // Treasurer cannot assign, remove, or otherwise change member roles.
     { key: 'settings.view', scope: 'all' },
     { key: 'settings.manage', scope: 'all' }
   ],
@@ -83,6 +97,13 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'minutes.publish', scope: 'all' },
     { key: 'contributions.view', scope: 'all' },
     { key: 'loans.view', scope: 'all' },
+    // Secretary sits in LOAN_OFFICIAL_ROLES (Loan.constants.js) and is
+    // needed as a recusal-quorum filler when the Chairperson/Treasurer is
+    // the applicant — without loans.review/approve, requirePermission()
+    // would 403 them before that quorum logic in Loanapproval.service.js
+    // ever runs.
+    { key: 'loans.review', scope: 'all' },
+    { key: 'loans.approve', scope: 'all' },
     { key: 'welfare.view', scope: 'all' },
     { key: 'reports.view', scope: 'all' },
     { key: 'roles.view', scope: 'all' }
@@ -93,6 +114,10 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'members.view_sensitive', scope: 'all' },
     { key: 'contributions.view', scope: 'all' },
     { key: 'loans.view', scope: 'all' },
+    // See the Secretary comment above — Auditor is also a recusal-quorum
+    // filler in LOAN_OFFICIAL_ROLES.
+    { key: 'loans.review', scope: 'all' },
+    { key: 'loans.approve', scope: 'all' },
     { key: 'expenses.view', scope: 'all' },
     { key: 'finance.summary.view', scope: 'all' },
     { key: 'finance.transactions.view', scope: 'all' },
@@ -110,6 +135,10 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'meetings.view', scope: 'all' },
     { key: 'contributions.view', scope: 'all' },
     { key: 'loans.view', scope: 'all' },
+    // See the Secretary comment above — Committee Member is the primary
+    // recusal-quorum filler in LOAN_OFFICIAL_ROLES.
+    { key: 'loans.review', scope: 'all' },
+    { key: 'loans.approve', scope: 'all' },
     { key: 'welfare.view', scope: 'all' },
     { key: 'reports.view', scope: 'all' }
   ],
@@ -117,13 +146,27 @@ const DEFAULT_ROLE_PERMISSIONS = {
   member: [
     { key: 'members.view', scope: 'own' },
     { key: 'contributions.view', scope: 'own' },
+    // A member must be able to pay their own contribution / MGR obligation
+    // (cash or M-Pesa STK) but never anyone else's. 'own' scope is enforced
+    // by requirePermission()'s resourceOwnerId check (see
+    // contributionPayment.routes.js), which resolves to the obligation's
+    // participant membership id.
+    { key: 'contributions.record', scope: 'own' },
     { key: 'loans.view', scope: 'own' },
     { key: 'loans.apply', scope: 'own' },
     { key: 'welfare.view', scope: 'own' },
     { key: 'welfare.apply', scope: 'own' },
     { key: 'meetings.view', scope: 'all' },
     { key: 'reports.view', scope: 'all' },
-    { key: 'finance.summary.view', scope: 'limited' }
+    { key: 'finance.summary.view', scope: 'limited' },
+    // A member may look through the Transactions list, but only ever
+    // sees the entries that trace back to their OWN contribution
+    // payments (enforced in finance.controller.js/finance.service.js,
+    // which read this 'own' scope off req.permissionResult and filter
+    // by the caller's membership id) - never the chama's full
+    // transaction book. That stays reserved for
+    // chairperson/treasurer/auditor via 'all' scope above.
+    { key: 'finance.transactions.view', scope: 'own' }
   ],
 
   patron: [
@@ -162,22 +205,34 @@ class PermissionService {
       });
 
       if (rolePermissions.length === 0) {
-        // No row for this exact (chama, role, key). Before denying, work
-        // out WHY there's no row: either (a) this chama's RolePermission
-        // table was never seeded for this role at all — e.g.
-        // initializeDefaultPermissions() failed/was skipped when the
-        // chama was created, or this chama predates the permission
-        // system — or (b) permissions WERE configured for this role and
-        // this key was deliberately left out / revoked. Only (a) should
-        // fall back to the baked-in defaults; (b) is a real, intentional
-        // denial and must stay denied.
-        const anyPermissionForRole = await RolePermission.exists({
+        // No ACTIVE row for this exact (chama, role, key). Before denying,
+        // work out WHY there's no active row: either (a) this exact
+        // permission key was never seeded for this role in this chama at
+        // all — e.g. initializeDefaultPermissions() failed/was skipped
+        // when the chama was created, the chama predates the permission
+        // system, or (most commonly) DEFAULT_ROLE_PERMISSIONS gained this
+        // key for this role AFTER this chama's rows were already seeded —
+        // or (b) a row for this exact key DOES exist but is inactive,
+        // meaning it was deliberately revoked. Only (a) should fall back
+        // to the baked-in defaults; (b) is a real, intentional denial and
+        // must stay denied.
+        //
+        // This must be checked per (role, permission_key), not merely
+        // "does this role have ANY permissions configured at all" — a
+        // chama can easily have some rows for a role (from its original
+        // seeding, or from an admin tweaking one unrelated permission)
+        // while still being missing a specific key that was added to the
+        // defaults later. Treating "has some rows" as "fully configured,
+        // no fallback" wrongly denies newer default permissions (e.g. a
+        // Chairperson's settings.manage) on any chama seeded before that
+        // key existed.
+        const keyEverConfigured = await RolePermission.exists({
           chama_id: membership.chama_id,
           role: membership.role,
-          status: 'active'
+          permission_key: permissionKey
         });
 
-        if (!anyPermissionForRole) {
+        if (!keyEverConfigured) {
           const fallbackDefaults = DEFAULT_ROLE_PERMISSIONS[membership.role] || [];
           const fallbackMatch = fallbackDefaults.find((perm) => perm.key === permissionKey);
 
@@ -443,6 +498,18 @@ class PermissionService {
       console.error('Revoke permission error:', error);
       throw new Error(`Failed to revoke permission: ${error.message}`);
     }
+  }
+
+  /**
+   * Get the built-in default role -> permission map that hasPermission()
+   * falls back to for any (role, key) pair with no RolePermission row at
+   * all. Returns a deep copy so callers can't mutate the real defaults.
+   * Scripts/tooling should read defaults through here rather than
+   * hand-copying DEFAULT_ROLE_PERMISSIONS, so they can never drift from
+   * what hasPermission() actually grants.
+   */
+  getDefaultRolePermissions() {
+    return JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMISSIONS));
   }
 
   /**

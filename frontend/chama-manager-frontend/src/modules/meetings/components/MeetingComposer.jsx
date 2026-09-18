@@ -27,9 +27,9 @@ export default function MeetingComposer({ onSubmit, submitting }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+      className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-obsidian-border dark:bg-obsidian-card"
     >
-      <h3 className="font-semibold text-slate-900 dark:text-white">
+      <h3 className="font-semibold text-slate-900 dark:text-mist">
         Schedule a Meeting
       </h3>
 

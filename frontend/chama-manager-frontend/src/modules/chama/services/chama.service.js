@@ -26,6 +26,13 @@ const chamaService = {
     return data.data.membership;
   },
 
+  // One-click "Request to Join" from the public directory — no
+  // join_code needed. Same pending-membership outcome as joinWithCode.
+  async requestToJoinPublicChama(chamaId) {
+    const { data } = await chamaApi.requestToJoinPublicChama(chamaId);
+    return data.data.membership;
+  },
+
   // Backend expects monthly_savings (snake_case) on update, unlike the
   // camelCase monthlySavings accepted on create — that inconsistency is
   // in the backend itself (chama.service.js updateChama), not a typo here.

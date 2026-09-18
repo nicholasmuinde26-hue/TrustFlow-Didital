@@ -12,6 +12,14 @@ import {
 import AppError from '../../utils/AppError.js';
 import { PROFILE_UPDATE_FIELDS } from '../../utils/Userprofile.js';
 
+const requestContext = (req) => ({
+  ip: req.ip || req.socket?.remoteAddress,
+  userAgent: req.get('user-agent'),
+  // Clients may provide a stable, non-sensitive device identifier. It is
+  // telemetry only; authentication never depends on this value.
+  deviceId: req.get('x-device-id') || undefined,
+});
+
 // ========================================
 // REQUEST OTP (USER-CHOSEN CHANNEL: SMS / EMAIL / WHATSAPP)
 // ========================================
@@ -59,7 +67,7 @@ export const verifyOtpController = async (req, res, next) => {
   try {
     const { phone, email, identifier, otpCode } = req.body;
 
-    const result = await verifyOtp({ phone, email, identifier, otpCode });
+    const result = await verifyOtp({ phone, email, identifier, otpCode, context: requestContext(req) });
 
     res.status(200).json({
       success: true,
@@ -140,6 +148,7 @@ export const loginController = async (req, res, next) => {
       identifier,
       password,
       channel,
+      context: requestContext(req),
     });
 
     res.status(200).json({

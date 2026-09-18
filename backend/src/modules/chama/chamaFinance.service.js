@@ -34,6 +34,7 @@ const periodFor = (frequency, customDays = null, from = new Date()) => {
   const end = new Date(start);
   if (frequency === "daily") end.setDate(end.getDate() + 1);
   else if (frequency === "weekly") end.setDate(end.getDate() + 7);
+  else if (frequency === "biweekly") end.setDate(end.getDate() + 14);
   else if (frequency === "monthly") end.setMonth(end.getMonth() + 1);
   else if (frequency === "quarterly") end.setMonth(end.getMonth() + 3);
   else if (frequency === "yearly") end.setFullYear(end.getFullYear() + 1);

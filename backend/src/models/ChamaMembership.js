@@ -166,6 +166,82 @@ const chamaMembershipSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null
+    },
+
+    // --------------------------------------
+    // SUSPENSION / MANAGEMENT RESTRICTION
+    // --------------------------------------
+    //
+    // A suspended member remains in the Chama
+    // history and can later be returned to active
+    // membership. Suspension always strips the
+    // member of governance/management authority.
+    //
+    suspended_at: {
+      type: Date,
+      default: null
+    },
+
+    management_restriction_until: {
+      type: Date,
+      default: null
+    },
+
+    returned_at: {
+      type: Date,
+      default: null
+    },
+
+    // --------------------------------------
+    // LEADERSHIP PIN
+    // --------------------------------------
+    //
+    // A second factor guarding the Leadership Desk, stored HERE and not
+    // on User on purpose: the same person can be a plain member in one
+    // Chama and Chairperson in another, and each leadership seat should
+    // carry its own PIN. Losing/leaving a seat therefore also takes the
+    // PIN with it — nothing to clean up on the User document.
+    //
+    // Only ever stores a bcrypt hash of a 4-6 digit PIN. `select: false`
+    // so it never leaks through the many places that do
+    // ChamaMembership.find(...) and hand the result to a controller.
+    //
+    // The lockout counters live alongside it because rate limiting a PIN
+    // has to be per-seat, not per-IP: an attacker with a stolen session
+    // is already "the right IP".
+    //
+    leadership_pin_hash: {
+      type: String,
+      default: null,
+      select: false
+    },
+
+    leadership_pin_set_at: {
+      type: Date,
+      default: null
+    },
+
+    // Consecutive failed unlock attempts. Reset to 0 on any success.
+    leadership_pin_failed_attempts: {
+      type: Number,
+      default: 0,
+      select: false
+    },
+
+    // Set once failed attempts cross the threshold; all verification is
+    // refused until this passes, even with the correct PIN.
+    leadership_pin_locked_until: {
+      type: Date,
+      default: null,
+      select: false
+    },
+
+    // Bumped whenever the PIN is changed or reset. Leadership tokens
+    // carry the version they were minted against, so changing the PIN
+    // instantly invalidates every outstanding unlocked session.
+    leadership_pin_version: {
+      type: Number,
+      default: 0
     }
 
   },

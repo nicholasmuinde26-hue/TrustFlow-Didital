@@ -20,26 +20,54 @@ const BATCH_SIZE = Number(process.env.MPESA_RECONCILE_BATCH_SIZE) || 10;
 let sweepInProgress = false;
 
 const reconcileOne = async (intent) => {
-  const attempt = await MpesaAttempt.findOne({ payment_intent_id: intent._id });
-  if (!attempt?.checkout_request_id) return;
+  // FIX: PaymentService.initiate() (the unified flow used by MGR /
+  // contributions payments) stores the STK CheckoutRequestID directly on
+  // the intent itself - intent.provider_request_id, set in
+  // payment.service.js. It never writes an MpesaAttempt record; that
+  // collection is only populated by the older, separate chamaFinance/
+  // mpesa.controller flows. Requiring MpesaAttempt here meant every intent
+  // created through the unified flow had no way to be reconciled at all:
+  // this function returned immediately, sweep after sweep, and the intent
+  // just sat "stale" forever regardless of what actually happened on
+  // M-Pesa's side. Prefer the intent's own field; fall back to
+  // MpesaAttempt for the legacy flows that still rely on it.
+  let checkoutRequestId = intent.provider_request_id;
+  if (!checkoutRequestId) {
+    const attempt = await MpesaAttempt.findOne({ payment_intent_id: intent._id });
+    checkoutRequestId = attempt?.checkout_request_id;
+  }
+  if (!checkoutRequestId) return;
 
   try {
-    const query = await mpesaService.queryStkPush({ checkoutRequestId: attempt.checkout_request_id });
+    const query = await mpesaService.queryStkPush({ checkoutRequestId });
 
-    // Still waiting for user PIN
-    if (query.resultCode === null || query.resultCode === undefined || query.resultCode === 1037) return;
+    // resultCode null/undefined genuinely means M-Pesa hasn't resolved the
+    // prompt yet (member still looking at their phone) - keep waiting.
+    //
+    // FIX: 1037 ("DS timeout user cannot be reached") does NOT belong in
+    // that same bucket - mapResultCode() below already classifies it as a
+    // terminal timeout, not a pending state. Treating it as "still waiting"
+    // meant a member who simply never entered their PIN sat on the
+    // "Waiting for M-Pesa PIN" spinner until the 1-hour MAX_AGE_MS sweep
+    // eventually force-failed the intent with a generic reason - instead of
+    // failing fast with "PIN entry timed out" like it should.
+    if (query.resultCode === null || query.resultCode === undefined) return;
 
-    const successful = Number(query.resultCode) === 0;
+    const mapped = mpesaService.mapResultCode(query.resultCode);
+    const successful = mapped.paymentStatus === PAYMENT_STATUS.COMPLETED;
+    const status = mapped.status === "cancelled" ? PAYMENT_STATUS.CANCELLED
+      : successful ? PAYMENT_STATUS.COMPLETED
+      : PAYMENT_STATUS.FAILED;
 
     // Use processCallback with standard lowercase PAYMENT_STATUS enum values
     await paymentService.processCallback({
       provider: 'mpesa',
       paymentId: intent._id,
       success: successful,
-      status: successful ? PAYMENT_STATUS.COMPLETED : PAYMENT_STATUS.FAILED,
+      status,
       providerData: {
        ...query,
-        ResultDesc: query.resultDescription || "M-Pesa STK status received (reconciliation sweep)"
+        ResultDesc: query.resultDescription || mapped.reason || "M-Pesa STK status received (reconciliation sweep)"
       },
       metadata: {
         productType: intent.type, // 'savings' | 'contribution' | 'mgr'
@@ -49,7 +77,7 @@ const reconcileOne = async (intent) => {
 
   } catch (error) {
     if (error.statusCode === 429 || error.statusCode === 500) {
-      console.warn(`[reconciliation] STK query throttled for ${attempt.checkout_request_id}. Retrying next sweep.`);
+      console.warn(`[reconciliation] STK query throttled for ${checkoutRequestId}. Retrying next sweep.`);
       return;
     }
     console.error(`[reconciliation] Failed to reconcile PaymentIntent ${intent._id}:`, error.message);

@@ -11,6 +11,18 @@ const financeApi = {
     );
   },
 
+  summaryMe(workspaceId) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/summary/me`
+    );
+  },
+
+  summaryTrend(workspaceId) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/summary/trend`
+    );
+  },
+
   accounts(workspaceId) {
     return api.get(
       `/workspaces/${workspaceId}/finance/accounts`
@@ -31,6 +43,13 @@ const financeApi = {
     );
   },
 
+  // GL balance check — cheap enough to poll from the workspace layout
+  glBalance(workspaceId) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/gl-balance`
+    );
+  },
+
   recentPayments(workspaceId) {
     return api.get(
       `/workspaces/${workspaceId}/finance/payments/recent`
@@ -46,6 +65,39 @@ const financeApi = {
 
   createOperation(workspaceId, payload) {
     return api.post(`/workspaces/${workspaceId}/finance/operations`, payload);
+  },
+
+  // ========================================
+  // CASH DEPOSIT ENFORCEMENT
+  // ========================================
+  // "No money stays as cash" - see backend cashDeposit.service.js.
+
+  cashDepositStatus(workspaceId) {
+    return api.get(`/workspaces/${workspaceId}/finance/cash/status`);
+  },
+
+  depositCash(workspaceId, payload) {
+    return api.post(`/workspaces/${workspaceId}/finance/cash/deposit`, payload);
+  },
+
+  // ========================================
+  // BANK ACCOUNTS
+  // ========================================
+
+  bankAccounts(workspaceId, params = {}) {
+    return api.get(`/workspaces/${workspaceId}/finance/bank-accounts`, { params });
+  },
+
+  createBankAccount(workspaceId, payload) {
+    return api.post(`/workspaces/${workspaceId}/finance/bank-accounts`, payload);
+  },
+
+  updateBankAccount(workspaceId, bankAccountId, payload) {
+    return api.patch(`/workspaces/${workspaceId}/finance/bank-accounts/${bankAccountId}`, payload);
+  },
+
+  deactivateBankAccount(workspaceId, bankAccountId) {
+    return api.delete(`/workspaces/${workspaceId}/finance/bank-accounts/${bankAccountId}`);
   },
 
 

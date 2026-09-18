@@ -8,17 +8,21 @@ import Spinner from "@/shared/components/ui/Spinner";
  * modules/workspaces/permissions/Permissions.js), rather than just
  * disabling edit controls on the page.
  *
- * Sensitive management areas — Command Center, Administration/Settings,
- * the Loans Approval queue — should be completely unreachable for a
- * plain member: no nav link (handled in workspaceNavigation.js /
+ * Sensitive management areas — the Leadership Desk, Administration/
+ * Settings, the Loans Approval queue — should be completely unreachable
+ * for a plain member: no nav link (handled in workspaceNavigation.js /
  * ContributionGroupLayout.jsx), and no page content even if they type
  * or bookmark the URL directly. A member landing here is redirected
  * straight back to the workspace overview instead of seeing any part
  * of the page shell.
  *
+ * This is a ROLE gate only. The Leadership Desk layers a per-leader PIN
+ * on top of it (modules/leadership/components/LeadershipPinGate) — the
+ * two are independent, and neither substitutes for the other.
+ *
  * Usage:
- *   <RequireWorkspaceRole check={canViewCommandCenter}>
- *     <ChamaCommandCenterPage />
+ *   <RequireWorkspaceRole check={canViewLeadershipDesk}>
+ *     <LeadershipDeskPage />
  *   </RequireWorkspaceRole>
  *
  * `check` receives (role, type) — the same signature every function

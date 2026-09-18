@@ -27,7 +27,19 @@ class PaymentEventFactory {
                 currency: payment.currency || context.currency || "KES",
                 status: payment.status || context.status || null,
                 productType: payment.productType || meta.productType || context.type || null,
-                paymentMethod: payment.paymentMethod || payment.payment_method || payment.method || meta.paymentMethod || context.paymentMethod || null
+                paymentMethod: payment.paymentMethod || payment.payment_method || payment.method || meta.paymentMethod || context.paymentMethod || null,
+                // Additive fields (never read by earlier consumers, safe to add):
+                // needed so realtime listeners (e.g. the Socket.IO payment
+                // bridge) can match a callback-driven status update back to the
+                // paymentIntentId/checkoutRequestId the frontend is polling on
+                // without a second DB round trip.
+                paymentIntentId: payment.payment_intent_id || payment.paymentIntentId || null,
+                providerPaymentId: payment.provider_payment_id || payment.providerPaymentId || null,
+                failureReason: payment.failure_message || payment.notes || null,
+                createdBy: payment.created_by || payment.createdBy || null,
+                ownerId: payment.owner_id || payment.ownerId || null,
+                ownerType: payment.owner_type || payment.ownerType || null,
+                phoneNumber: payment.payment_instrument?.phone_number || payment.phoneNumber || null
             },
 
             context: {

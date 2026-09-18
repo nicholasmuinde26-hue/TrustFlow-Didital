@@ -50,6 +50,12 @@ const savingsShareoutApi = {
     return api.get(`/chamas/${workspaceId}/savings-shareouts/${shareoutId}`);
   },
 
+  // ── Overview (per-member balances, top savers, growth trend) ──
+
+  getOverview(workspaceId) {
+    return api.get(`/chamas/${workspaceId}/savings-overview`);
+  },
+
   // Chairperson-only
   approve(workspaceId, shareoutId, payload) {
     return api.patch(

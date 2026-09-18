@@ -47,9 +47,9 @@ export default function AnnouncementComposer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+      className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-obsidian-border dark:bg-obsidian-card"
     >
-      <h3 className="font-semibold text-slate-900 dark:text-white">
+      <h3 className="font-semibold text-slate-900 dark:text-mist">
         Post an Announcement
       </h3>
 
@@ -71,7 +71,7 @@ export default function AnnouncementComposer({
             w-full resize-none rounded-xl border border-slate-200 bg-white
             px-4 py-3 text-sm text-slate-900 outline-none transition-colors
             focus:border-primary
-            dark:border-slate-700 dark:bg-slate-800 dark:text-white
+            dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist
           "
         />
 
@@ -100,7 +100,7 @@ export default function AnnouncementComposer({
         )}
 
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-mist-muted">
             <input
               type="checkbox"
               checked={pinned}

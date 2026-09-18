@@ -11,10 +11,26 @@ import domainEventEmitter from './domainEvent.emitter.js';
 // ========================================
 
 class NotificationEventHandler {
+  // FIX: app.js calls initializeEventListeners() once at boot, but
+  // notification.controller.js's initializeNotificationSystem endpoint could
+  // also call it on demand. EventEmitter#on() only ever appends listeners, so
+  // without this guard every extra call stacks another full set of listeners
+  // on top of the existing ones - each domain event would then fire that many
+  // times over (this is also why LOAN_SUBMITTED was logging/notifying twice
+  // for a single loan - see notification.service.js for the other half of
+  // that fix, which removed its own duplicate inline listener block).
+  #listenersInitialized = false;
+
   /**
    * Initialize event listeners for domain events
    */
   initializeEventListeners() {
+    if (this.#listenersInitialized) {
+      console.log('Notification event listeners already initialized - skipping');
+      return;
+    }
+    this.#listenersInitialized = true;
+
     // Financial events
     domainEventEmitter.onDomainEvent('CONTRIBUTION_RECEIVED', this.handleContributionReceived.bind(this));
     domainEventEmitter.onDomainEvent('CONTRIBUTION_MISSED', this.handleContributionMissed.bind(this));

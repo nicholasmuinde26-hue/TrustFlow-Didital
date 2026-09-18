@@ -311,11 +311,42 @@ export const sendWorkspaceRequestStatusEmail = async ({
   }
 };
 
+// Administrative access changes deserve an out-of-band notice. This is
+// deliberately best-effort: a mail outage must never leave access half-updated.
+export const sendAdminAccessEmail = async ({ to, name, action, category, reason = '' }) => {
+  if (!to || !to.includes('@') || !isConfigured()) return null;
+  const actionText = {
+    appointed: 'You have been appointed as a platform administrator.',
+    rescoped: 'Your platform administrator permissions or workspace have changed.',
+    suspended: 'Your platform administrator access has been suspended.',
+    reinstated: 'Your platform administrator access has been reinstated.',
+    revoked: 'Your platform administrator access has been revoked.',
+  }[action] || 'Your platform administrator access has changed.';
+  const subject = `Administrative access ${action}`;
+  const text = `Hello ${name || 'there'}, ${actionText} Category: ${category || 'N/A'}.${reason ? ` Note: ${reason}` : ''} If this was unexpected, contact the platform owner immediately.`;
+  try {
+    const fromEmail = env.smtp.resendFromEmail || env.smtp.fromEmail || 'onboarding@resend.dev';
+    const fromName = env.smtp.fromName || 'VeriCircle';
+    if (isResendConfigured()) await getResendClient().emails.send({ from: `${fromName} <${fromEmail}>`, to, subject, text, html: `<p>${text}</p>` });
+    else await getTransporter()?.sendMail({ from: `"${fromName}" <${fromEmail}>`, to, subject, text, html: `<p>${text}</p>` });
+    return { channel: 'email', to };
+  } catch (error) { console.error('sendAdminAccessEmail failed:', error); return null; }
+};
+
+export const sendSecurityAlertEmail = async ({ to, name, title, summary, severity = 'MEDIUM' }) => {
+  if (!to || !to.includes('@') || !isConfigured()) return null;
+  const subject = `[${severity}] ${title}`;
+  const text = `Hello ${name || 'Security Admin'}, ${summary}\n\nOpen the Security Command Center to investigate.`;
+  try { const fromEmail = env.smtp.resendFromEmail || env.smtp.fromEmail || 'onboarding@resend.dev'; const fromName = env.smtp.fromName || 'VeriCircle'; if (isResendConfigured()) await getResendClient().emails.send({ from: `${fromName} <${fromEmail}>`, to, subject, text, html: `<p>${text}</p>` }); else await getTransporter()?.sendMail({ from: `"${fromName}" <${fromEmail}>`, to, subject, text, html: `<p>${text}</p>` }); return { channel: 'email', to }; } catch (error) { console.error('sendSecurityAlertEmail failed:', error); return null; }
+};
+
 export const isEmailChannelConfigured = isConfigured;
 
 export default {
   sendOtpEmail,
   sendBusinessReceiptEmail,
   sendWorkspaceRequestStatusEmail,
+  sendAdminAccessEmail,
+  sendSecurityAlertEmail,
   isEmailChannelConfigured,
 };

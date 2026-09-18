@@ -8,11 +8,172 @@ import ContributionGroup from '../../models/ContributionGroup.js';
 import ContributionGroupMember from '../../models/ContributionGroupMember.js';
 import WorkspaceRequest from '../../models/WorkspaceRequest.js';
 import FinancialAccount from '../../models/FinancialAccount.js';
+import ChamaContribution from '../../models/ChamaContribution.js';
+import ChamaLoan from '../../models/ChamaLoan.js';
 import AuditLog from '../../models/AuditLog.js';
+import PlatformAdminAuditLog from '../../models/PlatformAdminAuditLog.js';
+import FinancialTransaction from '../../models/FinancialTransaction.js';
+import C2bPayment from '../../models/C2bPayment.js';
+import ApprovalRequest from '../../models/ApprovalRequest.js';
+import ContributionObligation from '../../models/ContributionObligation.js';
+import { findUnbalancedOwners } from '../finance/accounting/glBalance.service.js';
 import AppError from '../../utils/AppError.js';
 import { generateUniqueJoinCode } from '../../utils/joinCode.js';
 import { formatPhone } from '../../utils/phone.js';
 import { sendWorkspaceRequestStatusEmail } from '../../services/notifications/email.service.js';
+import { sendAdminAccessEmail } from '../../services/notifications/email.service.js';
+import { createAuditLog } from '../../services/audit.service.js';
+import bcrypt from 'bcryptjs';
+import { generateAdminStepUpToken } from '../../utils/jwt.js';
+import AdminAccessSession from '../../models/AdminAccessSession.js';
+
+// Each category is a distinct console, not just a label: `permissions` is
+// what actually decides which workspaces render for that admin (see
+// admin.middleware.js and the frontend nav). Super Admin bypasses all of
+// this and always has every workspace.
+const CATEGORY_PROFILES = {
+  finance: {
+    adminRole: 'FINANCE_ADMIN',
+    label: 'Finance',
+    description: 'Treasury, reconciliation & reporting',
+    permissions: { users: false, chamas: true, businesses: true, contributionGroups: true, finance: true, auditLogs: true, settings: false, security: false, support: false, onboarding: false },
+  },
+  security: {
+    adminRole: 'SECURITY_ADMIN',
+    label: 'Security',
+    description: 'Risk signals, fraud telemetry & audit investigation',
+    permissions: { users: true, chamas: true, businesses: true, contributionGroups: true, finance: false, auditLogs: true, settings: false, security: true, support: false, onboarding: false },
+  },
+  support: {
+    adminRole: 'SUPPORT_ADMIN',
+    label: 'Support',
+    description: 'Member and workspace assistance',
+    permissions: { users: true, chamas: true, businesses: true, contributionGroups: true, finance: false, auditLogs: false, settings: false, security: false, support: true, onboarding: false },
+  },
+  operations: {
+    adminRole: 'OPERATIONS_ADMIN',
+    label: 'Operations',
+    description: 'Daily platform operations',
+    permissions: { users: true, chamas: true, businesses: true, contributionGroups: true, finance: false, auditLogs: true, settings: false, security: false, support: true, onboarding: true },
+  },
+  compliance: {
+    adminRole: 'COMPLIANCE_ADMIN',
+    label: 'Compliance',
+    description: 'Controls & evidence review',
+    permissions: { users: true, chamas: true, businesses: true, contributionGroups: true, finance: true, auditLogs: true, settings: false, security: true, support: false, onboarding: false },
+  },
+  onboarding: {
+    adminRole: 'ONBOARDING_ADMIN',
+    label: 'Onboarding',
+    description: 'Workspace activation',
+    permissions: { users: true, chamas: true, businesses: true, contributionGroups: true, finance: false, auditLogs: false, settings: false, security: false, support: false, onboarding: true },
+  },
+  marketplace: {
+    adminRole: 'MARKETPLACE_ADMIN',
+    label: 'Marketplace',
+    description: 'Category hubs, product moderation & merchant governance',
+    permissions: {
+      users: false,
+      chamas: false,
+      businesses: true,
+      contributionGroups: false,
+      finance: false,
+      auditLogs: true,
+      settings: false,
+      security: false,
+      support: false,
+      onboarding: false,
+      marketplace: true,
+      manageMarketplaceDesign: true,
+      approveListings: true,
+      manageCategories: true,
+      manageFeaturedContent: true,
+      viewMarketplaceAnalytics: true,
+      manageCommissions: true,
+      accessMerchantPayouts: false,
+    },
+  },
+};
+
+export const listAdminCategories = () =>
+  Object.entries(CATEGORY_PROFILES).map(([value, profile]) => ({
+    value,
+    label: profile.label,
+    description: profile.description,
+    defaultPermissions: profile.permissions,
+  }));
+
+export const createAdminStepUp = async (userId, password) => {
+  if (!password) throw new AppError('Password is required for administrative step-up', 400);
+  const user = await User.findById(userId).select('+password');
+  if (!user?.password || !(await bcrypt.compare(password, user.password))) {
+    throw new AppError('Password verification failed', 401);
+  }
+  return generateAdminStepUpToken(user._id);
+};
+
+export const listMyAdminSessions = (userId) => AdminAccessSession.find({ userId }).sort({ lastSeenAt: -1 }).lean();
+export const revokeMyAdminSession = async (userId, sessionId) => {
+  const session = await AdminAccessSession.findOneAndUpdate({ _id: sessionId, userId }, { $set: { status: 'REVOKED', revokedAt: new Date() } }, { new: true });
+  if (!session) throw new AppError('Administrative device session not found', 404);
+  return session;
+};
+
+// ========================================
+// "WHO AM I" — lets the frontend build a permission-aware nav/workspace
+// without duplicating the category→permission table on the client.
+// ========================================
+export const getMyAdminProfile = async (user) => {
+  if (user.systemRole === 'super_admin') {
+    return {
+      systemRole: 'super_admin',
+      adminRole: 'SUPER_ADMIN',
+      category: 'super_admin',
+      permissions: {
+        users: true,
+        chamas: true,
+        businesses: true,
+        contributionGroups: true,
+        finance: true,
+        auditLogs: true,
+        settings: true,
+        security: true,
+        support: true,
+        onboarding: true,
+        marketplace: true,
+        manageMarketplaceDesign: true,
+        approveListings: true,
+        manageCategories: true,
+        manageFeaturedContent: true,
+        viewMarketplaceAnalytics: true,
+        manageCommissions: true,
+        accessMerchantPayouts: true,
+      },
+      marketplaceScopes: ['*'],
+      status: 'ACTIVE',
+    };
+  }
+
+  const record = await PlatformAdmin.findOne({ userId: user._id }).lean();
+  if (!record || record.status !== 'ACTIVE') {
+    return null;
+  }
+
+  return {
+    systemRole: 'sub_admin',
+    adminRole: record.adminRole,
+    category: record.category,
+    permissions: record.permissions,
+    marketplaceScopes: record.marketplaceScopes || [],
+    status: record.status,
+  };
+};
+
+const adminSnapshot = (admin) => admin ? { adminRole: admin.adminRole, category: admin.category, permissions: admin.permissions, status: admin.status, notes: admin.notes } : null;
+const writeAdminAudit = (payload) => PlatformAdminAuditLog.create(payload);
+const notifyAdminAccess = (user, action, category, reason = '') => {
+  sendAdminAccessEmail({ to: user?.email, name: user?.name, action, category, reason }).catch((error) => console.error('Admin access notification failed:', error.message));
+};
 
 // ========================================
 // GET SYSTEM OVERVIEW STATS
@@ -41,6 +202,72 @@ export const getOverviewStats = async () => {
     totalGroups,
     pendingRequests,
     totalSubAdmins,
+  };
+};
+
+// ========================================
+// GET EXECUTIVE (CROSS-WORKSPACE) OVERVIEW
+// ========================================
+//
+// Aggregates across every Chama/ContributionGroup rather than one
+// workspace at a time — this is "Screen 1" of the platform: total
+// groups/members, money processed, what fraction of M-Pesa payments
+// were auto-verified, how many risk signals and approvals are
+// currently open. Every number here is a straight read of data the
+// platform already records (C2bPayment.match_status, ApprovalRequest,
+// FinancialTransaction, ContributionObligation) — nothing here is
+// simulated or estimated.
+// ========================================
+export const getExecutiveOverview = async () => {
+  const [
+    totalGroups,
+    totalChamas,
+    totalMembers,
+    totalTransactions,
+    moneyProcessedAgg,
+    matchedPayments,
+    totalPayments,
+    pendingApprovals,
+    overdueObligations,
+    unbalancedChamas,
+    unbalancedGroups,
+  ] = await Promise.all([
+    ContributionGroup.countDocuments(),
+    Chama.countDocuments(),
+    ChamaMembership.countDocuments({ status: 'active' }),
+    FinancialTransaction.countDocuments({ status: 'posted' }),
+    FinancialTransaction.aggregate([
+      { $match: { status: 'posted' } },
+      { $group: { _id: null, total: { $sum: { $toDouble: '$amount' } } } },
+    ]),
+    C2bPayment.countDocuments({ match_status: { $in: ['matched', 'manually_matched'] } }),
+    C2bPayment.countDocuments(),
+    ApprovalRequest.countDocuments({ status: 'pending' }),
+    ContributionObligation.countDocuments({ status: 'overdue' }),
+    findUnbalancedOwners('Chama'),
+    findUnbalancedOwners('ContributionGroup'),
+  ]);
+
+  const moneyProcessed = moneyProcessedAgg[0]?.total ?? 0;
+  const verifiedTransactionPercent =
+    totalPayments > 0 ? Math.round((matchedPayments / totalPayments) * 100) : null;
+  const unbalancedLedgers = unbalancedChamas.length + unbalancedGroups.length;
+
+  return {
+    groups: totalGroups + totalChamas,
+    members: totalMembers,
+    transactions: totalTransactions,
+    moneyProcessed: Math.round(moneyProcessed),
+    verifiedTransactionPercent,
+    unbalancedLedgers,
+    unbalancedLedgerDetails: [...unbalancedChamas, ...unbalancedGroups],
+    // "Risk alerts" combines every real, already-tracked signal rather than
+    // one invented number: contributions overdue, M-Pesa payments that came
+    // in but couldn't be auto-matched to a member, and any workspace whose
+    // general ledger doesn't balance (the most serious of the three — see
+    // unbalancedLedgerDetails for exactly which workspaces).
+    riskAlerts: overdueObligations + (totalPayments - matchedPayments) + unbalancedLedgers,
+    pendingApprovals,
   };
 };
 
@@ -115,6 +342,8 @@ export const listSubAdmins = async () => {
               settings: false,
             },
       adminStatus: record?.status || 'ACTIVE',
+      category: u.systemRole === 'super_admin' ? 'super_admin' : record?.category || 'operations',
+      notes: record?.notes || '',
     };
   });
 };
@@ -122,7 +351,7 @@ export const listSubAdmins = async () => {
 // ========================================
 // PROMOTE USER TO SUB-ADMIN (WITH PERMISSIONS)
 // ========================================
-export const promoteToSubAdmin = async (userId, permissions = {}, appointedByUserId = null) => {
+export const promoteToSubAdmin = async (userId, permissions = {}, appointedByUserId = null, { category = 'operations', notes = '', marketplaceScopes = [] } = {}) => {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid user ID', 400);
   }
@@ -139,35 +368,34 @@ export const promoteToSubAdmin = async (userId, permissions = {}, appointedByUse
   user.systemRole = 'sub_admin';
   await user.save();
 
-  const defaultPermissions = {
-    users: permissions.users ?? true,
-    chamas: permissions.chamas ?? true,
-    businesses: permissions.businesses ?? false,
-    contributionGroups: permissions.contributionGroups ?? true,
-    finance: permissions.finance ?? false,
-    auditLogs: permissions.auditLogs ?? true,
-    settings: permissions.settings ?? false,
-  };
+  const profile = CATEGORY_PROFILES[category] || CATEGORY_PROFILES.operations;
+  const defaultPermissions = { ...profile.permissions, ...permissions };
+  const previous = await PlatformAdmin.findOne({ userId: user._id });
 
   const platformAdmin = await PlatformAdmin.findOneAndUpdate(
     { userId: user._id },
     {
       userId: user._id,
-      adminRole: 'PLATFORM_ADMIN',
+      adminRole: profile.adminRole,
       permissions: defaultPermissions,
+      marketplaceScopes: Array.isArray(marketplaceScopes) ? marketplaceScopes : [],
       status: 'ACTIVE',
       appointedBy: appointedByUserId,
+      category: CATEGORY_PROFILES[category] ? category : 'operations',
+      notes,
     },
     { upsert: true, new: true }
   );
 
+  await writeAdminAudit({ actorUserId: appointedByUserId, targetUserId: user._id, action: 'SUB_ADMIN_APPOINTED', category: platformAdmin.category, before: adminSnapshot(previous), after: adminSnapshot(platformAdmin) });
+  notifyAdminAccess(user, 'appointed', platformAdmin.category);
   return { user, platformAdmin };
 };
 
 // ========================================
 // UPDATE SUB-ADMIN PERMISSIONS
 // ========================================
-export const updateSubAdminPermissions = async (userId, permissions = {}) => {
+export const updateSubAdminPermissions = async (userId, permissions = {}, actorUserId = null, { category, notes, marketplaceScopes } = {}) => {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid user ID', 400);
   }
@@ -177,19 +405,27 @@ export const updateSubAdminPermissions = async (userId, permissions = {}) => {
     throw new AppError('Platform administrator record not found', 404);
   }
 
+  const before = adminSnapshot(platformAdmin);
+  const nextProfile = category && CATEGORY_PROFILES[category];
+  if (nextProfile) { platformAdmin.category = category; platformAdmin.adminRole = nextProfile.adminRole; }
+  if (typeof notes === 'string') platformAdmin.notes = notes;
+  if (Array.isArray(marketplaceScopes)) platformAdmin.marketplaceScopes = marketplaceScopes;
   platformAdmin.permissions = {
-    ...platformAdmin.permissions.toObject(),
+    ...(nextProfile?.permissions || platformAdmin.permissions.toObject()),
     ...permissions,
   };
 
   await platformAdmin.save();
+  await writeAdminAudit({ actorUserId, targetUserId: platformAdmin.userId, action: 'SUB_ADMIN_SCOPE_UPDATED', category: platformAdmin.category, before, after: adminSnapshot(platformAdmin) });
+  const affectedUser = await User.findById(platformAdmin.userId).select('name email');
+  notifyAdminAccess(affectedUser, 'rescoped', platformAdmin.category);
   return platformAdmin;
 };
 
 // ========================================
 // DEMOTE SUB-ADMIN
 // ========================================
-export const demoteSubAdmin = async (userId) => {
+export const demoteSubAdmin = async (userId, actorUserId = null) => {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid user ID', 400);
   }
@@ -206,9 +442,104 @@ export const demoteSubAdmin = async (userId) => {
   user.systemRole = 'user';
   await user.save();
 
-  await PlatformAdmin.findOneAndDelete({ userId });
+  const previous = await PlatformAdmin.findOne({ userId });
+  const before = adminSnapshot(previous);
+  // Preserve the administrator record and its appointment history. Revoking
+  // access means suspending it, never deleting evidence of the assignment.
+  if (previous) { previous.status = 'SUSPENDED'; await previous.save(); }
+  await writeAdminAudit({ actorUserId, targetUserId: user._id, action: 'SUB_ADMIN_REVOKED', category: previous?.category, before, after: { status: 'SUSPENDED' } });
+  notifyAdminAccess(user, 'revoked', previous?.category);
 
   return user;
+};
+
+// ========================================
+// SUSPEND / REINSTATE SUB-ADMIN
+// ========================================
+// Distinct from demotion on purpose: demoting strips the systemRole and is
+// meant to be a permanent removal. Suspending pulls access immediately
+// (requireAdmin rejects them on their very next request) while preserving
+// their systemRole, category and permission configuration untouched —
+// useful mid-investigation, when Super Admin wants the account frozen
+// without deciding yet whether the appointment itself should end.
+// ========================================
+export const suspendSubAdmin = async (userId, actorUserId = null, reason = '') => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new AppError('Invalid user ID', 400);
+  }
+
+  const user = await User.findById(userId);
+  if (!user) throw new AppError('User not found', 404);
+  if (user.systemRole === 'super_admin') {
+    throw new AppError('Cannot suspend the Super Admin', 400);
+  }
+
+  const platformAdmin = await PlatformAdmin.findOne({ userId });
+  if (!platformAdmin) throw new AppError('Platform administrator record not found', 404);
+
+  const before = adminSnapshot(platformAdmin);
+  platformAdmin.status = 'SUSPENDED';
+  if (reason) platformAdmin.notes = reason;
+  await platformAdmin.save();
+
+  await writeAdminAudit({
+    actorUserId,
+    targetUserId: userId,
+    action: 'SUB_ADMIN_SUSPENDED',
+    category: platformAdmin.category,
+    before,
+    after: adminSnapshot(platformAdmin),
+    metadata: { reason: reason || null },
+  });
+  notifyAdminAccess(user, 'suspended', platformAdmin.category, reason);
+
+  return platformAdmin;
+};
+
+export const reinstateSubAdmin = async (userId, actorUserId = null) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new AppError('Invalid user ID', 400);
+  }
+
+  const platformAdmin = await PlatformAdmin.findOne({ userId });
+  if (!platformAdmin) throw new AppError('Platform administrator record not found', 404);
+
+  const before = adminSnapshot(platformAdmin);
+  platformAdmin.status = 'ACTIVE';
+  await platformAdmin.save();
+
+  await writeAdminAudit({
+    actorUserId,
+    targetUserId: userId,
+    action: 'SUB_ADMIN_REINSTATED',
+    category: platformAdmin.category,
+    before,
+    after: adminSnapshot(platformAdmin),
+  });
+
+  const reinstatedUser = await User.findById(userId).select('name email');
+  notifyAdminAccess(reinstatedUser, 'reinstated', platformAdmin.category);
+
+  return platformAdmin;
+};
+
+export const listAdminActivity = async ({ page = 1, limit = 50, category = '', action = '', actor = '', from = '', to = '' } = {}) => {
+  const query = {};
+  if (category) query.category = category;
+  if (action) query.action = action.toUpperCase();
+  if (actor && mongoose.Types.ObjectId.isValid(actor)) query.actorUserId = actor;
+  if (from || to) {
+    query.createdAt = {};
+    if (from && !Number.isNaN(new Date(from).getTime())) query.createdAt.$gte = new Date(from);
+    if (to && !Number.isNaN(new Date(to).getTime())) { const until = new Date(to); until.setHours(23, 59, 59, 999); query.createdAt.$lte = until; }
+  }
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
+  const skip = (Math.max(Number(page) || 1, 1) - 1) * safeLimit;
+  const [logs, total] = await Promise.all([
+    PlatformAdminAuditLog.find(query).populate('actorUserId targetUserId', 'name email phone').sort({ createdAt: -1 }).skip(skip).limit(safeLimit).lean(),
+    PlatformAdminAuditLog.countDocuments(query),
+  ]);
+  return { logs, total, page: Number(page), limit: safeLimit };
 };
 
 // ========================================
@@ -685,4 +1016,302 @@ export const rejectWorkspaceRequest = async (requestId, adminNotes = '', adminUs
   }
 
   return request;
+};
+
+// ========================================
+// ENTITY DIRECTORY DETAIL
+// ========================================
+// Powers the Admin "who is who where" drill-down: given a workspace type
+// and id, returns the full picture the Super Admin / Sub-Admin needs to
+// manage it directly — the entity itself, every member/owner involved
+// with their role and contact details, and a finance snapshot — without
+// requiring the admin to log into the workspace itself.
+// ========================================
+
+const MONEY = (v) => (v === null || v === undefined ? 0 : Number(v.toString ? v.toString() : v));
+
+export const getChamaDetail = async (chamaId) => {
+  if (!mongoose.Types.ObjectId.isValid(chamaId)) {
+    throw new AppError('Invalid chama ID', 400);
+  }
+
+  const chama = await Chama.findById(chamaId).populate('created_by', 'name phone email').lean();
+  if (!chama) {
+    throw new AppError('Chama not found', 404);
+  }
+
+  const [members, accounts, contributions, loans] = await Promise.all([
+    ChamaMembership.find({ chama_id: chamaId, status: { $ne: 'removed' } })
+      .populate('user_id', 'name phone email status isPhoneVerified')
+      .sort({ role: 1, joined_at: 1 })
+      .lean(),
+    FinancialAccount.find({ owner_type: 'Chama', owner_id: chamaId }).lean(),
+    ChamaContribution.find({ chama_id: chamaId }).select('title status target_amount collected_amount createdAt').sort({ createdAt: -1 }).limit(10).lean(),
+    ChamaLoan.countDocuments({ chama_id: chamaId, status: { $ne: 'paid' } }),
+  ]);
+
+  const totalBalance = accounts.reduce((sum, a) => sum + MONEY(a.current_balance), 0);
+
+  return {
+    type: 'chama',
+    entity: chama,
+    members: members.map((m) => ({
+      membershipId: m._id,
+      user: m.user_id,
+      role: m.role,
+      status: m.status,
+      custom_title: m.custom_title,
+      payout_position: m.payout_position,
+      joined_at: m.joined_at,
+      suspended_at: m.suspended_at,
+    })),
+    finance: {
+      accounts: accounts.map((a) => ({ name: a.name, account_type: a.account_type, balance: MONEY(a.current_balance) })),
+      totalBalance,
+    },
+    contributions: contributions.map((c) => ({
+      ...c,
+      target_amount: MONEY(c.target_amount),
+      collected_amount: MONEY(c.collected_amount),
+    })),
+    outstandingLoans: loans,
+  };
+};
+
+export const getBusinessDetail = async (businessId) => {
+  if (!mongoose.Types.ObjectId.isValid(businessId)) {
+    throw new AppError('Invalid business ID', 400);
+  }
+
+  const business = await Business.findById(businessId).populate('created_by', 'name phone email status').lean();
+  if (!business) {
+    throw new AppError('Business not found', 404);
+  }
+
+  const accounts = await FinancialAccount.find({ owner_type: 'Business', owner_id: businessId }).lean();
+  const totalBalance = accounts.reduce((sum, a) => sum + MONEY(a.current_balance), 0);
+
+  return {
+    type: 'business',
+    entity: business,
+    members: [
+      {
+        user: business.created_by,
+        role: 'owner',
+        status: 'active',
+      },
+    ],
+    finance: {
+      accounts: accounts.map((a) => ({ name: a.name, account_type: a.account_type, balance: MONEY(a.current_balance) })),
+      totalBalance,
+    },
+  };
+};
+
+export const getContributionGroupDetail = async (groupId) => {
+  if (!mongoose.Types.ObjectId.isValid(groupId)) {
+    throw new AppError('Invalid contribution group ID', 400);
+  }
+
+  const group = await ContributionGroup.findById(groupId).populate('created_by', 'name phone email').lean();
+  if (!group) {
+    throw new AppError('Contribution group not found', 404);
+  }
+
+  const [members, accounts] = await Promise.all([
+    ContributionGroupMember.find({ contribution_group_id: groupId, status: { $ne: 'removed' } })
+      .populate('user_id', 'name phone email status')
+      .sort({ role: 1 })
+      .lean(),
+    FinancialAccount.find({ owner_type: 'ContributionGroup', owner_id: groupId }).lean(),
+  ]);
+
+  const totalBalance = accounts.reduce((sum, a) => sum + MONEY(a.current_balance), 0);
+
+  return {
+    type: 'contribution_group',
+    entity: group,
+    members: members.map((m) => ({
+      membershipId: m._id,
+      user: m.user_id,
+      role: m.role,
+      status: m.status,
+    })),
+    finance: {
+      accounts: accounts.map((a) => ({ name: a.name, account_type: a.account_type, balance: MONEY(a.current_balance) })),
+      totalBalance,
+    },
+  };
+};
+
+export const getEntityDetail = async (type, id) => {
+  const normalized = String(type || '').toLowerCase();
+  if (normalized === 'chama') return getChamaDetail(id);
+  if (normalized === 'business') return getBusinessDetail(id);
+  if (normalized === 'contribution_group') return getContributionGroupDetail(id);
+  throw new AppError('Unknown workspace type', 400);
+};
+
+// ========================================
+// UPDATE A CHAMA MEMBER'S ROLE OR STATUS (ADMIN OVERRIDE)
+// ========================================
+// Lets Platform Admin fix a membership directly — most importantly,
+// hand the chairperson seat to a new member when a term ends, without
+// the outgoing chairperson needing to do it themselves. Promoting
+// someone to chairperson automatically demotes whoever currently holds
+// it, since a Chama can only have one active chairperson at a time.
+// ========================================
+export const updateChamaMemberRole = async (chamaId, membershipId, { role, status } = {}, adminUser) => {
+  if (!mongoose.Types.ObjectId.isValid(chamaId) || !mongoose.Types.ObjectId.isValid(membershipId)) {
+    throw new AppError('Invalid chama or member ID', 400);
+  }
+
+  const membership = await ChamaMembership.findOne({ _id: membershipId, chama_id: chamaId });
+  if (!membership) {
+    throw new AppError('Membership not found in this chama', 404);
+  }
+
+  const VALID_ROLES = ['member', 'treasurer', 'secretary', 'auditor', 'chairperson', 'committee_member', 'patron'];
+  const VALID_STATUSES = ['active', 'inactive', 'suspended'];
+
+  let demoted = null;
+  const before = { role: membership.role, status: membership.status };
+
+  if (role && role !== membership.role) {
+    if (!VALID_ROLES.includes(role)) {
+      throw new AppError('Invalid role', 400);
+    }
+
+    if (role === 'chairperson') {
+      const currentChair = await ChamaMembership.findOne({
+        chama_id: chamaId,
+        role: 'chairperson',
+        status: 'active',
+        _id: { $ne: membership._id },
+      });
+
+      if (currentChair) {
+        currentChair.role = 'member';
+        await currentChair.save();
+        demoted = currentChair;
+      }
+    }
+
+    membership.role = role;
+  }
+
+  if (status && status !== membership.status) {
+    if (!VALID_STATUSES.includes(status)) {
+      throw new AppError('Invalid status', 400);
+    }
+    membership.status = status;
+    membership.suspended_at = status === 'suspended' ? new Date() : null;
+    membership.returned_at = status === 'active' && before.status === 'suspended' ? new Date() : membership.returned_at;
+  }
+
+  await membership.save();
+
+  try {
+    await createAuditLog({
+      actorUserId: adminUser._id,
+      scopeType: 'CHAMA',
+      chamaId,
+      action: role === 'chairperson' && before.role !== 'chairperson' ? 'ADMIN_CHAIRPERSON_TRANSFER' : 'ADMIN_MEMBERSHIP_UPDATE',
+      resourceType: 'ChamaMembership',
+      resourceId: membership._id,
+      before,
+      after: { role: membership.role, status: membership.status },
+      metadata: {
+        performedByAdmin: adminUser.name || adminUser.phone,
+        demotedMembershipId: demoted?._id || null,
+      },
+    });
+  } catch {
+    // Non-blocking — the membership change itself already succeeded.
+  }
+
+  return getChamaDetail(chamaId);
+};
+
+// ========================================
+// GLOBAL PEOPLE SEARCH ("who is who where")
+// ========================================
+// Finds a person by name/phone/email and shows every chama, business, and
+// contribution group they're involved in and in what role, so an admin
+// can answer "who is this person, and where are they active?" in one look.
+// ========================================
+export const searchPeople = async ({ query = '', page = 1, limit = 20 }) => {
+  const filter = {};
+  const term = query.trim();
+  if (term) {
+    filter.$or = [
+      { name: { $regex: term, $options: 'i' } },
+      { phone: { $regex: term, $options: 'i' } },
+      { email: { $regex: term, $options: 'i' } },
+    ];
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+  const [users, total] = await Promise.all([
+    User.find(filter)
+      .select('name phone email status systemRole createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean(),
+    User.countDocuments(filter),
+  ]);
+
+  const userIds = users.map((u) => u._id);
+
+  const [chamaMemberships, businesses, groupMemberships] = await Promise.all([
+    ChamaMembership.find({ user_id: { $in: userIds }, status: { $ne: 'removed' } })
+      .populate('chama_id', 'name chama_type')
+      .lean(),
+    Business.find({ created_by: { $in: userIds } }).select('name category created_by').lean(),
+    ContributionGroupMember.find({ user_id: { $in: userIds }, status: { $ne: 'removed' } })
+      .populate('contribution_group_id', 'name group_type')
+      .lean(),
+  ]);
+
+  const rolesByUser = new Map(userIds.map((id) => [String(id), []]));
+
+  for (const m of chamaMemberships) {
+    if (!m.chama_id) continue;
+    rolesByUser.get(String(m.user_id))?.push({
+      workspaceType: 'chama',
+      workspaceId: m.chama_id._id,
+      workspaceName: m.chama_id.name,
+      role: m.role,
+      status: m.status,
+    });
+  }
+
+  for (const b of businesses) {
+    rolesByUser.get(String(b.created_by))?.push({
+      workspaceType: 'business',
+      workspaceId: b._id,
+      workspaceName: b.name,
+      role: 'owner',
+      status: 'active',
+    });
+  }
+
+  for (const m of groupMemberships) {
+    if (!m.contribution_group_id) continue;
+    rolesByUser.get(String(m.user_id))?.push({
+      workspaceType: 'contribution_group',
+      workspaceId: m.contribution_group_id._id,
+      workspaceName: m.contribution_group_id.name,
+      role: m.role,
+      status: m.status,
+    });
+  }
+
+  return {
+    people: users.map((u) => ({ ...u, memberships: rolesByUser.get(String(u._id)) || [] })),
+    total,
+    page: Number(page),
+    limit: Number(limit),
+  };
 };

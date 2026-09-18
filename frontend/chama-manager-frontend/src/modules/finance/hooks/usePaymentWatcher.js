@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import financeService from "../services/finance.service";
+import { useSocket } from "@/app/providers/SocketProvider";
 
 const formatKES = (value) => 
   new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(Number(value??0));
@@ -9,6 +10,42 @@ const formatKES = (value) =>
 export default function usePaymentWatcher(workspaceId) {
   const queryClient = useQueryClient();
   const shown = useRef(new Set());
+  const { socket } = useSocket();
+
+  // Instant path: the moment ANY member's M-Pesa STK push settles - not
+  // just the ones initiated from this tab - the backend pushes
+  // "payment:status" to this chama's room (see
+  // backend/src/modules/realtime/paymentSocketBridge.js). This is what
+  // makes the MGR/finance dashboard react the instant a payment lands
+  // instead of waiting for the next 4s poll below, which stays as the
+  // backup for when the socket is disconnected or the event is missed.
+  useEffect(() => {
+    if (!socket || !workspaceId) return undefined;
+
+    const handlePaymentStatus = (payload = {}) => {
+      const dedupeKey = payload.paymentId || payload.paymentIntentId;
+      if (!dedupeKey || shown.current.has(dedupeKey)) return;
+
+      if (payload.status === "completed") {
+        shown.current.add(dedupeKey);
+        toast.success(
+          `Payment confirmed! ${formatKES(payload.amount)} deposited`,
+          { icon: "✅" }
+        );
+        queryClient.invalidateQueries({ queryKey: ["transactions", workspaceId] });
+        queryClient.invalidateQueries({ queryKey: ["ledger", workspaceId] });
+        window.dispatchEvent(new Event("finance:updated"));
+      } else if (["failed", "cancelled"].includes(payload.status)) {
+        shown.current.add(dedupeKey);
+        toast.error(`Payment ${payload.status}: ${formatKES(payload.amount)}`, {
+          description: payload.failureReason || "Please try again",
+        });
+      }
+    };
+
+    socket.on("payment:status", handlePaymentStatus);
+    return () => socket.off("payment:status", handlePaymentStatus);
+  }, [socket, workspaceId, queryClient]);
 
   useEffect(() => {
     if (!workspaceId) return;

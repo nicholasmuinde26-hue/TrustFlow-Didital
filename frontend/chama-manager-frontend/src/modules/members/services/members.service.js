@@ -23,6 +23,11 @@ const membersService = {
     return data.data.member || data.data.membership;
   },
 
+  async assessExit(type, workspaceId, memberId) {
+    const { data } = await membersApi.assessExit(type, workspaceId, memberId);
+    return data.data;
+  },
+
   async remove(type, workspaceId, memberId) {
     const { data } = await membersApi.remove(type, workspaceId, memberId);
     return data.data.member || data.data.membership;

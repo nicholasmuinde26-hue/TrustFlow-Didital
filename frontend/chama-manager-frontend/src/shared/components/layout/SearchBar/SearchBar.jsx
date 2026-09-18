@@ -38,9 +38,9 @@ export default function SearchBar() {
           focus:ring-4
           focus:ring-primary/10
 
-          dark:border-slate-700
-          dark:bg-slate-800
-          dark:text-white
+          dark:border-obsidian-border
+          dark:bg-obsidian-raised
+          dark:text-mist
           dark:placeholder:text-slate-500
           dark:focus:border-primary
           dark:focus:bg-slate-900

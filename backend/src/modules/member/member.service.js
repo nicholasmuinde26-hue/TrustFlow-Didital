@@ -4,6 +4,15 @@ import User from '../../models/User.js';
 import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import Payout from '../../models/Payout.js';
+import PlatformAdmin from '../../models/PlatformAdmin.js';
+import ContributionObligation from '../../models/ContributionObligation.js';
+import ChamaLoan from '../../models/ChamaLoan.js';
+import MemberExitRequest from '../../models/MemberExitRequest.js';
+import approvalService from '../approval/approval.service.js';
+import accountingService from '../finance/accounting/accounting.service.js';
+import { OPEN_LOAN_STATUSES } from '../loans/Loan.constants.js';
+import { getMemberSavingsBalance } from '../savingsShareout/savingsShareout.service.js';
+import ContributionPlan from '../../models/ContributionPlan.js';
 
 import AppError from '../../utils/AppError.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
@@ -42,6 +51,55 @@ const ALLOWED_STATUSES = [
   'suspended',
   'removed'
 ];
+
+const MANAGEMENT_ROLES = [
+  'treasurer',
+  'secretary',
+  'auditor',
+  'chairperson',
+  'committee_member',
+  'patron'
+];
+
+const getManagementRestrictionError = (membership, role) => {
+  if (
+    role === 'member' ||
+    !MANAGEMENT_ROLES.includes(role) ||
+    !membership.management_restriction_until
+  ) {
+    return null;
+  }
+
+  const until = new Date(membership.management_restriction_until);
+  if (until <= new Date()) return null;
+
+  return new AppError(
+    `This member cannot be promoted to a management role until ${until.toLocaleDateString('en-KE')}.`,
+    403
+  );
+};
+
+const ensureActiveTreasurerForChairperson = async (chamaId, actorMembership, options = {}) => {
+  if (actorMembership?.role !== 'chairperson') return;
+
+  const allowSuspendingCurrentTreasurer =
+    options.allowSuspendingCurrentTreasurer === true;
+
+  if (allowSuspendingCurrentTreasurer) return;
+
+  const activeTreasurer = await ChamaMembership.findOne({
+    chama_id: chamaId,
+    role: 'treasurer',
+    status: 'active'
+  }).select('_id').lean();
+
+  if (!activeTreasurer) {
+    throw new AppError(
+      'This Chama cannot operate without an active Treasurer. Please promote an active member to Treasurer before continuing.',
+      403
+    );
+  }
+};
 
 
 // ========================================
@@ -628,16 +686,20 @@ export const updateMemberRole = async ({
   // 3. Verify Treasurer or Chairperson
   // --------------------------------------
 
-  await requireChamaRole({
+  const { actorMembership } = await requireChamaRole({
 
     chamaId,
 
     actorUserId,
 
     requiredRole:
-      ['treasurer', 'chairperson']
+      'chairperson'
 
   });
+
+  if (role !== 'treasurer') {
+    await ensureActiveTreasurerForChairperson(chamaId, actorMembership);
+  }
 
 
   // --------------------------------------
@@ -679,6 +741,13 @@ export const updateMemberRole = async ({
       403
     );
 
+  }
+
+  const managementRestrictionError =
+    getManagementRestrictionError(membership, role);
+
+  if (managementRestrictionError) {
+    throw managementRestrictionError;
   }
 
 
@@ -882,7 +951,7 @@ export const updateMemberStatus = async ({
   // 3. Verify Treasurer or Chairperson
   // --------------------------------------
 
-  await requireChamaRole({
+  const { actorMembership } = await requireChamaRole({
 
     chamaId,
 
@@ -919,6 +988,11 @@ export const updateMemberStatus = async ({
 
   }
 
+  await ensureActiveTreasurerForChairperson(chamaId, actorMembership, {
+    allowSuspendingCurrentTreasurer:
+      membership.role === 'treasurer' && status === 'suspended'
+  });
+
 
   // --------------------------------------
   // 5. Prevent Duplicate Status
@@ -937,16 +1011,20 @@ export const updateMemberStatus = async ({
 
 
   // --------------------------------------
-  // 6. Protect Treasurer
+  // 6. Protect Treasurer unless suspending.
+  //    Suspension is allowed to remove an official
+  //    from office; the Chama then requires a new
+  //    Treasurer before normal operations continue.
   // --------------------------------------
 
   if (
     membership.role === 'treasurer' &&
-    status !== 'active'
+    status !== 'active' &&
+    status !== 'suspended'
   ) {
 
     throw new AppError(
-      'The Treasurer cannot be deactivated or removed. Transfer the Treasurer role first.',
+      'The Treasurer cannot be deactivated or removed. Transfer the Treasurer role first, or suspend them if required.',
       403
     );
 
@@ -1008,6 +1086,27 @@ export const updateMemberStatus = async ({
 
   membership.status =
     status;
+
+  // A suspension demotes the member immediately and
+  // starts a six-month management/governance ban.
+  if (status === 'suspended') {
+    const suspendedAt = new Date();
+    const restrictionUntil = new Date(suspendedAt);
+    restrictionUntil.setMonth(restrictionUntil.getMonth() + 6);
+
+    membership.role = 'member';
+    membership.suspended_at = suspendedAt;
+    membership.management_restriction_until = restrictionUntil;
+    membership.returned_at = null;
+  }
+
+  // Returning a suspended member restores active
+  // membership only. Their role remains "member" until
+  // the six-month restriction has expired.
+  if (status === 'active' && before.status === 'suspended') {
+    membership.returned_at = new Date();
+    membership.role = 'member';
+  }
 
   // Approving a join request (pending -> active) is the moment the
   // Treasurer/Chairperson accepted the member -- record it, the same
@@ -1095,7 +1194,16 @@ export const updateMemberStatus = async ({
         membership.status,
 
       payout_position:
-        membership.payout_position
+        membership.payout_position,
+
+      suspended_at:
+        membership.suspended_at,
+
+      management_restriction_until:
+        membership.management_restriction_until,
+
+      returned_at:
+        membership.returned_at
 
     }
 
@@ -1161,220 +1269,167 @@ export const getChamaJoinRequests = async ({
 
 
 // ========================================
+// MEMBER EXIT / WITHDRAWAL CLEARANCE
+// ========================================
+
+const moneyNumber = (value) => Number(value?.toString?.() ?? value ?? 0);
+
+export const assessMemberExit = async ({ chamaId, memberId }) => {
+  validateObjectId(chamaId, 'Chama ID');
+  validateObjectId(memberId, 'member ID');
+
+  const membership = await ChamaMembership.findOne({ _id: memberId, chama_id: chamaId });
+  if (!membership) throw new AppError('Member not found in this Chama', 404);
+
+  const [obligations, loans, plans] = await Promise.all([
+    ContributionObligation.find({
+      owner_type: 'Chama', owner_id: chamaId,
+      participant_type: 'ChamaMembership', participant_id: memberId,
+      status: { $in: ['pending', 'partially_paid', 'overdue'] },
+    }).select('expected_amount paid_amount due_date status'),
+    ChamaLoan.find({ chama_id: chamaId, membership_id: memberId, status: { $in: OPEN_LOAN_STATUSES } }).select('balances status'),
+    ContributionPlan.find({ owner_type: 'Chama', owner_id: chamaId, participant_type: 'ChamaMembership', contribution_type: 'free_will' }).select('_id currency'),
+  ]);
+
+  const arrears = obligations.reduce((sum, o) => sum + Math.max(0, moneyNumber(o.expected_amount) - moneyNumber(o.paid_amount)), 0);
+  const loanOutstanding = loans.reduce((sum, l) => sum + moneyNumber(l.balances?.principal_outstanding) + moneyNumber(l.balances?.interest_outstanding) + moneyNumber(l.balances?.penalty_outstanding), 0);
+
+  let savings = 0;
+  for (const plan of plans) {
+    savings += moneyNumber(await getMemberSavingsBalance(chamaId, plan._id, memberId));
+  }
+
+  return {
+    membership,
+    arrears: Number(arrears.toFixed(2)),
+    loanOutstanding: Number(loanOutstanding.toFixed(2)),
+    savings: Number(Math.max(0, savings).toFixed(2)),
+    blockingReasons: [
+      ...(arrears > 0 ? [`Outstanding contribution arrears of KES ${arrears.toFixed(2)}`] : []),
+      ...(loanOutstanding > 0 ? [`Outstanding loan balance of KES ${loanOutstanding.toFixed(2)}`] : []),
+    ],
+  };
+};
+
+export const initiateMemberExit = async ({ chamaId, memberId, actorUserId, reason = '' }) => {
+  validateObjectId(chamaId, 'Chama ID');
+  validateObjectId(memberId, 'member ID');
+  validateObjectId(actorUserId, 'actor user ID');
+
+  const actorUser = await User.findById(actorUserId).select('systemRole').lean();
+  const isSystemAdmin = actorUser?.systemRole === 'super_admin' || actorUser?.systemRole === 'sub_admin' || Boolean(await PlatformAdmin.exists({ userId: actorUserId, status: 'ACTIVE' }));
+  let actorMembership = null;
+  if (!isSystemAdmin) {
+    actorMembership = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
+    if (!actorMembership) throw new AppError('You are not an active member of this Chama.', 403);
+    const isChair = actorMembership.role === 'chairperson';
+    const isSelf = String(actorMembership._id) === String(memberId);
+    if (!isChair && !isSelf) throw new AppError('Only the Chairperson may initiate an exit for another member. A member may initiate their own withdrawal.', 403);
+  }
+
+  const assessment = await assessMemberExit({ chamaId, memberId });
+  const membership = assessment.membership;
+  if (membership.status === 'removed') throw new AppError('Member has already been removed', 409);
+  if (membership.role === 'chairperson' && !isSystemAdmin) throw new AppError('The Chairperson cannot be removed by Chama members. Only a system administrator can remove the Chairperson.', 403);
+  if (membership.role === 'treasurer') throw new AppError('Transfer the Treasurer role before starting a member exit.', 403);
+  if (assessment.blockingReasons.length) {
+    throw new AppError(`Member cannot be removed until financial clearance is complete: ${assessment.blockingReasons.join('; ')}.`, 409);
+  }
+
+  const existing = await MemberExitRequest.findOne({ membership_id: memberId, chama_id: chamaId, status: { $in: ['pending_approval','approved'] } });
+  if (existing) return existing;
+
+  const exit = await MemberExitRequest.create({
+    chama_id: chamaId,
+    membership_id: memberId,
+    initiated_by: actorUserId,
+    reason,
+    savings_amount: assessment.savings,
+    currency: 'KES',
+    status: 'pending_approval',
+  });
+
+  const approval = await approvalService.createRequest({
+    chamaId,
+    resourceType: 'WITHDRAWAL',
+    resourceId: exit._id,
+    action: 'MEMBER_EXIT_SAVINGS_DISBURSEMENT',
+    title: `Member exit clearance and savings refund`,
+    description: `Exit request for membership ${memberId}. Savings refund: KES ${assessment.savings.toFixed(2)}.`,
+    amount: assessment.savings,
+    initiatedByMembershipId: actorMembership?._id || membership._id,
+    requiredApprovals: 2,
+    eligibleRoles: ['chairperson','secretary','treasurer'],
+    allowInitiatorApproval: false,
+    permissionKey: 'members.remove',
+    workflowStages: [
+      { stage_name: 'Financial clearance', stage_order: 1, required_roles: ['chairperson','treasurer'], required_approvals: 1 },
+      { stage_name: 'Savings refund approval', stage_order: 2, required_roles: ['chairperson','secretary','treasurer'], required_approvals: 2 },
+      { stage_name: 'Disbursement', stage_order: 3, required_roles: ['treasurer'], required_approvals: 1 },
+    ],
+    metadata: { member_id: memberId, savings_amount: assessment.savings, kenya_chama_process: true },
+  });
+  exit.approval_request_id = approval._id;
+  await exit.save();
+
+  return { exitRequest: exit, assessment, approvalRequest: approval };
+};
+
+export const completeMemberExit = async ({ chamaId, exitRequestId, actorUserId, disbursement_method, external_reference = null }) => {
+  validateObjectId(chamaId, 'Chama ID');
+  validateObjectId(exitRequestId, 'exit request ID');
+  validateObjectId(actorUserId, 'actor user ID');
+  if (!['cash','bank','mpesa'].includes(disbursement_method)) throw new AppError('Disbursement method must be cash, bank or mpesa', 400);
+
+  const actor = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
+  if (!actor || actor.role !== 'treasurer') throw new AppError('Only the active Treasurer can disburse an approved member exit refund.', 403);
+
+  const exit = await MemberExitRequest.findOne({ _id: exitRequestId, chama_id: chamaId }).populate('membership_id');
+  if (!exit) throw new AppError('Member exit request not found', 404);
+  if (exit.status !== 'approved') throw new AppError('Member exit must have the required approvals before disbursement.', 400);
+  if (exit.settlement_transaction_id) throw new AppError('Member exit refund has already been disbursed.', 409);
+
+  const assessment = await assessMemberExit({ chamaId, memberId: exit.membership_id._id });
+  if (assessment.blockingReasons.length) throw new AppError(`Disbursement blocked: ${assessment.blockingReasons.join('; ')}`, 409);
+  if (Math.abs(assessment.savings - moneyNumber(exit.savings_amount)) > 0.01) throw new AppError('The member savings balance changed after approval. Re-submit the exit request for a fresh approval.', 409);
+
+  const obligation = await accountingService.post({
+    referenceType: 'SAVINGS_SHAREOUT_OBLIGATION', owner_type: 'Chama', owner_id: chamaId,
+    member: exit.membership_id._id, amount: exit.savings_amount, currency: 'KES', source_type: 'MemberExitRequest', source_id: exit._id,
+    description: `Member exit savings refund obligation for ${exit.membership_id._id}`, created_by: actorUserId, posted_by: actorUserId,
+  });
+  const settlement = await accountingService.post({
+    referenceType: 'SAVINGS_SHAREOUT_SETTLEMENT', owner_type: 'Chama', owner_id: chamaId,
+    member: exit.membership_id._id, amount: exit.savings_amount, currency: 'KES', source_type: 'MemberExitRequest', source_id: exit._id,
+    disbursement_method, description: `Member exit savings refund disbursement`, created_by: actorUserId, posted_by: actorUserId,
+  });
+
+  const membership = exit.membership_id;
+  membership.status = 'removed';
+  membership.role = 'member';
+  membership.payout_position = null;
+  membership.removed_at = new Date();
+  membership.removed_by = actorUserId;
+  await membership.save();
+
+  exit.obligation_transaction_id = obligation.transactionId;
+  exit.settlement_transaction_id = settlement.transactionId;
+  exit.disbursement_method = disbursement_method;
+  exit.external_reference = external_reference;
+  exit.status = 'disbursed';
+  exit.disbursed_at = new Date();
+  exit.completed_by = actorUserId;
+  await exit.save();
+  return exit;
+};
+
+// ========================================
 // REMOVE MEMBER FROM CHAMA
 // ========================================
 
-export const removeMemberFromChama = async ({
-  chamaId,
-  memberId,
-  actorUserId
-}) => {
-
-  // --------------------------------------
-  // 1. Validate IDs
-  // --------------------------------------
-
-  validateObjectId(
-    chamaId,
-    'Chama ID'
-  );
-
-  validateObjectId(
-    memberId,
-    'member ID'
-  );
-
-  validateObjectId(
-    actorUserId,
-    'actor user ID'
-  );
-
-
-  // --------------------------------------
-  // 2. Verify Treasurer or Chairperson
-  // --------------------------------------
-
-  await requireChamaRole({
-
-    chamaId,
-
-    actorUserId,
-
-    requiredRole:
-      ['treasurer', 'chairperson']
-
-  });
-
-
-  // --------------------------------------
-  // 3. Find Membership
-  // --------------------------------------
-
-  const membership =
-    await ChamaMembership.findOne({
-
-      _id:
-        memberId,
-
-      chama_id:
-        chamaId
-
-    });
-
-
-  if (!membership) {
-
-    throw new AppError(
-      'Member not found in this Chama',
-      404
-    );
-
-  }
-
-
-  // --------------------------------------
-  // 4. Prevent Duplicate Removal
-  // --------------------------------------
-
-  if (
-    membership.status === 'removed'
-  ) {
-
-    throw new AppError(
-      'Member has already been removed',
-      409
-    );
-
-  }
-
-
-  // --------------------------------------
-  // 5. Prevent Removing Treasurer
-  // --------------------------------------
-
-  if (
-    membership.role === 'treasurer'
-  ) {
-
-    throw new AppError(
-      'The Treasurer cannot be removed. Transfer the Treasurer role first.',
-      403
-    );
-
-  }
-
-
-  // --------------------------------------
-  // 6. Prevent Self-Removal
-  // --------------------------------------
-
-  const isSelf =
-    membership.user_id.toString() ===
-    actorUserId.toString();
-
-
-  if (isSelf) {
-
-    throw new AppError(
-      'You cannot remove your own membership',
-      403
-    );
-
-  }
-
-
-  // --------------------------------------
-  // 7. Capture BEFORE State
-  // --------------------------------------
-
-  const before = {
-
-    userId:
-      membership.user_id,
-
-    role:
-      membership.role,
-
-    status:
-      membership.status,
-
-    payout_position:
-      membership.payout_position
-
-  };
-
-
-  // --------------------------------------
-  // 8. Remove Member
-  // --------------------------------------
-
-  membership.status =
-    'removed';
-
-  membership.payout_position =
-    null;
-
-
-  await membership.save();
-
-
-  // --------------------------------------
-  // 9. Populate User
-  // --------------------------------------
-
-  await membership.populate(
-    'user_id',
-    'name phone email id_number avatar_url status'
-  );
-
-
-  // --------------------------------------
-  // 10. Create Audit Log
-  // --------------------------------------
-
-  await createAuditLog({
-
-    actorUserId,
-
-    scopeType:
-      AUDIT_SCOPE_TYPES.CHAMA,
-
-    chamaId,
-
-    action:
-      AUDIT_ACTIONS.MEMBER_REMOVED,
-
-    resourceType:
-      'ChamaMembership',
-
-    resourceId:
-      membership._id,
-
-    before,
-
-    after: {
-
-      userId:
-        membership.user_id,
-
-      role:
-        membership.role,
-
-      status:
-        membership.status,
-
-      payout_position:
-        membership.payout_position
-
-    }
-
-  });
-
-
-  return membership;
-
+export const removeMemberFromChama = async ({ chamaId, memberId, actorUserId }) => {
+  return initiateMemberExit({ chamaId, memberId, actorUserId });
 };
-
 
 // ========================================
 // TRANSFER TREASURER ROLE
@@ -1407,8 +1462,8 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 2. Verify Actor Is Treasurer Or
-  //    Chairperson
+  // 2. Verify Actor Is Chairperson
+  //    (Treasurer cannot change roles)
   // --------------------------------------
   //
   // NOTE: The actor performing this action
@@ -1432,7 +1487,7 @@ export const transferTreasurerRole = async ({
       actorUserId,
 
       requiredRole:
-        ['treasurer', 'chairperson']
+        'chairperson'
 
     });
 
@@ -1526,7 +1581,19 @@ export const transferTreasurerRole = async ({
 
 
   // --------------------------------------
-  // 7. Check Target Role
+  // 7. Enforce six-month management ban
+  // --------------------------------------
+
+  const managementRestrictionError =
+    getManagementRestrictionError(targetMembership, 'treasurer');
+
+  if (managementRestrictionError) {
+    throw managementRestrictionError;
+  }
+
+
+  // --------------------------------------
+  // 8. Check Target Role
   // --------------------------------------
 
   if (
@@ -1771,6 +1838,8 @@ export const updateMemberProfile = async ({
       actorUserId
 
     });
+
+  await ensureActiveTreasurerForChairperson(chamaId, actorMembership);
 
 
   // --------------------------------------
@@ -2050,7 +2119,7 @@ export const reorderPayoutPositions = async ({
   // 2. Verify Treasurer or Chairperson
   // --------------------------------------
 
-  await requireChamaRole({
+  const { actorMembership } = await requireChamaRole({
 
     chamaId,
 
@@ -2060,6 +2129,8 @@ export const reorderPayoutPositions = async ({
       ['treasurer', 'chairperson']
 
   });
+
+  await ensureActiveTreasurerForChairperson(chamaId, actorMembership);
 
 
   // --------------------------------------

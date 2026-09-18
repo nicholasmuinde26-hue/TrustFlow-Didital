@@ -1,34 +1,79 @@
 /*
-  Tailwind v4 only generates color utilities (bg-primary, text-primary,
-  border-primary, ring-primary/10, from-primary, ...) for variables
-  declared inside an @theme block. These two were previously only in
-  :root, so every `-primary` utility class used across the app (Sidebar,
-  SidebarItem, Button, StatCard, WorkspaceSwitcher, links, etc.) was
-  silently producing no CSS at all.
+  Product design tokens
+  ---------------------
+  Keep component code semantic (primary, surface, danger) and keep the
+  visual language in one place. Tailwind v4 generates utilities for the
+  @theme values while the :root values serve CSS and third-party widgets.
 */
 @theme {
     --color-primary: #2563eb;
     --color-primary-dark: #1d4ed8;
+    --color-primary-soft: #eff6ff;
+    --color-surface: #ffffff;
+    --color-canvas: #f8fafc;
+    --color-ink: #0f172a;
+    --color-muted: #64748b;
+    --color-positive: #15803d;
+    --color-caution: #b45309;
+    --color-negative: #b91c1c;
+    --color-informative: #0e7490;
+
+    --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+    --radius-control: 0.75rem;
+    --radius-panel: 1rem;
+    --radius-feature: 1.5rem;
+    --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 24px rgb(15 23 42 / 0.06);
+
+    /*
+      VeriCircle dark theme — sampled from the Doc1 mockup screens.
+      Named independently of the light palette (not just "dark:slate")
+      so components can reach for the exact mockup colors on purpose,
+      e.g. dark:bg-obsidian, dark:bg-obsidian-card, dark:text-mint.
+    */
+    --color-obsidian: #0d1917;       /* app canvas */
+    --color-obsidian-rail: #0b1715;  /* sidebar rail */
+    --color-obsidian-card: #172623;  /* card surface */
+    --color-obsidian-raised: #1b2e29;/* raised/hover surface */
+    --color-obsidian-border: #20342f;
+    --color-mist: #e8f5ef;           /* primary text on dark */
+    --color-mist-muted: #8aa79b;     /* secondary text on dark */
+    --color-mint: #6ee0b6;           /* accent / primary action */
+    --color-mint-hover: #59cfa0;
+    --color-mint-deep: #16352d;      /* icon chip / subtle fill */
+    --color-mint-strong: #124b3c;
+    --color-amber-deep-bg: #3a2e10;
+    --color-amber-deep-text: #e3a542;
 }
 
 :root {
     --background: #f8fafc;
     --foreground: #0f172a;
-
     --card: #ffffff;
-
     --border: #e2e8f0;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --focus-ring: #2563eb;
 
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 20px;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+
+    --radius-control: 0.75rem;
+    --radius-panel: 1rem;
+    --radius-feature: 1.5rem;
 }
 
 .dark {
-    --background: #090d16;
-    --foreground: #f8fafc;
-
-    --card: #0f172a;
-
-    --border: #1e293b;
+    --background: #0d1917;
+    --foreground: #e8f5ef;
+    --card: #172623;
+    --muted: #8aa79b;
+    --border: #20342f;
+    --focus-ring: #6ee0b6;
 }

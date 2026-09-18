@@ -382,6 +382,8 @@ const contributionPlanSchema =
 
           'weekly',
 
+          'biweekly',
+
           'monthly',
 
           'quarterly',
@@ -651,6 +653,8 @@ const contributionPlanSchema =
           enum: [
 
             'weekly',
+
+            'biweekly',
 
             'monthly',
 

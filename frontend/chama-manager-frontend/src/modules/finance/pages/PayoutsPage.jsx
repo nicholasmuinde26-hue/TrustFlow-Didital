@@ -66,14 +66,14 @@ export default function PayoutsPage() {
   });
 
   return (
-    <div className="space-y-6 font-sans text-slate-900 dark:text-slate-100 pb-12">
+    <div className="space-y-6 font-sans text-slate-900 dark:text-mist pb-12">
       {/* Header Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-mist sm:text-3xl">
             Payouts
           </h1>
-          <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
             Control and approve money leaving the chama
           </p>
         </div>
@@ -90,33 +90,33 @@ export default function PayoutsPage() {
 
       {/* Top 4 Metrics Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">PENDING</span>
-          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{money(pendingTotal)}</p>
+          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">{money(pendingTotal)}</p>
           <span className="mt-1 text-xs font-bold text-slate-400 block">{pendingRequests.length} Requests</span>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">APPROVED</span>
-          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{money(approvedTotal)}</p>
+          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">{money(approvedTotal)}</p>
           <span className="mt-1 text-xs font-bold text-slate-400 block">{approvedRequests.length} Requests</span>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">PAID</span>
-          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{money(paidTotal)}</p>
+          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">{money(paidTotal)}</p>
           <span className="mt-1 text-xs font-bold text-slate-400 block">{paidRequests.length} Requests</span>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">FAILED</span>
-          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{money(failedTotal)}</p>
+          <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">{money(failedTotal)}</p>
           <span className="mt-1 text-xs font-bold text-slate-400 block">{failedRequests.length} Requests</span>
         </div>
       </div>
 
       {/* Filter Toolbar Card */}
-      <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+      <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
         <div className="grid gap-3 sm:grid-cols-12 items-center">
           <div className="relative sm:col-span-4">
             <Search size={16} className="absolute left-3.5 top-3 text-slate-400" />
@@ -125,12 +125,12 @@ export default function PayoutsPage() {
               placeholder="Search payout..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 focus:border-rose-600 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-900 focus:border-rose-600 focus:bg-white focus:outline-none dark:border-obsidian-border dark:bg-obsidian dark:text-mist"
             />
           </div>
 
           <div className="sm:col-span-3">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 px-3 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 focus:outline-none">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 px-3 text-xs font-bold text-slate-700 dark:border-obsidian-border dark:bg-obsidian dark:text-mist-muted focus:outline-none">
               <option value="all">All Status</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
@@ -140,19 +140,19 @@ export default function PayoutsPage() {
           </div>
 
           <div className="sm:col-span-2">
-            <select className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 px-3 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 focus:outline-none">
+            <select className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 px-3 text-xs font-bold text-slate-700 dark:border-obsidian-border dark:bg-obsidian dark:text-mist-muted focus:outline-none">
               <option value="all">All Types</option>
             </select>
           </div>
 
           <div className="sm:col-span-2">
-            <select className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 px-3 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 focus:outline-none">
+            <select className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 py-2.5 px-3 text-xs font-bold text-slate-700 dark:border-obsidian-border dark:bg-obsidian dark:text-mist-muted focus:outline-none">
               <option value="all">All Methods</option>
             </select>
           </div>
 
           <div className="sm:col-span-1 flex justify-end">
-            <button className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
+            <button className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist-muted">
               <Filter size={16} />
             </button>
           </div>
@@ -160,10 +160,10 @@ export default function PayoutsPage() {
       </div>
 
       {/* Payouts Detailed Table */}
-      <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+      <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 bg-slate-50/50 uppercase text-[11px] font-extrabold text-slate-400 dark:border-slate-800 dark:bg-slate-800/40">
+            <thead className="border-b border-slate-100 bg-slate-50/50 uppercase text-[11px] font-extrabold text-slate-400 dark:border-obsidian-border dark:bg-obsidian-raised/40">
               <tr>
                 <th className="px-6 py-4">ID</th>
                 <th className="px-6 py-4">RECIPIENT</th>
@@ -174,14 +174,14 @@ export default function PayoutsPage() {
                 <th className="px-6 py-4 text-right">ACTION</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold">
+            <tbody className="divide-y divide-slate-100 dark:divide-obsidian-border/60 font-semibold">
               {filteredPayouts.length > 0 ? (
                 filteredPayouts.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition">
-                    <td className="px-6 py-4 text-slate-900 dark:text-white font-mono font-bold">{row.id}</td>
-                    <td className="px-6 py-4 text-slate-900 dark:text-white font-bold">{row.recipient}</td>
-                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{row.purpose}</td>
-                    <td className="px-6 py-4 text-slate-900 dark:text-white font-mono font-bold">{money(row.amount)}</td>
+                  <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-obsidian-raised/30 transition">
+                    <td className="px-6 py-4 text-slate-900 dark:text-mist font-mono font-bold">{row.id}</td>
+                    <td className="px-6 py-4 text-slate-900 dark:text-mist font-bold">{row.recipient}</td>
+                    <td className="px-6 py-4 text-slate-600 dark:text-mist-muted">{row.purpose}</td>
+                    <td className="px-6 py-4 text-slate-900 dark:text-mist font-mono font-bold">{money(row.amount)}</td>
                     <td className="px-6 py-4">
                       {row.status === "paid" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-black text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"><CheckCircle2 size={12} /> Paid</span>}
                       {row.status === "pending" && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-black text-amber-800 dark:bg-amber-950 dark:text-amber-300"><Clock size={12} /> Pending</span>}
@@ -190,7 +190,7 @@ export default function PayoutsPage() {
                     </td>
                     <td className="px-6 py-4 text-slate-500 font-mono">{row.requestedOn}</td>
                     <td className="px-6 py-4 text-right">
-                      <button className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1">
+                      <button className="text-slate-400 hover:text-slate-700 dark:hover:text-mist p-1">
                         <MoreVertical size={16} />
                       </button>
                     </td>
@@ -207,12 +207,12 @@ export default function PayoutsPage() {
           </table>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-t border-slate-100 bg-white px-6 py-4 text-xs font-semibold text-slate-500 dark:border-obsidian-border dark:bg-obsidian-card">
           <span>Showing 1 to {filteredPayouts.length} of {payouts.length} payouts</span>
           <div className="flex items-center gap-1.5">
-            <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"><ChevronLeft size={14} /></button>
+            <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 dark:border-obsidian-border dark:hover:bg-obsidian-raised"><ChevronLeft size={14} /></button>
             <button className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-600 text-white font-bold">1</button>
-            <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"><ChevronRight size={14} /></button>
+            <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 dark:border-obsidian-border dark:hover:bg-obsidian-raised"><ChevronRight size={14} /></button>
           </div>
         </div>
       </div>

@@ -42,8 +42,8 @@ export const CONTRIBUTION_GROUP_ROLES = [
   "organizer",
 ];
 
-// Roles a manager is allowed to hand to another member. Deliberately
-// excludes "organizer" for contribution groups.
+// Roles exposed by the role picker. Actual authorization is enforced by
+// the backend; for Chamas, only the Chairperson may assign governance roles.
 export function assignableRoles(type) {
   if (isChamaBacked(type)) {
     return CHAMA_ROLES;
@@ -178,17 +178,52 @@ export function canInviteMembers(role, type) {
 // URL is visited directly).
 // ==========================================================
 
-// Chama-only: the Command Center is the officials' operational
-// dashboard (assign officials, verify member KYC, review goals).
-// Not a Contribution Group concept.
+// The Leadership Desk is a role-aware view of the same workspace, not a
+// separate product. It is deliberately limited to the people who already
+// hold operational responsibility for a Chama; individual actions inside it
+// are still gated by their more specific permission helpers, and the desk
+// itself sits behind a per-leader PIN (see modules/leadership).
+//
+// Burial Chamas are included: they are Chama documents underneath, with
+// the same governance routes, so their officials need the same desk.
+export function canViewLeadershipDesk(role, type) {
+  return isChamaBacked(type) && isManager(role, "chama");
+}
+
+// DEPRECATED — kept only so any stray import doesn't crash a build.
+//
+// The Command Center was a second, near-duplicate leadership page gated
+// by this exact same check, which is why leaders saw two overlapping
+// sidebar links. Its tabs now live inside the Leadership Desk and the
+// old route redirects there. Delete this once nothing imports it.
 export function canViewCommandCenter(role, type) {
-  return type === "chama" && isManager(role, "chama");
+  return canViewLeadershipDesk(role, type);
 }
 
 // Chama & Contribution Group: workspace-wide configuration and
 // (for the Treasurer/organizer) deletion. Restricted to managers.
 export function canViewAdministration(role, type) {
   return isManager(role, type);
+}
+
+// Chama-only: the raw double-entry books - General Ledger, Chama Wallet
+// (account balances), and Trial Balance. Mirrors finance.accounts.view
+// in backend/src/services/permission.service.js's DEFAULT_ROLE_PERMISSIONS,
+// which only Chairperson, Treasurer, and Auditor hold at scope 'all' -
+// Secretary and Committee Member don't have it either, same as a plain
+// Member. Deliberately narrower than isManager()/canViewAdministration()
+// above (which would miss Auditor) because these are raw accounting
+// records, not a role-management concern.
+//
+// NOT included here: Transactions (a member sees their own, scoped
+// server-side), and Balance Sheet / Income Statement / Cash Flow /
+// Reports (member-facing statements everyone can read via reports.view -
+// see ReportsPage.jsx's own managementOnly flags, which agree with this
+// split).
+const CHAMA_BOOKS_OFFICIAL_ROLES = ["chairperson", "treasurer", "auditor"];
+
+export function canViewFullBooks(role, type) {
+  return isChamaBacked(type) && CHAMA_BOOKS_OFFICIAL_ROLES.includes(role);
 }
 
 // Chama-only: the dual loan-approval queue (approve/reject/
@@ -225,6 +260,30 @@ export function canDisburseLoan(role, type) {
 // the API will 403 on. Approval sign-off is intentionally NOT gated by this
 // helper — eligibility for that is per-policy (approval_rule.eligible_roles)
 // and enforced server-side in approval.service.js.
+// Chama-only: generating a fresh Trust Score snapshot and creating/
+// revoking its public share link. Mirrors requireChamaTreasurerOrChairperson
+// on the backend (trustScore.routes.js) — the people who'd actually hand
+// this report to a bank or SACCO federation.
+export function canManageTrustScore(role, type) {
+  return isChamaBacked(type) && (role === "treasurer" || role === "chairperson");
+}
+
+// Chama-only: moving a dispute along (investigate/resolve/dismiss).
+// Mirrors requireSecretaryOrManager on the backend (dispute.routes.js) —
+// Secretary, Treasurer, or Chairperson.
+export function canManageDisputes(role, type) {
+  return isChamaBacked(type) && ["secretary", "treasurer", "chairperson"].includes(role);
+}
+
+// Chama-only: viewing the raw per-rater breakdown (with comments) behind
+// an official's aggregate rating. Mirrors requireAuditAccess on the
+// backend — deliberately narrower than isManager() so the Chairperson
+// (who could themself be the subject of a rating) doesn't automatically
+// get to see who said what.
+export function canViewRatingDetail(role, type) {
+  return isChamaBacked(type) && ["treasurer", "auditor"].includes(role);
+}
+
 export function canManageMgr(role, type) {
   return type === "chama" && role === "treasurer";
 }

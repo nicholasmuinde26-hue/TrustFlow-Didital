@@ -89,7 +89,7 @@ export const listMyGuarantees = send(async (req) => {
 });
 
 export const applyForLoan = send((req) =>
-  loanApplication.applyForLoan({ chama: req.chama, membership: req.membership, userId: req.user._id, data: req.body })
+  loanApplication.applyForLoan({ chama: req.chama, membership: req.membership, userId: req.user._id, applicantPhone: req.user.phone, data: req.body })
 );
 
 export const getLoan = send(async (req) => {

@@ -188,6 +188,13 @@ CONTRIBUTION_GROUP_ARCHIVED:
   LOAN_DISBURSEMENT_FAILED:
     'LOAN_DISBURSEMENT_FAILED',
 
+  // Raised by the loan disbursement reconciliation sweep when a
+  // disbursement is still stuck in "processing" past the max-age window
+  // and needs a human to check with M-Pesa/the bank directly, rather than
+  // being auto-retried (which could double-pay if funds already moved).
+  LOAN_DISBURSEMENT_NEEDS_REVIEW:
+    'LOAN_DISBURSEMENT_NEEDS_REVIEW',
+
   LOAN_OVERDUE:
     'LOAN_OVERDUE',
 
@@ -223,6 +230,61 @@ CONTRIBUTION_GROUP_ARCHIVED:
     'ROTATION_UPDATED',
 
   PAYOUT_TRIGGERED:
-    'PAYOUT_TRIGGERED'
+    'PAYOUT_TRIGGERED',
+
+
+  // ======================================
+  // ACCOUNTABILITY (disputes, official ratings, trust score)
+  // ======================================
+
+  DISPUTE_RAISED:
+    'DISPUTE_RAISED',
+
+  DISPUTE_STATUS_UPDATED:
+    'DISPUTE_STATUS_UPDATED',
+
+  DISPUTE_RESOLVED:
+    'DISPUTE_RESOLVED',
+
+  DISPUTE_DISMISSED:
+    'DISPUTE_DISMISSED',
+
+  OFFICIAL_RATING_SUBMITTED:
+    'OFFICIAL_RATING_SUBMITTED',
+
+  TRUST_SCORE_GENERATED:
+    'TRUST_SCORE_GENERATED',
+
+  TRUST_SCORE_SHARED:
+    'TRUST_SCORE_SHARED',
+
+  TRUST_SCORE_SHARE_REVOKED:
+    'TRUST_SCORE_SHARE_REVOKED',
+
+
+  // ======================================
+  // CASH DEPOSIT ENFORCEMENT / BANK ACCOUNTS
+  // ======================================
+
+  CASH_DEPOSITED_TO_BANK:
+    'CASH_DEPOSITED_TO_BANK',
+
+  CASH_DEPOSIT_OVERDUE_FLAGGED:
+    'CASH_DEPOSIT_OVERDUE_FLAGGED',
+
+  CASH_INFLOW_LOCKED:
+    'CASH_INFLOW_LOCKED',
+
+  CASH_INFLOW_UNLOCKED:
+    'CASH_INFLOW_UNLOCKED',
+
+  BANK_ACCOUNT_CREATED:
+    'BANK_ACCOUNT_CREATED',
+
+  BANK_ACCOUNT_UPDATED:
+    'BANK_ACCOUNT_UPDATED',
+
+  BANK_ACCOUNT_DEACTIVATED:
+    'BANK_ACCOUNT_DEACTIVATED'
 
 };

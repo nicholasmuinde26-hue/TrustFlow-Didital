@@ -38,7 +38,7 @@ export default function AnnouncementCard({
             ? "border-red-300/60 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10"
             : pinned
             ? "border-primary/30 bg-primary/5"
-            : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+            : "border-slate-200 bg-white dark:border-obsidian-border dark:bg-obsidian-card"
         }
       `}
     >
@@ -67,11 +67,11 @@ export default function AnnouncementCard({
             )}
           </div>
 
-          <h3 className="font-semibold text-slate-900 dark:text-white">
+          <h3 className="font-semibold text-slate-900 dark:text-mist">
             {title}
           </h3>
 
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+          <p className="mt-1 text-sm text-slate-600 dark:text-mist-muted">
             {content}
           </p>
 
@@ -112,7 +112,7 @@ export default function AnnouncementCard({
               <button
                 onClick={() => onTogglePin(announcement)}
                 title={pinned ? "Unpin" : "Pin"}
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800"
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-primary dark:hover:bg-obsidian-raised"
               >
                 <Pin size={16} />
               </button>

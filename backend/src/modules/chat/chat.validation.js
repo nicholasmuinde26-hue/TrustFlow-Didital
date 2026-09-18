@@ -13,3 +13,15 @@ export function validateMessage(data) {
   }
 
 }
+
+export function validateDirectMessage(data) {
+
+  if (!data.message?.trim()) {
+    throw new Error("Message required");
+  }
+
+  if (!data.recipient_id) {
+    throw new Error("Recipient required");
+  }
+
+}

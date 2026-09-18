@@ -35,6 +35,7 @@ import ContributionPayment from "../../models/ContributionPayment.js";
 import savingsDepositRule from "./accounting/rules/savingsPayment.rule.js";
 import contributionPaymentRule from "./accounting/rules/contributionPayment.rule.js";
 import mgrContributionRule from "./accounting/rules/mgrContribution.rule.js";
+import chamaContributionRule from "./accounting/rules/chamaContribution.rule.js";
 
 
 // ============================================================================
@@ -45,6 +46,7 @@ const RULES = [
     savingsDepositRule,
     contributionPaymentRule,
     mgrContributionRule,
+    chamaContributionRule,
 ];
 
 
@@ -68,10 +70,11 @@ const RULES = [
 //
 // ============================================================================
 
-const TRANSACTION_TYPE_BY_RULE = {
+export const TRANSACTION_TYPE_BY_RULE = {
     SAVINGS_DEPOSIT: "deposit",
     CONTRIBUTION_PAYMENT: "contribution_payment",
     MGR_CONTRIBUTION: "mgr_contribution",
+    CHAMA_CONTRIBUTION_PAYMENT: "chama_contribution_payment",
 };
 
 
@@ -578,7 +581,7 @@ class FinancialEngine {
 
 
             // ==================================================================
-            // 13b. CLOSE THE OBLIGATION (contribution / MGR only)
+            // 13b. CLOSE THE OBLIGATION (contribution / MGR / savings)
             // ==================================================================
             //
             // FinanceEngine only posts ledger entries. Closing the obligation
@@ -588,9 +591,21 @@ class FinancialEngine {
             // obligations were never actually marked paid. Doing it here, in
             // the same local transaction as the ledger posting, keeps the
             // two from ever drifting apart.
+            //
+            // SAVINGS_DEPOSIT is included here too: initiateSavingsDeposit()
+            // (chamaFinance.service.js) creates/reuses a period ContributionObligation
+            // and attaches its id to the payment exactly like a normal
+            // contribution does, so it must be closed the same way - otherwise
+            // the deposit posts to the ledger correctly but the member's
+            // savings obligation (and anything reading it, e.g. the USSD
+            // balance summary / next-due screens) stays stuck at "pending".
             // ==================================================================
 
-            if (ruleName === "CONTRIBUTION_PAYMENT" || ruleName === "MGR_CONTRIBUTION") {
+            if (
+                ruleName === "CONTRIBUTION_PAYMENT" ||
+                ruleName === "MGR_CONTRIBUTION" ||
+                ruleName === "SAVINGS_DEPOSIT"
+            ) {
 
                 const obligationId =
                     event.obligation?.id ||
@@ -743,6 +758,12 @@ class FinancialEngine {
             ) {
 
                 productType = "mgr";
+
+            } else if (
+                reference.startsWith("CHAMA-CC")
+            ) {
+
+                productType = "chama_contribution";
             }
 
 
@@ -850,6 +871,66 @@ class FinancialEngine {
                             );
                         });
                     }
+                }
+
+                return;
+            }
+
+
+            // ==================================================================
+            // CHAMA-INTERNAL CONTRIBUTION (emergency / wedding / purchase / etc)
+            // ==================================================================
+
+            if (productType === "chama_contribution") {
+
+                await this.post(
+                    "CHAMA_CONTRIBUTION_PAYMENT",
+                    event
+                );
+
+                // Best-effort, same pattern as the MGR round sync above: a
+                // failure here must not undo the ledger posting that just
+                // succeeded. Prefer chama_contribution_id from metadata when
+                // available, but the account_code parsed straight out of the
+                // reference (CHAMA-CC-<accountCode>-<ts>-<rand>) is the
+                // reliable fallback - it doesn't depend on metadata surviving
+                // the payment pipeline. See chamaContribution.rule.js.
+                const chamaContributionId =
+                    event.payment?.metadata?.chama_contribution_id ||
+                    event.context?.metadata?.chama_contribution_id ||
+                    null;
+
+                const { parseAccountCodeFromReference } = await import(
+                    "./accounting/rules/chamaContribution.rule.js"
+                );
+                const accountCode =
+                    parseAccountCodeFromReference(event.payment?.reference) ||
+                    event.payment?.metadata?.account_code ||
+                    event.context?.metadata?.account_code ||
+                    null;
+
+                if (chamaContributionId || accountCode) {
+
+                    const chamaContributionService = (await import(
+                        "../chama/chamaContribution.service.js"
+                    )).default;
+
+                    await chamaContributionService.recordPaymentPosted({
+                        chamaContributionId,
+                        accountCode,
+                        amount: event.payment?.amount,
+                        paymentId: event.payment?.id,
+                    }).catch((err) => {
+                        console.error(
+                            "[FinanceEngine] chamaContributionService.recordPaymentPosted failed:",
+                            err.message
+                        );
+                    });
+
+                } else {
+                    console.warn(
+                        `[FinanceEngine] chama_contribution payment ${event.payment?.reference} has no chama_contribution_id or account_code - ledger posted but contribution total not updated.`
+                    );
                 }
 
                 return;

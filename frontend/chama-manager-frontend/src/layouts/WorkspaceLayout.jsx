@@ -11,6 +11,8 @@ import Spinner from "@/shared/components/ui/Spinner";
 import ContributionGroupLayout from "./ContributionGroupLayout";
 import { AiAssistantWidget } from "@/modules/ai";
 import WorkspaceQuickLaunchers from "@/modules/workspaces/components/WorkspaceQuickLaunchers";
+import GlBalanceGuard from "@/modules/finance/components/GlBalanceGuard";
+import MobileBottomNav from "@/shared/components/layout/MobileBottomNav/MobileBottomNav";
 
 
 export default function WorkspaceLayout() {
@@ -57,12 +59,13 @@ export default function WorkspaceLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      {/* Sidebar Overlay (Mobile) & Persistent Sidebar (Desktop) */}
+    <div className="flex h-screen overflow-hidden bg-[#f5f8f6] dark:bg-obsidian">
+      {/* Compact app rail with an on-demand, role-filtered all-tools drawer. */}
       <Sidebar
         sections={sections}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onOpen={() => setSidebarOpen(true)}
         workspace={workspace}
         workspaceId={workspaceId}
       />
@@ -73,11 +76,16 @@ export default function WorkspaceLayout() {
           <Topbar onMenuToggle={() => setSidebarOpen(true)} />
         </div>
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-6 pb-24 lg:p-8 lg:pb-8">
           <Breadcrumbs />
           <Outlet />
         </main>
       </div>
+
+      {/* Mobile-only: keeps Home/Workspaces/Messages/Profile reachable
+          from inside a workspace too, matching every mobile screen in
+          the Doc1 mockups (the desktop icon rail stays lg:flex-only). */}
+      <MobileBottomNav />
 
       <WorkspaceQuickLaunchers workspaceId={workspaceId} workspaceType={workspace?.type} />
 
@@ -86,6 +94,13 @@ export default function WorkspaceLayout() {
         workspaceType={workspace?.type}
         workspaceName={workspace?.name}
       />
+
+      {/* Chama-only: general ledger double-entry integrity is the one thing
+          that should never silently go wrong. Not mounted for business/
+          contribution-group workspaces per the current scope. */}
+      {workspace?.type === "chama" && (
+        <GlBalanceGuard workspaceId={workspaceId} workspaceName={workspace?.name} />
+      )}
     </div>
   );
 }

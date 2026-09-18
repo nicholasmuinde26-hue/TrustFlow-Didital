@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Smartphone, X, CheckCircle2, AlertCircle, Loader2, Clock, XCircle, ShieldCheck, ArrowRight, RefreshCcw } from "lucide-react";
 import businessService from "../services/business.service";
+import useStkPushFlow from "@/shared/hooks/useStkPushFlow";
 
 export default function BusinessMpesaModal({
   isOpen,
@@ -14,46 +15,48 @@ export default function BusinessMpesaModal({
   const [amount, setAmount] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [description, setDescription] = useState("");
+  const [formError, setFormError] = useState(null);
 
-  // Modal State Flow: 'form' | 'sending' | 'waiting' | 'success' | 'failed'
-  const [modalState, setModalState] = useState("form");
-  const [statusMessage, setStatusMessage] = useState(null);
-  const [countdown, setCountdown] = useState(40);
-  const [activeTxData, setActiveTxData] = useState(null);
+  // Uses the same shared useStkPushFlow hook as MpesaStkModal/MGR/Pledge —
+  // real sending -> awaiting_pin -> processing phases, Socket.IO-first
+  // instant detection with HTTP polling as the fallback, and the specific
+  // M-Pesa failure reason (insufficient funds, cancelled, timed out)
+  // instead of a generic "not completed" message.
+  //
+  // Business transactions don't go through the shared PaymentIntent
+  // pipeline (see business.service.js), so their own checkStkStatus /
+  // reconcileStkCallback already call emitBusinessTransactionStatus() to
+  // push "payment:status" straight to this seller's socket room the
+  // instant M-Pesa resolves it - this modal just needs to actually be
+  // listening, which useStkPushFlow now does correctly.
+  const fetchStatus = async (transactionId) => {
+    if (!workspaceId) return null;
+    const result = await businessService.queryMpesaStkPushStatus(workspaceId, transactionId);
+    const transaction = result?.transaction;
+    if (!transaction) return null;
+    return { status: transaction.status, failureReason: transaction.failure_reason, raw: transaction };
+  };
 
-  const pollRef = useRef(null);
-  const countdownRef = useRef(null);
-  const isMountedRef = useRef(true);
+  const { phase, failureReason, secondsLeft, startSending, beginWaiting, cancel, reset } = useStkPushFlow({
+    fetchStatus,
+    onResolved: (status, reason, raw) => {
+      if (status === "completed") {
+        onSuccess?.(raw);
+      }
+    },
+  });
 
   useEffect(() => {
-    isMountedRef.current = true;
     if (isOpen) {
-      resetModal();
-    } else {
-      clearTimers();
+      setPhoneNumber("");
+      setAmount("");
+      setCustomerName("");
+      setDescription("");
+      setFormError(null);
+      reset();
     }
-    return () => {
-      isMountedRef.current = false;
-      clearTimers();
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
-
-  const resetModal = () => {
-    setPhoneNumber("");
-    setAmount("");
-    setCustomerName("");
-    setDescription("");
-    setStatusMessage(null);
-    setModalState("form");
-    setCountdown(40);
-    setActiveTxData(null);
-    clearTimers();
-  };
-
-  const clearTimers = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-  };
 
   const formatPhoneNumber = (phone) => {
     let cleaned = phone.replace(/\D/g, "");
@@ -62,82 +65,20 @@ export default function BusinessMpesaModal({
     return cleaned;
   };
 
-  // Start 40s Countdown and Status Polling (Phase 2)
-  const startCountdownAndPolling = (transactionData) => {
-    setActiveTxData(transactionData);
-    setModalState("waiting");
-    setCountdown(40);
-    clearTimers();
-
-    const txId = transactionData?.transaction?._id || transactionData?._id || transactionData?.id;
-
-    // 1. Countdown timer - decrement every 1s from 40 down to 0
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(countdownRef.current);
-          handleFinalState("timeout", transactionData, "PIN input timed out after 40s. If the customer completed the payment, balance will update automatically.");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    // 2. Status polling every 2s to check if customer entered PIN & transaction was completed
-    let pollCount = 0;
-    pollRef.current = setInterval(async () => {
-      if (!isMountedRef.current || !workspaceId || !txId) return;
-      pollCount++;
-
-      try {
-        const queryRes = await businessService.queryMpesaStkPushStatus(workspaceId, txId);
-        const txStatus = queryRes?.transaction?.status || queryRes?.status;
-
-        if (txStatus === "completed") {
-          handleFinalState("completed", queryRes?.transaction || transactionData);
-        } else if (txStatus === "failed" || txStatus === "cancelled") {
-          handleFinalState("failed", queryRes?.transaction || transactionData, "The customer cancelled or failed the M-Pesa PIN prompt.");
-        }
-      } catch (err) {
-        console.debug("[STK Modal] Status poll attempt:", pollCount, err?.message);
-      }
-    }, 2000);
-  };
-
-  const handleFinalState = (status, txDetails, customMessage) => {
-    clearTimers();
-    if (status === "completed") {
-      setModalState("success");
-      setStatusMessage({
-        type: "success",
-        text: "Payment completed successfully and posted to the General Ledger!",
-      });
-      if (onSuccess) onSuccess(txDetails);
-    } else {
-      setModalState("failed");
-      setStatusMessage({
-        type: "error",
-        text: customMessage || "The M-Pesa STK payment was not completed.",
-      });
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setStatusMessage(null);
+    setFormError(null);
 
     const formattedPhone = formatPhoneNumber(phoneNumber);
     if (!formattedPhone || formattedPhone.length !== 12) {
-      return setStatusMessage({ type: "error", text: "Please enter a valid Kenyan M-Pesa phone number (e.g. 0712345678)" });
+      return setFormError("Please enter a valid Kenyan M-Pesa phone number (e.g. 0712345678)");
     }
-
     if (!amount || Number(amount) <= 0) {
-      return setStatusMessage({ type: "error", text: "Please enter a valid payment amount (minimum KES 1)" });
+      return setFormError("Please enter a valid payment amount (minimum KES 1)");
     }
 
     try {
-      // Phase 1: Sending STK Push
-      setModalState("sending");
+      startSending();
 
       const payload = {
         phoneNumber: formattedPhone,
@@ -154,106 +95,99 @@ export default function BusinessMpesaModal({
       }
 
       const txData = result?.data || result;
+      const transactionId = txData?.transaction?._id || txData?._id || txData?.id;
+      const checkoutRequestId = txData?.checkoutRequestId || txData?.transaction?.checkout_request_id;
+      if (!transactionId) throw new Error("M-Pesa did not return a payment reference");
 
-      // Phase 2: Start ~40 second countdown waiting for customer PIN entry
-      startCountdownAndPolling(txData);
+      beginWaiting(transactionId, checkoutRequestId);
     } catch (err) {
-      setModalState("form");
-      setStatusMessage({
-        type: "error",
-        text: err?.response?.data?.message || err?.message || "Failed to send STK Push prompt to customer.",
-      });
+      reset();
+      setFormError(err?.response?.data?.message || err?.message || "Failed to send STK Push prompt to customer.");
     }
   };
 
-  const handleCancelWaiting = () => {
-    clearTimers();
-    setModalState("failed");
-    setStatusMessage({
-      type: "error",
-      text: "STK Push collection cancelled by seller.",
-    });
-  };
+  const handleCancelWaiting = () => cancel("STK Push collection cancelled by seller.");
 
   if (!isOpen) return null;
-  const isLocked = modalState === "sending" || modalState === "waiting";
+
+  const isLocked = phase === "sending" || phase === "awaiting_pin" || phase === "processing";
+  const isDone = phase === "completed";
+  const isTerminalError = ["failed", "cancelled", "timeout"].includes(phase);
+
+  const errorText =
+    formError ||
+    (isTerminalError
+      ? failureReason ||
+        (phase === "timeout"
+          ? "PIN input timed out. If the customer completed the payment, balance will update automatically."
+          : "The M-Pesa STK payment was not completed.")
+      : null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans animate-fade-in">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4 transition-all">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
 
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
               <Smartphone size={22} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">{title}</h3>
+              <h3 className="text-lg font-bold">{title}</h3>
               <p className="text-xs text-slate-500">
-                {modalState === "sending" && "Phase 1: Sending STK Push..."}
-                {modalState === "waiting" && `Phase 2: Awaiting PIN (${countdown}s)`}
-                {modalState === "success" && "Phase 3: Payment Posted"}
-                {modalState === "failed" && "Phase 3: Payment Status"}
-                {modalState === "form" && "Collect payment directly to business accounts"}
+                {phase === "sending" && "Sending STK push..."}
+                {phase === "awaiting_pin" && "Awaiting customer PIN..."}
+                {phase === "processing" && "Processing payment..."}
+                {(phase === "idle" || isTerminalError) && "Secure STK collection"}
+                {isDone && "Payment received"}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            disabled={isLocked}
-            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 disabled:opacity-30"
-          >
+          <button onClick={onClose} disabled={isLocked} className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30">
             <X size={18} />
           </button>
         </div>
 
-        {/* Status Banners for Form / Failed */}
-        {statusMessage && (modalState === "form" || modalState === "failed") && (
-          <div className={`flex items-start gap-3 rounded-xl p-3.5 text-xs font-semibold ${
-            statusMessage.type === "success"
-              ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-              : "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-300"
-          }`}>
-            {statusMessage.type === "success" ? <CheckCircle2 size={18} className="shrink-0" /> : <AlertCircle size={18} className="shrink-0" />}
-            <span>{statusMessage.text}</span>
+        {errorText && (phase === "idle" || isTerminalError) && (
+          <div className="mt-4 flex items-start gap-3 rounded-xl p-3.5 text-xs font-semibold bg-red-50 text-red-800">
+            <AlertCircle size={18} />
+            <span>{errorText}</span>
           </div>
         )}
 
-        {/* Phase 1: Sending STK State */}
-        {modalState === "sending" && (
-          <div className="my-8 flex flex-col items-center justify-center space-y-4 py-4 text-center">
-            <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
-              <Loader2 size={44} className="animate-spin text-emerald-600 dark:text-emerald-400" />
-              <Smartphone size={22} className="absolute text-emerald-700 dark:text-emerald-200" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-base font-black text-slate-900 dark:text-white">Sending STK Push Prompt...</h4>
-              <p className="text-xs text-slate-500 max-w-xs">
-                Establishing secure connection with M-Pesa gateway for <strong className="font-mono text-slate-800 dark:text-slate-200">{phoneNumber}</strong>
-              </p>
-            </div>
+        {/* Phase 1: Sending STK Push */}
+        {phase === "sending" && (
+          <div className="my-8 flex flex-col items-center text-center space-y-4">
+            <Loader2 size={40} className="animate-spin text-emerald-600" />
+            <h4 className="font-bold">Sending STK Push...</h4>
+            <p className="text-xs text-slate-500">Contacting M-Pesa for <span className="font-semibold">{phoneNumber}</span></p>
           </div>
         )}
 
-        {/* Phase 2: Waiting for Customer PIN Entry (~40s Countdown) */}
-        {modalState === "waiting" && (
-          <div className="my-6 flex flex-col items-center text-center space-y-5 py-2">
-            <div className="relative flex h-24 w-24 items-center justify-center">
-              <div className="absolute inset-0 rounded-full border-4 border-emerald-200 dark:border-emerald-900 animate-ping opacity-25"></div>
+        {/* Phase 2: Awaiting PIN / Processing */}
+        {(phase === "awaiting_pin" || phase === "processing") && (
+          <div className="my-4 flex flex-col items-center text-center space-y-4 py-2">
+            <div className="relative">
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 shadow-inner">
-                <Smartphone size={32} className="animate-bounce" />
+                <Smartphone size={32} className={phase === "awaiting_pin" ? "animate-bounce" : ""} />
               </div>
+              {phase === "processing" && <Loader2 size={96} className="animate-spin text-emerald-500/40 absolute -inset-2" />}
             </div>
 
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3.5 py-1 text-xs font-black text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                 <Clock size={14} className="animate-spin text-amber-700" />
-                <span>Waiting for Customer PIN... {countdown}s</span>
+                <span>{phase === "awaiting_pin" ? "Waiting for Customer PIN" : "Confirming with M-Pesa"}... {secondsLeft}s</span>
               </div>
-              <h4 className="mt-2 text-base font-black text-slate-900 dark:text-white">STK Prompt Delivered!</h4>
+              <h4 className="mt-2 text-base font-black text-slate-900 dark:text-white">
+                {phase === "awaiting_pin" ? "STK Prompt Delivered!" : "Processing Payment..."}
+              </h4>
               <p className="text-xs text-slate-500 max-w-xs">
-                A prompt of <strong className="font-mono font-bold text-slate-900 dark:text-white">KES {Number(amount).toLocaleString()}</strong> was sent to customer's phone <strong className="font-mono text-slate-900 dark:text-white">{phoneNumber}</strong>.
+                {phase === "awaiting_pin" ? (
+                  <>A prompt of <strong className="font-mono font-bold text-slate-900 dark:text-white">KES {Number(amount).toLocaleString()}</strong> was sent to customer's phone <strong className="font-mono text-slate-900 dark:text-white">{phoneNumber}</strong>.</>
+                ) : (
+                  "Confirming with M-Pesa, this won't take long"
+                )}
               </p>
             </div>
 
@@ -270,7 +204,7 @@ export default function BusinessMpesaModal({
                 <span>Status:</span>
                 <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
                   <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-                  Awaiting PIN input
+                  {phase === "awaiting_pin" ? "Awaiting PIN input" : "Processing"}
                 </span>
               </div>
             </div>
@@ -285,7 +219,7 @@ export default function BusinessMpesaModal({
         )}
 
         {/* Phase 3: Success View (Payment Completed & Posted to Ledger) */}
-        {modalState === "success" && (
+        {isDone && (
           <div className="my-4 flex flex-col items-center text-center space-y-4 py-2">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300 shadow-md">
               <CheckCircle2 size={38} />
@@ -297,7 +231,6 @@ export default function BusinessMpesaModal({
               </p>
             </div>
 
-            {/* General Ledger Confirmation Badge */}
             <div className="w-full rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-left space-y-2 dark:bg-emerald-950/60 dark:border-emerald-800">
               <div className="flex items-center gap-2 text-xs font-black text-emerald-900 dark:text-emerald-300">
                 <ShieldCheck size={18} className="text-emerald-600 shrink-0" />
@@ -319,8 +252,8 @@ export default function BusinessMpesaModal({
           </div>
         )}
 
-        {/* Phase 3 (Alt): Failed / Timeout View */}
-        {modalState === "failed" && (
+        {/* Phase 3 (Alt): Failed / Cancelled / Timeout View */}
+        {isTerminalError && (
           <div className="my-4 flex flex-col items-center text-center space-y-4 py-2">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-300">
               <XCircle size={32} />
@@ -328,14 +261,14 @@ export default function BusinessMpesaModal({
             <div className="space-y-1">
               <h4 className="text-base font-black text-slate-900 dark:text-white">STK Push Payment Failed</h4>
               <p className="text-xs text-slate-500 max-w-xs">
-                The payment could not be completed. Please confirm the customer phone number and try again.
+                {errorText}
               </p>
             </div>
 
             <div className="flex items-center gap-3 w-full pt-2">
               <button
                 type="button"
-                onClick={() => setModalState("form")}
+                onClick={reset}
                 className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white shadow hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5"
               >
                 <RefreshCcw size={14} /> Try Again
@@ -352,8 +285,8 @@ export default function BusinessMpesaModal({
         )}
 
         {/* Form View (Initial Step) */}
-        {modalState === "form" && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+        {phase === "idle" && (
+          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">M-Pesa Phone *</label>
               <input

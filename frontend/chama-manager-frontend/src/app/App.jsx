@@ -1,10 +1,11 @@
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import router from "./router/router";
+import { MarketplaceCartProvider } from "@/modules/marketplace/context/MarketplaceCartContext";
 
 export default function App() {
   return (
-    <>
+    <MarketplaceCartProvider>
       <Toaster 
         position="top-right" 
         toastOptions={{
@@ -23,6 +24,6 @@ export default function App() {
           v7_startTransition: true,
         }}
       />
-    </>
+    </MarketplaceCartProvider>
   );
 }

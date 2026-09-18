@@ -91,6 +91,46 @@ class ContributionObligationService {
             opts
         );
     }
+
+    /**
+     * Period-by-period totals for a Chama/ContributionGroup — expected vs
+     * paid per contribution period, oldest first. Feeds the forecasting
+     * engine (ai/forecast.engine.js). Read-only aggregate over existing
+     * obligation data; no new fields or writes required.
+     */
+    async getPeriodHistory(ownerType, ownerId, limit = 6, session = null) {
+        const opts = getOpts(session);
+        const rows = await ContributionObligation.aggregate([
+            {
+                $match: {
+                    owner_type: ownerType,
+                    owner_id: new mongoose.Types.ObjectId(ownerId),
+                    period_start: { $type: "date" },
+                },
+            },
+            {
+                $group: {
+                    _id: "$period_start",
+                    periodStart: { $first: "$period_start" },
+                    periodEnd: { $first: "$period_end" },
+                    expected: { $sum: { $toDouble: "$expected_amount" } },
+                    paid: { $sum: { $toDouble: "$paid_amount" } },
+                },
+            },
+            { $sort: { periodStart: -1 } },
+            { $limit: limit },
+        ], opts);
+
+        // oldest -> newest, the order the forecast engine expects
+        return rows
+            .sort((a, b) => new Date(a.periodStart) - new Date(b.periodStart))
+            .map((r) => ({
+                periodStart: r.periodStart,
+                periodEnd: r.periodEnd,
+                expected: r.expected,
+                paid: r.paid,
+            }));
+    }
 }
 
 export default new ContributionObligationService();

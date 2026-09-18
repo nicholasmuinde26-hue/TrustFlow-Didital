@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 import { Settings, Building2, Receipt, Save, CheckCircle2, ShieldCheck, X } from "lucide-react";
 import { useBusinessSummary } from "../hooks/useBusiness";
 import Spinner from "@/shared/components/ui/Spinner";
@@ -49,6 +50,7 @@ export default function BusinessSettingsPage() {
     setTimeout(() => {
       setIsSaving(false);
       setSaved(true);
+      toast.success("Business settings saved");
       setTimeout(() => setSaved(false), 3000);
     }, 600);
   };

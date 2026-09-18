@@ -10,12 +10,27 @@ import {
   LayoutDashboard,
   ShieldAlert,
   MessageSquare,
+  Users,
+  History,
+  Store,
 } from "lucide-react";
 import useAuth from "@/app/hooks/useAuth";
 import ThemeToggle from "@/shared/components/layout/ThemeToggle";
 import UserMenu from "@/shared/components/layout/UserMenu/UserMenu";
 import adminService from "../services/admin.service";
 import inquiryService from "@/app/services/inquiry.service";
+import useAdminProfile from "../hooks/useAdminProfile";
+
+const WORKSPACE_NAMES = {
+  finance: "Finance Workspace", security: "Security Workspace", support: "Support Workspace",
+  operations: "Operations Workspace", compliance: "Compliance Workspace", onboarding: "Onboarding Workspace",
+  marketplace: "Marketplace Workspace", super_admin: "Super Admin Console",
+};
+const HOME_LABELS = {
+  finance: "Treasury", security: "Risk overview", support: "Ticket queue",
+  operations: "Operations", compliance: "Control review", onboarding: "Onboarding queue",
+  marketplace: "Moderation Queue", super_admin: "Overview",
+};
 
 export default function AdminLayout() {
   const { user } = useAuth();
@@ -23,6 +38,9 @@ export default function AdminLayout() {
   const navigate = useNavigate();
 
   const isSuperAdmin = user?.systemRole === "super_admin";
+  const { profile } = useAdminProfile();
+  const permissions = profile?.permissions || (isSuperAdmin ? { users: true, chamas: true, businesses: true, contributionGroups: true, finance: true, auditLogs: true, security: true, support: true, onboarding: true } : {});
+  const category = profile?.category || (isSuperAdmin ? "super_admin" : "operations");
   const [pendingCount, setPendingCount] = useState(0);
   const [inquiryCount, setInquiryCount] = useState(0);
 
@@ -49,42 +67,62 @@ export default function AdminLayout() {
   const navItems = [
     {
       to: "/admin",
-      label: "Overview",
+      label: HOME_LABELS[category] || "Overview",
       icon: LayoutDashboard,
       exact: true,
     },
-    {
+    permissions.security && {
+      to: "/admin/security",
+      label: "Security Center",
+      icon: ShieldAlert,
+    },
+    permissions.support && {
       to: "/admin/inquiries",
       label: "Inquiries & Reports",
       icon: MessageSquare,
       badge: inquiryCount > 0 ? inquiryCount : null,
     },
-    {
+    permissions.onboarding && {
       to: "/admin/requests",
       label: "Workspace Requests",
       icon: Inbox,
       badge: pendingCount > 0 ? pendingCount : null,
     },
-    ...(isSuperAdmin
+    ...(isSuperAdmin || permissions.auditLogs
       ? [
-          {
+          ...(isSuperAdmin ? [{
             to: "/admin/sub-admins",
             label: "Sub-Admins",
             icon: UserCheck,
+          }] : []),
+          {
+            to: "/admin/activity",
+            label: "Admin Activity",
+            icon: History,
           },
         ]
       : []),
-    {
+    (isSuperAdmin || permissions.marketplace || permissions.approveListings) && {
+      to: "/admin/marketplace",
+      label: "Marketplace Hubs",
+      icon: Store,
+    },
+    permissions.onboarding && {
       to: "/admin/create",
       label: "Create Entity",
       icon: PlusCircle,
     },
-    {
+    (permissions.chamas || permissions.businesses || permissions.contributionGroups) && {
       to: "/admin/directory",
       label: "All Workspaces",
       icon: FolderKanban,
     },
-  ];
+    permissions.users && {
+      to: "/admin/people",
+      label: "People",
+      icon: Users,
+    },
+  ].filter(Boolean);
 
 
   return (
@@ -117,11 +155,11 @@ export default function AdminLayout() {
                         : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
                     }`}
                   >
-                    {isSuperAdmin ? "Super Admin" : "Sub-Admin"}
+                    {isSuperAdmin ? "Super Admin" : (profile?.category || "Sub-Admin")}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  ChamaManager Central Administration
+                  {WORKSPACE_NAMES[category] || "Admin Workspace"}
                 </p>
               </div>
             </div>

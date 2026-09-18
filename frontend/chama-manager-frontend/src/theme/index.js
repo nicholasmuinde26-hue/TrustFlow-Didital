@@ -6,3 +6,4 @@ export { default as shadows } from "./shadows";
 export { default as animations } from "./animations";
 export { default as breakpoints } from "./breakpoints";
 export { default as zIndex } from "./zIndex";
+export { default as designTokens } from "./tokens";

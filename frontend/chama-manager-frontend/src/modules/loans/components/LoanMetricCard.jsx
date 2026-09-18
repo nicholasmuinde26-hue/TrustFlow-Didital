@@ -31,10 +31,10 @@ export default function LoanMetricCard({ label, value, hint, accent = "emerald" 
   return (
     <motion.div
       whileHover={{ y: -2 }}
-      className={`relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${config.borderTop} border-t-4 transition-all`}
+      className={`relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card ${config.borderTop} border-t-4 transition-all`}
     >
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-mist-muted">
           {label}
         </p>
         <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${config.bgIcon}`}>
@@ -42,8 +42,8 @@ export default function LoanMetricCard({ label, value, hint, accent = "emerald" 
         </div>
       </div>
       <div className="mt-3">
-        <p className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">{value}</p>
-        {hint && <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{hint}</p>}
+        <p className="text-2xl font-black tracking-tight text-slate-900 dark:text-mist">{value}</p>
+        {hint && <p className="mt-1 text-xs font-medium text-slate-500 dark:text-mist-muted">{hint}</p>}
       </div>
     </motion.div>
   );

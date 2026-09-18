@@ -17,7 +17,7 @@ import { sumMoney, toDecimal } from '../../shared/decimal.js';
 //   2. Make a Contribution
 //   3. Check Balance
 //   4. Admin & Support
-//   5. Register / Link Phone
+//   5. Register
 //
 // DESIGN NOTE — statelessness:
 // Africa's Talking resends the FULL accumulated `text` string on every
@@ -36,6 +36,9 @@ import { sumMoney, toDecimal } from '../../shared/decimal.js';
 
 const MAX_CHAMAS_SHOWN = 5;
 const MAX_ISSUE_LENGTH = 140;
+const MAX_USSD_TEXT_LENGTH = 300;
+const MAX_CONTRIBUTION_AMOUNT = 1_000_000;
+const MAX_NAME_LENGTH = 60;
 
 class UssdMenuService {
   /**
@@ -43,6 +46,10 @@ class UssdMenuService {
    * @returns {{ message: string, endSession: boolean }}
    */
   static async handle({ sessionId, phoneNumber: rawPhone, text = '' }) {
+    if (String(text || '').length > MAX_USSD_TEXT_LENGTH) {
+      return this.end('Your input is too long. Please dial again.');
+    }
+
     const levels = String(text || '')
       .split('*')
       .map((s) => s.trim())
@@ -55,12 +62,19 @@ class UssdMenuService {
       return this.end('Sorry, we could not read your phone number. Please try again.');
     }
 
+    const user = await User.findOne({ phone: phoneNumber }).lean();
+
+    // A suspended account must not retain access merely because the SIM is
+    // recognized. Unverified registrations can still reach the link/help
+    // path, but cannot view financial data or initiate payments.
+    if (user?.status === 'suspended') {
+      return this.end('This account is suspended. Please contact support.');
+    }
+
     // Best-effort audit trail. Never blocks or alters the menu response.
-    this.logInteraction({ sessionId, phoneNumber, levels }).catch((err) => {
+    this.logInteraction({ sessionId, phoneNumber, levels, userId: user?._id }).catch((err) => {
       console.error('[ussd] failed to log interaction:', err.message);
     });
-
-    const user = await User.findOne({ phone: phoneNumber }).lean();
 
     if (levels.length === 0) return this.mainMenu();
 
@@ -74,7 +88,7 @@ class UssdMenuService {
       case '4':
         return this.adminSupport(user, levels);
       case '5':
-        return this.registerLinkPhone(user, phoneNumber, levels);
+        return this.registerPhone(user, phoneNumber, levels);
       default:
         return this.invalid();
     }
@@ -99,7 +113,7 @@ class UssdMenuService {
   static needsAccount() {
     return this.end(
       'This phone number is not linked to a VeriCircle account yet. ' +
-        'Choose "5. Register / Link Phone" from the menu to get started.'
+        'Choose "5. Register" from the menu to get started.'
     );
   }
 
@@ -110,7 +124,7 @@ class UssdMenuService {
         '2. Make a Contribution\n' +
         '3. Check Balance\n' +
         '4. Admin & Support\n' +
-        '5. Register / Link Phone'
+        '5. Register'
     );
   }
 
@@ -214,7 +228,7 @@ class UssdMenuService {
     }
 
     const amount = Number(levels[2]);
-    if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) {
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount) || amount > MAX_CONTRIBUTION_AMOUNT) {
       return this.end('Invalid amount. Please dial again and enter a whole number of KES.');
     }
 
@@ -240,7 +254,8 @@ class UssdMenuService {
         idempotencyKey,
       });
     } catch (err) {
-      return this.end(`Sorry, we could not start the M-Pesa payment: ${err.message}`);
+      console.error('[ussd] M-Pesa initiation failed:', err.message);
+      return this.end('We could not start the M-Pesa payment. Please try again shortly.');
     }
 
     return this.end('Check your phone to enter your M-Pesa PIN and complete the payment.');
@@ -295,7 +310,8 @@ class UssdMenuService {
 
     // The free-text description may itself contain '*', so rejoin
     // everything after the menu path instead of trusting levels[2] alone.
-    const message = levels.slice(2).join('*').slice(0, MAX_ISSUE_LENGTH);
+    const message = levels.slice(2).join('*').trim().slice(0, MAX_ISSUE_LENGTH);
+    if (message.length < 3) return this.end('Please enter a short description and dial again.');
 
     try {
       await PlatformInquiry.create({
@@ -333,34 +349,29 @@ class UssdMenuService {
   }
 
   // ------------------------------------------------------------------
-  // 5. REGISTER / LINK PHONE
+  // 5. REGISTER
   // ------------------------------------------------------------------
 
-  static async registerLinkPhone(user, phoneNumber, levels) {
+  static async registerPhone(user, phoneNumber, levels) {
     if (user) return this.end('This phone number is already linked to a VeriCircle account.');
 
     if (levels.length === 1) return this.con('Enter your National ID number or member code:');
 
     const idNumber = levels[1].trim();
+    if (idNumber.length < 4 || idNumber.length > 30) return this.end('Invalid ID or member code. Please dial again.');
     const existing = await User.findOne({ id_number: idNumber }).lean();
 
+    // An ID number is not proof of ownership. Do not let someone who knows
+    // an ID take over an existing account from a USSD session, nor create a
+    // second account using the same identity value.
+    if (existing) return this.end('An account already uses this ID. To change its phone number, please use the app or contact support.');
+
     if (levels.length === 2) {
-      if (existing) return this.con('Account found for this ID.\n1. Link this phone\n2. Cancel');
       return this.con('Enter your full name:');
     }
 
-    // levels.length === 3
-    if (existing) {
-      if (levels[2] === '1') {
-        await User.updateOne({ _id: existing._id }, { phone: phoneNumber, isPhoneVerified: true });
-        return this.end('Your phone number has been linked to your VeriCircle account.');
-      }
-      if (levels[2] === '2') return this.end('Registration cancelled.');
-      return this.invalid();
-    }
-
-    const name = levels[2].trim();
-    if (name.length < 2) return this.end('Invalid name. Please dial again.');
+    const name = levels.slice(2).join(' ').trim();
+    if (name.length < 2 || name.length > MAX_NAME_LENGTH) return this.end('Invalid name. Please dial again.');
 
     try {
       await User.create({
@@ -382,13 +393,13 @@ class UssdMenuService {
   // AUDIT LOG (never drives routing — see design note above)
   // ------------------------------------------------------------------
 
-  static async logInteraction({ sessionId, phoneNumber, levels }) {
+  static async logInteraction({ sessionId, phoneNumber, levels, userId = null }) {
     const screen = levels.join('*') || 'main';
     await UssdSession.findOneAndUpdate(
       { session_id: sessionId },
       {
         $setOnInsert: { session_id: sessionId, phone_number: phoneNumber, started_at: new Date() },
-        $set: { phone_number: phoneNumber, current_menu: screen, last_activity_at: new Date() },
+        $set: { phone_number: phoneNumber, user_id: userId, current_menu: screen, last_activity_at: new Date(), status: 'active' },
         $push: {
           navigation_history: {
             menu: screen,
@@ -412,6 +423,13 @@ class UssdMenuService {
       { status: 'timeout' }
     );
     return result.modifiedCount;
+  }
+
+  static async completeSession(sessionId) {
+    await UssdSession.updateOne(
+      { session_id: sessionId, status: 'active' },
+      { $set: { status: 'completed', completed_at: new Date(), last_activity_at: new Date() } }
+    );
   }
 }
 

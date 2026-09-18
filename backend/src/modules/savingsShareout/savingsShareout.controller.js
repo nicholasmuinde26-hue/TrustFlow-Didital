@@ -16,6 +16,8 @@ import {
   getShareoutById,
 } from './savingsShareout.service.js';
 
+import { getSavingsOverview } from './savingsOverview.service.js';
+
 // ========================================
 // POLICIES
 // ========================================
@@ -167,6 +169,19 @@ export const cancelShareoutController = async (req, res, next) => {
       cancelled_by: req.user._id,
     });
     res.status(200).json({ success: true, data: { shareout } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========================================
+// SAVINGS OVERVIEW (per-member balances, top savers, growth trend)
+// ========================================
+
+export const getSavingsOverviewController = async (req, res, next) => {
+  try {
+    const overview = await getSavingsOverview(req.params.id);
+    res.status(200).json({ success: true, data: overview });
   } catch (error) {
     next(error);
   }

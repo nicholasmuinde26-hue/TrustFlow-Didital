@@ -25,14 +25,29 @@ const colors = {
     inverse: "#FFFFFF",
   },
 
+  // "VeriCircle dark" — sampled directly from the Doc1 mockup screens.
+  // This is the palette the .dark class now renders (see
+  // styles/variables.css); ThemeProvider toggles it on, light stays default.
   dark: {
-    background: "#020617",
+    background: "#0D1917",
+    backgroundRail: "#0B1715",
+    surface: "#172623",
+    surfaceRaised: "#1B2E29",
+    border: "#20342F",
 
-    surface: "#0F172A",
+    text: "#E8F5EF",
+    textMuted: "#8AA79B",
 
-    border: "#1E293B",
+    accent: "#6EE0B6",
+    accentHover: "#59CFA0",
+    accentDeep: "#16352D",
+    accentStrong: "#124B3C",
 
-    text: "#F8FAFC",
+    warningBg: "#3A2E10",
+    warningText: "#E3A542",
+
+    successBg: "#16352D",
+    successText: "#6CCC9E",
   },
 };
 

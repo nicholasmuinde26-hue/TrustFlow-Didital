@@ -6,7 +6,8 @@ import {
   deleteChama,
   verifyTreasurerUser,
   getPublicChamas,
-  joinWithCode
+  joinWithCode,
+  requestToJoinPublicChama
 } from './chama.service.js';
 import PaymentIntent from '../../models/PaymentIntent.js';
 import { getMgrOverview, initiateSavingsDeposit, markMgrObligationPaid, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
@@ -28,6 +29,25 @@ export const joinWithCodeController = async (req, res, next) => {
     const { joinCode } = req.body;
     const membership = await joinWithCode(req.user._id, joinCode);
     
+    return res.status(201).json({
+      success: true,
+      message: 'Join request submitted successfully',
+      data: { membership },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// One-click "Request to Join" from the public directory — no
+// join_code or invite link needed, since the Chama is already
+// publicly discoverable. Creates a pending membership for the
+// Treasurer/Chairperson to approve or reject.
+export const requestToJoinPublicChamaController = async (req, res, next) => {
+  try {
+    const { chamaId } = req.params;
+    const membership = await requestToJoinPublicChama(req.user._id, chamaId);
+
     return res.status(201).json({
       success: true,
       message: 'Join request submitted successfully',

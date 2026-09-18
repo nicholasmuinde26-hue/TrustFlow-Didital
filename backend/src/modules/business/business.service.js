@@ -18,8 +18,34 @@ import { formatPhone } from "../../utils/phone.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import { sendBusinessReceiptEmail } from "../../services/notifications/email.service.js";
 import slugify from "slugify";
+import { getIO } from "../realtime/socketServer.js";
 
 const getUserId = (user) => user?._id || user?.id;
+
+// Business POS STK pushes don't go through the shared PaymentIntent/event-bus
+// system (see reconcileStkCallback / checkStkStatus below), so they need
+// their own tiny bridge to push the result to the seller's browser the
+// instant it's known, instead of only ever surfacing on the next poll.
+function emitBusinessTransactionStatus(transaction) {
+  try {
+    const io = getIO();
+    io.to(`user:${transaction.created_by}`).emit("payment:status", {
+      paymentIntentId: String(transaction._id),
+      checkoutRequestId: transaction.checkout_request_id || null,
+      paymentId: String(transaction._id),
+      status: transaction.status,
+      failureReason: transaction.status === "completed" ? null : (transaction.failure_reason || null),
+      amount: transaction.amount ? transaction.amount.toString() : null,
+      productType: "business_sale",
+      ownerId: String(transaction.business_id),
+      ownerType: "Business",
+    });
+  } catch (error) {
+    // Non-fatal: Socket.IO may not be up (e.g. during tests/scripts), and
+    // the frontend's own status polling remains the fallback either way.
+    console.warn("[business.service] Failed to emit payment:status:", error.message);
+  }
+}
 
 
 async function getOwnedBusiness(businessId, user) {
@@ -473,7 +499,7 @@ export async function initiateCustomerPayout(businessId, user, data) {
   });
 
   try {
-    const payout = await mpesaService.initiateB2c({
+    const payout = await mpesaService.initiateB2cPayment({
       amount: data.amount,
       phoneNumber: data.phoneNumber,
       remarks: data.description || `Payment from ${business.name}`,
@@ -489,20 +515,36 @@ export async function initiateCustomerPayout(businessId, user, data) {
   }
 }
 
+// FIX: this function existed but was never called from anywhere, so the STK
+// callback Safaricom actually sends for business sales was silently
+// dropped - business transactions only ever resolved via the frontend's own
+// active status-poll (checkStkStatus below), which is slower and, until the
+// bridge added here, gave no instant push at all. Now wired from
+// mpesa.controller.js's handleMpesaCallback.
 export async function reconcileStkCallback(callback) {
   const transaction = await BusinessTransaction.findOne({ checkout_request_id: callback.checkoutRequestId });
   if (!transaction || transaction.status !== "pending") return false;
   const matchesAmount = Number(callback.amount) === Number(transaction.amount.toString());
-  transaction.status = callback.success && matchesAmount ? "completed" : "failed";
-  if (transaction.status === "completed") {
+  const success = callback.success && matchesAmount;
+  transaction.status = success ? "completed" : "failed";
+  if (success) {
     transaction.mpesa_receipt_number = callback.mpesaReceiptNumber;
     transaction.external_reference = callback.mpesaReceiptNumber || transaction.external_reference;
+    transaction.failure_reason = null;
     const business = await Business.findById(transaction.business_id);
     if (business) {
       await onTransactionCompleted(transaction, business);
     }
+  } else {
+    transaction.failure_reason = !matchesAmount && callback.success
+      ? "M-Pesa confirmed a different amount than expected."
+      : callback.reason || "The customer cancelled or failed the M-Pesa PIN prompt.";
   }
   await transaction.save();
+
+  // Instant push - this is the whole point of wiring the callback in.
+  emitBusinessTransactionStatus(transaction);
+
   return true;
 }
 
@@ -570,24 +612,36 @@ export async function checkStkStatus(businessId, transactionId, user) {
         transaction.mpesa_receipt_number ||
         `NL${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       transaction.external_reference = transaction.mpesa_receipt_number;
+      transaction.failure_reason = null;
 
       await onTransactionCompleted(transaction, business);
       await transaction.save();
+      emitBusinessTransactionStatus(transaction);
     } else if (isUserCancelled || isUserFailed) {
       transaction.status = "failed";
+      // Surface M-Pesa's own description (e.g. "The balance is insufficient
+      // for the transaction.") instead of a generic message whenever we
+      // have it, same as the unified payment system does for everyone else.
+      transaction.failure_reason = stkQuery?.resultDescription
+        || (isUserCancelled ? "Request cancelled by user." : "The M-Pesa payment failed.");
       await transaction.save();
+      emitBusinessTransactionStatus(transaction);
     } else if (isMockOrDev && elapsedSeconds >= 5 && !isUserCancelled) {
       transaction.status = "completed";
       transaction.mpesa_receipt_number =
         transaction.mpesa_receipt_number ||
         `NL${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
       transaction.external_reference = transaction.mpesa_receipt_number;
+      transaction.failure_reason = null;
 
       await onTransactionCompleted(transaction, business);
       await transaction.save();
+      emitBusinessTransactionStatus(transaction);
     } else if (elapsedSeconds >= 45) {
       transaction.status = "failed";
+      transaction.failure_reason = "Payment confirmation timed out. If the customer completed the payment, it will reconcile automatically.";
       await transaction.save();
+      emitBusinessTransactionStatus(transaction);
     } else {
       transaction.status = "pending";
     }

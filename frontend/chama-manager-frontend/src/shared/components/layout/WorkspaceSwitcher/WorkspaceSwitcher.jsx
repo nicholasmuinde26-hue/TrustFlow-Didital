@@ -118,8 +118,8 @@ export default function WorkspaceSwitcher() {
           sm:py-2.5
           transition-all
           hover:bg-slate-50
-          dark:border-slate-700
-          dark:bg-slate-800
+          dark:border-obsidian-border
+          dark:bg-obsidian-raised
           dark:hover:bg-slate-700
           max-w-[200px]
           sm:max-w-xs
@@ -130,7 +130,7 @@ export default function WorkspaceSwitcher() {
         <div className="text-left min-w-0">
           <p className="text-[10px] text-slate-500 leading-none mb-0.5 hidden sm:block">Workspace</p>
 
-          <p className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
+          <p className="font-semibold text-slate-900 dark:text-mist text-xs sm:text-sm truncate">
             {activeWorkspace.name}
           </p>
         </div>
@@ -155,14 +155,14 @@ export default function WorkspaceSwitcher() {
             border-slate-200
             bg-white
             shadow-xl
-            dark:border-slate-700
-            dark:bg-slate-900
+            dark:border-obsidian-border
+            dark:bg-obsidian-card
             z-50
             flex
             flex-col
           "
         >
-          <div className="flex items-center justify-between border-b border-slate-200 p-3 dark:border-slate-700">
+          <div className="flex items-center justify-between border-b border-slate-200 p-3 dark:border-obsidian-border">
             <p className="text-sm font-semibold">Switch Workspace</p>
 
             <button
@@ -170,7 +170,7 @@ export default function WorkspaceSwitcher() {
                 setOpen(false);
                 navigate("/workspaces");
               }}
-              className="flex items-center gap-1 text-xs font-bold text-violet-600 hover:underline dark:text-violet-400"
+              className="flex items-center gap-1 text-xs font-bold text-violet-600 hover:underline dark:text-mint"
             >
               <LayoutGrid size={13} />
               All
@@ -209,7 +209,7 @@ export default function WorkspaceSwitcher() {
                           text-left
                           transition-colors
                           hover:bg-slate-100
-                          dark:hover:bg-slate-800
+                          dark:hover:bg-obsidian-raised
                         "
                       >
                         <span className="flex-1 truncate text-sm">{workspace.name}</span>
@@ -227,7 +227,7 @@ export default function WorkspaceSwitcher() {
             )}
           </div>
 
-          <div className="border-t border-slate-200 dark:border-slate-700">
+          <div className="border-t border-slate-200 dark:border-obsidian-border">
             <button
               onClick={() => setCreateOpen((prev) => !prev)}
               className="
@@ -268,8 +268,8 @@ export default function WorkspaceSwitcher() {
                       text-slate-600
                       transition-colors
                       hover:bg-slate-100
-                      dark:text-slate-300
-                      dark:hover:bg-slate-800
+                      dark:text-mist-muted
+                      dark:hover:bg-obsidian-raised
                     "
                   >
                     <Icon size={15} className="text-slate-400 shrink-0" />

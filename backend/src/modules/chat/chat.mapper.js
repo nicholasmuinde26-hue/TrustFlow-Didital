@@ -4,10 +4,21 @@ export function toChatDTO(message) {
 
     id: message._id,
 
+    conversation_type:
+      message.conversation_type || "workspace",
+
     workspace_id: message.workspace_id,
 
     workspace_type:
       message.workspace_type,
+
+    recipient: message.recipient_id
+      ? {
+          id: message.recipient_id?._id || message.recipient_id,
+          name: message.recipient_id?.name,
+          avatar: message.recipient_id?.avatar,
+        }
+      : null,
 
     type: message.type,
 

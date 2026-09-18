@@ -90,13 +90,22 @@ export const errorHandler = (err, req, res, next) => {
   // 8. Send response
   // ----------------------------------------
 
+  // A STRING err.code is a deliberate machine-readable signal for the
+  // client (e.g. LEADERSHIP_PIN_REQUIRED, LEADERSHIP_STEP_UP_REQUIRED)
+  // and must survive into production — the frontend keys its PIN prompt
+  // off it. Mongo's own err.code is numeric (11000), so this narrowing
+  // keeps driver internals out of the response.
+  const clientCode = typeof err.code === "string" ? err.code : undefined;
+
   res.status(statusCode).json({
     success: false,
     message,
 
+    ...(clientCode && { code: clientCode }),
+    ...(err.stepUpAction && { stepUpAction: err.stepUpAction }),
+
     ...(process.env.NODE_ENV !== "production" && {
       error: err.name,
-      code: err.code,
       stack: err.stack,
     }),
   });

@@ -21,6 +21,12 @@ const chamaApi = {
     return api.post('/chamas/directory/join', { joinCode });
   },
 
+  // One-click "Request to Join" from the public directory — no code
+  // needed, since the Chama is already publicly visible.
+  requestToJoinPublicChama(chamaId) {
+    return api.post(`/chamas/directory/${chamaId}/join`);
+  },
+
   update(chamaId, payload) {
     return api.patch(`/chamas/${chamaId}`, payload);
   },
@@ -48,6 +54,13 @@ const chamaApi = {
   assignOfficial(chamaId, membershipId, role) { return api.put(`/chamas/${chamaId}/officials/${membershipId}`, { role }); },
   createInvitation(chamaId, payload) { return api.post(`/chamas/${chamaId}/invitations`, payload); },
   submitKyc(chamaId, payload) { return api.post(`/chamas/${chamaId}/kyc`, payload); },
+
+  // Leadership-side counterpart to submitKyc: an official approving or
+  // rejecting another member's submitted ID. Gated by the leadership
+  // session on the backend (chamaOperations.routes.js).
+  verifyKyc(chamaId, membershipId, status) {
+    return api.put(`/chamas/${chamaId}/kyc/${membershipId}`, { status });
+  },
   applyLoan(chamaId, payload) { return api.post(`/chamas/${chamaId}/loans`, payload); },
   approveLoan(chamaId, loanId) { return api.post(`/chamas/${chamaId}/loans/${loanId}/approve`); },
   disburseLoan(chamaId, loanId) { return api.post(`/chamas/${chamaId}/loans/${loanId}/disburse`); },

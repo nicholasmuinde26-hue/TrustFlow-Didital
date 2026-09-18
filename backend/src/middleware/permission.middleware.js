@@ -30,6 +30,18 @@ export const requirePermission = (permissionKey, options = {}) => {
 
   return async (req, res, next) => {
     try {
+      // System administrators are platform-level authorities and are not
+      // constrained by Chama role-permission rows. This is also required
+      // for protected operations such as removing a Chairperson.
+      const isSystemAdmin =
+        req.user?.systemRole === 'super_admin' ||
+        req.user?.systemRole === 'sub_admin' ||
+        Boolean(req.platformAdmin);
+
+      if (isSystemAdmin) {
+        return next();
+      }
+
       // Ensure request has membership context
       if (!req.membership) {
         return res.status(401).json({

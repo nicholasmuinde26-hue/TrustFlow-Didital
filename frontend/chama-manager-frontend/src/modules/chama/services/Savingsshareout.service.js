@@ -54,6 +54,13 @@ const savingsShareoutService = {
     return data.data;
   },
 
+  // ── Overview (per-member balances, top savers, growth trend) ──
+
+  async getOverview(workspaceId) {
+    const { data } = await savingsShareoutApi.getOverview(workspaceId);
+    return data.data;
+  },
+
   async approve(workspaceId, shareoutId, payload = {}) {
     const { data } = await savingsShareoutApi.approve(
       workspaceId,

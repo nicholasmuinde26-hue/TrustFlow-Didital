@@ -34,3 +34,33 @@ export function useSendMessage(workspaceId) {
     },
   });
 }
+
+function directMessagesKey(recipientUserId) {
+  return ["direct-messages", recipientUserId];
+}
+
+// Direct (1:1) thread with another workspace member. Requires the
+// backend's /chat/direct/:recipientUserId routes — see chat.api.js.
+export function useDirectMessages(recipientUserId) {
+  return useQuery({
+    queryKey: directMessagesKey(recipientUserId),
+    queryFn: () => chatService.listDirect(recipientUserId),
+    enabled: Boolean(recipientUserId),
+    refetchInterval: POLL_INTERVAL,
+    retry: false,
+  });
+}
+
+export function useSendDirectMessage(recipientUserId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload) => chatService.sendDirect(recipientUserId, payload),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: directMessagesKey(recipientUserId),
+      });
+    },
+  });
+}

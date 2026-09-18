@@ -17,6 +17,12 @@ import AppError from '../utils/AppError.js';
 const getChamaId = async (req) => {
   if (req.params.chamaId) return req.params.chamaId;
   if (req.params.id) return req.params.id;
+  // Finance routes (and any future workspace-scoped routes) are mounted
+  // as /workspaces/:workspaceId/... rather than /:chamaId/... — without
+  // this, getChamaId() returns null for every finance call,
+  // requireChamaMember() throws "Invalid Chama ID", and req.membership
+  // never gets attached, so requirePermission() 401s on every request.
+  if (req.params.workspaceId) return req.params.workspaceId;
   if (req.body?.chamaId) return req.body.chamaId;
   if (req.query?.chamaId) return req.query.chamaId;
 
@@ -71,6 +77,22 @@ const getChamaId = async (req) => {
     const PenaltyWaiver = (await import('../models/PenaltyWaiver.js')).default;
     const waiver = await PenaltyWaiver.findById(req.params.waiverId).lean();
     if (waiver) return String(waiver.chama_id);
+  }
+
+  // Contribution payment routes (e.g. POST /contributions for MGR/regular
+  // STK pushes) have no :chamaId param at all - the only thing the client
+  // sends is the obligationId. Without this, getChamaId() returns null for
+  // every caller on that route, requireChamaMember() throws "Invalid Chama
+  // ID" before it ever gets a chance to run, and requirePermission() further
+  // down the chain fails with "Membership context required" because
+  // req.membership was never attached.
+  const obligationId = req.params.obligationId || req.body?.obligationId;
+  if (obligationId && mongoose.Types.ObjectId.isValid(obligationId)) {
+    const ContributionObligation = (await import('../models/ContributionObligation.js')).default;
+    const obligation = await ContributionObligation.findById(obligationId).lean();
+    if (obligation && String(obligation.owner_type) === 'Chama') {
+      return String(obligation.owner_id);
+    }
   }
 
   const burialChamaProfileId =
@@ -501,6 +523,29 @@ export const requireChamaTreasurer = async (
         403
       );
 
+    }
+
+    // A Chairperson may not operate Treasurer-gated workflows
+    // while the Chama has no active Treasurer. This intentionally
+    // does not apply to the Members role-assignment endpoint,
+    // which remains available so the Chairperson can appoint one.
+    if (
+      req.membership?.role === 'chairperson' &&
+      !isSystemAdmin
+    ) {
+      const activeTreasurer =
+        await ChamaMembership.findOne({
+          chama_id: req.chama._id,
+          role: 'treasurer',
+          status: 'active'
+        }).select('_id').lean();
+
+      if (!activeTreasurer) {
+        throw new AppError(
+          'This Chama cannot operate without an active Treasurer. Please promote an active member to Treasurer before continuing.',
+          403
+        );
+      }
     }
 
 

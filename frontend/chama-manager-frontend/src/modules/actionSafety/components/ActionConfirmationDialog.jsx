@@ -41,36 +41,34 @@ export default function ActionConfirmationDialog({
     }
   }, [isOpen, action, chamaId, actionData]);
 
-  const dialog = generateDialogMutation.data?.data;
+  const dialog = generateDialogMutation.data?.data?.data;
   const isLoading = generateDialogMutation.isPending;
 
   const handleConfirm = async () => {
     if (!dialog) return;
 
-    // Validate confirmation response if required
-    if (dialog.requiresStepUpConfirmation || dialog.requiresExplicitConfirmation) {
-      const validation = await validateMutation.mutateAsync({
-        action,
-        dialog,
-        response: { typedPhrase }
-      });
-
-      if (!validation.valid) {
-        return; // Validation failed
+    try {
+      // Validate confirmation response if required
+      if (dialog.requiresStepUpConfirmation || dialog.requiresExplicitConfirmation) {
+        // On failure this rejects (400 response), so a resolved result here always means valid: true.
+        await validateMutation.mutateAsync({
+          action,
+          dialog,
+          response: { typedPhrase }
+        });
       }
-    }
 
-    // Re-validate action before execution
-    const revalidation = await revalidateMutation.mutateAsync({
-      action,
-      chamaId,
-      actionData,
-      versionToken: actionData.versionToken
-    });
-
-    if (!revalidation.valid) {
-      // Show record changed error
-      alert(revalidation.message);
+      // Re-validate action before execution
+      // On failure this rejects (400 response) rather than resolving with valid:false.
+      await revalidateMutation.mutateAsync({
+        action,
+        chamaId,
+        actionData,
+        versionToken: actionData.versionToken
+      });
+    } catch (err) {
+      // Show record-changed / validation-failed error from the backend envelope
+      alert(err?.response?.data?.message || 'This action could not be completed. Please try again.');
       return;
     }
 

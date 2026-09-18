@@ -25,15 +25,15 @@ export default function SidebarItem({
 
         ${
           isActive
-            ? "bg-primary text-white shadow-lg shadow-primary/20"
+            ? "bg-primary text-white shadow-lg shadow-primary/20 dark:bg-mint-deep dark:text-mint dark:shadow-none"
             : `
               text-slate-600
               hover:bg-slate-100
               hover:text-slate-900
 
-              dark:text-slate-300
-              dark:hover:bg-slate-800
-              dark:hover:text-white
+              dark:text-mist-muted
+              dark:hover:bg-obsidian-card
+              dark:hover:text-mist
             `
         }
         `

@@ -17,6 +17,7 @@ import {
   verifyTreasurerController,
   getPublicChamasController,
   joinWithCodeController,
+  requestToJoinPublicChamaController,
 } from './chama.controller.js';
 
 import {
@@ -29,6 +30,12 @@ import {
   requireChamaTreasurer,
   requireChamaTreasurerOrChairperson
 } from '../../middleware/chama.middleware.js';
+
+import {
+  requireLeadershipSession,
+  requireLeadershipStepUp,
+  STEP_UP_ACTIONS
+} from '../../middleware/leadershipSession.middleware.js';
 
 
 const router =
@@ -51,6 +58,17 @@ router.post(
   '/directory/join',
   protect,
   joinWithCodeController
+);
+
+// One-click "Request to Join" straight from the public directory —
+// no join_code required, since visibility: 'public' is itself what
+// makes the Chama discoverable. Declared here (not under the
+// /:id/... member routes below) since the requester isn't a member
+// yet and requireChamaMember would reject them.
+router.post(
+  '/directory/:chamaId/join',
+  protect,
+  requestToJoinPublicChamaController
 );
 
 // ========================================
@@ -111,11 +129,16 @@ router.get(
 //
 // ========================================
 
+// The Leadership Desk is the only UI entry point for this now, and the
+// PIN guarding that desk has to mean something at the API layer too —
+// otherwise it is skippable by anyone who can send an HTTP request with
+// a treasurer's access token.
 router.patch(
   '/:id',
   protect,
   requireChamaMember,
   requireChamaTreasurerOrChairperson,
+  requireLeadershipSession,
   updateChamaController
 );
 
@@ -124,11 +147,15 @@ router.patch(
 // DELETE CHAMA
 // ========================================
 
+// Deleting a Chama is irreversible and takes every member's association
+// with it. An unlocked desk is not enough here — the Treasurer re-enters
+// the PIN for this specific action, seconds before it runs.
 router.delete(
   '/:id',
   protect,
   requireChamaMember,
   requireChamaTreasurer,
+  requireLeadershipStepUp(STEP_UP_ACTIONS.DELETE_CHAMA),
   deleteChamaController
 );
 

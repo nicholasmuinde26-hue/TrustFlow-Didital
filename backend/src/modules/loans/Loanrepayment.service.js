@@ -286,7 +286,7 @@ export async function refreshLoanStatus({ chama, loanId }) {
 
   if (isDefault && !wasDefault) {
     await createAuditLog({
-      actorUserId: null,
+      isSystemGenerated: true,
       scopeType: AUDIT_SCOPE_TYPES.CHAMA,
       chamaId: chama._id,
       action: AUDIT_ACTIONS.LOAN_DEFAULTED,

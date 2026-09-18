@@ -3,15 +3,15 @@
  * LEDGER SERVICE
  * ============================================================================
  *
- * Generates balanced ledger entries for an existing Journal.
+ * Generates and persists ledger entries for an existing Journal, from
+ * entries an accounting rule has already built (see accounting.service.js /
+ * financeEngine.service.js, which call createEntries()).
  *
  * Responsibilities
  * ----------------
- * ✓ Read accounting rules
- * ✓ Generate ledger entries
- * ✓ Validate journal
  * ✓ Persist ledger entries
- * ✓ Return posting aggregate
+ * ✓ Update journal running totals
+ * ✓ Build reversal entries
  *
  * DOES NOT
  * --------
@@ -19,6 +19,8 @@
  * ✗ Create financial transactions
  * ✗ Update account balances
  * ✗ Know about Contributions or Payouts
+ * ✗ Decide which accounts a transaction type posts to (that's an
+ *   accounting rule's job, e.g. rules/mgrContribution.rule.js)
  *
  * ============================================================================
  */
@@ -27,189 +29,12 @@ import mongoose from "mongoose";
 import LedgerEntry from "../../../models/LedgerEntry.js";
 import financeAccountService from "../financeAccount.service.js";
 
-import { ACCOUNTING_RULES } from "./accounting.rules.js";
-
 import {
     ENTRY_TYPES,
     POSTING_STATUS
 } from "./accounting.constants.js";
 
-import journalValidator from "./journal.validator.js";
-
 class LedgerService {
-
-    /**
-     * ============================================================
-     * POST JOURNAL
-     * ============================================================
-     */
-
-    async post(journal, transaction, session = null) {
-
-        const transactionType =
-            transaction.transaction_type ||
-            transaction.transactionType;
-
-        const rule = ACCOUNTING_RULES[transactionType];
-
-        if (!rule) {
-
-            throw new Error(
-
-                `No accounting rule defined for '${transaction.transactionType}'.`
-
-            );
-
-        }
-
-        const entries = [];
-
-        let totalDebit = 0;
-
-        let totalCredit = 0;
-
-        /**
-         * --------------------------------------------------------
-         * Generate Entries
-         * --------------------------------------------------------
-         */
-
-        for (const line of rule.entries) {
-
-            const entry = {
-
-                journal: journal._id,
-
-                transaction: transaction._id,
-
-                chama: transaction.chama,
-
-                member: transaction.member,
-
-                account: line.account || line.accountCode,
-
-                type: line.type || line.entry_type || line.entryType,
-
-                amount: transaction.amount,
-
-                currency: transaction.currency,
-
-                provider: transaction.provider,
-
-                reference: transaction.reference,
-
-                description: line.description,
-
-                status: POSTING_STATUS.POSTED,
-
-                metadata: {
-
-                    correlationId:
-                        transaction.correlationId,
-
-                    source:
-                        rule.source,
-
-                    payment:
-                        transaction.payment,
-
-                    obligation:
-                        transaction.obligation,
-
-                    payout:
-                        transaction.payout
-
-                }
-
-            };
-
-            entries.push(entry);
-
-            if (entry.type === ENTRY_TYPES.DEBIT) {
-
-                totalDebit += Number(entry.amount);
-
-            }
-
-            else {
-
-                totalCredit += Number(entry.amount);
-
-            }
-
-        }
-
-        /**
-         * --------------------------------------------------------
-         * Validate Journal
-         * --------------------------------------------------------
-         */
-
-        journalValidator.validate(
-
-            journal,
-
-            entries
-
-        );
-
-        /**
-         * --------------------------------------------------------
-         * Persist Entries
-         * --------------------------------------------------------
-         */
-
-        const savedEntries = await LedgerEntry.insertMany(
-
-            entries,
-
-            {
-
-                session
-
-            }
-
-        );
-
-        /**
-         * --------------------------------------------------------
-         * Update Journal Totals
-         * --------------------------------------------------------
-         */
-
-        journal.totalDebit = totalDebit;
-
-        journal.totalCredit = totalCredit;
-
-        await journal.save({
-
-            session
-
-        });
-
-        /**
-         * --------------------------------------------------------
-         * Return Aggregate
-         * --------------------------------------------------------
-         */
-
-        return {
-
-            journal,
-
-            entries: savedEntries,
-
-            debit: totalDebit,
-
-            credit: totalCredit,
-
-            balanced:
-
-                totalDebit === totalCredit
-
-        };
-
-    }
 
     /**
      * ============================================================

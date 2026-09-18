@@ -1,6 +1,6 @@
 import ChamaLoan from '../../models/ChamaLoan.js';
 import { getMemberSavings, getExistingOutstanding } from './loanSavings.service.js';
-import { OPEN_LOAN_STATUSES } from './Loan.constants.js';
+import { LOAN_IN_PROGRESS_STATUSES, AWAITING_DECISION_STATUSES } from './Loan.constants.js';
 
 const monthsSince = (date) => {
   if (!date) return 0;
@@ -47,15 +47,22 @@ export async function checkEligibility({ chama, membership, policy, amount, purp
   }
 
   // 3. No unresolved previous loan (one active loan at a time, unless it's a top-up)
+  // LOAN_IN_PROGRESS_STATUSES (not just the disbursed/open ones) so a
+  // member can't submit a second application while their first is
+  // still sitting in the approval queue.
   if (loanType !== 'topup') {
-    const openLoansCount = await ChamaLoan.countDocuments({
+    const openLoans = await ChamaLoan.find({
       chama_id: chama._id,
       membership_id: membership._id,
-      status: { $in: OPEN_LOAN_STATUSES },
-    });
+      status: { $in: LOAN_IN_PROGRESS_STATUSES },
+    }).select('status');
+    const openLoansCount = openLoans.length;
     if (openLoansCount >= Number(policy.max_active_loans_per_member || 1)) {
+      const awaitingDecision = openLoans.some((l) => AWAITING_DECISION_STATUSES.includes(l.status));
       return fail(
-        openLoansCount === 1
+        awaitingDecision
+          ? 'You already have a loan application awaiting a decision. Please wait for the chairperson/treasurer to review it before applying again.'
+          : openLoansCount === 1
           ? 'You already have an active loan. Repay it in full, or apply for a top-up instead.'
           : `You already have ${openLoansCount} active loan(s), which is the maximum this Chama allows.`
       );

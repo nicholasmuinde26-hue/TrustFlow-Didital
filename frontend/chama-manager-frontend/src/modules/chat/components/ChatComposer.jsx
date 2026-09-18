@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SendHorizontal } from "lucide-react";
+import { Plus, Smile, SendHorizontal } from "lucide-react";
 
 export default function ChatComposer({ onSend, sending }) {
   const [content, setContent] = useState("");
@@ -17,36 +17,44 @@ export default function ChatComposer({ onSend, sending }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-end gap-3 border-t border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+      className="flex items-center gap-3 border-t px-5 py-4"
+      style={{ borderColor: "rgba(255,255,255,0.06)", backgroundColor: "#0b1512" }}
     >
-      <textarea
-        value={content}
-        onChange={(event) => setContent(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            handleSubmit(event);
-          }
-        }}
-        placeholder="Write a message..."
-        rows={1}
-        className="
-          flex-1 resize-none rounded-xl border border-slate-200 bg-white
-          px-4 py-3 text-sm text-slate-900 outline-none transition-colors
-          focus:border-primary
-          dark:border-slate-700 dark:bg-slate-800 dark:text-white
-        "
-      />
+      <button
+        type="button"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:text-white"
+        style={{ backgroundColor: "#16211e" }}
+        aria-label="Add attachment"
+      >
+        <Plus size={18} />
+      </button>
+
+      <div
+        className="flex flex-1 items-center gap-2 rounded-2xl px-4 py-2.5"
+        style={{ backgroundColor: "#131d1a" }}
+      >
+        <input
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              handleSubmit(event);
+            }
+          }}
+          placeholder="Write a message..."
+          className="flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+        />
+        <Smile size={18} className="shrink-0 text-slate-500" />
+      </div>
 
       <button
         type="submit"
         disabled={sending || !content.trim()}
-        className="
-          flex h-11 w-11 items-center justify-center rounded-xl bg-primary
-          text-white transition-opacity disabled:opacity-50
-        "
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-50"
+        style={{ backgroundColor: "#0f9d70" }}
       >
-        <SendHorizontal size={18} />
+        <SendHorizontal size={17} />
       </button>
     </form>
   );

@@ -18,9 +18,18 @@ import {
 
 const router = express.Router();
 
-// Apply authentication middleware to all routes
-router.use(protect);
-router.use(requireChamaMember);
+// NOTE: intentionally NOT `router.use(protect); router.use(requireChamaMember);`
+// here. This router is mounted in app.js as a plain
+// `app.use("/api/v1/chamas", chairpersonLoanSettingsRoutes)` — a path-less
+// `router.use(...)` therefore runs for EVERY request under "/api/v1/chamas",
+// including ones this file doesn't own (e.g. /trust-timeline), and at that
+// point in the stack there's no ":chamaId" captured yet (neither the mount
+// nor this generic middleware has one), so requireChamaMember has nothing
+// to resolve and throws "Invalid Chama ID" before the request ever reaches
+// the router that actually owns that path. Attaching the guard per-route
+// instead means it only runs once one of *this file's* own ":chamaId"
+// routes has actually matched.
+const guard = [protect, requireChamaMember];
 
 // ========================================
 // GET CHAIRPERSON LOAN SETTINGS
@@ -29,6 +38,7 @@ router.use(requireChamaMember);
 
 router.get(
   '/:chamaId/chairperson-loan-settings',
+  ...guard,
   requirePermission('settings.view'),
   getChairpersonLoanSettingsController
 );
@@ -40,6 +50,7 @@ router.get(
 
 router.patch(
   '/:chamaId/chairperson-loan-settings',
+  ...guard,
   requirePermission('settings.manage'),
   updateChairpersonLoanSettingsController
 );
@@ -51,6 +62,7 @@ router.patch(
 
 router.post(
   '/:chamaId/chairperson-loan-settings/reset',
+  ...guard,
   requirePermission('settings.manage'),
   resetChairpersonLoanSettingsController
 );
@@ -62,6 +74,7 @@ router.post(
 
 router.get(
   '/:chamaId/chairperson-loan-settings/history',
+  ...guard,
   requirePermission('audit.view'),
   getSettingsHistoryController
 );
@@ -73,6 +86,7 @@ router.get(
 
 router.get(
   '/:chamaId/chairperson-loan-settings/can-approve/:loanId',
+  ...guard,
   requirePermission('loans.approve'),
   canApproveLoanController
 );
@@ -84,6 +98,7 @@ router.get(
 
 router.post(
   '/:chamaId/chairperson-loan-settings/can-change',
+  ...guard,
   requirePermission('settings.view'),
   canChangeSettingsController
 );
@@ -95,6 +110,7 @@ router.post(
 
 router.get(
   '/:chamaId/chairperson-loan-settings/loan-types',
+  ...guard,
   requirePermission('settings.view'),
   getLoanTypesController
 );
@@ -106,6 +122,7 @@ router.get(
 
 router.post(
   '/:chamaId/chairperson-loan-settings/loan-types',
+  ...guard,
   requirePermission('settings.manage'),
   addLoanTypeController
 );
@@ -117,6 +134,7 @@ router.post(
 
 router.patch(
   '/:chamaId/chairperson-loan-settings/loan-types/:typeName',
+  ...guard,
   requirePermission('settings.manage'),
   updateLoanTypeController
 );
@@ -128,6 +146,7 @@ router.patch(
 
 router.patch(
   '/:chamaId/chairperson-loan-settings/loan-types/:typeName/toggle',
+  ...guard,
   requirePermission('settings.manage'),
   toggleLoanTypeController
 );
@@ -139,6 +158,7 @@ router.patch(
 
 router.delete(
   '/:chamaId/chairperson-loan-settings/loan-types/:typeName',
+  ...guard,
   requirePermission('settings.manage'),
   deleteLoanTypeController
 );

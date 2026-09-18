@@ -44,19 +44,19 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 shadow-2xl space-y-6 text-slate-900 dark:text-slate-100"
+        className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 dark:border-obsidian-border dark:bg-obsidian-card shadow-2xl space-y-6 text-slate-900 dark:text-mist"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-obsidian-border pb-4">
           <div>
             <span className="inline-block rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-bold dark:bg-emerald-950 dark:text-emerald-400">
               FAST 3-TAP APPLICATION
             </span>
-            <h3 className="text-xl font-black text-slate-900 dark:text-white mt-1">Apply for Chama Loan</h3>
+            <h3 className="text-xl font-black text-slate-900 dark:text-mist mt-1">Apply for Chama Loan</h3>
           </div>
           <button
             onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400"
+            className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-500 hover:text-slate-900 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist-muted"
           >
             <X className="h-5 w-5" />
           </button>
@@ -68,7 +68,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
             <div
               key={s}
               className={`h-2 flex-1 rounded-full transition-all ${
-                s <= step ? "bg-emerald-600" : "bg-slate-200 dark:bg-slate-800"
+                s <= step ? "bg-emerald-600" : "bg-slate-200 dark:bg-obsidian-raised"
               }`}
             />
           ))}
@@ -79,7 +79,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
           <div className="space-y-5">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Step 1 of 3: How much do you need?</p>
-              <h4 className="text-lg font-extrabold text-slate-900 dark:text-white mt-1">Select Amount</h4>
+              <h4 className="text-lg font-extrabold text-slate-900 dark:text-mist mt-1">Select Amount</h4>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -91,7 +91,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
                   className={`rounded-2xl p-4 text-center font-black text-lg transition border ${
                     amount === String(amt)
                       ? "border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300 shadow-sm"
-                      : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                      : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
                   }`}
                 >
                   KES {amt.toLocaleString()}
@@ -99,13 +99,13 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
               ))}
             </div>
 
-            <label className="block space-y-1 text-xs font-bold text-slate-600 dark:text-slate-400">
+            <label className="block space-y-1 text-xs font-bold text-slate-600 dark:text-mist-muted">
               <span>Or enter custom amount:</span>
               <input
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-base font-black text-slate-900 focus:border-emerald-600 dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-base font-black text-slate-900 focus:border-emerald-600 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
                 placeholder="20,000"
               />
             </label>
@@ -125,7 +125,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
           <div className="space-y-5">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Step 2 of 3: Repayment Period</p>
-              <h4 className="text-lg font-extrabold text-slate-900 dark:text-white mt-1">How many months?</h4>
+              <h4 className="text-lg font-extrabold text-slate-900 dark:text-mist mt-1">How many months?</h4>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -137,7 +137,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
                   className={`rounded-2xl p-4 text-center font-extrabold text-base transition border ${
                     months === String(m)
                       ? "border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300 shadow-sm"
-                      : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                      : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
                   }`}
                 >
                   {m} Month{m > 1 ? "s" : ""}
@@ -148,7 +148,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
             <div className="flex gap-3">
               <button
                 onClick={() => setStep(1)}
-                className="flex-1 rounded-2xl border border-slate-200 bg-slate-100 py-3.5 font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                className="flex-1 rounded-2xl border border-slate-200 bg-slate-100 py-3.5 font-bold text-slate-700 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist-muted"
               >
                 ← Back
               </button>
@@ -167,7 +167,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
           <div className="space-y-5">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Step 3 of 3: Chama Guarantors</p>
-              <h4 className="text-lg font-extrabold text-slate-900 dark:text-white mt-1">Pick 2 Guarantors ({selectedGuarantors.length}/2)</h4>
+              <h4 className="text-lg font-extrabold text-slate-900 dark:text-mist mt-1">Pick 2 Guarantors ({selectedGuarantors.length}/2)</h4>
             </div>
 
             <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -180,7 +180,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
                     className={`cursor-pointer flex items-center justify-between rounded-2xl p-3.5 border transition ${
                       isSelected
                         ? "border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300"
-                        : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                        : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
                     }`}
                   >
                     <span className="font-bold text-sm">{m.user_id?.name || "Chama Member"}</span>
@@ -193,7 +193,7 @@ export default function LoanApplicationForm({ canApply, onSubmit, busy, members 
             <div className="flex gap-3">
               <button
                 onClick={() => setStep(2)}
-                className="flex-1 rounded-2xl border border-slate-200 bg-slate-100 py-3.5 font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                className="flex-1 rounded-2xl border border-slate-200 bg-slate-100 py-3.5 font-bold text-slate-700 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist-muted"
               >
                 ← Back
               </button>

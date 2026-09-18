@@ -26,6 +26,7 @@ import {
 import useWorkspace from "@/app/hooks/useWorkspace";
 import mgrApi from "../api/mgr.api";
 import MgrSetupWizard from "../components/MgrSetupWizard";
+import useStkPushFlow from "@/shared/hooks/useStkPushFlow";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -288,67 +289,69 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
   const [paymentMethod, setPaymentMethod] = useState("mpesa");
   const [phoneNumber, setPhoneNumber] = useState(defaultPhone);
   const [amount, setAmount] = useState(remainingBalance > 0 ? remainingBalance : expectedAmount);
-  const [step, setStep] = useState("init"); // 'init' | 'stk_sent' | 'completed' | 'failed'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [paymentIntentId, setPaymentIntentId] = useState(null);
-  const [countdown, setCountdown] = useState(60);
+  const [cashDone, setCashDone] = useState(false);
 
   const postPaymentBalance = Math.max(0, remainingBalance - Number(amount || 0));
   const isFullPayment = Number(amount || 0) >= remainingBalance;
 
-  // Poll payment status while in 'stk_sent' step
-  useEffect(() => {
-    if (step !== "stk_sent" || !paymentIntentId) return;
+  const fetchStatus = async (paymentIntentId) => {
+    const { data } = await mgrApi.getPaymentStatus(paymentIntentId);
+    const intent = data?.data;
+    if (!intent) return null;
+    return { status: intent.status, failureReason: intent.failure_reason, raw: intent };
+  };
 
-    const interval = setInterval(async () => {
-      try {
-        const { data } = await mgrApi.getPaymentStatus(paymentIntentId);
-        const status = data.data?.status;
-
-        if (status === "completed") {
-          setStep("completed");
-          clearInterval(interval);
-          setTimeout(() => {
-            onSuccess();
-            onClose();
-          }, 1500);
-        } else if (status === "failed" || status === "cancelled") {
-          setStep("failed");
-          setError(data.data?.failure_reason || "M-Pesa payment prompt was cancelled or failed");
-          clearInterval(interval);
-        }
-      } catch {
-        // Continue polling
+  const { phase, failureReason, secondsLeft, startSending, beginWaiting, reset } = useStkPushFlow({
+    fetchStatus,
+    onResolved: (status) => {
+      if (status === "completed") {
+        // Ledger/Accounts/Transactions pages only refresh on this signal
+        // (see useLedger/useAccounts/useTransactions) - this modal never
+        // fired it, so the general ledger kept showing stale data even
+        // though the payment posted correctly on the backend.
+        window.dispatchEvent(new Event("finance:updated"));
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 1500);
       }
-    }, 2500);
+    },
+  });
 
-    const timer = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          clearInterval(interval);
-          clearInterval(timer);
-          setStep("failed");
-          setError("Payment confirmation timed out. If you entered your PIN, the balance will update automatically shortly.");
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
+  const step = cashDone ? "completed" : phase; // idle|sending|awaiting_pin|processing|success->treated as completed below|failed|cancelled|timeout
+  const isInit = step === "idle";
+  const isWaiting = step === "sending" || step === "awaiting_pin" || step === "processing";
+  // FIX: useStkPushFlow resolves to "completed", never "success" — this
+  // never matched, so the completed view below never rendered for M-Pesa
+  // payments (only the cashDone manual-payment path ever showed it).
+  const isCompleted = step === "completed" || cashDone;
+  const isFailed = ["failed", "cancelled", "timeout"].includes(step);
 
-    return () => {
-      clearInterval(interval);
-      clearInterval(timer);
-    };
-  }, [step, paymentIntentId, onSuccess, onClose]);
+  const displayError = error || (isFailed ? failureReason || "M-Pesa payment prompt was cancelled or failed" : null);
 
   const handleInitiate = async () => {
+    // `obligation` here can be a synthetic, display-only row (see the
+    // `_synthetic` flag set in the fallback in the parent page) generated
+    // before the backend has created real ContributionObligation rows for
+    // this round. Its `_id` is just the member's id, not a payable
+    // obligation - submitting it always fails with "Invalid Chama ID"
+    // since no such obligation exists to attribute the payment to.
+    // Refreshing re-fetches the overview, which lazily creates the real
+    // obligations server-side (see mgr.service.js#getDashboardOverview).
+    if (obligation?._synthetic) {
+      setError("This round's contributions are still being set up. Please refresh the page and try again in a moment.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       if (paymentMethod === "mpesa") {
         if (!phoneNumber) throw new Error("Phone number is required for M-Pesa STK push");
 
+        startSending();
         const { data } = await mgrApi.initiateContributionPayment({
           obligationId: obligation._id,
           amount,
@@ -356,10 +359,10 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
           phoneNumber,
         });
 
-        const intentId = data.data?._id || data.data?.paymentIntentId || data.data?.id;
-        setPaymentIntentId(intentId);
-        setStep("stk_sent");
-        setCountdown(60);
+        const intentId = data.data?.paymentIntentId || data.data?._id || data.data?.id;
+        const checkoutRequestId = data.data?.checkoutRequestId;
+        if (!intentId) throw new Error("M-Pesa did not return a payment reference");
+        beginWaiting(intentId, checkoutRequestId);
       } else {
         // Manual Cash / Bank
         await mgrApi.recordPayment(chamaId, {
@@ -368,13 +371,18 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
           paymentMethod: "cash",
         });
 
-        setStep("completed");
+        setCashDone(true);
+        // Same reasoning as the STK-completed branch above: nudge
+        // ledger/accounts hooks to refetch immediately for the manual
+        // cash/bank path too.
+        window.dispatchEvent(new Event("finance:updated"));
         setTimeout(() => {
           onSuccess();
           onClose();
         }, 1200);
       }
     } catch (err) {
+      reset();
       setError(err.response?.data?.message || err.message || "Failed to initiate payment");
     } finally {
       setLoading(false);
@@ -396,15 +404,15 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
           </button>
         </div>
 
-        {error && (
+        {displayError && (isInit || isFailed) && (
           <div className="mt-4 flex items-center gap-2 rounded-2xl bg-rose-50 p-3 text-xs font-bold text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
             <AlertTriangle size={16} />
-            {error}
+            {displayError}
           </div>
         )}
 
         <div className="py-4 space-y-4 text-xs font-semibold">
-          {step === "init" && (
+          {isInit && (
             <>
               {/* Obligation Breakdown */}
               <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/80 p-3.5 space-y-2 border border-slate-100 dark:border-slate-700">
@@ -506,7 +514,7 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
             </>
           )}
 
-          {step === "stk_sent" && (
+          {isWaiting && (
             <div className="py-6 flex flex-col items-center text-center gap-3">
               <div className="relative flex items-center justify-center">
                 <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 animate-pulse">
@@ -514,20 +522,30 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
                 </div>
               </div>
               <div>
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">Check Your Phone</h4>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                  {step === "sending" ? "Sending STK Push..." : step === "processing" ? "Processing Payment..." : "Check Your Phone"}
+                </h4>
                 <p className="text-xs font-medium text-slate-500 mt-1 max-w-xs">
-                  An M-Pesa STK push prompt for <span className="font-bold text-emerald-600 font-mono">{money(amount)}</span> has been sent to{" "}
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{phoneNumber}</span>. Please enter your PIN.
+                  {step === "sending" ? (
+                    <>Contacting M-Pesa for <span className="font-mono font-bold text-slate-900 dark:text-white">{phoneNumber}</span>...</>
+                  ) : step === "processing" ? (
+                    <>Confirming your <span className="font-bold text-emerald-600 font-mono">{money(amount)}</span> payment with M-Pesa, this won't take long.</>
+                  ) : (
+                    <>An M-Pesa STK push prompt for <span className="font-bold text-emerald-600 font-mono">{money(amount)}</span> has been sent to{" "}
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">{phoneNumber}</span>. Please enter your PIN.</>
+                  )}
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-600 dark:text-amber-400 mt-2">
-                <Loader2 className="animate-spin" size={14} />
-                Waiting for M-Pesa PIN ({countdown}s)
-              </div>
+              {step !== "sending" && (
+                <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-600 dark:text-amber-400 mt-2">
+                  <Loader2 className="animate-spin" size={14} />
+                  Waiting for confirmation ({secondsLeft}s)
+                </div>
+              )}
             </div>
           )}
 
-          {step === "completed" && (
+          {isCompleted && (
             <div className="py-6 flex flex-col items-center text-center gap-3">
               <div className="h-16 w-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
                 <CheckCircle2 size={32} />
@@ -539,10 +557,10 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
             </div>
           )}
 
-          {step === "failed" && (
+          {isFailed && (
             <div className="py-4 text-center space-y-3">
               <button
-                onClick={() => setStep("init")}
+                onClick={reset}
                 className="rounded-2xl bg-amber-500 px-6 py-2.5 text-xs font-bold text-white hover:bg-amber-600"
               >
                 Try Again
@@ -551,7 +569,7 @@ function StkPaymentModal({ obligation, chamaId, isTreasurer, onClose, onSuccess 
           )}
         </div>
 
-        {step === "init" && (
+        {isInit && (
           <div className="flex gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
             <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 p-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300">
               Cancel
@@ -708,7 +726,13 @@ export default function MerryGoRoundPage() {
   const auditLogs = overview?.auditLogs || [];
   const members = policy?.participants || chamaMembers || [];
 
-  // Guarantee that every member in the policy/chama appears in the table!
+  // Guarantee that every member in the policy/chama appears in the table,
+  // even before the backend has generated real ContributionObligation rows
+  // for this round. These synthetic rows are display-only — `_id` here is
+  // the member's own id, not a real obligation, so they're flagged
+  // `_synthetic: true` and the Pay flow below refuses to submit them
+  // (submitting a member id as `obligationId` always 400s with
+  // "Invalid Chama ID" since no such obligation exists in the database).
   const obligations = rawObligations.length > 0
     ? rawObligations
     : members.map((m, idx) => ({
@@ -720,6 +744,7 @@ export default function MerryGoRoundPage() {
         paid_amount: 0,
         amount_paid: 0,
         status: "pending",
+        _synthetic: true,
       }));
 
   const expectedPool = Number(activeRound?.expected_amount || 0);
@@ -760,6 +785,15 @@ export default function MerryGoRoundPage() {
 
   const paidObligations = obligations.filter((o) => o.status === "paid").length;
   const totalObligations = obligations.length;
+
+  // ─── VISIBILITY SCOPE ────────────────────────────────────
+  // Everyone (member or treasurer) can see the full member list and
+  // everyone's payment status - full transparency on who's paid. Only the
+  // ACTIONS differ: a plain member gets no action buttons on anyone else's
+  // row (no Mark Paid, no reminders, no manage-participant) and can only
+  // act on their own row. The treasurer can act on every row. This mirrors
+  // the backend's 'own' vs 'all' scope on contributions.record.
+  const myMembershipId = String(workspace?.membership?._id || workspace?.activeWorkspace?.membershipId || "");
 
   // ─── NO POLICY STATE ─────────────────────────────────────
   if (!loading && (!overview?.hasPolicy)) {
@@ -1000,6 +1034,13 @@ export default function MerryGoRoundPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+              {obligations.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-slate-400 font-semibold text-xs">
+                    No members found for this round.
+                  </td>
+                </tr>
+              )}
               {obligations.map((ob, idx) => {
                 const details = resolveMemberDetails(ob);
                 const memberName = details.name;
@@ -1012,6 +1053,8 @@ export default function MerryGoRoundPage() {
                 const memberIdStr = String(rawMember?._id || rawMember);
                 const recipientIdStr = String(activeRound?.recipient_id?._id || activeRound?.recipient_id);
                 const isRecipient = memberIdStr === recipientIdStr;
+                const isOwnRow = Boolean(myMembershipId) && memberIdStr === myMembershipId;
+                const canPayThisRow = isTreasurer || isOwnRow;
 
                 const posLabel = isRecipient ? "#T" : `#${idx + 1}`;
 
@@ -1047,7 +1090,7 @@ export default function MerryGoRoundPage() {
                     </td>
                     <td className="py-3.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {ob.status !== "paid" && (
+                        {canPayThisRow && ob.status !== "paid" && (
                           <button
                             onClick={() => {
                               setSelectedObligationForPay(ob);
@@ -1078,13 +1121,15 @@ export default function MerryGoRoundPage() {
                             </a>
                           </>
                         )}
-                        <button
-                          onClick={() => notify("Participant options updated")}
-                          title="Manage participant"
-                          className="rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400 p-1.5 transition"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {isTreasurer && (
+                          <button
+                            onClick={() => notify("Participant options updated")}
+                            title="Manage participant"
+                            className="rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400 p-1.5 transition"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -13,6 +13,7 @@ import {
   approveShareoutController,
   payShareoutItemController,
   cancelShareoutController,
+  getSavingsOverviewController,
 } from './savingsShareout.controller.js';
 
 import { protect } from '../../middleware/auth.middleware.js';
@@ -34,6 +35,14 @@ router.use(protect);
 // ========================================
 
 router.get('/:id/savings-share-policies', requireChamaMember, listPoliciesController);
+
+// ========================================
+// SAVINGS OVERVIEW
+// Per-member balances, top savers, growth trend - read-only,
+// same visibility as the share-out list/detail routes below.
+// ========================================
+
+router.get('/:id/savings-overview', requireChamaMember, getSavingsOverviewController);
 
 router.post('/:id/savings-share-policies', requireChamaTreasurerOrChairperson, createPolicyController);
 

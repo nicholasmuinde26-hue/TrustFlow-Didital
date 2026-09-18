@@ -10,11 +10,20 @@ import AdminRequestsPage from "@/modules/admin/pages/AdminRequestsPage";
 import AdminSubAdminsPage from "@/modules/admin/pages/AdminSubAdminsPage";
 import AdminCreateEntityPage from "@/modules/admin/pages/AdminCreateEntityPage";
 import AdminDirectoryPage from "@/modules/admin/pages/AdminDirectoryPage";
+import AdminEntityDetailPage from "@/modules/admin/pages/AdminEntityDetailPage";
+import AdminPeoplePage from "@/modules/admin/pages/AdminPeoplePage";
 import AdminInquiriesPage from "@/modules/admin/pages/AdminInquiriesPage";
+import AdminActivityPage from "@/modules/admin/pages/AdminActivityPage";
+import SecurityCommandCenterPage from "@/modules/security/pages/SecurityCommandCenterPage";
 
 
 import PlatformLayout from "@/layouts/PlatformLayout";
 import WorkspaceLayout from "@/layouts/WorkspaceLayout";
+import FinanceBooksLayout from "@/modules/finance/layouts/FinanceBooksLayout";
+import MoneyCollectionsLayout from "@/modules/finance/layouts/MoneyCollectionsLayout";
+import ContributionsGroupLayout from "@/modules/contribution-group/layouts/ContributionsGroupLayout";
+import LoansGroupLayout from "@/modules/loans/layouts/LoansGroupLayout";
+import GovernanceLayout from "@/modules/leadership/layouts/GovernanceLayout";
 
 // ======================================================
 // Landing
@@ -59,7 +68,8 @@ import WorkspaceOverviewPage from "@/modules/workspaces/pages/WorkspaceOverviewP
 import WorkspaceSettingsPage from "@/modules/workspaces/pages/WorkspaceSettingsPage";
 import WorkspacesPage from "@/modules/workspaces/pages/WorkspacesPage";
 import RequireWorkspaceRole from "@/shared/components/routing/RequireWorkspaceRole";
-import { canViewCommandCenter, canViewAdministration } from "@/modules/workspaces/permissions/Permissions";
+import { canViewAdministration, canViewLeadershipDesk } from "@/modules/workspaces/permissions/Permissions";
+import LegacyLeadershipRedirect from "@/modules/leadership/components/LegacyLeadershipRedirect";
 
 // ======================================================
 // Business Module
@@ -79,6 +89,18 @@ import BusinessSettingsPage from "@/modules/business/pages/BusinessSettingsPage"
 import PosPage from "@/modules/business/pages/PosPage";
 import KitchenPage from "@/modules/business/pages/KitchenPage";
 import StorefrontPage from "@/modules/business/pages/StorefrontPage";
+import BusinessMarketplacePage from "@/modules/business/pages/BusinessMarketplacePage";
+
+// ======================================================
+// Marketplace Hubs & Public Discovery
+// ======================================================
+
+import MarketplaceHomePage from "@/modules/marketplace/pages/MarketplaceHomePage";
+import MarketplaceCategoryPage from "@/modules/marketplace/pages/MarketplaceCategoryPage";
+import MarketplaceListingDetailPage from "@/modules/marketplace/pages/MarketplaceListingDetailPage";
+import MarketplacePublicBusinessPage from "@/modules/marketplace/pages/MarketplacePublicBusinessPage";
+import MarketplaceOrderTrackPage from "@/modules/marketplace/pages/MarketplaceOrderTrackPage";
+import MarketplaceAdminConsole from "@/modules/admin/pages/MarketplaceAdminConsole";
 
 // ======================================================
 // Public Storefront (buyer-facing, no auth)
@@ -100,6 +122,7 @@ import MembersPage from "@/modules/members/pages/MembersPage";
 
 import AnnouncementsPage from "@/modules/announcements/pages/AnnouncementsPage";
 import ChatPage from "@/modules/chat/pages/ChatPage";
+import CollaborationLayout from "@/modules/chat/layouts/CollaborationLayout";
 import MeetingsPage from "@/modules/meetings/pages/MeetingsPage";
 import PollsPage from "@/modules/polls/pages/PollsPage";
 
@@ -109,9 +132,19 @@ import PollsPage from "@/modules/polls/pages/PollsPage";
 
 import LoansPage from "@/modules/loans/pages/LoansPage";
 import ReportsPage from "@/modules/chama/pages/ReportsPage";
+import TrustTimelinePage from "@/modules/audit/pages/TrustTimelinePage";
+import TrustScorePage from "@/modules/trustScore/pages/TrustScorePage";
+import PublicTrustScorePage from "@/modules/trustScore/pages/PublicTrustScorePage";
+import DisputesPage from "@/modules/disputes/pages/DisputesPage";
+import OfficialAccountabilityPage from "@/modules/officials/pages/OfficialAccountabilityPage";
 import ChamaFinancePage from "@/modules/chama/pages/FinancePage";
 import MerryGoRoundPage from "@/modules/chama/pages/MerryGoRoundPage";
-import ChamaCommandCenterPage from "@/modules/chama/pages/ChamaCommandCenterPage";
+import ChamaContributionsPage from "@/modules/chama/pages/ChamaContributionsPage";
+// The Command Center and the old link-list Leadership Desk are gone —
+// both are now tabs inside the single merged desk below. Their routes
+// survive as redirects (LegacyLeadershipRedirect) so bookmarks and
+// in-app links that still point at /command-center keep working.
+import LeadershipDeskPage from "@/modules/leadership/pages/LeadershipDeskPage";
 import MyChamaRouterPage from "@/modules/workspaces/pages/MyChamaRouterPage";
 
 // ======================================================
@@ -143,6 +176,7 @@ import RecordContributionPage from "@/modules/finance/pages/RecordContributionPa
 import TransactionsPage from "@/modules/finance/pages/TransactionsPage";
 import LedgerPage from "@/modules/finance/pages/LedgerPage";
 import FinanceAccountsPage from "@/modules/finance/pages/AccountsPage";
+import BankAccountsPage from "@/modules/finance/pages/BankAccountsPage";
 import SavingsPage from "@/modules/finance/pages/SavingsPage";
 import TrialBalancePage from "@/modules/finance/pages/TrialBalancePage";
 import BalanceSheetPage from "@/modules/finance/pages/BalanceSheetPage";
@@ -179,6 +213,43 @@ const router = createBrowserRouter([
   {
     path: "/store/:slug/track",
     element: <TrackOrderPage />,
+  },
+
+  // ======================================================
+  // PUBLIC MARKETPLACE (Category Hubs & Multi-Vendor Discovery)
+  // ======================================================
+
+  {
+    path: "/marketplace",
+    element: <MarketplaceHomePage />,
+  },
+  {
+    path: "/marketplace/track",
+    element: <MarketplaceOrderTrackPage />,
+  },
+  {
+    path: "/marketplace/:categorySlug",
+    element: <MarketplaceCategoryPage />,
+  },
+  {
+    path: "/marketplace/:category/products/:slug",
+    element: <MarketplaceListingDetailPage />,
+  },
+  {
+    path: "/marketplace/:category/listings/:slug",
+    element: <MarketplaceListingDetailPage />,
+  },
+  {
+    path: "/businesses/:businessSlug",
+    element: <MarketplacePublicBusinessPage />,
+  },
+
+  // Public Chama Trust Score share link (e.g. /trust-score/:token) — a
+  // bank, SACCO federation, or prospective member opens this with no
+  // login. See modules/trustScore/pages/PublicTrustScorePage.jsx.
+  {
+    path: "/trust-score/:token",
+    element: <PublicTrustScorePage />,
   },
 
   // Chama join-link landing page. Deliberately public (not wrapped in
@@ -275,12 +346,20 @@ const router = createBrowserRouter([
                 element: <AdminDashboardPage />,
               },
               {
+                path: "security",
+                element: <SecurityCommandCenterPage />,
+              },
+              {
                 path: "requests",
                 element: <AdminRequestsPage />,
               },
               {
                 path: "sub-admins",
                 element: <AdminSubAdminsPage />,
+              },
+              {
+                path: "activity",
+                element: <AdminActivityPage />,
               },
               {
                 path: "create",
@@ -291,8 +370,20 @@ const router = createBrowserRouter([
                 element: <AdminInquiriesPage />,
               },
               {
+                path: "marketplace",
+                element: <MarketplaceAdminConsole />,
+              },
+              {
                 path: "directory",
                 element: <AdminDirectoryPage />,
+              },
+              {
+                path: "directory/:type/:id",
+                element: <AdminEntityDetailPage />,
+              },
+              {
+                path: "people",
+                element: <AdminPeoplePage />,
               },
             ],
 
@@ -352,7 +443,11 @@ const router = createBrowserRouter([
           },
           {
             path: "business/storefront",
-            element: <StorefrontPage />,
+            element: <Navigate to="../business/marketplace" replace />,
+          },
+          {
+            path: "business/marketplace",
+            element: <BusinessMarketplacePage />,
           },
           {
             path: "business/customers",
@@ -379,30 +474,56 @@ const router = createBrowserRouter([
           // CONTRIBUTION GROUPS
           // ----------------------------------------------
 
+          // Contributions / Schedule / Activity / Updates share one
+          // persistent "Quick actions · Contributions" nav bar,
+          // rendered once by ContributionsGroupLayout so it stays on
+          // screen while jumping between these pages.
           {
-            path: "contributions",
-            element: <ContributionsPage />,
-          },
-          {
-            path: "schedule",
-            element: <SchedulePage />,
-          },
-          {
-            path: "activity",
-            element: <ActivityPage />,
-          },
-          {
-            path: "updates",
-            element: <UpdatesPage />,
+            element: <ContributionsGroupLayout />,
+            children: [
+              {
+                path: "contributions",
+                element: <ContributionsPage />,
+              },
+              {
+                path: "schedule",
+                element: <SchedulePage />,
+              },
+              {
+                path: "activity",
+                element: <ActivityPage />,
+              },
+              {
+                path: "updates",
+                element: <UpdatesPage />,
+              },
+            ],
           },
 
           // ----------------------------------------------
           // CHAMA OPERATIONS
           // ----------------------------------------------
 
+          // Loans / Trust Score / Trust Timeline share one persistent
+          // "Quick actions · Loans" nav bar, rendered once by
+          // LoansGroupLayout so it stays on screen while jumping
+          // between these pages.
           {
-            path: "loans",
-            element: <LoansPage />,
+            element: <LoansGroupLayout />,
+            children: [
+              {
+                path: "loans",
+                element: <LoansPage />,
+              },
+              {
+                path: "trust-timeline",
+                element: <TrustTimelinePage />,
+              },
+              {
+                path: "trust-score",
+                element: <TrustScorePage />,
+              },
+            ],
           },
           {
             path: "reports",
@@ -412,17 +533,41 @@ const router = createBrowserRouter([
             path: "chama-finance",
             element: <ChamaFinancePage />,
           },
-          {
-            path: "mgr",
-            element: <MerryGoRoundPage />,
-          },
+          // Legacy route. The Command Center's tabs are now the desk's
+          // Overview / Treasury Oversight / Members & Officials tabs;
+          // send arrivals to Overview rather than 404-ing them.
           {
             path: "command-center",
-            element: (
-              <RequireWorkspaceRole check={canViewCommandCenter}>
-                <ChamaCommandCenterPage />
-              </RequireWorkspaceRole>
-            ),
+            element: <LegacyLeadershipRedirect tab="overview" />,
+          },
+          // Members / Officials / Leadership Desk / Disputes share one
+          // persistent "Quick actions · People & governance" nav bar,
+          // rendered once by GovernanceLayout so it stays on screen
+          // while jumping between these pages.
+          {
+            element: <GovernanceLayout />,
+            children: [
+              {
+                path: "members",
+                element: <MembersPage />,
+              },
+              {
+                path: "officials",
+                element: <OfficialAccountabilityPage />,
+              },
+              {
+                path: "leadership",
+                element: (
+                  <RequireWorkspaceRole check={canViewLeadershipDesk}>
+                    <LeadershipDeskPage />
+                  </RequireWorkspaceRole>
+                ),
+              },
+              {
+                path: "disputes",
+                element: <DisputesPage />,
+              },
+            ],
           },
           {
             path: "my-chama",
@@ -462,74 +607,106 @@ const router = createBrowserRouter([
           // FINANCE ENGINE
           // ----------------------------------------------
 
+          // Dashboard / Contributions / Record Contribution / Savings /
+          // MGR / Chama Contributions / Payouts / Savings Share-Out
+          // share one persistent "Quick actions" nav bar, rendered once
+          // by MoneyCollectionsLayout so it stays on screen while
+          // jumping between these pages instead of disappearing per
+          // page.
           {
-            path: "finance",
-            element: <FinanceDashboard />,
+            element: <MoneyCollectionsLayout />,
+            children: [
+              {
+                path: "finance",
+                element: <FinanceDashboard />,
+              },
+              {
+                path: "finance/overview",
+                element: <FinanceDashboard />,
+              },
+              {
+                path: "finance/record-contribution",
+                element: <RecordContributionPage />,
+              },
+              // Backwards-compatible aliases
+              {
+                path: "finance/contributions",
+                // Keep the legacy sidebar URL on the same route level. Using
+                // "../record-contribution" here resolves to /workspace/:id/
+                // record-contribution and falls through to the landing page.
+                element: <RecordContributionPage />,
+              },
+              {
+                path: "finance/contributions/new",
+                element: <RecordContributionPage />,
+              },
+              {
+                path: "finance/savings",
+                element: <SavingsPage />,
+              },
+              // "Savings Share-Out" is its own sidebar link
+              // (workspaceNavigation.js) but not a separate page — it's the
+              // "shareout" tab of SavingsPage. Route it to the same
+              // component so the URL, the active sidebar highlight, and the
+              // in-page tab all agree with each other.
+              {
+                path: "finance/savings-shareout",
+                element: <SavingsPage />,
+              },
+              {
+                path: "finance/payouts",
+                element: <PayoutsPage />,
+              },
+              {
+                path: "mgr",
+                element: <MerryGoRoundPage />,
+              },
+              {
+                path: "chama-contributions",
+                element: <ChamaContributionsPage />,
+              },
+            ],
           },
+          // Books of accounts: these all share one persistent
+          // "Quick actions · Books of accounts" nav bar, rendered once
+          // by FinanceBooksLayout so it stays on screen while jumping
+          // between books instead of disappearing per page.
           {
-            path: "finance/overview",
-            element: <FinanceDashboard />,
-          },
-          {
-            path: "finance/record-contribution",
-            element: <RecordContributionPage />,
-          },
-          // Backwards-compatible aliases
-          {
-            path: "finance/contributions",
-            // Keep the legacy sidebar URL on the same route level. Using
-            // "../record-contribution" here resolves to /workspace/:id/
-            // record-contribution and falls through to the landing page.
-            element: <RecordContributionPage />,
-          },
-          {
-            path: "finance/contributions/new",
-            element: <RecordContributionPage />,
-          },
-          {
-            path: "finance/transactions",
-            element: <TransactionsPage />,
-          },
-          {
-            path: "finance/ledger",
-            element: <LedgerPage />,
-          },
-          {
-            path: "finance/accounts",
-            element: <FinanceAccountsPage />,
-          },
-          {
-            path: "finance/savings",
-            element: <SavingsPage />,
-          },
-          // "Savings Share-Out" is its own sidebar link
-          // (workspaceNavigation.js) but not a separate page — it's the
-          // "shareout" tab of SavingsPage. Route it to the same
-          // component so the URL, the active sidebar highlight, and the
-          // in-page tab all agree with each other.
-          {
-            path: "finance/savings-shareout",
-            element: <SavingsPage />,
-          },
-          {
-            path: "finance/trial-balance",
-            element: <TrialBalancePage />,
-          },
-          {
-            path: "finance/balance-sheet",
-            element: <BalanceSheetPage />,
-          },
-          {
-            path: "finance/income-statement",
-            element: <IncomeStatementPage />,
-          },
-          {
-            path: "finance/cash-flow",
-            element: <CashFlowStatementPage />,
-          },
-          {
-            path: "finance/payouts",
-            element: <PayoutsPage />,
+            element: <FinanceBooksLayout />,
+            children: [
+              {
+                path: "finance/transactions",
+                element: <TransactionsPage />,
+              },
+              {
+                path: "finance/ledger",
+                element: <LedgerPage />,
+              },
+              {
+                path: "finance/accounts",
+                element: <FinanceAccountsPage />,
+              },
+              {
+                path: "finance/bank-accounts",
+                element: <BankAccountsPage />,
+              },
+              {
+                path: "finance/trial-balance",
+                element: <TrialBalancePage />,
+              },
+              {
+                path: "finance/balance-sheet",
+                element: <BalanceSheetPage />,
+              },
+              {
+                path: "finance/income-statement",
+                element: <IncomeStatementPage />,
+              },
+              {
+                path: "finance/cash-flow",
+                element: <CashFlowStatementPage />,
+              },
+            ],
           },
           {
             path: "finance/payouts/new",
@@ -552,36 +729,47 @@ const router = createBrowserRouter([
           // COLLABORATION & COMMUNICATION
           // ----------------------------------------------
 
+          // Messages / Meetings / Polls / Announcements share one
+          // persistent quick-nav bar, rendered once by
+          // CollaborationLayout so it stays on screen while jumping
+          // between these pages instead of disappearing per page.
           {
-            path: "members",
-            element: <MembersPage />,
-          },
-          {
-            path: "chat",
-            element: <ChatPage />,
-          },
-          {
-            path: "announcements",
-            element: <AnnouncementsPage />,
-          },
-          {
-            path: "meetings",
-            element: <MeetingsPage />,
-          },
-          {
-            path: "polls",
-            element: <PollsPage />,
+            element: <CollaborationLayout />,
+            children: [
+              {
+                path: "chat",
+                element: <ChatPage />,
+              },
+              {
+                path: "announcements",
+                element: <AnnouncementsPage />,
+              },
+              {
+                path: "meetings",
+                element: <MeetingsPage />,
+              },
+              {
+                path: "polls",
+                element: <PollsPage />,
+              },
+            ],
           },
 
           // ----------------------------------------------
           // SETTINGS
           // ----------------------------------------------
 
+          // For a Chama this is now the desk's "Governance Settings"
+          // tab; LegacyLeadershipRedirect forwards there and leaves
+          // non-Chama workspaces (Contribution Groups, which have no
+          // Leadership Desk) on the standalone settings page.
           {
             path: "settings",
             element: (
               <RequireWorkspaceRole check={canViewAdministration}>
-                <WorkspaceSettingsPage />
+                <LegacyLeadershipRedirect tab="governance">
+                  <WorkspaceSettingsPage />
+                </LegacyLeadershipRedirect>
               </RequireWorkspaceRole>
             ),
           },

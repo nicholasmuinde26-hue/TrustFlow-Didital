@@ -8,6 +8,8 @@ const loanService = {
     try { portfolio = await data(loansApi.portfolio(chamaId)); } catch { /* portfolio is official-only */ }
     return { summary, loans: loans || [], portfolio };
   },
+  getPolicy: (chamaId) => data(loansApi.policy(chamaId)),
+  updatePolicy: (chamaId, payload) => data(loansApi.updatePolicy(chamaId, payload)),
   getRepayments: (chamaId, loanId) => data(loansApi.repayments(chamaId, loanId)),
   checkEligibility: (chamaId, params) => data(loansApi.checkEligibility(chamaId, params)),
   getMyGuarantees: (chamaId) => data(loansApi.myGuarantees(chamaId)),

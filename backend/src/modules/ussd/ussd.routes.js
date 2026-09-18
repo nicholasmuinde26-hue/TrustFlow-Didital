@@ -1,6 +1,7 @@
 import express from 'express';
 import { handleUssdRequest, cleanupUssdSessions } from './ussd.controller.js';
 import { protect } from '../../middleware/auth.middleware.js';
+import { requireAdmin } from '../../middleware/admin.middleware.js';
 
 const router = express.Router();
 
@@ -18,6 +19,6 @@ router.post(
 // ============================================================
 // ADMIN — manual trigger for the session cleanup sweep
 // ============================================================
-router.post('/cleanup', protect, cleanupUssdSessions);
+router.post('/cleanup', protect, requireAdmin, cleanupUssdSessions);
 
 export default router;

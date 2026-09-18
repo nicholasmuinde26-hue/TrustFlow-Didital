@@ -11,6 +11,7 @@ import authRoutes from "./modules/auth/auth.routes.js";
 
 // Admin & Workspace Requests
 import adminRoutes from "./modules/admin/admin.routes.js";
+import securityRoutes from "./modules/security/security.routes.js";
 import workspaceRequestRoutes from "./modules/workspaces/workspaceRequest.routes.js";
 
 // Workspace
@@ -19,8 +20,10 @@ import workspaceRoutes from "./modules/workspaces/workspace.routes.js";
 // Chamas
 import chamaRoutes from "./modules/chama/chama.routes.js";
 import chamaOperationsRoutes from "./modules/chama/chamaOperations.routes.js";
+import leadershipPinRoutes from "./modules/leadership/leadershipPin.routes.js";
 import chamaInvitationRoutes from "./modules/chama/chamaInvitation.routes.js";
 import memberRoutes from "./modules/member/member.routes.js";
+import chamaContributionRoutes from "./modules/chama/chamaContribution.routes.js";
 
 // Contribution Groups
 import contributionGroupRoutes from "./modules/contributionGroups/contributionGroup.routes.js";
@@ -52,11 +55,24 @@ import pollRoutes from "./modules/polls/poll.routes.js";
 
 // Audit
 import auditRoutes from "./modules/audit/audit.routes.js";
+
+// Chama Trust Score (shareable score/report + public share-link view)
+import trustScoreRoutes from "./modules/trustScore/Trustscore.routes.js";
+import publicTrustScoreRoutes from "./modules/trustScore/Publictrustscore.routes.js";
+
+// Official peer ratings (accountability)
+import officialRatingRoutes from "./modules/officials/Officialrating.routes.js";
+
+// Disputes (accountability)
+import disputeRoutes from "./modules/disputes/Dispute.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
 import productRoutes from "./modules/business/product.routes.js";
 import cartRoutes from "./modules/business/cart.routes.js";
 import storefrontPublicRoutes from "./modules/business/storefront.public.routes.js";
 import loanRoutes from "./modules/loans/loan.routes.js";
+import marketplaceRoutes from "./modules/marketplace/marketplace.routes.js";
+import marketplaceAdminRoutes from "./modules/marketplace/marketplaceAdmin.routes.js";
+import marketplaceMerchantRoutes from "./modules/marketplace/marketplaceMerchant.routes.js";
 
 // Notifications
 import notificationRoutes from "./modules/notifications/notifications.routes.js";
@@ -88,6 +104,12 @@ import chairpersonLoanSettingsRoutes from "./modules/chairperson/chairpersonLoan
 import inquiryRoutes, { adminInquiryRouter } from "./modules/inquiries/inquiry.routes.js";
 
 import "./modules/finance/financeEngine.service.js";
+
+// Bridges payment.completed/failed/cancelled events (contributions, MGR,
+// savings) onto Socket.IO so the paying member's STK modal resolves the
+// instant M-Pesa's callback lands, instead of only via HTTP polling.
+import { registerPaymentSocketBridge } from "./payment/paymentSocketBridge.js";
+registerPaymentSocketBridge();
 
 
 // ============================================================================
@@ -159,9 +181,18 @@ app.use(
 );
 
 app.use(
+    "/api/v1/admin/marketplace",
+    marketplaceAdminRoutes
+);
+
+app.use(
     "/api/v1/admin",
     adminRoutes
 );
+
+// TrustOS security intelligence: telemetry is evaluated continuously;
+// the Security Admin consumes the explanations and controlled responses.
+app.use("/api/v1/security", securityRoutes);
 
 app.use(
     "/api/v1/inquiries",
@@ -197,6 +228,18 @@ app.use(
 );
 
 app.use("/api/v1/chamas/:chamaId", chamaOperationsRoutes);
+
+// ============================================================================
+// LEADERSHIP DESK (PIN)
+// ============================================================================
+//
+// Mounted on /api/v1/chamas (not /:chamaId) so the router owns its own
+// "/:chamaId/leadership/..." paths, same pattern as memberRoutes below.
+// These endpoints are how a leader OBTAINS a leadership session token —
+// they are gated by role only, never by the session token itself.
+// ============================================================================
+
+app.use("/api/v1/chamas", leadershipPinRoutes);
 app.use("/api/v1/chama-invitations", chamaInvitationRoutes);
 
 // ============================================================================
@@ -206,6 +249,20 @@ app.use("/api/v1/chama-invitations", chamaInvitationRoutes);
 app.use(
     "/api/v1/chamas",
     memberRoutes
+);
+
+// ============================================================================
+// CHAMA-INTERNAL CONTRIBUTIONS (emergency / wedding / purchase, etc)
+// ============================================================================
+//
+// Ad-hoc, cause-based contributions that live inside a Chama - separate
+// from Savings, MGR, and the fixed/scheduled ContributionPlan. See
+// modules/chama/chamaContribution.service.js.
+// ============================================================================
+
+app.use(
+    "/api/v1/chamas",
+    chamaContributionRoutes
 );
 
 // ============================================================================
@@ -305,6 +362,16 @@ app.use(
 app.use(
     "/api/v1/storefront",
     storefrontPublicRoutes
+);
+
+app.use(
+    "/api/v1/marketplace",
+    marketplaceRoutes
+);
+
+app.use(
+    "/api/v1/businesses/:businessId/marketplace",
+    marketplaceMerchantRoutes
 );
 
 // ============================================================================
@@ -409,6 +476,44 @@ app.use(
 app.use(
     "/api/v1/contribution-groups",
     auditRoutes
+);
+
+// ============================================================================
+// CHAMA TRUST SCORE — shareable score/report, peer ratings, disputes
+// ============================================================================
+//
+// A single exportable artifact a chama can hand to a bank, a SACCO
+// federation, or a prospective member — see chamaTrustScore.service.js.
+// Peer ratings (officialRatingRoutes) and disputes (disputeRoutes) are
+// the "official accountability" inputs that, alongside repayment/KYC/
+// audit-integrity data, feed that score.
+//
+// GET  /api/v1/chamas/:chamaId/trust-score
+// POST /api/v1/chamas/:chamaId/trust-score/generate
+// POST /api/v1/chamas/:chamaId/trust-score/:trustScoreId/share
+// GET  /api/v1/chamas/:chamaId/officials
+// POST /api/v1/chamas/:chamaId/officials/:membershipId/ratings
+// POST /api/v1/chamas/:chamaId/disputes
+//
+// GET  /api/v1/public/trust-score/:token   <- no auth, for banks/SACCOs
+//
+// ============================================================================
+
+app.use(
+    "/api/v1/chamas",
+    trustScoreRoutes
+);
+app.use(
+    "/api/v1/chamas",
+    officialRatingRoutes
+);
+app.use(
+    "/api/v1/chamas",
+    disputeRoutes
+);
+app.use(
+    "/api/v1/public/trust-score",
+    publicTrustScoreRoutes
 );
 
 // ============================================================================

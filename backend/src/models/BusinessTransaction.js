@@ -8,6 +8,14 @@ const businessTransactionSchema = new mongoose.Schema({
   currency: { type: String, default: "KES", uppercase: true },
   payment_channel: { type: String, enum: ["cash", "bank", "till", "paybill", "mpesa"], required: true },
   status: { type: String, enum: ["pending", "completed", "failed"], default: "completed", index: true },
+  // Written by reconcileStkCallback()/checkStkStatus() in business.service.js
+  // with the specific M-Pesa result description (insufficient funds, PIN
+  // timeout, cancelled by user, etc) whenever status ends up "failed". This
+  // field was previously missing from the schema entirely, so Mongoose's
+  // default strict mode silently dropped every write to it on save - the
+  // seller's STK modal always fell back to a generic "cancelled or failed"
+  // message even though the backend knew exactly why.
+  failure_reason: { type: String, default: null },
   // Kitchen prep status — independent of payment `status` above. Only meaningful
   // for type: "sale" on restaurant-category businesses; every other business type
   // ignores it. Kept off `status` on purpose: `status` tracks whether the M-Pesa

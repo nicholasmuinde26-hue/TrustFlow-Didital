@@ -36,7 +36,43 @@ class ContributionPaymentController {
         return res.status(400).json({ success: false, message: "Phone number is required for M-Pesa payments." });
       }
 
-      const key = idempotencyKey || crypto.createHash('sha256').update(`${userId}:${obligationId}:${amount}:${paymentMethod || 'cash'}`).digest('hex');
+      // A plain member's 'contributions.record' grant is scope: 'own' (see
+      // requirePermission in the route, which already confirmed this is
+      // their own obligation). Cash/bank marks an obligation paid without
+      // any money actually moving, so that path stays treasurer-only
+      // (scope: 'all') - members self-recording cash would let anyone mark
+      // themselves paid for free. Members can only pay via a real M-Pesa
+      // STK push to their own phone.
+      const isOwnScopeOnly = req.permissionResult?.scope && req.permissionResult.scope !== 'all';
+      if (isOwnScopeOnly && paymentMethod !== 'MPESA') {
+        return res.status(403).json({
+          success: false,
+          message: "Only the treasurer can record cash/bank payments. Use M-Pesa to pay your own contribution.",
+        });
+      }
+
+      const baseKey = idempotencyKey || crypto.createHash('sha256').update(`${userId}:${obligationId}:${amount}:${paymentMethod || 'cash'}`).digest('hex');
+
+      // Only reuse the deterministic key while a prior attempt is still
+      // genuinely in-flight (pending/processing) - that's the case the
+      // unique index exists to protect against: a double-click or a
+      // network retry firing two STK pushes for the same tap. Once that
+      // prior attempt is terminal (failed/cancelled/completed), this exact
+      // (obligation, amount, method) combination must NOT stay permanently
+      // claimed - the member has to be able to try again. Without this
+      // check, any failed/timed-out/cancelled attempt would collide with
+      // the SAME idempotency key forever, and every retry would just hand
+      // back that dead record's stale failure_reason (e.g. the
+      // reconciliation job's "No confirmation received from M-Pesa within
+      // the expected window" once it's over an hour old) instead of ever
+      // sending a new STK push.
+      let key = baseKey;
+      if (!idempotencyKey) {
+        const priorAttempt = await PaymentIntent.findOne({ idempotency_key: baseKey }).select('status').lean();
+        if (priorAttempt && !['pending', 'processing'].includes(priorAttempt.status)) {
+          key = `${baseKey}-${Date.now()}`;
+        }
+      }
 
       // 1. Load obligation
       const obligation = await ContributionObligation.findById(obligationId).populate('plan_id', 'name contribution_type');
@@ -86,17 +122,50 @@ class ContributionPaymentController {
         success: true,
         message: result.duplicate ? "Payment already initiated" : "Payment initiated",
         duplicate: result.duplicate || false,
-        data: result.payment,
+        // FIX: PaymentService.initiate() returns { paymentId, paymentIntentId,
+        // reference, checkoutRequestId, phoneNumber, providerResponse } - there
+        // is no `.payment` field. Sending `result.payment` here always sent
+        // `data: undefined`, so the frontend's STK modal could never read
+        // paymentIntentId/checkoutRequestId back out and immediately failed
+        // with "M-Pesa did not return a payment reference", even though the
+        // STK push itself had gone out fine.
+        data: {
+          paymentId: result.paymentId,
+          paymentIntentId: result.paymentIntentId,
+          reference: result.reference,
+          checkoutRequestId: result.checkoutRequestId,
+          phoneNumber: result.phoneNumber
+        },
         providerResponse: result.providerResponse
       });
 
     } catch (error) {
       if (error.code === 11000) {
+        // FIX: `error.existingRecord` was never set anywhere (Mongo's E11000
+        // doesn't attach one) - every duplicate-key retry (e.g. a member
+        // re-submitting the same obligation/amount/method, whose
+        // idempotencyKey is deterministic: sha256(userId:obligationId:amount:
+        // paymentMethod)) returned `data: null`, which reproduces the exact
+        // same "M-Pesa did not return a payment reference" failure on the
+        // frontend as the original missing-`data` bug. Look up the intent
+        // that was actually created for this idempotency key and return it
+        // in the same shape as the success path.
+        const key = req.body.idempotencyKey || crypto.createHash('sha256')
+          .update(`${req.user._id}:${req.body.obligationId}:${req.body.amount}:${req.body.paymentMethod || 'cash'}`)
+          .digest('hex');
+        const existingIntent = await PaymentIntent.findOne({ idempotency_key: key }).lean();
+
         return res.status(200).json({
           success: true,
-          message: "Payment already processed. Returning existing record.",
+          message: "Payment already initiated",
           duplicate: true,
-          data: error.existingRecord || null
+          data: existingIntent ? {
+            paymentId: existingIntent._id,
+            paymentIntentId: existingIntent._id,
+            reference: existingIntent.reference,
+            checkoutRequestId: existingIntent.provider_request_id,
+            phoneNumber: existingIntent.metadata?.phoneNumber || null
+          } : null
         });
       }
       next(error);
@@ -118,14 +187,23 @@ class ContributionPaymentController {
         return res.status(200).json({ success: true, message: "Unknown payment, acknowledged" });
       }
 
+      // FIX: mapResultCode() already knows how to tell "insufficient balance"
+      // (1), "cancelled by user" (1032), and "timed out" (1037) apart - it
+      // just wasn't being called here, so every non-zero ResultCode collapsed
+      // into a generic FAILED with no distinguishing reason.
+      const mapped = mpesaService.mapResultCode(parsed.resultCode);
+      const reason = parsed.success
+        ? null
+        : (parsed.resultDescription || mapped.reason || 'M-Pesa payment was not completed.');
+
       const result = await paymentService.processCallback({
         provider: 'mpesa',
         paymentId: intent._id,
         success: parsed.success,
-        status: parsed.success ? 'COMPLETED' : 'FAILED',
+        status: parsed.success ? 'COMPLETED' : mapped.status === 'cancelled' ? 'CANCELLED' : 'FAILED',
         amount: parsed.amount || intent.amount,
         currency: 'KES',
-        providerData: parsed,
+        providerData: { ...parsed, ResultDesc: reason },
         metadata: intent.metadata
       });
 

@@ -18,6 +18,61 @@ const canUseTransactions = () => {
 const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 // ----------------------------------------------------------------------------
+// CASH-IN-HAND DEPOSIT CLOCK
+// ----------------------------------------------------------------------------
+// No cash may sit un-banked for longer than this window (48h by default).
+// Kept here (rather than only in cashDeposit.service.js) so the clock is
+// maintained at the exact same choke point every ledger entry already
+// passes through - applyEntries() below - and can never fall out of sync
+// with the balance it's tracking.
+export const CASH_DEPOSIT_WINDOW_MS =
+  Number(process.env.CASH_DEPOSIT_WINDOW_MS) || 48 * 60 * 60 * 1000; // 48h
+
+// Called after an account's current_balance has just been updated, with
+// the balance it had immediately before this entry. Only CASH system
+// accounts carry a deposit clock.
+const updateCashDepositClock = (account, previousBalance) => {
+  if (account.account_code !== "CASH") return;
+
+  const before = toDecimal(previousBalance);
+  const after = toDecimal(account.current_balance);
+  const tracking = account.cash_deposit_tracking || {};
+
+  if (before.lte(0) && after.gt(0)) {
+    // Cash just started accumulating from empty - start the clock. If it
+    // was already running (shouldn't happen once cleared below, but keep
+    // it defensive), leave the original held_since alone.
+    if (!tracking.held_since) {
+      const now = new Date();
+      tracking.held_since = now;
+      tracking.due_at = new Date(now.getTime() + CASH_DEPOSIT_WINDOW_MS);
+      tracking.is_overdue = false;
+      tracking.overdue_since = null;
+      tracking.last_reminder_sent_at = null;
+      tracking.reminder_count = 0;
+      tracking.last_broadcast_sent_at = null;
+      tracking.inflow_locked = false;
+    }
+  } else if (after.lte(0)) {
+    // Fully deposited/withdrawn - clock resets, cash may accumulate again.
+    tracking.held_since = null;
+    tracking.due_at = null;
+    tracking.is_overdue = false;
+    tracking.overdue_since = null;
+    tracking.last_reminder_sent_at = null;
+    tracking.reminder_count = 0;
+    tracking.last_broadcast_sent_at = null;
+    tracking.inflow_locked = false;
+  }
+  // Otherwise (still >0 before and after): a partial deposit or additional
+  // cash came in while some was already outstanding - the clock keeps
+  // running from the OLDEST cash still un-banked, so held_since is
+  // deliberately left untouched here.
+
+  account.cash_deposit_tracking = tracking;
+};
+
+// ----------------------------------------------------------------------------
 // SELF-HEAL: legacy account_code -> display name
 // ----------------------------------------------------------------------------
 // `FinancialAccount.name` became a required field after some accounts had
@@ -70,7 +125,11 @@ class FinanceAccountService {
                 throw new Error(`Financial account '${accountId}' not found`);
             }
 
+            const balanceBefore = account.current_balance;
+
             this.applyEntry(account, entry);
+
+            updateCashDepositClock(account, balanceBefore);
 
             backfillLegacyName(account);
 

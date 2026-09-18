@@ -2,6 +2,36 @@ import financeApi from "../api/finance.api";
 
 const safeData = (res) => res?.data?.data ?? res?.data ?? {};
 
+// Human-readable label for each FinancialTransaction.transaction_type value,
+// used to tag every ledger row with the product it actually belongs to
+// (savings / MGR / contribution / chama-internal contribution / loan / ...)
+// so payments never look like anonymous debits and credits.
+export const CATEGORY_LABELS = {
+  deposit: "Savings",
+  withdrawal: "Savings Withdrawal",
+  savings_shareout_obligation: "Savings Share-out",
+  savings_shareout_settlement: "Savings Share-out",
+  savings_shareout_cancellation: "Savings Share-out (Cancelled)",
+  contribution: "Contribution",
+  contribution_payment: "Contribution",
+  contribution_reversal: "Contribution (Reversed)",
+  mgr_contribution: "MGR Contribution",
+  chama_contribution_payment: "Chama Contribution",
+  payout: "Payout",
+  payout_obligation: "Payout",
+  payout_settlement: "Payout",
+  payout_cancellation: "Payout (Cancelled)",
+  loan_disbursement: "Loan Disbursement",
+  loan_repayment: "Loan Repayment",
+  transfer: "Transfer",
+  fee: "Fee",
+  penalty: "Penalty",
+  adjustment: "Adjustment",
+  sale: "Sale",
+  expense: "Expense",
+  customer_payout: "Customer Payout",
+};
+
 // Coerce to a finite number. Handles Decimal128, strings, null, undefined
 const safeNumber = (value) => {
   if (value && typeof value === 'object' && '$numberDecimal' in value) {
@@ -74,6 +104,47 @@ const financeService = {
           Object.keys(zeros).map(k => [k, formatCurrency(0)])
         )
       };
+    }
+  },
+
+  // A member's own figures - always their own, regardless of role. Backed
+  // by GET /finance/summary/me (see finance.controller.js#getMyFinanceSummary).
+  async getMySummary(workspaceId) {
+    try {
+      const res = await financeApi.summaryMe(workspaceId);
+      const data = safeData(res);
+      return {
+        my_total_contributions: safeNumber(data.my_total_contributions),
+        my_payment_count: safeNumber(data.my_payment_count),
+        my_recent_activity: Array.isArray(data.my_recent_activity)
+          ? data.my_recent_activity.map((p) => ({ ...p, amount: safeNumber(p.amount) }))
+          : [],
+      };
+    } catch (err) {
+      console.error("getMySummary failed:", err);
+      return { my_total_contributions: 0, my_payment_count: 0, my_recent_activity: [] };
+    }
+  },
+
+  // Real week-by-week income vs expense totals for the Overview chart.
+  // Officials-only (mirrors finance/summary scope) - a plain member gets
+  // back an empty weeks array, same shape, nothing to special-case.
+  async getTrend(workspaceId) {
+    try {
+      const res = await financeApi.summaryTrend(workspaceId);
+      const data = safeData(res);
+      const weeks = Array.isArray(data.weeks) ? data.weeks : [];
+      return {
+        scope: data.scope || "own",
+        weeks: weeks.map((w) => ({
+          ...w,
+          income: safeNumber(w.income),
+          expense: safeNumber(w.expense),
+        })),
+      };
+    } catch (err) {
+      console.error("getTrend failed:", err);
+      return { scope: "own", weeks: [] };
     }
   },
 
@@ -158,6 +229,28 @@ const financeService = {
         e.account ||
         "Unknown Account";
 
+      // `transaction_id` arrives populated with the parent
+      // FinancialTransaction (see finance.service.js#getLedger on the
+      // backend), which carries transaction_type - the one field that
+      // says WHAT this money movement actually was (a savings deposit,
+      // an MGR contribution, a chama-internal contribution, a loan
+      // repayment...). This is what lets the UI show every entry
+      // tagged with its correct category instead of a bare debit/credit.
+      const transaction =
+        e.transaction_id && typeof e.transaction_id === "object"
+          ? e.transaction_id
+          : null;
+
+      const category = String(transaction?.transaction_type || "").toLowerCase();
+
+      // `transaction_id` now arrives as a populated object (see above), so
+      // anything that used to read it as a plain id string (e.g. the
+      // Reference column's fallback) would otherwise print "[object
+      // Object]". Surface the transaction's own reference explicitly and
+      // keep transaction_id as a clean id string for backward compatibility.
+      const transactionRef = transaction?.reference || e.reference || null;
+      const transactionId = transaction?._id || (transaction ? null : e.transaction_id) || null;
+
       return {
         ...e,
         account_name: accountName,
@@ -165,6 +258,10 @@ const financeService = {
         credit,
         formatted_debit: formatCurrency(debit),
         formatted_credit: formatCurrency(credit),
+        category,
+        category_label: CATEGORY_LABELS[category] || (category ? category.replace(/_/g, " ") : "Other"),
+        reference: transactionRef,
+        transaction_id: transactionId,
       };
     });
     return {
@@ -176,6 +273,94 @@ const financeService = {
   async createOperation(workspaceId, payload) {
     const res = await financeApi.createOperation(workspaceId, payload);
     return safeData(res);
+  },
+
+  // ========================================
+  // CASH DEPOSIT ENFORCEMENT
+  // ========================================
+
+  async getCashDepositStatus(workspaceId) {
+    try {
+      const res = await financeApi.cashDepositStatus(workspaceId);
+      const data = safeData(res);
+      return {
+        cash_balance: safeNumber(data.cash_balance),
+        held_since: data.held_since || null,
+        due_at: data.due_at || null,
+        is_overdue: Boolean(data.is_overdue),
+        inflow_locked: Boolean(data.inflow_locked),
+        hours_remaining: data.hours_remaining ?? null,
+        hours_overdue: data.hours_overdue ?? null,
+        deposit_window_hours: safeNumber(data.deposit_window_hours) || 48,
+        formatted_cash_balance: formatCurrency(data.cash_balance),
+      };
+    } catch (err) {
+      console.error("getCashDepositStatus failed:", err);
+      return {
+        cash_balance: 0,
+        held_since: null,
+        due_at: null,
+        is_overdue: false,
+        inflow_locked: false,
+        hours_remaining: null,
+        hours_overdue: null,
+        deposit_window_hours: 48,
+        formatted_cash_balance: formatCurrency(0),
+        checkFailed: true,
+      };
+    }
+  },
+
+  async depositCashToBank(workspaceId, payload) {
+    const res = await financeApi.depositCash(workspaceId, payload);
+    return safeData(res);
+  },
+
+  // ========================================
+  // BANK ACCOUNTS
+  // ========================================
+
+  async getBankAccounts(workspaceId, params = {}) {
+    const res = await financeApi.bankAccounts(workspaceId, params);
+    const data = safeData(res);
+    return Array.isArray(data) ? data : data.accounts || [];
+  },
+
+  async createBankAccount(workspaceId, payload) {
+    const res = await financeApi.createBankAccount(workspaceId, payload);
+    return safeData(res);
+  },
+
+  async updateBankAccount(workspaceId, bankAccountId, payload) {
+    const res = await financeApi.updateBankAccount(workspaceId, bankAccountId, payload);
+    return safeData(res);
+  },
+
+  async deactivateBankAccount(workspaceId, bankAccountId) {
+    const res = await financeApi.deactivateBankAccount(workspaceId, bankAccountId);
+    return safeData(res);
+  },
+
+  // { ownerType, ownerId, totalDebits, totalCredits, difference, balanced, checkedAt }
+  async getGlBalance(workspaceId) {
+    try {
+      const res = await financeApi.glBalance(workspaceId);
+      const data = safeData(res);
+      return {
+        ...data,
+        totalDebits: safeNumber(data.totalDebits),
+        totalCredits: safeNumber(data.totalCredits),
+        difference: safeNumber(data.difference),
+        balanced: data.balanced !== false,
+        checkFailed: false,
+      };
+    } catch (err) {
+      console.error("getGlBalance failed:", err);
+      // Fail OPEN, not closed: a network hiccup or a 403 must never trigger
+      // the blocking "books don't balance" modal. Only a confirmed
+      // balanced:false from the backend should ever do that.
+      return { balanced: true, checkFailed: true };
+    }
   },
 
   async getRecentPayments(workspaceId) {
@@ -218,4 +403,4 @@ const financeService = {
   formatCurrency,
 };
 
-export default financeService;
+export default financeService;

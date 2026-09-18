@@ -10,7 +10,7 @@ const roleLabel = (role) =>
 
 const statusStyles = {
   active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
-  inactive: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  inactive: "bg-slate-100 text-slate-600 dark:bg-obsidian-raised dark:text-mist-muted",
   suspended: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
   removed: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400",
 };
@@ -50,7 +50,7 @@ export default function MemberRow({
     type === "chama" && canManage && !isSelf && member.role !== "treasurer" && membershipStatus === "active";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-obsidian-border dark:bg-obsidian-card">
       <div className="flex items-center gap-3">
         <div className="relative h-11 w-11 shrink-0">
           {user.avatar_url ? (
@@ -60,33 +60,33 @@ export default function MemberRow({
               className="h-11 w-11 rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 font-semibold text-slate-600 dark:bg-obsidian-raised dark:text-mist-muted">
               {initials(user.name)}
             </div>
           )}
           <span
             title={status === "online" ? "Online" : "Offline"}
-            className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white dark:border-slate-900 ${
-              status === "online" ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+            className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white dark:border-obsidian-card ${
+              status === "online" ? "bg-emerald-500" : "bg-slate-300 dark:bg-obsidian-raised"
             }`}
           />
         </div>
 
         <div>
-          <p className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
+          <p className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-mist">
             {user.name || "Member"}
             {isSelf && <span className="text-xs font-normal text-slate-400">(you)</span>}
             {member.role === "treasurer" && (
               <Crown size={14} className="text-amber-500" aria-label="Treasurer" />
             )}
           </p>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-mist-muted mt-0.5">
             <span>{user.phone || user.email || "No contact on file"}</span>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-mono font-bold text-[11px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
               🛡️ {member.trustScore || Math.floor(Math.random() * 8 + 92)}% On-Time
             </span>
             {member.totalContributed !== undefined && (
-              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+              <span className="font-mono font-bold text-slate-700 dark:text-mist-muted">
                 • KES {Number(member.totalContributed || 0).toLocaleString()}
               </span>
             )}
@@ -106,7 +106,7 @@ export default function MemberRow({
         {canManage && !isRemoved ? (
           <select
             value={member.role}
-            disabled={updatingRole}
+            disabled={updatingRole || membershipStatus !== "active"}
             onChange={(e) => onChangeRole(member, e.target.value)}
             className="rounded-lg border p-2 text-sm disabled:opacity-50"
           >
@@ -117,7 +117,7 @@ export default function MemberRow({
             ))}
           </select>
         ) : (
-          <span className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <span className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-obsidian-raised dark:text-mist-muted">
             {roleLabel(member.role)}
           </span>
         )}
@@ -127,7 +127,7 @@ export default function MemberRow({
             type="button"
             onClick={() => onEditProfile(member)}
             title="Edit profile"
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:text-mist-muted dark:hover:bg-obsidian-raised"
           >
             <Pencil size={14} /> Edit
           </button>
@@ -151,7 +151,7 @@ export default function MemberRow({
             disabled={updatingStatus}
             onClick={() => onToggleStatus(member)}
             title={membershipStatus === "active" ? "Suspend member" : "Reactivate member"}
-            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:text-mist-muted dark:hover:bg-obsidian-raised"
           >
             {membershipStatus === "active" ? (
               <>

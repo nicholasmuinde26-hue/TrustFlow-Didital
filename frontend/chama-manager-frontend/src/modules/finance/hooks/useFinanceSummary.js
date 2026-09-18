@@ -4,6 +4,7 @@ import financeService from "../services/finance.service";
 export default function useFinanceSummary(workspaceId) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const refetch = useCallback(async () => {
     if (!workspaceId) return;
@@ -11,6 +12,9 @@ export default function useFinanceSummary(workspaceId) {
     try {
       const data = await financeService.getSummary(workspaceId);
       setSummary(data);
+      setError(null);
+    } catch (err) {
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -30,7 +34,10 @@ export default function useFinanceSummary(workspaceId) {
 
   return {
     summary,
+    data: summary,
     loading,
+    isLoading: loading,
+    error,
     refetch,
   };
 }

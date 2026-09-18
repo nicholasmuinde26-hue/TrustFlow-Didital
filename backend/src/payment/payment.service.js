@@ -148,7 +148,21 @@ class PaymentService {
 
             intent.status = targetStatus;
             intent.provider_response = callback.raw;
-            intent.completed_at = targetStatus === PAYMENT_STATUS.COMPLETED ? new Date() : null;
+            if (targetStatus === PAYMENT_STATUS.COMPLETED) {
+                intent.completed_at = new Date();
+                intent.failure_reason = null;
+                intent.failed_at = null;
+            } else {
+                // FIX: this was never persisted on the intent, only on the
+                // ContributionPayment - so GET /payments/:id/status (which reads
+                // the intent) always returned failure_reason: null and the modal
+                // fell back to a generic "prompt not completed" message even when
+                // M-Pesa told us exactly why (insufficient balance, user cancelled,
+                // PIN timeout, etc).
+                intent.completed_at = null;
+                intent.failure_reason = callback.reason || null;
+                intent.failed_at = new Date();
+            }
             await intent.save({ session });
 
             let payment = null;

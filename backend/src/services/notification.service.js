@@ -775,94 +775,24 @@ class NotificationService {
 // ========================================
 // SETUP DOMAIN EVENT LISTENERS
 // ========================================
+//
+// FIX: this used to register its own inline listeners for
+// CONTRIBUTION_RECEIVED, LOAN_SUBMITTED, LOAN_APPROVED, LOAN_DISBURSED,
+// MEMBER_JOINED, MEMBER_REMOVED, ROLE_CHANGED, MEETING_SCHEDULED,
+// SECURITY_ALERT, PAYMENT_FAILED, and WITHDRAWAL_REQUESTED - but
+// notificationEventHandler.service.js (registered once at boot in app.js)
+// already listens for every one of those same events with functionally
+// identical handlers, plus ~30 more event types this file never covered.
+// Both being registered meant every one of these 11 events fired two
+// notifications per recipient - visible in logs as the same
+// "Role X cannot receive notification type Y" line printed twice for a
+// single loan submission. Domain events are now handled in exactly one
+// place: notificationEventHandler.service.js.
 
-// Auto-subscribe to domain events and create notifications
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.CONTRIBUTION_RECEIVED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.CONTRIBUTION_RECEIVED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.LOAN_SUBMITTED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.LOAN_SUBMITTED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.LOAN_APPROVED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.LOAN_APPROVED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.LOAN_DISBURSED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.LOAN_DISBURSED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.MEMBER_JOINED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.MEMBER_JOINED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.MEMBER_REMOVED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.MEMBER_REMOVED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.ROLE_CHANGED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.ROLE_CHANGED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.MEETING_SCHEDULED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.MEETING_SCHEDULED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.SECURITY_ALERT, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.SECURITY_ALERT,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.PAYMENT_FAILED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.PAYMENT_FAILED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-domainEventEmitter.onDomainEvent(DOMAIN_EVENTS.WITHDRAWAL_REQUESTED, async (eventData) => {
-  await notificationService.sendDomainEventNotification({
-    domainEvent: DOMAIN_EVENTS.WITHDRAWAL_REQUESTED,
-    chamaId: eventData.chamaId,
-    eventData
-  });
-});
-
-export default new NotificationService();
+// FIX: the listeners above all call `notificationService.sendDomainEventNotification`,
+// but `export default new NotificationService()` never bound that instance to a
+// local name - every domain event emitted crashed the process with
+// "ReferenceError: notificationService is not defined". Name the instance so
+// those references resolve, then export the same instance as before.
+const notificationService = new NotificationService();
+export default notificationService;
