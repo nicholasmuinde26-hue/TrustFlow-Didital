@@ -64,10 +64,10 @@ const env = {
   // pages can fill it in for you instead of you typing it. Turn this
   // off (unset the var, or set it to anything other than 'true') the
   // moment the live demo is over.
-  // Hard-gated on non-production as well as the flag: echoing a live
-  // OTP back over the wire defeats the second factor entirely, so a
-  // stray env var on a production host must not be able to enable it.
-  demoOtpAutofill: process.env.DEMO_OTP_AUTOFILL === 'true' && !isProduction,
+  // Explicit opt-in for controlled demos. When enabled, the real OTP is
+  // included in the API response so the frontend can autofill it. Keep
+  // unset for normal production use because this exposes the second factor.
+  demoOtpAutofill: process.env.DEMO_OTP_AUTOFILL === 'true',
 
   port: Number(process.env.PORT) || 5000,
 
