@@ -1,4 +1,4 @@
-import api from "@/shared/lib/api";
+import api from "@/app/services/api";
 
 export async function getWorkspaceDashboard(workspaceId) {
     const { data } = await api.get(
