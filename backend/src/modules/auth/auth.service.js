@@ -198,7 +198,9 @@ export const sendOtp = async ({ phone, email, identifier, channel }) => {
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
     expiresInMinutes: expiryMinutes,
-    ...(env.demoOtpAutofill ? { devOtp: issuedOtpCode, demoAutofill: true } : {}),
+    ...(env.demoOtpAutofill && usedChannel === 'sms'
+      ? { devOtp: issuedOtpCode, demoAutofill: true }
+      : {}),
   };
 };
 
@@ -340,7 +342,9 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
       usedChannel === 'email' ? user.email : formattedPhone
     }`,
     expiresInMinutes: expiryMinutes,
-    ...(env.demoOtpAutofill ? { devOtp: issuedOtpCode, demoAutofill: true } : {}),
+    ...(env.demoOtpAutofill && usedChannel === 'sms'
+      ? { devOtp: issuedOtpCode, demoAutofill: true }
+      : {}),
   };
 };
 
@@ -445,7 +449,9 @@ export const loginUser = async ({ phone, email, identifier, password, channel, c
       usedChannel === 'email' ? user.email : user.phone
     }`,
     expiresInMinutes: expiryMinutes,
-    ...(env.demoOtpAutofill ? { devOtp: issuedOtpCode, demoAutofill: true } : {}),
+    ...(env.demoOtpAutofill && usedChannel === 'sms'
+      ? { devOtp: issuedOtpCode, demoAutofill: true }
+      : {}),
   };
 };
 
