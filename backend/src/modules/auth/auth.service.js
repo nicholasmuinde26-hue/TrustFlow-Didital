@@ -120,11 +120,17 @@ export const generateAndSendOtp = async (user, requestedChannel) => {
   user.otpAttempts = 0;
   await user.save();
 
-  await deliverOtp({ channel, user, otpCode, expiryMinutes });
+  try {
+    await deliverOtp({ channel, user, otpCode, expiryMinutes });
+  } catch (error) {
+    if (!env.demoOtpAutofill) throw error;
+    console.warn(
+      `[OTP Delivery] Demo autofill is enabled; continuing without ${channel} delivery: ${error.message}`
+    );
+  }
 
-  // otpCode is returned so the caller can echo it under the demo
-  // autofill flag (non-production only) without re-reading it from the
-  // user document, which no longer holds it.
+  // otpCode is returned so the caller can echo it under the explicit
+  // demo autofill flag without re-reading it from the user document.
   return { expiryMinutes, channel, otpCode };
 };
 
@@ -189,16 +195,18 @@ export const sendOtp = async ({ phone, email, identifier, channel }) => {
 
   return {
     otpRequired: true,
-    message: `OTP sent successfully via ${usedChannel} to ${
-      usedChannel === 'email' ? user.email : user.phone
-    }`,
+    message: env.demoOtpAutofill
+      ? 'Demo OTP generated and autofilled.'
+      : `OTP sent successfully via ${usedChannel} to ${
+          usedChannel === 'email' ? user.email : user.phone
+        }`,
     phone: user.phone,
     email: user.email,
     identifier: usedChannel === 'email' ? user.email : user.phone,
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
     expiresInMinutes: expiryMinutes,
-    ...(env.demoOtpAutofill && usedChannel === 'sms'
+    ...(env.demoOtpAutofill
       ? { devOtp: issuedOtpCode, demoAutofill: true }
       : {}),
   };
@@ -338,11 +346,13 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
     identifier: usedChannel === 'email' ? user.email : formattedPhone,
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
-    message: `Account created. Security OTP code sent via ${usedChannel} to ${
-      usedChannel === 'email' ? user.email : formattedPhone
-    }`,
+    message: env.demoOtpAutofill
+      ? 'Account created. Demo OTP generated and autofilled.'
+      : `Account created. Security OTP code sent via ${usedChannel} to ${
+          usedChannel === 'email' ? user.email : formattedPhone
+        }`,
     expiresInMinutes: expiryMinutes,
-    ...(env.demoOtpAutofill && usedChannel === 'sms'
+    ...(env.demoOtpAutofill
       ? { devOtp: issuedOtpCode, demoAutofill: true }
       : {}),
   };
@@ -445,11 +455,13 @@ export const loginUser = async ({ phone, email, identifier, password, channel, c
     identifier: usedChannel === 'email' ? user.email : user.phone,
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
-    message: `Password verified. Security OTP code sent via ${usedChannel} to ${
-      usedChannel === 'email' ? user.email : user.phone
-    }`,
+    message: env.demoOtpAutofill
+      ? 'Password verified. Demo OTP generated and autofilled.'
+      : `Password verified. Security OTP code sent via ${usedChannel} to ${
+          usedChannel === 'email' ? user.email : user.phone
+        }`,
     expiresInMinutes: expiryMinutes,
-    ...(env.demoOtpAutofill && usedChannel === 'sms'
+    ...(env.demoOtpAutofill
       ? { devOtp: issuedOtpCode, demoAutofill: true }
       : {}),
   };
