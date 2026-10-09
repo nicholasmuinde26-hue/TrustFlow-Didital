@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 import Withdrawal from "../../models/Withdrawal.js";
-import WithdrawalPolicy from "../../models/WithdrawalPolicy.js";
+import WithdrawalPolicy from "../../models/Withdrawalpolicy.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import ChamaLoan from "../../models/ChamaLoan.js";
 import FinancialAccount from "../../models/FinancialAccount.js";

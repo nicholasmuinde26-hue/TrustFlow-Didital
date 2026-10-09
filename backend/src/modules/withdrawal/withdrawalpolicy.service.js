@@ -1,4 +1,4 @@
-import WithdrawalPolicy from "../../models/withdrawalPolicy.js";
+import WithdrawalPolicy from "../../models/Withdrawalpolicy.js";
 import AppError from "../../utils/AppError.js";
 
 // ============================================================

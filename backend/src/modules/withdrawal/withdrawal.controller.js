@@ -14,7 +14,7 @@ import {
     archiveWithdrawalPolicy,
     listWithdrawalPolicies,
     getWithdrawalPolicyById
-} from "./withdrawalPolicy.service.js";
+} from "./withdrawalpolicy.service.js";
 
 // ========================================
 // LIST WITHDRAWALS FOR A CHAMA
