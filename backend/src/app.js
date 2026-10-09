@@ -3,7 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 
 import env from "./config/env.js";
-import { globalLimiter } from "./middleware/Ratelimit.middleware.js";
+import { globalLimiter } from "./middleware/rateLimit.middleware.js";
 
 // ============================================================================
 // ROUTES
