@@ -23,9 +23,22 @@ const financeApi = {
     );
   },
 
-  accounts(workspaceId) {
+  // My Wallet — the caller's own contributions + savings + loan +
+  // pending payout + pending withdrawal, rolled into one response.
+  wallet(workspaceId) {
     return api.get(
-      `/workspaces/${workspaceId}/finance/accounts`
+      `/workspaces/${workspaceId}/finance/wallet`
+    );
+  },
+  depositMemberWallet(workspaceId, payload) { return api.post(`/workspaces/${workspaceId}/finance/wallet/deposit`, payload); },
+  withdrawMemberWallet(workspaceId, payload) { return api.post(`/workspaces/${workspaceId}/finance/wallet/withdraw`, payload); },
+  setMemberWalletPin(workspaceId, pin) { return api.post(`/workspaces/${workspaceId}/finance/wallet/pin`, { pin }); },
+  changeMemberWalletPin(workspaceId, payload) { return api.patch(`/workspaces/${workspaceId}/finance/wallet/pin`, payload); },
+
+  accounts(workspaceId, params = {}) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/accounts`,
+      { params }
     );
   },
 
@@ -50,6 +63,24 @@ const financeApi = {
     );
   },
 
+  // The contributions register - the single source of truth behind the
+  // Contributions page (per-member/per-plan expected vs collected vs
+  // outstanding, plus the payment rows themselves).
+  contributions(workspaceId, params = {}) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/contributions`,
+      { params }
+    );
+  },
+
+  // The caller's own effective permissions for this workspace, so the UI
+  // gates on the same decision the API will make.
+  permissions(workspaceId) {
+    return api.get(
+      `/workspaces/${workspaceId}/finance/permissions`
+    );
+  },
+
   recentPayments(workspaceId) {
     return api.get(
       `/workspaces/${workspaceId}/finance/payments/recent`
@@ -61,6 +92,18 @@ const financeApi = {
       `/workspaces/${workspaceId}/finance/reports`,
       { params }
     );
+  },
+
+  businessFundSeparation(workspaceId) {
+    return api.get(`/workspaces/${workspaceId}/finance/business-funds/separation`);
+  },
+
+  applyBusinessFundSeparation(workspaceId) {
+    return api.post(`/workspaces/${workspaceId}/finance/business-funds/separation`);
+  },
+
+  businessFunds(workspaceId, params = {}) {
+    return api.get(`/workspaces/${workspaceId}/finance/business-funds`, { params });
   },
 
   createOperation(workspaceId, payload) {
@@ -118,14 +161,91 @@ const financeApi = {
     });
   },
 
-  contributionObligations(planId, workspaceId, ownerType) {
+  contributionObligations(planId, workspaceId, ownerType, participantId, status = "pending,partially_paid,overdue") {
     return api.get(`/contribution-plans/${planId}/obligations`, {
-      params: { owner_id: workspaceId, owner_type: ownerType, status: "pending,partially_paid,overdue" },
+      params: { owner_id: workspaceId, owner_type: ownerType, status: status || undefined, participant_id: participantId || undefined },
     });
   },
 
   initiateMpesaStkPush(payload) {
     return api.post("/mpesa/contributions/stk-push", payload);
+  },
+
+  // ========================================
+  // LEDGER ADJUSTMENTS
+  // ========================================
+
+  adjustments(workspaceId, params = {}) {
+    return api.get(`/workspaces/${workspaceId}/finance/adjustments`, { params });
+  },
+
+  adjustment(workspaceId, adjustmentId) {
+    return api.get(`/workspaces/${workspaceId}/finance/adjustments/${adjustmentId}`);
+  },
+
+  requestAdjustment(workspaceId, payload) {
+    return api.post(`/workspaces/${workspaceId}/finance/adjustments`, payload);
+  },
+
+  decideAdjustment(workspaceId, adjustmentId, payload) {
+    return api.post(`/workspaces/${workspaceId}/finance/adjustments/${adjustmentId}/decide`, payload);
+  },
+
+  cancelAdjustment(workspaceId, adjustmentId, payload = {}) {
+    return api.post(`/workspaces/${workspaceId}/finance/adjustments/${adjustmentId}/cancel`, payload);
+  },
+
+  // ========================================
+  // BANK RECONCILIATION
+  // ========================================
+
+  reconciliationSessions(workspaceId, params = {}) {
+    return api.get(`/workspaces/${workspaceId}/finance/reconciliation/sessions`, { params });
+  },
+
+  reconciliationSession(workspaceId, sessionId) {
+    return api.get(`/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}`);
+  },
+
+  createReconciliationSession(workspaceId, payload) {
+    return api.post(`/workspaces/${workspaceId}/finance/reconciliation/sessions`, payload);
+  },
+
+  addReconciliationLines(workspaceId, sessionId, lines) {
+    return api.post(`/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/lines`, { lines });
+  },
+
+  autoMatchReconciliation(workspaceId, sessionId) {
+    return api.post(`/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/auto-match`);
+  },
+
+  matchReconciliationLine(workspaceId, sessionId, lineId, ledgerEntryId) {
+    return api.post(
+      `/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/lines/${lineId}/match`,
+      { ledgerEntryId }
+    );
+  },
+
+  unmatchReconciliationLine(workspaceId, sessionId, lineId) {
+    return api.post(`/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/lines/${lineId}/unmatch`);
+  },
+
+  ignoreReconciliationLine(workspaceId, sessionId, lineId, reason) {
+    return api.post(
+      `/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/lines/${lineId}/ignore`,
+      { reason }
+    );
+  },
+
+  raiseAdjustmentForLine(workspaceId, sessionId, lineId, payload) {
+    return api.post(
+      `/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/lines/${lineId}/raise-adjustment`,
+      payload
+    );
+  },
+
+  completeReconciliationSession(workspaceId, sessionId, force = false) {
+    return api.post(`/workspaces/${workspaceId}/finance/reconciliation/sessions/${sessionId}/complete`, { force });
   },
 };
 

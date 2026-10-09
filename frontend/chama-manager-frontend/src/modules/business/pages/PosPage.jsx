@@ -4,6 +4,7 @@ import { useBusinessPos } from "../hooks/useBusiness";
 import PageHeader from "../../../shared/components/ui/PageHeader";
 import Spinner from "../../../shared/components/ui/Spinner";
 import Button from "../../../shared/components/ui/Button";
+import PosReceiptModal from "../components/PosReceiptModal";
 
 const PAYMENT_CHANNELS = [
   { key: "cash", label: "Cash" },
@@ -22,6 +23,7 @@ export default function PosPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState(null);
+  const [showReceipt, setShowReceipt] = useState(false);
 
   const inventoryList = Array.isArray(items) ? items : [];
 
@@ -56,7 +58,7 @@ export default function PosPage() {
   const addToCart = (item) => {
     const itemId = item._id || item.id;
     const currentQty = cart[itemId] || 0;
-    if (currentQty >= (item.quantity || 0)) return; // can't exceed live stock
+    if (item.track_stock !== false && currentQty >= (item.quantity || 0)) return;
     setCart((prev) => ({ ...prev, [itemId]: currentQty + 1 }));
   };
 
@@ -91,6 +93,7 @@ export default function PosPage() {
         customer_phone: customerPhone.trim() || undefined,
       });
       setReceipt(result);
+      setShowReceipt(Boolean(result?.receipt));
       setCart({});
       setCustomerPhone("");
     } catch (err) {
@@ -152,13 +155,14 @@ export default function PosPage() {
               filteredItems.map((item) => {
                 const itemId = item._id || item.id;
                 const inCart = cart[itemId] || 0;
-                const outOfStock = (item.quantity || 0) <= 0;
-                const lowStock = !outOfStock && item.quantity <= 10;
+                const tracksStock = item.track_stock !== false;
+                const outOfStock = tracksStock && (item.quantity || 0) <= 0;
+                const lowStock = tracksStock && !outOfStock && item.quantity <= 10;
 
                 return (
                   <button
                     key={itemId}
-                    disabled={outOfStock || inCart >= item.quantity}
+                    disabled={outOfStock || (tracksStock && inCart >= item.quantity)}
                     onClick={() => addToCart(item)}
                     className={`relative rounded-2xl border p-4 text-left transition-all ${
                       outOfStock
@@ -175,7 +179,7 @@ export default function PosPage() {
                           : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                       }`}
                     >
-                      {outOfStock ? "Out of stock" : `${item.quantity} in stock`}
+                      {outOfStock ? "Out of stock" : tracksStock ? `${item.quantity} in stock` : "Available"}
                     </span>
                     <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-xl">
                       {item.icon || "📦"}
@@ -230,7 +234,7 @@ export default function PosPage() {
                       <span className="w-4 text-center text-xs font-bold">{line.qty}</span>
                       <button
                         onClick={() => changeQty(itemId, 1)}
-                        disabled={line.qty >= line.item.quantity}
+                        disabled={line.item.track_stock !== false && line.qty >= line.item.quantity}
                         className="text-sm font-bold text-primary disabled:opacity-30"
                       >
                         +
@@ -282,8 +286,9 @@ export default function PosPage() {
             {error && <p className="text-xs font-medium text-red-600">{error}</p>}
 
             {receipt && (
-              <div className="rounded-lg bg-emerald-50 p-3 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                Sale completed — receipt {receipt.receipt_number}. Stock updated.
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 p-3 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                <span>Sale completed — receipt {receipt.receipt_number}. Stock updated.</span>
+                {receipt.receipt && <button type="button" onClick={() => setShowReceipt(true)} className="shrink-0 underline">View receipt</button>}
               </div>
             )}
 
@@ -297,6 +302,7 @@ export default function PosPage() {
           </div>
         </div>
       </div>
+      {showReceipt && receipt?.receipt && <PosReceiptModal receipt={receipt.receipt} onClose={() => setShowReceipt(false)} />}
     </div>
   );
 }

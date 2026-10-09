@@ -8,6 +8,7 @@ import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 
 import ChamaMembership from '../../models/ChamaMembership.js';
 import { allGuaranteesAccepted } from './Loanguarantor.service.js';
+import { creditMemberWallet } from '../finance/memberWallet.service.js';
 
 /**
  * Kicks off disbursement. The loan is NOT marked `disbursed` here — only
@@ -57,6 +58,9 @@ export async function initiateDisbursement({ chama, loanId, userId }) {
   await loan.save();
 
   if (loan.disbursement_method !== 'mpesa') {
+    if (loan.disbursement_method === 'wallet') {
+      return markDisbursed({ loan, userId, chama });
+    }
     // Manual channels (bank/cash) are confirmed explicitly by the treasurer
     // via confirmManualDisbursement — no automatic provider round trip.
     return loan;
@@ -116,6 +120,7 @@ export async function confirmManualDisbursement({ chama, loanId, userId, disburs
   if (!loan) throw new AppError('Loan is not awaiting disbursement confirmation', 400);
 
   loan.disbursement.provider = disbursementMethod || loan.disbursement_method;
+  loan.disbursement_method = disbursementMethod || loan.disbursement_method;
   loan.disbursement.provider_reference = externalReference || loan.disbursement.provider_reference;
   return markDisbursed({ loan, userId, chama });
 }
@@ -130,6 +135,10 @@ async function markDisbursed({ loan, userId, chama, chamaLookup }) {
   loan.balances.interest_outstanding = loan.interest_amount;
 
   await loanAccounting.postDisbursement({ chama: resolvedChama, loan, userId });
+  if (loan.disbursement_method === 'wallet') {
+    const membership = await ChamaMembership.findById(loan.membership_id).select('user_id');
+    await creditMemberWallet({ userId: membership?.user_id, amount: loan.amount, sourceType: 'ChamaLoan', sourceId: loan._id, createdBy: userId, externalReference: loan.reference });
+  }
   await loan.save();
 
   await createAuditLog({

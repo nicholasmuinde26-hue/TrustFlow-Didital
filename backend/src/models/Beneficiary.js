@@ -307,7 +307,7 @@ beneficiarySchema.index({
 // PRE-SAVE HOOKS
 // ======================================================
 
-beneficiarySchema.pre('save', function(next) {
+beneficiarySchema.pre('save', function() {
   // Calculate age from date of birth
   if (this.date_of_birth) {
     const today = new Date();
@@ -324,8 +324,6 @@ beneficiarySchema.pre('save', function(next) {
 
   // Build full name
   this.full_name = `${this.first_name} ${this.other_names ? this.other_names + ' ' : ''}${this.last_name}`.trim();
-
-  next();
 });
 
 // ======================================================

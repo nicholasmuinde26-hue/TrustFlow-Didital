@@ -327,7 +327,7 @@ const contributionGroupSchema =
 
   );
 
-contributionGroupSchema.pre('save', function (next) {
+contributionGroupSchema.pre('save', function () {
   if (!this.join_code) {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let code = 'CG-';
@@ -336,7 +336,6 @@ contributionGroupSchema.pre('save', function (next) {
     }
     this.join_code = code;
   }
-  next();
 });
 
 

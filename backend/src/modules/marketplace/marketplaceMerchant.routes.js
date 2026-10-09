@@ -2,6 +2,8 @@ import express from "express";
 import {
   getEnrollmentStatus,
   enrollInHub,
+  getProfile,
+  updateProfile,
   getMerchantListings,
   submitListing,
   updateListing,
@@ -22,6 +24,10 @@ router.use(protect);
 // Category Enrollments
 router.get("/status", getEnrollmentStatus);
 router.post("/enroll", enrollInHub);
+
+// Seller-controlled store name, look & feel, and pause switch
+router.get("/profile", getProfile);
+router.put("/profile", updateProfile);
 
 // Listings Management & Submission
 router.get("/listings", getMerchantListings);

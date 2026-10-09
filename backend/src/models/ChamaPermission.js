@@ -171,7 +171,7 @@ chamaPermissionSchema.index({ permission_key: 1, status: 1 });
 // VALIDATION
 // ========================================
 
-chamaPermissionSchema.pre('save', function(next) {
+chamaPermissionSchema.pre('save', function () {
   // Ensure scope is valid for the permission key
   if (this.scope === 'none' && this.status === 'active') {
     this.status = 'inactive';
@@ -179,10 +179,9 @@ chamaPermissionSchema.pre('save', function(next) {
 
   // If permission requires approval, ensure approval roles are specified
   if (this.requires_approval && this.approval_roles.length === 0) {
-    return next(new Error('Permissions requiring approval must specify approval roles'));
+    throw new Error('Permissions requiring approval must specify approval roles');
   }
 
-  next();
 });
 
 // ========================================

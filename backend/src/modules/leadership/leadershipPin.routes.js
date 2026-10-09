@@ -1,9 +1,9 @@
 import express from 'express';
+import AppError from '../../utils/AppError.js';
 
 import { protect } from '../../middleware/auth.middleware.js';
 import {
-  requireChamaMember,
-  requireChamaTreasurerOrChairperson
+  requireChamaMember
 } from '../../middleware/chama.middleware.js';
 
 import {
@@ -25,14 +25,25 @@ import {
 //
 // Note what these routes do NOT require: a leadership session token.
 // They are how you GET one. The role gate
-// (requireChamaTreasurerOrChairperson) is what stops a plain member
+// (requireTopOfficial) is what stops a plain member
 // from setting a PIN on a seat they don't hold.
 //
 // ========================================
 
 const router = express.Router();
 
-const guard = [protect, requireChamaMember, requireChamaTreasurerOrChairperson];
+// The three top officials hold a desk PIN. (requireChamaLeadershipOfficial is
+// wider - auditors and committee members - so it is not used here.)
+const TOP_OFFICIAL_ROLES = ['chairperson', 'treasurer', 'secretary'];
+const requireTopOfficial = (req, _res, next) => {
+  const isSystemAdmin = ['super_admin', 'sub_admin'].includes(req.user?.systemRole);
+  if (!TOP_OFFICIAL_ROLES.includes(req.membership?.role) && !isSystemAdmin) {
+    return next(new AppError('Only the chairperson, treasurer or secretary can use the Leadership Desk', 403));
+  }
+  return next();
+};
+
+const guard = [protect, requireChamaMember, requireTopOfficial];
 
 // Which PIN screen should the client show?
 router.get('/:chamaId/leadership/pin/status', ...guard, getPinStatusController);

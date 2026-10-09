@@ -31,6 +31,8 @@ export const searchListings = async (req, res, next) => {
     const result = await marketplaceService.searchPublicListings({
       categorySlug: req.query.category,
       subcategory: req.query.subcategory,
+      brand: req.query.brand,
+      rating: req.query.rating,
       search: req.query.search,
       minPrice: req.query.minPrice,
       maxPrice: req.query.maxPrice,
@@ -45,6 +47,16 @@ export const searchListings = async (req, res, next) => {
       limit: req.query.limit,
     });
     res.json({ success: true, ...result });
+  } catch (err) {
+    sendError(err, res, next);
+  }
+};
+
+// GET /api/v1/marketplace/retail/sellers
+export const getRetailStores = async (req, res, next) => {
+  try {
+    const stores = await marketplaceService.getRetailStores();
+    res.json({ success: true, data: stores });
   } catch (err) {
     sendError(err, res, next);
   }

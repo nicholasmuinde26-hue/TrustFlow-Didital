@@ -75,6 +75,7 @@ export const STEP_UP_ACTIONS = Object.freeze({
   DISBURSE_FUNDS: "disburse_funds",
   CHANGE_MEMBER_ROLE: "change_member_role",
   UPDATE_PAYMENT_DETAILS: "update_payment_details",
+  REGISTER_CHAMA_ASSET: "register_chama_asset",
 });
 
 // Plain-language labels for the confirmation modal. A PIN prompt that
@@ -106,5 +107,10 @@ export const STEP_UP_LABELS = Object.freeze({
     title: "Change the group's payment details",
     detail:
       "The M-Pesa shortcode and bank account are where the group's money is collected and sent.",
+  },
+  [STEP_UP_ACTIONS.REGISTER_CHAMA_ASSET]: {
+    title: "Request a Chama business workspace",
+    detail:
+      "This sends a Chama-owned business request to Platform Administration for review and workspace setup.",
   },
 });

@@ -117,6 +117,36 @@ const chamaSchema = new mongoose.Schema(
 
 
     // ========================================
+    // WORKSPACE CONFIG
+    // ========================================
+    //
+    // Which feature modules this chama's workspace contains (loans, MGR,
+    // assets, polls ...). See constants/workspaceModules.constants.js for the
+    // catalog and presets.
+    //
+    //   preset  -> which template it started from (informational)
+    //   modules -> { loans: { enabled: false }, mgr: { enabled: true }, ... }
+    //
+    // A chama WITHOUT this field (created before configurable workspaces)
+    // is resolved from its chama_type by getEnabledModules(), so nothing
+    // changes for it until scripts/backfillWorkspaceConfig.js is run - and
+    // nothing changes even after, because the backfill writes the exact
+    // legacy module set.
+    //
+    // Switching a module off hides and blocks it; it never deletes data.
+    //
+    // ========================================
+
+    workspace_config: {
+      preset: { type: String, default: 'standard' },
+      modules: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      version: { type: Number, default: 1 },
+      configured_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      configured_at: { type: Date, default: null }
+    },
+
+
+    // ========================================
     // JOIN CODE
     // ========================================
     //

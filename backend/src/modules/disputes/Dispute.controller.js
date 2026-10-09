@@ -1,6 +1,15 @@
 import { raiseDispute, listDisputes, updateDisputeStatus } from '../../services/Dispute.service.js';
 
-const AUDIT_ACCESS_ROLES = ['treasurer', 'chairperson', 'auditor'];
+// Who sees every dispute in the chama, not just their own. This must be a
+// superset of Dispute.routes.js's requireSecretaryOrManager (chairperson/
+// treasurer/secretary) plus 'auditor' for read-only oversight — otherwise
+// someone who is allowed to investigate/resolve/dismiss disputes (the
+// PATCH route) would be scoped down to only their own raised disputes on
+// the list route and never see the ones they're supposed to be managing.
+// 'secretary' was missing here even though requireSecretaryOrManager
+// grants it PATCH access, which meant a secretary asked to review a
+// dispute couldn't actually find it in their own list.
+const AUDIT_ACCESS_ROLES = ['chairperson', 'treasurer', 'secretary', 'auditor'];
 
 // ========================================
 // RAISE A DISPUTE

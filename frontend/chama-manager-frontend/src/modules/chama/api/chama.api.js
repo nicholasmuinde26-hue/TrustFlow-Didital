@@ -48,6 +48,20 @@ const chamaApi = {
     return api.post(`/chamas/${chamaId}/payment-intents/${paymentIntentId}/reconcile`);
   },
   getCommandCenter(chamaId) { return api.get(`/chamas/${chamaId}/command-center`); },
+  getPublicProfile(chamaId) { return api.get(`/chamas/${chamaId}/public-profile`); },
+  // A person's card (member or official), shown when someone taps their profile.
+  getPersonProfile(chamaId, membershipId) { return api.get(`/chamas/${chamaId}/public-profile/people/${membershipId}`); },
+  personImageUrl(chamaId, membershipId) { return `${api.defaults.baseURL}/chamas/${chamaId}/public-profile/people/${membershipId}/image`; },
+  getMyPublicProfile(chamaId) { return api.get(`/chamas/${chamaId}/my-public-profile`); },
+  saveMyPublicProfile(chamaId, payload) { return api.put(`/chamas/${chamaId}/my-public-profile`, payload); },
+  // The Chama's own public details + logo/cover (no payment PIN needed).
+  getPublicSettings(chamaId) { return api.get(`/chamas/${chamaId}/public-settings`); },
+  savePublicProfile(chamaId, payload) { return api.put(`/chamas/${chamaId}/public-profile`, payload); },
+  // Reviewers load one person's ID photo + selfie on demand.
+  getKycDocuments(chamaId, membershipId) { return api.get(`/chamas/${chamaId}/kyc/${membershipId}/documents`); },
+  // Chama (organisation) KYC.
+  getOrgKyc(chamaId) { return api.get(`/chamas/${chamaId}/org-kyc`); },
+  submitOrgKyc(chamaId, payload) { return api.post(`/chamas/${chamaId}/org-kyc`, payload); },
   getProfile(chamaId) { return api.get(`/chamas/${chamaId}/profile`); },
   saveProfile(chamaId, payload) { return api.put(`/chamas/${chamaId}/profile`, payload); },
   addGoal(chamaId, payload) { return api.post(`/chamas/${chamaId}/goals`, payload); },
@@ -58,8 +72,8 @@ const chamaApi = {
   // Leadership-side counterpart to submitKyc: an official approving or
   // rejecting another member's submitted ID. Gated by the leadership
   // session on the backend (chamaOperations.routes.js).
-  verifyKyc(chamaId, membershipId, status) {
-    return api.put(`/chamas/${chamaId}/kyc/${membershipId}`, { status });
+  verifyKyc(chamaId, membershipId, status, reason) {
+    return api.put(`/chamas/${chamaId}/kyc/${membershipId}`, { status, reason });
   },
   applyLoan(chamaId, payload) { return api.post(`/chamas/${chamaId}/loans`, payload); },
   approveLoan(chamaId, loanId) { return api.post(`/chamas/${chamaId}/loans/${loanId}/approve`); },

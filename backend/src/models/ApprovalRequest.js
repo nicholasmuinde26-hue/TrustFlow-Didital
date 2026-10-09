@@ -23,7 +23,7 @@ const approvalRequestSchema = new mongoose.Schema(
 
     resource_type: {
       type: String,
-      enum: ['MGR_PAYOUT', 'LOAN_DISBURSEMENT', 'WITHDRAWAL', 'EXPENSE', 'INVESTMENT', 'POLICY_CHANGE', 'CHAMA_CONTRIBUTION_PAYOUT'],
+      enum: ['MGR_PAYOUT', 'LOAN_DISBURSEMENT', 'WITHDRAWAL', 'EXPENSE', 'INVESTMENT', 'POLICY_CHANGE', 'CHAMA_CONTRIBUTION_PAYOUT', 'LEDGER_ADJUSTMENT', 'ASSET_DISCREPANCY', 'YEAR_END_CLOSE', 'WORKSPACE_MODULES'],
       required: true,
       index: true,
     },
@@ -333,7 +333,7 @@ approvalRequestSchema.index({ 'committee_context.committee_approvals.committee_i
 // VALIDATION HOOKS
 // ========================================
 
-approvalRequestSchema.pre('save', function(next) {
+approvalRequestSchema.pre('save', function() {
   // Check expiration
   if (this.expires_at && this.expires_at < new Date() && this.status === 'pending') {
     this.status = 'cancelled';
@@ -342,15 +342,13 @@ approvalRequestSchema.pre('save', function(next) {
 
   // Validate committee approval requirements
   if (this.committee_context.required_committee && !this.committee_context.committee_approvals.length) {
-    return next(new Error('Committee approval requires committee_approvals configuration'));
+    throw new Error('Committee approval requires committee_approvals configuration');
   }
 
   // Ensure workflow stages are properly ordered
   if (this.workflow_stages.length > 0) {
     this.workflow_stages.sort((a, b) => a.stage_order - b.stage_order);
   }
-
-  next();
 });
 
 // ========================================

@@ -58,18 +58,51 @@ const router = express.Router();
  */
 const getObligationOwnerMembershipId = async (req) => {
     const obligationId = req.params.obligationId || req.body?.obligationId;
-    if (!obligationId) return null;
+    if (obligationId) {
+        const obligation = await ContributionObligation
+            .findById(obligationId)
+            .select('participant_id')
+            .lean();
 
-    const obligation = await ContributionObligation
-        .findById(obligationId)
-        .select('participant_id')
-        .lean();
+        return obligation ? String(obligation.participant_id) : null;
+    }
 
-    return obligation ? String(obligation.participant_id) : null;
+    // planId / period_key payments: the member being paid for is the caller
+    // unless they name someone else (body.membershipId) - in which case a plain
+    // member's 'own' scope fails, exactly as it does for someone else's obligation.
+    if (req.body?.planId) {
+        return String(req.body.membershipId || req.membership?._id || '') || null;
+    }
+
+    return null;
 };
 
 
 
+
+/**
+ * ============================================================================
+ * PREVIEW A PAYMENT (read-only)
+ * ============================================================================
+ *
+ * POST /api/v1/contributions/preview
+ *
+ * { chamaId, planId, period_key?, amount, membershipId? }
+ *
+ * Shows which months the money would clear and what would go forward as an
+ * advance, without starting a payment.
+ */
+
+router.post(
+    "/preview",
+    protect,
+    requireChamaMember,
+    requirePermission('contributions.record', {
+        getResourceOwnerId: getObligationOwnerMembershipId,
+        checkSelfAction: false,
+    }),
+    contributionPaymentController.previewPayment
+);
 
 
 /**
@@ -83,13 +116,18 @@ const getObligationOwnerMembershipId = async (req) => {
  *
  * Requires authentication.
  *
- * Example:
+ * One contribution product, two ways to use it:
  *
- * {
- *    obligationId:"123",
- *    amount:500,
- *    paymentMethod:"MPESA"
- * }
+ * Specific month:
+ * { chamaId, planId, period_key:"2026-09", amount:500, paymentMethod:"MPESA", phoneNumber }
+ *
+ * Lump sum (cleared oldest-first, excess carried forward as an advance):
+ * { chamaId, planId, amount:3000, paymentMethod:"MPESA", phoneNumber }
+ *
+ * Legacy / one exact obligation:
+ * { obligationId:"123", amount:500, paymentMethod:"MPESA" }
+ *
+ * Leadership may add membershipId to pay for another member.
  *
  */
 

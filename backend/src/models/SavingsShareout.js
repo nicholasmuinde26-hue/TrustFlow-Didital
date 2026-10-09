@@ -83,7 +83,7 @@ const shareoutItemSchema = new mongoose.Schema(
 
     disbursement_method: {
       type: String,
-      enum: ['cash', 'bank', 'mpesa'],
+      enum: ['cash', 'bank', 'mpesa', 'wallet'],
       default: null,
     },
 

@@ -1,23 +1,19 @@
 import authApi from "../api/auth.api";
 
-// Helper to store tokens across both key conventions
+// Helper to store tokens
 const setAuthTokens = (accessToken, refreshToken) => {
   if (accessToken) {
     localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("access_token", accessToken);
   }
   if (refreshToken) {
     localStorage.setItem("refreshToken", refreshToken);
-    localStorage.setItem("refresh_token", refreshToken);
   }
 };
 
 // Helper to clear stored tokens
 const clearAuthTokens = () => {
   localStorage.removeItem("accessToken");
-  localStorage.removeItem("access_token");
   localStorage.removeItem("refreshToken");
-  localStorage.removeItem("refresh_token");
 };
 
 const authService = {

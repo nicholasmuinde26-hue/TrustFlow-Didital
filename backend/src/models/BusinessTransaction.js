@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const businessTransactionSchema = new mongoose.Schema({
   business_id: { type: mongoose.Schema.Types.ObjectId, ref: "Business", required: true, index: true },
+  rental_listing_id: { type: mongoose.Schema.Types.ObjectId, ref: "RentalListing", default: null, index: true },
   type: { type: String, enum: ["sale", "expense", "customer_payout"], required: true },
   direction: { type: String, enum: ["cash_in", "cash_out"], required: true },
   amount: { type: mongoose.Schema.Types.Decimal128, required: true, min: 0 },
@@ -26,6 +27,21 @@ const businessTransactionSchema = new mongoose.Schema({
   customer_name: { type: String, default: null, trim: true },
   customer_phone: { type: String, default: null, trim: true },
   external_reference: { type: String, default: null, trim: true, index: true },
+  // Snapshot of what was sold at the till, so a receipt can be reprinted later
+  // exactly as issued even if item names or prices change afterwards.
+  receipt: {
+    items: [{
+      _id: false,
+      item_id: { type: mongoose.Schema.Types.ObjectId, default: null },
+      name: { type: String, default: "" },
+      qty: { type: Number, default: 1 },
+      price: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
+    }],
+    subtotal: { type: Number, default: 0 },
+    discount: { type: Number, default: 0 },
+    mpesa_prompt_sent: { type: Boolean, default: false },
+  },
   checkout_request_id: { type: String, sparse: true, unique: true },
   mpesa_receipt_number: { type: String, sparse: true, unique: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },

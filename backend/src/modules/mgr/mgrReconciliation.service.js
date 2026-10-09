@@ -22,7 +22,10 @@ class MgrReconciliationService {
     let obligationsPaid = 0;
     if (round.contribution_plan_id) {
       const obligations = await ContributionObligation.find({
-        contribution_plan_id: round.contribution_plan_id,
+        $or: [
+          { mgr_round_id: round._id },
+          { plan_id: round.contribution_plan_id, mgr_round_id: null },
+        ],
       });
 
       const totalPaid = obligations.reduce((acc, ob) => acc + Number(ob.amount_paid || 0), 0);

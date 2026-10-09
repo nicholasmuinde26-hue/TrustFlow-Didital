@@ -8,6 +8,7 @@ import {
   canDeleteAnnouncement,
   canApproveAnnouncement,
   announcementNeedsApproval,
+  canSubmitAnnouncements,
 } from "@/modules/workspaces/permissions/Permissions";
 
 import {
@@ -35,6 +36,7 @@ export default function AnnouncementsPage() {
   const type = workspace?.type || "chama";
 
   const manage = canManageAnnouncements(workspace?.role, type);
+  const canSubmit = canSubmitAnnouncements(workspace?.role, type);
   const canPin = canPinAnnouncement(workspace?.role, type);
   const canDelete = canDeleteAnnouncement(workspace?.role, type);
   const canApprove = canApproveAnnouncement(workspace?.role, type);
@@ -63,19 +65,20 @@ export default function AnnouncementsPage() {
       </h1>
 
       <p className="mt-2 text-slate-500 dark:text-mist-muted">
-        {manage
+        {canSubmit
           ? needsApproval
-            ? `Post updates for everyone in this workspace. Your posts need approval from ${approverLabel} before members see them.`
+            ? `Submit updates for everyone in this workspace. ${manage ? "Your posts" : "Submissions"} need approval from ${approverLabel} before members see them.`
             : "Post updates for everyone in this workspace. Members can read but not remove them."
           : "Updates from your organizer."}
       </p>
 
       <div className="mt-6 space-y-6">
-        {manage && (
+        {canSubmit && (
           <AnnouncementComposer
             submitting={createAnnouncement.isPending}
             type={type}
             needsApproval={needsApproval}
+            canPin={canPin}
             approverLabel={approverLabel}
             onSubmit={(payload) => createAnnouncement.mutateAsync(payload)}
           />

@@ -60,9 +60,9 @@ const announcementSchema = new mongoose.Schema(
     // APPROVAL WORKFLOW (Chama)
     // ========================================
     // Chairperson/Secretary posts go live immediately ("approved").
-    // Other management roles (e.g. Treasurer) create a "pending"
-    // announcement that only becomes visible workspace-wide once a
-    // Chairperson or Secretary approves it. Not used for
+    // Other Chama members create a "pending" announcement that only
+    // becomes visible workspace-wide once a Chairperson or Secretary
+    // approves it. Not used for
     // contribution-group / business workspaces, which stay "approved".
     // ========================================
     status: {

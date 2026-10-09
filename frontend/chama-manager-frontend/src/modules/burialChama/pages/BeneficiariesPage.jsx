@@ -45,7 +45,7 @@ export default function BeneficiariesPage() {
   const { data: beneficiaries, isLoading } = useQuery({
     queryKey: ['beneficiaries', workspaceId],
     queryFn: async () => {
-      const response = await api.get(`/api/v1/burial-chama/chama/${workspaceId}/beneficiaries`);
+      const response = await api.get(`/burial-chama/chama/${workspaceId}/beneficiaries`);
       return response.data.data;
     }
   });
@@ -54,7 +54,7 @@ export default function BeneficiariesPage() {
   const addBeneficiaryMutation = useMutation({
     mutationFn: async (data) => {
       const response = await api.post(
-        `/api/v1/burial-chama/membership/${workspaceId}/beneficiaries`,
+        `/burial-chama/membership/${workspaceId}/beneficiaries`,
         data
       );
       return response.data;
@@ -82,7 +82,7 @@ export default function BeneficiariesPage() {
   const updateBeneficiaryMutation = useMutation({
     mutationFn: async ({ id, data }) => {
       const response = await api.put(
-        `/api/v1/burial-chama/beneficiaries/${id}`,
+        `/burial-chama/beneficiaries/${id}`,
         data
       );
       return response.data;

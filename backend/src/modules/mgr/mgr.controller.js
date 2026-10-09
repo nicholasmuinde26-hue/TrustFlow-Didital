@@ -68,7 +68,33 @@ export async function disbursePayoutController(req, res, next) {
   try {
     const { roundId } = req.params;
     const userId = req.user._id || req.user.id;
-    const result = await mgrService.disbursePayout({ roundId, actorUserId: userId });
+    const result = await mgrService.disbursePayout({ roundId, actorUserId: userId, externalReference: req.body?.externalReference });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function confirmRoundPositionController(req, res) {
+  try {
+    const round = await mgrService.confirmRoundPosition({
+      roundId: req.params.roundId,
+      recipientId: req.body?.recipientId,
+      actorUserId: req.user._id || req.user.id,
+    });
+    return res.status(200).json({ success: true, data: round });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function markPayoutReceivedController(req, res) {
+  try {
+    const result = await mgrService.markPayoutReceived({
+      roundId: req.params.roundId,
+      recipientMembershipId: req.membership?._id,
+      actorUserId: req.user._id || req.user.id,
+    });
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });

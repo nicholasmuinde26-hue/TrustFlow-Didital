@@ -9,14 +9,15 @@ import {
 import { protect } from '../../middleware/auth.middleware.js';
 import { requireChamaMember, requireAuditAccess } from '../../middleware/chama.middleware.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
-router.get('/:chamaId/officials', protect, requireChamaMember, listRateableOfficialsController);
+router.get('/:chamaId/officials', protect, requireChamaMember, requireModule('officials'), listRateableOfficialsController);
 
 router.post(
   '/:chamaId/officials/:membershipId/ratings',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('officials'),
   submitOfficialRatingController
 );
 

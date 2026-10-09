@@ -14,6 +14,7 @@ import approvalService from "../approval/approval.service.js";
 import { accountCodeForContribution } from "../finance/accounting/rules/chamaContribution.rule.js";
 import { PAYMENT_PROVIDER } from "../../payment/payment.constants.js";
 import { toDecimal } from "../../shared/decimal.js";
+import { creditMemberWallet } from "../finance/memberWallet.service.js";
 
 // Chairperson, Treasurer, Secretary - same "officials" set used elsewhere
 // for chama-wide management actions (see officialRoles in
@@ -35,6 +36,13 @@ const generateUniqueReference = (displayRef) => {
   return `${displayRef}-${ts}-${rand}`.slice(0, 100);
 };
 
+// toObject() skips the model's toJSON transform, so Decimal128 fields would
+// reach the client as { "$numberDecimal": "500.00" } objects - which the
+// frontend cannot read as a number (Number(obj) is NaN, shown as "NaN" on the
+// Chama Contributions card). Stringify them here, same as the toJSON transform.
+const decimalToString = (value) =>
+  value === undefined || value === null ? value : value.toString();
+
 const withBalance = async (contribution) => {
   const doc = contribution.toObject ? contribution.toObject() : contribution;
   let balance = doc.collected_amount ? doc.collected_amount.toString() : "0";
@@ -51,7 +59,13 @@ const withBalance = async (contribution) => {
     }
   }
 
-  return { ...doc, balance };
+  return {
+    ...doc,
+    target_amount: decimalToString(doc.target_amount),
+    collected_amount: decimalToString(doc.collected_amount),
+    disbursed_amount: decimalToString(doc.disbursed_amount),
+    balance,
+  };
 };
 
 // ---------------------------------------------------------
@@ -94,16 +108,80 @@ export const createContribution = async ({ chamaId, membership, data }) => {
 // ---------------------------------------------------------
 // LIST / GET
 // ---------------------------------------------------------
-export const listContributions = async (chamaId, { status } = {}) => {
+export const listContributions = async (chamaId, { status, membership } = {}) => {
   const filter = { chama_id: chamaId };
   if (status) filter.status = status;
 
   const contributions = await ChamaContribution.find(filter)
     .sort({ createdAt: -1 })
     .populate("created_by", "user_id role")
-    .populate("beneficiary_membership_id", "user_id role");
+    .populate("beneficiary_membership_id", "user_id role")
+    .populate("approval_request_id", "status approvals required_approvals initiated_by eligible_roles");
 
-  return Promise.all(contributions.map(withBalance));
+  const ids = contributions.map((c) => String(c._id));
+
+  // One aggregate for every card on the page: how many members have chipped
+  // in, how many payments that is, and how much the current member has given.
+  const stats = ids.length
+    ? await ContributionPayment.aggregate([
+        {
+          $match: {
+            "metadata.chama_contribution_id": { $in: ids },
+            status: "completed",
+          },
+        },
+        {
+          $group: {
+            _id: "$metadata.chama_contribution_id",
+            payments: { $sum: 1 },
+            contributors: { $addToSet: "$participant_id" },
+            last_at: { $max: "$paid_at" },
+            mine: {
+              $sum: {
+                $cond: [
+                  { $eq: [{ $toString: "$participant_id" }, String(membership?._id || "")] },
+                  { $toDouble: "$amount" },
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ])
+    : [];
+  const statsById = new Map(stats.map((row) => [row._id, row]));
+
+  return Promise.all(
+    contributions.map(async (c) => {
+      const base = await withBalance(c);
+      const row = statsById.get(String(c._id));
+      const approval = base.approval_request_id && typeof base.approval_request_id === "object"
+        ? base.approval_request_id
+        : null;
+
+      return {
+        ...base,
+        contributors_count: row ? row.contributors.length : 0,
+        payments_count: row ? row.payments : 0,
+        last_contribution_at: row ? row.last_at : null,
+        my_contributed: row ? row.mine : 0,
+        payout_approval: approval
+          ? {
+              _id: approval._id,
+              status: approval.status,
+              required: approval.required_approvals,
+              approved: (approval.approvals || []).filter((a) => a.status === "approved").length,
+              signed_by: (approval.approvals || [])
+                .filter((a) => a.status === "approved")
+                .map((a) => String(a.approver_id)),
+              initiated_by: approval.initiated_by ? String(approval.initiated_by) : null,
+              eligible_roles: approval.eligible_roles || [],
+            }
+          : null,
+        approval_request_id: approval ? approval._id : base.approval_request_id,
+      };
+    })
+  );
 };
 
 export const getContribution = async (chamaId, contributionId) => {
@@ -117,10 +195,30 @@ export const getContribution = async (chamaId, contributionId) => {
     withBalance(contribution),
     ContributionPayment.find({ "metadata.chama_contribution_id": String(contributionId) })
       .sort({ createdAt: -1 })
-      .populate("participant_id", "user_id"),
+      .populate({ path: "participant_id", select: "user_id", populate: { path: "user_id", select: "name" } }),
   ]);
 
-  return { ...withBal, payments };
+  // Per-member totals from settled payments only, biggest giver first.
+  const totals = new Map();
+  for (const p of payments) {
+    if (p.status !== "completed") continue;
+    const key = String(p.participant_id?._id || p.participant_id);
+    const prev = totals.get(key) || {
+      membership_id: key,
+      name: p.participant_id?.user_id?.name || "Member",
+      total: 0,
+      count: 0,
+    };
+    prev.total += Number(p.amount?.toString?.() ?? p.amount) || 0;
+    prev.count += 1;
+    totals.set(key, prev);
+  }
+
+  return {
+    ...withBal,
+    payments,
+    contributors: [...totals.values()].sort((a, b) => b.total - a.total),
+  };
 };
 
 // ---------------------------------------------------------
@@ -343,6 +441,10 @@ export const proposePayout = async ({
 }) => {
   assertOfficial(actorMembership);
 
+  if (!["cash", "bank", "mpesa", "wallet"].includes(disbursementMethod)) {
+    throw new AppError("Disbursement method must be cash, bank, mpesa or wallet", 400);
+  }
+
   const contribution = await ChamaContribution.findOne({ _id: contributionId, chama_id: chamaId }).populate(
     "beneficiary_membership_id",
     "user_id"
@@ -354,6 +456,10 @@ export const proposePayout = async ({
 
   const amount = Number(toDecimal(contribution.collected_amount).toFixed(2));
   if (!(amount > 0)) throw new AppError("This contribution has not collected anything yet", 409);
+
+  if (disbursementMethod === "wallet" && !contribution.beneficiary_membership_id?.user_id) {
+    throw new AppError("Wallet payout needs a member beneficiary. Choose M-Pesa, bank or cash instead.", 400);
+  }
 
   const approvalRequest = await approvalService.createRequest({
     chamaId,
@@ -389,7 +495,10 @@ export const proposePayout = async ({
 export const disburse = async ({ chamaId, contributionId, actorMembership }) => {
   assertOfficial(actorMembership);
 
-  const contribution = await ChamaContribution.findOne({ _id: contributionId, chama_id: chamaId });
+  const contribution = await ChamaContribution.findOne({ _id: contributionId, chama_id: chamaId }).populate(
+    "beneficiary_membership_id",
+    "user_id"
+  );
   if (!contribution) throw new AppError("Contribution not found", 404);
   if (contribution.status !== "payout_pending") {
     throw new AppError(`Cannot disburse a contribution that is ${contribution.status}`, 409);
@@ -422,6 +531,17 @@ export const disburse = async ({ chamaId, contributionId, actorMembership }) => 
       disbursement_method: contribution.disbursement?.method || "cash",
     },
   });
+
+  if (contribution.disbursement?.method === "wallet") {
+    await creditMemberWallet({
+      userId: contribution.beneficiary_membership_id?.user_id,
+      amount,
+      sourceType: "ChamaContribution",
+      sourceId: contribution._id,
+      createdBy: actorMembership.user_id,
+      externalReference: contribution.title,
+    });
+  }
 
   contribution.status = "completed";
   contribution.disbursed_at = new Date();

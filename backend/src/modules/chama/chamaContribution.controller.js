@@ -26,6 +26,7 @@ export const listController = async (req, res, next) => {
   try {
     const contributions = await chamaContributionService.listContributions(req.params.id, {
       status: req.query.status || null,
+      membership: req.membership,
     });
     res.status(200).json({ success: true, data: { contributions } });
   } catch (error) {

@@ -43,13 +43,13 @@ export default function RentalInquiriesPage() {
     <div className="p-6 space-y-6">
       <PageHeader
         title="Tenant Inquiries"
-        subtitle="Leads submitted through your storefront's 'Inquire' form on a room or plot listing."
+        subtitle="Enquiries from tenants about your room and plot listings."
       />
 
       <div className="space-y-3">
         {list.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500">
-            No inquiries yet. When a tenant inquires about a listing on your storefront, it'll show up here.
+            No inquiries yet. When a tenant enquires about one of your listings, it'll show up here.
           </div>
         ) : (
           list.map((inquiry) => {

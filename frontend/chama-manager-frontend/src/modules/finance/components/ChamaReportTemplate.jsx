@@ -1,5 +1,6 @@
 import React from "react";
 import { UserCheck, Coins, CheckCircle2 } from "lucide-react";
+import ReportWarnings from "./ReportWarnings";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -11,6 +12,7 @@ export default function ChamaReportTemplate({
 }) {
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100 print:text-black font-sans">
+      <ReportWarnings warnings={data.warnings} />
       {/* Dynamic Report Content based on reportType */}
       {reportType === "TRIAL_BALANCE" && (
         <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6 print:border-none print:bg-white print:p-0">
@@ -141,69 +143,99 @@ export default function ChamaReportTemplate({
         </div>
       )}
 
-      {reportType === "BALANCE SHEET" && (
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6 print:border-none print:bg-white print:p-0">
-          <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white uppercase tracking-tight print:text-black">
-              BALANCE SHEET — TAARIFA YA FEDHA
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">What the Chama owns vs what is owed to members.</p>
+      {reportType === "BALANCE_SHEET" && (() => {
+        const cashBank = Number(data.cashBank || 0);
+        const loansReceivable = Number(data.loansReceivable || 0);
+        const otherAssets = Number(data.otherAssets || 0);
+        const totalAssets = Number(data.totalAssets ?? cashBank + loansReceivable + otherAssets);
+
+        const payoutsDue = Number(data.payoutsDue || 0);
+        const totalLiabilities = Number(data.totalLiabilities ?? payoutsDue);
+
+        const membersFunds = Number(data.membersFunds || 0);
+        const totalLiabilitiesAndEquity = totalLiabilities + membersFunds;
+        const isBalanced = Math.abs(totalAssets - totalLiabilitiesAndEquity) < 1;
+
+        const Line = ({ label, value, indent }) => (
+          <div className={`flex justify-between py-1 text-sm ${indent ? "pl-4" : ""}`}>
+            <span className="text-slate-700 dark:text-slate-300">{label}</span>
+            <span className="font-mono text-slate-900 dark:text-white">{money(value)}</span>
           </div>
+        );
 
-          <div className="grid md:grid-cols-3 gap-5">
-            {/* Mali / ASSETS */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50 space-y-3 print:border-black">
-              <h3 className="text-sm font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wider">Mali / ASSETS</h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Bank + M-Pesa Till</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.cashBank || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Madeni ya Mikopo (Loans)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.loansReceivable || 0)}</span>
-                </div>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-sky-700 dark:text-sky-400">
-                <span>JUMLA MALI</span>
-                <span className="font-mono">{money(data.totalAssets || 0)}</span>
-              </div>
+        const Subtotal = ({ label, value, color }) => (
+          <div
+            className={`flex justify-between border-t border-slate-300 dark:border-slate-700 mt-1 pt-2 text-sm font-bold ${color} print:text-black`}
+          >
+            <span>{label}</span>
+            <span className="font-mono">{money(value)}</span>
+          </div>
+        );
+
+        return (
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6 print:border-none print:bg-white print:p-0">
+            <div className="border-b border-slate-200 dark:border-slate-800 pb-4 text-center">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white uppercase tracking-tight print:text-black">
+                {workspaceName}
+              </h2>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mt-1">
+                Balance Sheet — Taarifa ya Fedha
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">As at {asAtDate}</p>
             </div>
 
-            {/* Madeni / LIABILITIES */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50 space-y-3 print:border-black">
-              <h3 className="text-sm font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Madeni / LIABILITIES</h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">MGR Inayokuja (Payouts Due)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.payoutsDue || 0)}</span>
-                </div>
+            <div className="max-w-xl mx-auto w-full space-y-8 print:max-w-none">
+              {/* MALI / ASSETS */}
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider border-b-2 border-slate-900 dark:border-white pb-1.5 mb-2 print:text-black print:border-black">
+                  Mali / Assets
+                </h3>
+                <Line label="Fedha Benki + M-Pesa (Cash at Bank & M-Pesa)" value={cashBank} indent />
+                <Line label="Madeni ya Mikopo (Loans Receivable)" value={loansReceivable} indent />
+                {otherAssets !== 0 && <Line label="Mali Nyingine (Other Assets)" value={otherAssets} indent />}
+                <Subtotal label="Jumla ya Mali / Total Assets" value={totalAssets} color="text-slate-900 dark:text-white" />
               </div>
-              <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-amber-700 dark:text-amber-400">
-                <span>JUMLA MADENI</span>
-                <span className="font-mono">{money(data.totalLiabilities || 0)}</span>
-              </div>
-            </div>
 
-            {/* Mtaji / MEMBERS FUNDS */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800/50 space-y-3 print:border-black">
-              <h3 className="text-sm font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-                Mtaji / MEMBERS FUNDS
-              </h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Mchango + Cumulative Surplus</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">{money(data.membersFunds || 0)}</span>
-                </div>
+              {/* MADENI / LIABILITIES */}
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider border-b-2 border-slate-900 dark:border-white pb-1.5 mb-2 print:text-black print:border-black">
+                  Madeni / Liabilities
+                </h3>
+                <Line label="MGR Inayokuja (Payouts Due to Members)" value={payoutsDue} indent />
+                <Subtotal label="Jumla ya Madeni / Total Liabilities" value={totalLiabilities} color="text-slate-900 dark:text-white" />
               </div>
-              <div className="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between font-bold text-sm text-emerald-700 dark:text-emerald-400">
-                <span>JUMLA MTAJI</span>
-                <span className="font-mono">{money(data.membersFunds || 0)}</span>
+
+              {/* MTAJI / MEMBERS FUNDS */}
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider border-b-2 border-slate-900 dark:border-white pb-1.5 mb-2 print:text-black print:border-black">
+                  Mtaji / Members Funds
+                </h3>
+                <Line label="Mchango + Akiba Iliyobaki (Contributions + Retained Surplus)" value={membersFunds} indent />
+                <Subtotal label="Jumla ya Mtaji / Total Members Funds" value={membersFunds} color="text-slate-900 dark:text-white" />
+              </div>
+
+              {/* GRAND TOTAL */}
+              <div className="border-t-2 border-slate-900 dark:border-white pt-3 flex justify-between text-base font-black text-slate-900 dark:text-white print:text-black print:border-black">
+                <span>Jumla ya Madeni na Mtaji / Total Liabilities &amp; Members Funds</span>
+                <span className="font-mono">{money(totalLiabilitiesAndEquity)}</span>
+              </div>
+
+              {/* Balance check */}
+              <div
+                className={`rounded-xl border px-4 py-2 text-xs font-semibold text-center ${
+                  isBalanced
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+                    : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                } print:border-black print:bg-white print:text-black`}
+              >
+                {isBalanced
+                  ? "✓ Mali = Madeni + Mtaji (Statement is balanced)"
+                  : `⚠ Out of balance by ${money(Math.abs(totalAssets - totalLiabilitiesAndEquity))}`}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {reportType === "CASH_FLOW" && (
         <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6 print:border-none print:bg-white print:p-0">

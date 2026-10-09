@@ -28,7 +28,7 @@ export default function MemberStatementPage() {
   const generateStatementMutation = useMutation({
     mutationFn: async (format) => {
       const response = await api.post(
-        `/api/v1/burial-chama/membership/${workspaceId}/statement`,
+        `/burial-chama/membership/${workspaceId}/statement`,
         {
           format,
           language: selectedLanguage

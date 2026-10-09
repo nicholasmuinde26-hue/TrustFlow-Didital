@@ -1,7 +1,10 @@
 import { Server } from "socket.io";
 import notificationService from "../../services/notification.service.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
+import ContributionGroupMember from "../../models/ContributionGroupMember.js";
+import Notification from "../../models/Notification.js";
 import User from "../../models/User.js";
+import { verifyAccessToken } from "../../utils/jwt.js";
 
 
 let io;
@@ -35,8 +38,11 @@ export function initSocket(server) {
                 return next(new Error('Authentication error: No token provided'));
             }
 
-            const jwt = (await import('jsonwebtoken')).default;
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+            // Same secret the login flow signs with (JWT_ACCESS_SECRET, falling
+            // back to JWT_SECRET). The old code verified with JWT_SECRET and a
+            // hard-coded 'your-secret-key' fallback, which rejects valid tokens
+            // whenever the two env vars differ.
+            const decoded = verifyAccessToken(token);
 
             const user = await User.findById(decoded.id);
             if (!user) {
@@ -72,6 +78,7 @@ export function initSocket(server) {
 
         // Join chama rooms for active memberships
         joinChamaRooms(socket);
+        joinContributionGroupRooms(socket);
 
 
         // Workspace events (existing functionality)
@@ -162,6 +169,7 @@ async function joinChamaRooms(socket) {
 
         for (const membership of memberships) {
             socket.join(`chama:${membership.chama_id}`);
+            socket.join(`chat-chama:${membership.chama_id}`);
             
             if (!userRooms.has(socket.userId)) {
                 userRooms.set(socket.userId, new Set());
@@ -173,6 +181,21 @@ async function joinChamaRooms(socket) {
 
     } catch (error) {
         console.error('Error joining chama rooms:', error);
+    }
+}
+
+async function joinContributionGroupRooms(socket) {
+    try {
+        const memberships = await ContributionGroupMember.find({
+            user_id: socket.userId,
+            status: 'active'
+        }).select('contribution_group_id').lean();
+
+        for (const membership of memberships) {
+            socket.join(`contribution-group:${membership.contribution_group_id}`);
+        }
+    } catch (error) {
+        console.error('Error joining contribution group rooms:', error);
     }
 }
 
@@ -199,6 +222,14 @@ function handleLeaveChama(socket, chamaId) {
 
 async function handleNotificationRead(socket, notificationId) {
     try {
+        // Only the recipient may mark their own notification read.
+        const owned = await Notification.exists({
+            _id: notificationId,
+            recipient_user_id: socket.userId
+        });
+        if (!owned) {
+            return socket.emit('error', { message: 'Notification not found' });
+        }
         await notificationService.markAsRead(notificationId);
         await sendUnreadCount(socket);
     } catch (error) {
@@ -242,15 +273,12 @@ function handleDisconnect(socket) {
 
 async function sendUnreadCount(socket) {
     try {
-        const membership = await ChamaMembership.findOne({
-            user_id: socket.userId,
-            status: 'active'
+        // Count across ALL of the user's memberships, matching the REST counts.
+        const unreadCount = await Notification.countDocuments({
+            recipient_user_id: socket.userId,
+            state: 'unread',
+            deleted_at: null
         });
-
-        if (!membership) return;
-
-        const counts = await notificationService.getNotificationCounts(membership._id);
-        const unreadCount = counts.find(c => c._id === 'unread')?.count || 0;
 
         socket.emit('notification:count', { unread: unreadCount });
 
@@ -281,12 +309,40 @@ export function sendToastToUser(userId, toast) {
     }
 }
 
+// Deliver chat events only to authenticated personal rooms. Chat clients then
+// refresh their own authorized conversation instead of joining arbitrary rooms.
+export function sendChatMessageToUser(userId, message) {
+    if (!io || !userId) return;
+    io.to(`user:${userId}`).emit('chat:new', message);
+}
+
+// Workspace rooms are joined from active membership records at connection time.
+// Broadcast the persisted message immediately; notification persistence runs separately.
+export function sendChatMessageToWorkspace(workspaceId, workspaceType, message) {
+    if (!io || !workspaceId || !message) return;
+    const room = workspaceType === 'chama'
+        ? `chat-chama:${workspaceId}`
+        : `contribution-group:${workspaceId}`;
+    const senderRoom = message.sender?.id ? `user:${message.sender.id}` : null;
+    const delivery = io.to(room);
+    if (senderRoom) delivery.except(senderRoom);
+    delivery.emit('chat:new', message);
+}
+
 export async function sendRealTimeNotification(notification) {
     try {
         sendNotificationToUser(notification.recipient_user_id.toString(), notification);
 
+        // Do NOT broadcast the notification itself to the whole chama room: it
+        // names a specific member and can contain loan or contribution details.
+        // Send a content-free ping so other members' screens can refresh if
+        // they want to, without seeing anyone else's private message.
         if (notification.category === 'financial' || notification.category === 'governance') {
-            sendNotificationToChama(notification.chama_id.toString(), notification);
+            io.to(`chama:${notification.chama_id.toString()}`).emit('chama:activity', {
+                category: notification.category,
+                notification_type: notification.notification_type,
+                at: Date.now()
+            });
         }
 
         const socketId = connectedUsers.get(notification.recipient_user_id.toString());

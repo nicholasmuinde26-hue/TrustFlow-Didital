@@ -85,6 +85,15 @@ export default function FinanceDashboard() {
           <BalanceCard title="Outstanding Loans" value={toNumber(summary?.outstanding_loans)} />
           <BalanceCard title="Pending Payouts" value={toNumber(summary?.pending_payouts)} />
         </div>
+        {toNumber(summary?.business_balance) !== 0 && (
+          <Link
+            to={`/workspace/${workspaceId}/assets/income`}
+            className="mt-4 flex items-center justify-between rounded-2xl border border-dashed px-5 py-3 text-sm hover:bg-slate-50"
+          >
+            <span className="font-semibold">Business &amp; property fund (separate from member money)</span>
+            <span className="font-mono font-bold">KES {toNumber(summary?.business_balance).toLocaleString()}</span>
+          </Link>
+        )}
       </section>
 
       <CashFlowCard

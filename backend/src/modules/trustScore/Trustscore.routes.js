@@ -14,16 +14,17 @@ import {
   requireChamaTreasurerOrChairperson,
 } from '../../middleware/chama.middleware.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 // Any active member can view the current score and its history — this
 // is the same "members see the same record officials do" principle as
 // the Trust Timeline.
-router.get('/:chamaId/trust-score', protect, requireChamaMember, getLatestTrustScoreController);
+router.get('/:chamaId/trust-score', protect, requireChamaMember, requireModule('trust'), getLatestTrustScoreController);
 router.get(
   '/:chamaId/trust-score/history',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('trust'),
   listTrustScoreHistoryController
 );
 
@@ -33,18 +34,21 @@ router.get(
 router.post(
   '/:chamaId/trust-score/generate',
   protect,
+  requireChamaMember, requireModule('trust'),
   requireChamaTreasurerOrChairperson,
   generateTrustScoreController
 );
 router.post(
   '/:chamaId/trust-score/:trustScoreId/share',
   protect,
+  requireChamaMember, requireModule('trust'),
   requireChamaTreasurerOrChairperson,
   createShareLinkController
 );
 router.post(
   '/:chamaId/trust-score/:trustScoreId/revoke',
   protect,
+  requireChamaMember, requireModule('trust'),
   requireChamaTreasurerOrChairperson,
   revokeShareLinkController
 );

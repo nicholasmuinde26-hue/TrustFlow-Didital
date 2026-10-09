@@ -10,17 +10,22 @@ import {
   requireChamaTreasurerOrChairperson
 } from '../../middleware/chama.middleware.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 // ======================================================
 // BURIAL CHAMA PROFILE ROUTES
 // ======================================================
 
-// Create / update burial chama profile
+// Create / update burial chama profile — same governance-authoring
+// authority as activate/complete below (treasurer or chairperson only).
+// A plain member can still GET the profile once it's set, just not
+// author it.
 router.post(
   '/chama/:chamaId/profile',
   protect,
-  requireChamaMember,
+  requireChamaTreasurerOrChairperson,
+  requireModule('burial_welfare'),
   BurialChamaController.createOrUpdateProfile
 );
 
@@ -28,7 +33,7 @@ router.post(
 router.get(
   '/chama/:chamaId/profile',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.getProfile
 );
 
@@ -38,6 +43,7 @@ router.post(
   '/chama/:chamaId/profile/activate',
   protect,
   requireChamaTreasurerOrChairperson,
+  requireModule('burial_welfare'),
   BurialChamaController.activateProfile
 );
 
@@ -49,7 +55,7 @@ router.post(
 router.post(
   '/membership/:membershipId/beneficiaries',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.addBeneficiary
 );
 
@@ -57,7 +63,7 @@ router.post(
 router.put(
   '/beneficiaries/:beneficiaryId',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.updateBeneficiary
 );
 
@@ -65,7 +71,7 @@ router.put(
 router.get(
   '/membership/:membershipId/beneficiaries',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.getMemberBeneficiaries
 );
 
@@ -77,7 +83,7 @@ router.get(
 router.post(
   '/chama/:chamaId/households',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.createHousehold
 );
 
@@ -85,7 +91,7 @@ router.post(
 router.post(
   '/households/:householdId/members/:membershipId',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.addMemberToHousehold
 );
 
@@ -97,7 +103,7 @@ router.post(
 router.post(
   '/cases',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.createBurialCase
 );
 
@@ -113,7 +119,7 @@ router.put(
 router.post(
   '/cases/:caseId/calculate-benefit',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.calculateCaseBenefit
 );
 
@@ -121,7 +127,7 @@ router.post(
 router.post(
   '/cases/:caseId/committee-vote',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.submitCommitteeVote
 );
 
@@ -133,7 +139,7 @@ router.post(
 router.post(
   '/penalty-waivers',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.requestPenaltyWaiver
 );
 
@@ -154,7 +160,7 @@ router.put(
 router.post(
   '/meetings',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.createMeetingRecord
 );
 
@@ -166,7 +172,7 @@ router.post(
 router.put(
   '/membership/:membershipId/communication-preferences',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.updateCommunicationPreferences
 );
 
@@ -178,7 +184,7 @@ router.put(
 router.get(
   '/chama/:chamaId/statistics',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.getChamaStatistics
 );
 
@@ -190,7 +196,7 @@ router.get(
 router.get(
   '/eligibility/:membershipId/:beneficiaryId/:burialChamaProfileId',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.checkEligibility
 );
 
@@ -198,7 +204,7 @@ router.get(
 router.post(
   '/contribution-obligation/:membershipId',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.calculateContributionObligation
 );
 
@@ -206,7 +212,7 @@ router.post(
 router.post(
   '/arrears/:membershipId',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.checkArrears
 );
 
@@ -218,7 +224,7 @@ router.post(
 router.post(
   '/membership/:membershipId/statement',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.generateMemberStatement
 );
 
@@ -226,7 +232,7 @@ router.post(
 router.get(
   '/membership/:membershipId/balance',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('burial_welfare'),
   BurialChamaController.getQuickBalance
 );
 
@@ -285,11 +291,13 @@ router.get(
   BurialChamaController.getPresetConfigurations
 );
 
-// Save wizard progress
+// Save wizard progress — same authoring authority as the profile
+// create/update route above; only the officials running the wizard
+// should be able to write to it.
 router.post(
   '/chama/:chamaId/wizard/progress/:stepNumber',
   protect,
-  requireChamaMember,
+  requireChamaTreasurerOrChairperson,
   BurialChamaController.saveWizardProgress
 );
 
@@ -297,7 +305,7 @@ router.post(
 router.get(
   '/chama/:chamaId/wizard/progress',
   protect,
-  requireChamaMember,
+  requireChamaTreasurerOrChairperson,
   BurialChamaController.loadWizardProgress
 );
 

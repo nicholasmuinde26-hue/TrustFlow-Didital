@@ -2,9 +2,13 @@ import User from '../../models/User.js';
 import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import C2bPayment from '../../models/C2bPayment.js';
+import ChamaAsset from '../../models/ChamaAsset.js';
 import AppError from '../../utils/AppError.js';
 import phoneUtil from '../../utils/phone.js';
+import env from '../../config/env.js';
 import { recordC2bContribution } from '../chama/chamaFinance.service.js';
+import { isAssetPaymentCode } from '../../utils/assetPaymentCode.js';
+import { recordVerifiedAssetIncomeFromC2b } from '../chamaAssets/chamaAsset.service.js';
 
 // ======================================================================
 // C2B RECONCILIATION SERVICE
@@ -94,6 +98,34 @@ export const processConfirmation = async (rawBody = {}) => {
     return;
   }
 
+  // ----------------------------------------------------------
+  // SHORTCODE CHECK
+  // ----------------------------------------------------------
+  //
+  // Transport-level checks (secret URL + IP allowlist) prove the
+  // request came from Safaricom. This proves it was addressed to US.
+  // Without it, a payment made to a different paybill - or a payload
+  // with the shortcode simply omitted - would be booked against this
+  // platform's ledger as though we had received the money.
+  //
+  // Fails closed: if MPESA_SHORTCODE isn't configured we refuse to
+  // book anything rather than accepting every shortcode.
+  const expectedShortCode = String(env.mpesa.shortCode || '').trim();
+  const payloadShortCode = String(rawBody.BusinessShortCode || '').trim();
+
+  if (!expectedShortCode) {
+    console.error('[c2b] MPESA_SHORTCODE not configured — refusing to book confirmation');
+    return;
+  }
+
+  if (payloadShortCode !== expectedShortCode) {
+    console.warn(
+      `[c2b] confirmation rejected: shortcode ${payloadShortCode || '(missing)'} ` +
+        `does not match this deployment's ${expectedShortCode} (receipt ${receiptNumber})`
+    );
+    return;
+  }
+
   let record;
   try {
     record = await C2bPayment.create({
@@ -119,7 +151,50 @@ export const processConfirmation = async (rawBody = {}) => {
     return;
   }
 
-  const match = await matchBillRefNumber(record.bill_ref_number);
+  const rawRef = String(record.bill_ref_number || "").trim();
+
+  // ----------------------------------------------------------
+  // ASSET PAYMENT CODE — a tenant/lessee paying a chama-owned asset
+  // directly (e.g. rent, a farmer's lease payment) types the asset's
+  // own payment_ref_code rather than a phone number. Checked BEFORE
+  // matchBillRefNumber below, since an asset code is never shaped like
+  // a phone number and should never fall through to member-contribution
+  // matching (or worse, be misread as one).
+  // ----------------------------------------------------------
+  if (isAssetPaymentCode(rawRef)) {
+    const asset = await ChamaAsset.findOne({ payment_ref_code: rawRef.toUpperCase(), status: "active" });
+    if (!asset) {
+      record.match_status = "unmatched";
+      record.match_note = `"${rawRef}" looks like an asset payment code but no active asset uses it.`;
+      await record.save();
+      return;
+    }
+    try {
+      const posting = await recordVerifiedAssetIncomeFromC2b(asset.chama_id, asset._id, {
+        amount: record.amount.toString(),
+        mpesaReceiptNumber: receiptNumber,
+        description: `Lease/rent payment received via M-Pesa — ${asset.name}`,
+      });
+      record.match_status = "matched";
+      record.matched_chama_id = asset.chama_id;
+      record.matched_asset_id = asset._id;
+      record.reconciled_at = new Date();
+      await record.save();
+      if (!posting.success) {
+        console.warn(`[c2b] asset income posting returned an unexpected result for ${receiptNumber}:`, posting);
+      }
+    } catch (err) {
+      // Money is safely recorded on this row either way — posting it to
+      // the asset's ledger failed, so leave it for manual reconciliation
+      // rather than losing track of it.
+      record.match_status = "unmatched";
+      record.match_note = `Matched asset ${asset.name} but posting failed: ${err.message}`;
+      await record.save();
+    }
+    return;
+  }
+
+  const match = await matchBillRefNumber(rawRef);
 
   if (!match.matched) {
     record.match_status = 'unmatched';

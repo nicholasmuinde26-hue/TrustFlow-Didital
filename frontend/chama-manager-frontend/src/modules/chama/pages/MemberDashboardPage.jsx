@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Wallet,
@@ -7,6 +7,9 @@ import {
   Layers,
   CreditCard,
   CalendarClock,
+  HandCoins,
+  ArrowLeftRight,
+  Receipt,
   ShieldCheck,
   QrCode,
   CheckCircle2,
@@ -14,10 +17,17 @@ import {
   AlertTriangle,
   TrendingUp,
   Clock,
+  ChevronDown,
+  ChevronUp,
+  PartyPopper,
+  Bell,
 } from "lucide-react";
 
 import chamaApi from "../api/chama.api";
 import loansApi from "@/modules/loans/api/loans.api";
+import useAuth from "@/app/hooks/useAuth";
+import KycSubmitModal from "../components/KycSubmitModal";
+import MyPublicProfileCard from "../components/MyPublicProfileCard";
 
 /* ============================================================================
  * CONFIGURATION
@@ -41,7 +51,7 @@ const MEMBER_DASHBOARD_CONFIG = {
   },
 
   kycStatuses: {
-    approved: "approved",
+    approved: "verified",
     pending: "pending",
     rejected: "rejected",
     notSubmitted: "not submitted",
@@ -127,7 +137,7 @@ export default function MemberDashboardPage() {
     if (!workspaceId) {
       setData(null);
       setLoanSummary(null);
-      setStatus("error");
+          setStatus("error");
       setErrorMessage(
         "No workspace was provided."
       );
@@ -171,7 +181,7 @@ export default function MemberDashboardPage() {
             {
               signal: controller.signal,
             }
-          ),
+          )
         ]);
 
         if (commandCenterResult.status === "rejected") {
@@ -254,9 +264,15 @@ export default function MemberDashboardPage() {
     // usePaymentWatcher dispatch on a successful payment.
     window.addEventListener("finance:updated", loadDashboard);
 
+    // Same idea for a freshly-submitted KYC record: KycSubmitModal
+    // dispatches this after a successful POST so the status badge below
+    // flips from "not submitted" to "pending" without a full remount.
+    window.addEventListener("chama:kyc-updated", loadDashboard);
+
     return () => {
       controller.abort();
       window.removeEventListener("finance:updated", loadDashboard);
+      window.removeEventListener("chama:kyc-updated", loadDashboard);
     };
   }, [workspaceId]);
 
@@ -289,6 +305,7 @@ export default function MemberDashboardPage() {
     <MemberDashboardView
       data={data}
       loanSummary={loanSummary}
+      workspaceId={workspaceId}
     />
   );
 }
@@ -297,7 +314,13 @@ export default function MemberDashboardPage() {
  * VIEW
  * ========================================================================== */
 
-function MemberDashboardView({ data, loanSummary }) {
+function MemberDashboardView({ data, loanSummary, workspaceId }) {
+  const { user } = useAuth();
+  const [showKycModal, setShowKycModal] = useState(false);
+  // Membership/KYC card starts collapsed on mobile (see render below) —
+  // desktop always shows it in full via the lg:grid override, so this
+  // only matters below the lg breakpoint.
+  const [showMemberCard, setShowMemberCard] = useState(false);
 
   /* ==========================================================================
    * SAFE DATA EXTRACTION
@@ -307,6 +330,9 @@ function MemberDashboardView({ data, loanSummary }) {
 
   const role = getRole(membership);
   const kycStatus = getKycStatus(data);
+  const canSubmitKyc =
+    kycStatus !== MEMBER_DASHBOARD_CONFIG.kycStatuses.approved &&
+    kycStatus !== MEMBER_DASHBOARD_CONFIG.kycStatuses.pending;
 
   const memberId = getMemberId(membership);
 
@@ -399,6 +425,7 @@ function MemberDashboardView({ data, loanSummary }) {
    * ======================================================================== */
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -410,44 +437,62 @@ function MemberDashboardView({ data, loanSummary }) {
        * the two chama pages feel like one product, not two.
        * ==================================================================== */}
 
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 p-6 sm:p-8 text-white shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 border border-white/30 px-3 py-1 text-xs font-semibold text-white">
+      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 p-5 sm:p-8 text-white shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
+          <div className="space-y-1 sm:space-y-2">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-white/20 border border-white/30 px-3 py-1 text-xs font-semibold text-white">
               <Wallet className="h-3.5 w-3.5" />
               MY CHAMA
             </span>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
+
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white hidden sm:block">
               Your Position at a Glance
             </h1>
-            <p className="max-w-xl text-sm text-emerald-100">
+
+            <div className="sm:hidden">
+              <p className="text-[10px] tracking-widest text-emerald-100 uppercase font-semibold mb-1">Total Balance</p>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white">{money(savingsBalance)}</h1>
+            </div>
+
+            <p className="max-w-xl text-sm text-emerald-100 hidden sm:block">
               Savings, shares, loan position, and your digital membership card — all in one place.
             </p>
           </div>
 
-          {/* Compact digital card preview, echoing Command Center's card */}
-          <div className="relative overflow-hidden rounded-2xl bg-black/20 border border-white/20 backdrop-blur px-5 py-4 min-w-[220px]">
-            <div className="flex items-center justify-between mb-3">
+          {/* Compact digital card preview */}
+          <div className="relative overflow-hidden rounded-2xl bg-black/20 border border-white/20 backdrop-blur px-4 py-3 sm:px-5 sm:py-4 min-w-[220px]">
+            <div className="flex items-center justify-between mb-1 sm:mb-3">
               <p className="text-[10px] tracking-widest text-emerald-100 uppercase font-semibold">
                 Member ID
               </p>
               <QrCode className="h-4 w-4 text-emerald-100" />
             </div>
-            <p className="font-mono text-lg font-black tracking-wider">
-              {displayMemberId}
-            </p>
-            <span className="mt-2 inline-block rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-              {role}
-            </span>
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-base sm:text-lg font-black tracking-wider">
+                {displayMemberId}
+              </p>
+              <span className="inline-block rounded-full bg-white/20 px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wide">
+                {role}
+              </span>
+            </div>
           </div>
         </div>
       </header>
 
       {/* ======================================================================
+       * QUICK ACTIONS (MOBILE FIRST)
+       * ==================================================================== */}
+      <div className="grid grid-cols-3 gap-3 sm:hidden pt-2">
+        <QuickAction icon={HandCoins} label="Get Loan" to={`/workspace/${workspaceId}/loans`} />
+        <QuickAction icon={ArrowLeftRight} label="Withdraw" to={`/workspace/${workspaceId}/finance/withdrawals`} />
+        <QuickAction icon={Receipt} label="Statement" to={`/workspace/${workspaceId}/finance/transactions`} />
+      </div>
+
+      {/* ======================================================================
        * FINANCIAL SUMMARY
        * ==================================================================== */}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <SummaryCard
           title="Savings"
           value={money(savingsBalance)}
@@ -464,7 +509,7 @@ function MemberDashboardView({ data, loanSummary }) {
             loanSummary?.shares_balance != null ||
             loanSummary?.shares != null
               ? "Your current share balance"
-              : "Tracked from total contributions"
+              : "Your share position"
           }
         />
 
@@ -590,10 +635,44 @@ function MemberDashboardView({ data, loanSummary }) {
       </section>
 
       {/* ======================================================================
-       * DIGITAL MEMBER CARD
+       * DIGITAL MEMBER CARD — secondary, "look up when you need it" info
+       * (role, KYC status, badge). On a small screen it starts collapsed
+       * to a one-line summary so it doesn't push Savings/Loan/Calendar
+       * further down the page; tapping it reveals the full card, same as
+       * it always renders on desktop.
        * ==================================================================== */}
 
-      <section className="grid gap-6 lg:grid-cols-3">
+      <button
+        type="button"
+        onClick={() => setShowMemberCard((v) => !v)}
+        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left dark:border-slate-800 dark:bg-slate-900 lg:hidden"
+      >
+        <span className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+            <ShieldCheck className="h-4 w-4" />
+          </span>
+          <span>
+            <span className="block text-sm font-bold text-slate-900 dark:text-white">Membership & KYC</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400 capitalize">
+              {role} · KYC {kycStatus}
+            </span>
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {canSubmitKyc && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+              Action needed
+            </span>
+          )}
+          {showMemberCard ? (
+            <ChevronUp size={18} className="text-slate-400" />
+          ) : (
+            <ChevronDown size={18} className="text-slate-400" />
+          )}
+        </span>
+      </button>
+
+      <section className={`${showMemberCard ? "flex" : "hidden"} flex-col gap-6 lg:grid lg:grid-cols-3`}>
         <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-5 mb-5">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
@@ -618,6 +697,32 @@ function MemberDashboardView({ data, loanSummary }) {
             />
             <MemberDetail label="Member ID" value={displayMemberId} mono />
           </div>
+
+          {data?.profile?.public_profile?.enabled && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+              <div><p className="text-sm font-bold text-slate-900 dark:text-white">Chama profile</p><p className="mt-1 line-clamp-2 text-xs text-slate-600 dark:text-slate-300">{data.profile.public_profile.description}</p></div>
+              <Link to={`/chama-profile/${workspaceId}`} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white">View / share profile</Link>
+            </div>
+          )}
+
+          {canSubmitKyc && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+              <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
+                {kycStatus === MEMBER_DASHBOARD_CONFIG.kycStatuses.rejected
+                  ? `Your last KYC submission was rejected.${data?.kyc?.rejection_reason ? ` ${data.kyc.rejection_reason}` : " Review your details and resubmit."}`
+                  : "You haven't submitted your ID for this Chama yet. Submit it so leadership can verify your membership."}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowKycModal(true)}
+                className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-md transition hover:bg-emerald-500"
+              >
+                {kycStatus === MEMBER_DASHBOARD_CONFIG.kycStatuses.rejected
+                  ? "Resubmit KYC"
+                  : "Submit KYC"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Card visual — mirrors the Command Center's gradient card so the
@@ -647,7 +752,35 @@ function MemberDashboardView({ data, loanSummary }) {
           </div>
         </div>
       </section>
+
+      {/* My public profile: every member and official can set a photo and
+          a short bio that others see when they tap their name. Separate
+          from KYC; nothing private is shown. */}
+      <details className="group rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
+          <span>
+            <span className="block text-sm font-bold text-slate-900 dark:text-white">My public profile</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">Add a photo and a short bio for people who tap your name.</span>
+          </span>
+          <ChevronDown size={18} className="shrink-0 text-slate-400 transition group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-slate-100 p-5 dark:border-slate-800">
+          <MyPublicProfileCard workspaceId={workspaceId} />
+        </div>
+      </details>
     </motion.div>
+
+      {showKycModal && (
+        <KycSubmitModal
+          workspaceId={workspaceId}
+          initialIdNumber={user?.id_number}
+          status={kycStatus}
+          requirements={data?.profile?.kyc_requirements || []}
+          onClose={() => setShowKycModal(false)}
+          onSubmitted={() => window.dispatchEvent(new Event("chama:kyc-updated"))}
+        />
+      )}
+    </>
   );
 }
 
@@ -872,6 +1005,23 @@ function DashboardState({
         )}
         <span>{children}</span>
       </div>
+    </div>
+  );
+}
+
+function QuickAction({ icon: Icon, label, to }) {
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <Link
+        to={to}
+        className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-100 bg-white text-emerald-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-emerald-400"
+        aria-label={label}
+      >
+        <Icon className="h-5 w-5" />
+      </Link>
+      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
     </div>
   );
 }

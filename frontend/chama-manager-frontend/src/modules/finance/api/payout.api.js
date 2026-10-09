@@ -11,9 +11,10 @@ const payoutApi = {
     return api.post(`/chamas/${workspaceId}/payouts/start`);
   },
 
-  approve(workspaceId, payoutId) {
+  approve(workspaceId, payoutId, payload) {
     return api.patch(
-      `/chamas/${workspaceId}/payouts/${payoutId}/approve`
+      `/chamas/${workspaceId}/payouts/${payoutId}/approve`,
+      payload
     );
   },
 

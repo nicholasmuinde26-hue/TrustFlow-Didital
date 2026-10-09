@@ -153,7 +153,7 @@ async (
         membership = await ContributionGroupMember.findOneAndUpdate(
           { contribution_group_id: groupId, user_id: req.user._id },
           { contribution_group_id: groupId, user_id: req.user._id, role, status: 'active' },
-          { upsert: true, new: true }
+          { upsert: true, returnDocument: 'after' }
         ).lean();
       } else {
         // Fallback: check if this is a Chama workspace ID where user is an active member

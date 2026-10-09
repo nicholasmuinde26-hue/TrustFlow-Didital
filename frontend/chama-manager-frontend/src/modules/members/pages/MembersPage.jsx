@@ -6,8 +6,6 @@ import {
   Download,
   Calendar,
   MoreVertical,
-  ChevronLeft,
-  ChevronRight,
   ShieldCheck,
   UserCheck,
   UserPlus,
@@ -29,6 +27,7 @@ import {
   ArrowLeft,
   SlidersHorizontal,
   ExternalLink,
+  ChevronDown,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -57,6 +56,8 @@ import {
   useUpdateMemberProfile,
   useUpdateMemberStatus,
   useTransferTreasurer,
+  useMembersOverview,
+  useMemberContributionMatrix,
 } from "../hooks/useMembers";
 import {
   useCreateChamaInvite,
@@ -67,6 +68,9 @@ import {
 import EditProfileModal from "../components/EditProfileModal";
 import Spinner from "@/shared/components/ui/Spinner";
 import AuditTrailPanel from "@/modules/audit/components/AuditTrailPanel";
+import MemberExitPanel from "../components/MemberExitPanel";
+import MemberAvatar from "../components/MemberAvatar";
+import MemberDetailsDrawer from "../components/MemberDetailsDrawer";
 
 const ROLE_OPTIONS = [
   { value: "member", label: "Member", description: "Standard member with voting & contribution rights." },
@@ -131,6 +135,16 @@ function initials(name) {
     .join("");
 }
 
+const csvCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+const maskPhone = (phone) => {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return digits.length >= 9 ? `${digits.slice(0, 4)}****${digits.slice(-4)}` : "••••";
+};
+const currentMonthKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+};
+
 export default function MembersPage() {
   const { workspaceId } = useParams();
   const { user } = useAuth();
@@ -169,6 +183,7 @@ export default function MembersPage() {
   const canInvite = canInviteMembers(workspace?.role, type);
 
   const { data: members = [], isLoading } = useMembers(type, workspaceId);
+  const { data: membersOverview, isLoading: overviewLoading, isError: overviewError } = useMembersOverview(type, workspaceId);
   const { data: presence = [] } = usePresence(workspaceId);
 
   const addMember = useAddMember(type, workspaceId);
@@ -199,6 +214,10 @@ export default function MembersPage() {
   const [actionSuccess, setActionSuccess] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [visibleCount, setVisibleCount] = useState(12);
+  const [requestExitTrigger, setRequestExitTrigger] = useState(0);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const loadMoreRef = useRef(null);
   const [viewMode, setViewMode] = useState("list");
 
   // Quick Add Member Form State
@@ -212,8 +231,6 @@ export default function MembersPage() {
   const [decidingRequestId, setDecidingRequestId] = useState(null);
 
   const userId = user?.id ?? user?._id;
-  const activeCount = members.filter((m) => m.status === "active").length;
-  const suspendedCount = members.filter((m) => m.status === "suspended").length;
   const hasActiveTreasurer = members.some((m) => m.status === "active" && m.role === "treasurer");
   const isChairperson = String(workspace?.role || "").toLowerCase() === "chairperson";
   const isSystemAdmin = ["super_admin", "sub_admin"].includes(String(user?.systemRole || "").toLowerCase());
@@ -227,12 +244,12 @@ export default function MembersPage() {
     isChairperson &&
     !hasActiveTreasurer &&
     !leadershipDeskOwnsManagement;
-  const governanceHealth = treasurerRequired
-    ? { label: "Needs attention", detail: "No active treasurer assigned", tone: "warn" }
-    : suspendedCount > 0
-    ? { label: "Review needed", detail: `${suspendedCount} suspended ${suspendedCount === 1 ? "member" : "members"}`, tone: "warn" }
-    : { label: "Excellent", detail: "All required roles assigned", tone: "good" };
-  const pendingInvitesCount = joinRequests.length;
+  const pendingInvitesCount = membersOverview?.counts?.pending_join_requests ?? joinRequests.length;
+  const canViewMemberContributions = isChamaWorkspace && ["chairperson", "treasurer", "secretary"].includes(String(workspace?.role || "").toLowerCase());
+  const contributionMonth = currentMonthKey();
+  const { data: contributionMatrix } = useMemberContributionMatrix(workspaceId, contributionMonth, canViewMemberContributions);
+  const contributionByMember = Object.fromEntries((contributionMatrix?.rows || []).map((row) => [String(row.membership_id), row]));
+  const ownMembership = members.find((member) => String(member.user_id?._id ?? member.user_id?.id ?? member.user_id) === String(userId));
 
   const guardChairpersonOperation = () => {
     if (treasurerRequired) {
@@ -354,7 +371,7 @@ export default function MembersPage() {
       setActionError(null);
       const result = await removeMember.mutateAsync(removeConfirmMember._id);
       setRemoveConfirmMember(null);
-      const amount = result?.exitRequest?.savings_amount ?? result?.data?.exitRequest?.savings_amount;
+      const amount = result?.exitRequest?.savings_amount ?? result?.assessment?.savings ?? result?.data?.exitRequest?.savings_amount ?? result?.data?.assessment?.savings;
       setActionSuccess(Number(amount || 0) > 0
         ? `Exit process started. KES ${Number(amount).toLocaleString()} savings refund is awaiting the required approvals before disbursement.`
         : "Exit process started. The member has no withdrawable savings balance; the required approval will be recorded before the membership is closed.");
@@ -417,15 +434,15 @@ export default function MembersPage() {
   const handleExportMembers = () => {
     const csv = [
       ["Name", "Phone", "Role", "Joined", "Status"],
-      ...members.map((m) => [
+      ...filteredMembers.map((m) => [
         m.user_id?.name || m.user_id?.first_name || "Member",
         m.user_id?.phone || m.user_id?.email || "",
         m.role || "member",
-        m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "",
+        m.joined_at || m.createdAt ? new Date(m.joined_at || m.createdAt).toLocaleDateString() : "",
         m.status || "active",
       ]),
     ]
-      .map((row) => row.join(","))
+      .map((row) => row.map(csvCell).join(","))
       .join("\n");
 
     const blob = new Blob([csv], { type: "text/csv" });
@@ -434,6 +451,7 @@ export default function MembersPage() {
     a.href = url;
     a.download = `members-${workspaceId}.csv`;
     a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const filteredMembers = members
@@ -442,37 +460,63 @@ export default function MembersPage() {
       const nameStr = (u.name || u.first_name || "").toLowerCase();
       const phoneStr = (u.phone || u.email || "").toLowerCase();
       const matchesSearch = nameStr.includes(searchQuery.toLowerCase()) || phoneStr.includes(searchQuery.toLowerCase());
-      const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? m.status !== "suspended" && m.status !== "inactive" : m.status === statusFilter);
+      const matchesStatus = statusFilter === "all" || m.status === statusFilter;
       return matchesSearch && matchesStatus;
     })
     .sort(compareMembersForDisplay);
+  const pageMembers = filteredMembers.slice(0, visibleCount);
+  const attendanceByMember = membersOverview?.attendance?.by_member || {};
+
+  useEffect(() => {
+    setVisibleCount(12);
+  }, [searchQuery, statusFilter]);
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel || visibleCount >= filteredMembers.length) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisibleCount((count) => Math.min(count + 12, filteredMembers.length));
+      },
+      { root: null, rootMargin: "240px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleCount, filteredMembers.length]);
 
   return (
-    <div className="space-y-6 font-sans text-slate-900 dark:text-mist pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto max-w-[1680px] space-y-6 font-sans text-slate-900 dark:text-mist pb-12">
+      {/* Page hero */}
+      <div className="relative isolate overflow-hidden rounded-[28px] border border-emerald-900/10 bg-gradient-to-br from-[#073c35] via-[#0b594b] to-[#13816a] px-6 py-7 text-white shadow-lg shadow-emerald-950/10 sm:px-8 sm:py-8">
+        <div aria-hidden="true" className="absolute -right-12 -top-24 -z-10 h-72 w-72 rounded-full bg-emerald-300/15 blur-3xl" />
+        <div aria-hidden="true" className="absolute bottom-[-100px] right-[22%] -z-10 h-56 w-56 rounded-full bg-teal-200/10 blur-3xl" />
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <Link
             to={`/workspace/${workspaceId}`}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-mist-muted dark:hover:text-mist mb-2 transition"
+            className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-100/75 transition hover:text-white"
           >
             <ArrowLeft size={14} /> Command Center
           </Link>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 place-items-center rounded-2xl border border-white/15 bg-white/10"><Users size={21} /></span>
+            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
             {isBurialChama ? "Welfare Members" : "People & governance"}
-          </h1>
-          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-mist-muted">
+            </h1>
+          </div>
+          <p className="mt-3 max-w-2xl text-sm font-medium text-emerald-50/75">
             {isBurialChama
               ? `${members.length} members covered under this welfare fund`
               : "Manage members, roles and the decisions that keep your group trusted."}
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           {isBurialChama && (
             <Link
               to={`/workspace/${workspaceId}/beneficiaries`}
-              className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist dark:hover:bg-obsidian-raised transition"
+              className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/20"
             >
               <ShieldCheck size={14} /> Manage Beneficiaries
             </Link>
@@ -481,7 +525,7 @@ export default function MembersPage() {
             <button
               type="button"
               onClick={() => setShowRolesModal(true)}
-              className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist dark:hover:bg-obsidian-raised transition"
+              className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/20"
             >
               <ShieldAlert size={14} /> Roles &amp; rules
             </button>
@@ -496,7 +540,7 @@ export default function MembersPage() {
             <button
               type="button"
               onClick={() => setShowInviteModal(true)}
-              className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 dark:bg-mint dark:text-obsidian-rail dark:hover:bg-mint-hover transition"
+              className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-extrabold text-emerald-900 shadow-sm transition hover:bg-emerald-50"
             >
               <UserPlus size={14} /> + Invite member
             </button>
@@ -504,22 +548,23 @@ export default function MembersPage() {
           <button
             type="button"
             onClick={handleExportMembers}
-            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist-muted dark:hover:bg-obsidian-raised transition"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition hover:bg-white/20"
             title="Export CSV"
           >
             <Download size={14} />
           </button>
         </div>
       </div>
+      </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-obsidian-border pb-1 overflow-x-auto">
+      <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200/70 bg-white p-1.5 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card">
         <button
           onClick={() => setActiveSection("members")}
-          className={`px-4 py-2 text-xs font-bold transition border-b-2 ${
+          className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-bold transition ${
             activeSection === "members"
-              ? "border-emerald-600 text-emerald-600 dark:border-mint dark:text-mint"
-              : "border-transparent text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-mist"
+              ? "bg-emerald-50 text-emerald-800 dark:bg-mint-deep dark:text-mint"
+              : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-mist-muted dark:hover:bg-obsidian-raised dark:hover:text-mist"
           }`}
         >
           Members
@@ -533,10 +578,10 @@ export default function MembersPage() {
         {canChangeChamaRoles && (
           <button
             onClick={() => setActiveSection("roles")}
-            className={`px-4 py-2 text-xs font-bold transition border-b-2 ${
+            className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-bold transition ${
               activeSection === "roles"
-                ? "border-emerald-600 text-emerald-600 dark:border-mint dark:text-mint"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-mist"
+                ? "bg-emerald-50 text-emerald-800 dark:bg-mint-deep dark:text-mint"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-mist-muted dark:hover:bg-obsidian-raised dark:hover:text-mist"
             }`}
           >
             Roles &amp; permissions
@@ -545,10 +590,10 @@ export default function MembersPage() {
         {manage && (
           <button
             onClick={() => setActiveSection("invitations")}
-            className={`px-4 py-2 text-xs font-bold transition border-b-2 flex items-center gap-2 ${
+            className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-bold transition ${
               activeSection === "invitations"
-                ? "border-emerald-600 text-emerald-600 dark:border-mint dark:text-mint"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-mist"
+                ? "bg-emerald-50 text-emerald-800 dark:bg-mint-deep dark:text-mint"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-mist-muted dark:hover:bg-obsidian-raised dark:hover:text-mist"
             }`}
           >
             Invitations
@@ -562,10 +607,10 @@ export default function MembersPage() {
         {canViewAuditTrail && (
           <button
             onClick={() => setActiveSection("audit")}
-            className={`px-4 py-2 text-xs font-bold transition border-b-2 ${
+            className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-bold transition ${
               activeSection === "audit"
-                ? "border-emerald-600 text-emerald-600 dark:border-mint dark:text-mint"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-mist"
+                ? "bg-emerald-50 text-emerald-800 dark:bg-mint-deep dark:text-mint"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-mist-muted dark:hover:bg-obsidian-raised dark:hover:text-mist"
             }`}
           >
             Audit trail
@@ -588,60 +633,9 @@ export default function MembersPage() {
         </div>
       )}
 
-      {/* Top 3 Summary Cards */}
-      <div className="grid gap-5 md:grid-cols-3">
-        {/* Active Members */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
-          <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-mist-muted">
-            ACTIVE MEMBERS
-          </p>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
-              {members.length || 24}
-            </span>
-          </div>
-          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-mint">
-            <CheckCircle2 size={13} /> {activeCount || members.length} in good standing
-          </p>
-        </div>
-
-        {/* Invitations */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
-          <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-mist-muted">
-            INVITATIONS
-          </p>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
-              {pendingInvitesCount} pending
-            </span>
-          </div>
-          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-mist-muted">
-            <Clock size={13} /> 1 approved this month
-          </p>
-        </div>
-
-        {/* Governance Health */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
-          <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-mist-muted">
-            GOVERNANCE HEALTH
-          </p>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span
-              className={`text-3xl font-black tracking-tight ${
-                governanceHealth.tone === "good"
-                  ? "text-slate-900 dark:text-mist"
-                  : "text-amber-600 dark:text-amber-400"
-              }`}
-            >
-              {governanceHealth.tone === "good" ? "100% compliant" : governanceHealth.label}
-            </span>
-          </div>
-          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-mint">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 dark:bg-mint" />
-            {governanceHealth.detail || "All required roles filled"}
-          </p>
-        </div>
-      </div>
+      {isChamaWorkspace && ownMembership?.status === "active" && (
+        <MemberExitPanel workspaceId={workspaceId} type={type} membership={ownMembership} requestTrigger={requestExitTrigger} />
+      )}
 
       {/* Main Tab Views */}
       {activeSection === "audit" ? (
@@ -845,39 +839,38 @@ export default function MembersPage() {
         </div>
       ) : (
         /* Members Tab (Image 1 2-column layout) */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 items-start gap-5 2xl:grid-cols-12">
           {/* Left Column: Your Members Directory (7/12 on lg, 8/12 on xl) */}
-          <div className="lg:col-span-7 xl:col-span-8 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card space-y-5">
+          <div className="min-w-0 space-y-5 rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card sm:p-6 2xl:col-span-8">
             {/* Header & Search */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-black text-slate-900 dark:text-mist">Your members</h2>
                 <p className="text-xs text-slate-400">Active participants in this Chama</p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Search size={14} className="absolute left-3.5 top-3 text-slate-400" />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative min-w-0 flex-1 sm:flex-none">
+                  <Search size={15} className="absolute left-3.5 top-3 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search members..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-56 rounded-full border border-slate-200 bg-slate-50/60 py-2 pl-9 pr-3 text-xs font-semibold text-slate-900 focus:border-emerald-600 focus:bg-white focus:outline-none dark:border-obsidian-border dark:bg-obsidian dark:text-mist dark:focus:border-mint"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-xs font-semibold text-slate-900 transition placeholder:font-medium placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-500/10 sm:w-64 dark:border-obsidian-border dark:bg-obsidian dark:text-mist dark:focus:border-mint"
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(statusFilter === "all" ? "active" : "all")}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
-                    statusFilter !== "all"
-                      ? "border-emerald-600 bg-emerald-50 text-emerald-600 dark:border-mint dark:bg-mint-deep dark:text-mint"
-                      : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist-muted"
-                  }`}
-                  title="Filter active status"
-                >
-                  <SlidersHorizontal size={14} />
-                </button>
+                <label className="relative flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 dark:border-obsidian-border dark:bg-obsidian-card" title="Filter by membership status">
+                  <SlidersHorizontal size={14} className="text-slate-500" />
+                  <select aria-label="Filter members by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="appearance-none bg-transparent py-2 pr-4 text-xs font-semibold text-slate-700 outline-none dark:text-mist">
+                    <option value="all">All statuses</option><option value="active">Active</option><option value="suspended">Suspended</option>
+                  </select>
+                  <ChevronDown size={12} className="pointer-events-none -ml-4 text-slate-400" />
+                </label>
+                <div role="group" aria-label="Member layout" className="flex items-center rounded-xl border border-slate-200 bg-white p-1 dark:border-obsidian-border dark:bg-obsidian-card">
+                  <button type="button" onClick={() => setViewMode("list")} aria-label="List view" aria-pressed={viewMode === "list"} className={`grid h-8 w-8 place-items-center rounded-lg transition ${viewMode === "list" ? "bg-emerald-50 text-emerald-700 dark:bg-mint-deep dark:text-mint" : "text-slate-400 hover:text-slate-700 dark:hover:text-mist"}`}><List size={15} /></button>
+                  <button type="button" onClick={() => setViewMode("grid")} aria-label="Grid view" aria-pressed={viewMode === "grid"} className={`grid h-8 w-8 place-items-center rounded-lg transition ${viewMode === "grid" ? "bg-emerald-50 text-emerald-700 dark:bg-mint-deep dark:text-mint" : "text-slate-400 hover:text-slate-700 dark:hover:text-mist"}`}><LayoutGrid size={15} /></button>
+                </div>
               </div>
             </div>
 
@@ -891,16 +884,39 @@ export default function MembersPage() {
                 No members match your criteria.
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-obsidian-border/60">
-                {filteredMembers.map((member) => {
+              <div aria-label="Member directory" className={`rounded-2xl border border-slate-100 bg-slate-50/50 px-2 dark:border-obsidian-border/60 dark:bg-obsidian/40 ${viewMode === "list" ? "divide-y divide-slate-100 dark:divide-obsidian-border/60" : "grid gap-2 p-2 sm:grid-cols-2"}`}>
+                {pageMembers.map((member) => {
                   const u = member.user_id || {};
                   const name = u.name || u.first_name || "Member";
-                  const phone = u.phone || u.email || "No contact";
+                  const phone = u.phone || "";
                   const isSelf = Boolean(userId) && String(u._id || u.id) === String(userId);
                   const isSuspended = member.status === "suspended";
+                  const attendance = attendanceByMember[member._id];
+                  const missedMeetings = attendance?.total ? attendance.total - attendance.attended : 0;
+                  const finances = contributionByMember[String(member._id)];
+                  const financeCells = Object.values(finances?.cells || {});
+                  const overdueCells = financeCells.filter((cell) => cell.status === "overdue");
+                  const oldestOverdue = overdueCells.map((cell) => cell.due_date).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0];
+                  const daysLate = oldestOverdue ? Math.max(1, Math.floor((Date.now() - new Date(oldestOverdue).getTime()) / 86_400_000)) : 0;
+                  const financeExpected = Number(finances?.totals?.expected || 0);
+                  const financeOutstanding = Number(finances?.totals?.outstanding || 0);
+                  const financeStatus = !finances
+                    ? ""
+                    : financeExpected <= 0
+                    ? "No schedule"
+                    : financeOutstanding <= 0
+                    ? "On track"
+                    : overdueCells.length
+                    ? `Late by ${daysLate}d`
+                    : "Outstanding";
+                  const healthLabel = isSuspended
+                    ? "Suspended"
+                    : attendance?.total
+                    ? `${missedMeetings > 0 ? `At risk · ${missedMeetings} missed` : "Active"} · ${attendance.attended}/${attendance.total} meetings`
+                    : "Active · Attendance not recorded";
                   const joinedDate = member.createdAt
                     ? new Date(member.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-                    : "Jan 2024";
+                    : "Date unavailable";
                   const isDropdownOpen = openDropdownId === member._id;
 
                   // Role badge styling
@@ -917,22 +933,22 @@ export default function MembersPage() {
                   return (
                     <div
                       key={member._id}
-                      className="py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-obsidian-raised/20 px-2 rounded-2xl transition"
+                      className={`group flex items-center justify-between gap-3 rounded-2xl transition hover:bg-white dark:hover:bg-obsidian-raised/50 ${viewMode === "list" ? "px-2 py-3.5" : "min-w-0 border border-slate-100 bg-white px-3 py-3 shadow-sm dark:border-obsidian-border/60 dark:bg-obsidian-card"}`}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-obsidian-raised font-bold text-slate-800 dark:text-mist text-xs border border-slate-200/60 dark:border-obsidian-border">
-                          {initials(name)}
-                        </div>
+                        <button type="button" onClick={() => setSelectedMember(member)} aria-label={`View ${name}'s member information`} className="group/phone flex min-w-0 items-center gap-3 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                        <MemberAvatar name={name} size="md" />
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-slate-900 dark:text-mist truncate flex items-center gap-1.5">
                             {name}
                             {isSelf && <span className="text-[10px] text-slate-400 font-normal">(you)</span>}
                           </p>
-                          <p className="text-[11px] text-slate-400 dark:text-mist-muted truncate font-mono mt-0.5">
-                            {phone} · Joined {joinedDate}
+                          <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-400 dark:text-mist-muted">
+                            <span>Joined {joinedDate}</span>
+                            {canViewMemberContributions && phone && <span title={maskPhone(phone)} className="hidden font-mono opacity-0 transition-opacity group-hover/phone:opacity-100 group-focus-within/phone:opacity-100 sm:inline">· {maskPhone(phone)}</span>}
+                            {canViewMemberContributions && financeStatus && <span title={`${contributionMatrix?.month?.label || contributionMonth} contribution status`} className={`shrink-0 font-sans font-bold ${financeStatus === "On track" ? "text-emerald-700 dark:text-mint" : financeStatus.startsWith("Late") ? "text-rose-600 dark:text-rose-300" : "text-amber-700 dark:text-amber-300"}`}>· KES {financeExpected.toLocaleString()} /mo · {financeStatus}</span>}
                           </p>
                         </div>
-                      </div>
+                        </button>
 
                       <div className="flex items-center gap-2 shrink-0">
                         {/* Role Badge */}
@@ -941,8 +957,8 @@ export default function MembersPage() {
                         </span>
 
                         {/* Attendance / Status Badge */}
-                        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-mint">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-mint" /> 8/8 attended
+                        <span className={`hidden sm:inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${isSuspended || missedMeetings > 0 ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-mint"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${isSuspended || missedMeetings > 0 ? "bg-amber-500" : "bg-emerald-500 dark:bg-mint"}`} /> {healthLabel}
                         </span>
 
                         {/* Action Menu */}
@@ -958,6 +974,15 @@ export default function MembersPage() {
 
                             {isDropdownOpen && (
                               <div className="absolute right-0 top-9 z-50 w-48 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-obsidian-border dark:bg-obsidian-card text-left">
+                                {isSelf && isChamaWorkspace && member.role === "member" && member.status === "active" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenDropdownId(null); setRequestExitTrigger((value) => value + 1); }}
+                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                                  >
+                                    <UserX size={14} /> Request to exit
+                                  </button>
+                                )}
                                 {canChangeChamaRoles && !isSelf && member.status === "active" && (
                                   <button
                                     type="button"
@@ -1017,85 +1042,38 @@ export default function MembersPage() {
                     </div>
                   );
                 })}
+                {visibleCount < filteredMembers.length && <div ref={loadMoreRef} aria-hidden="true" className="h-8" />}
               </div>
             )}
 
             {/* Pagination / Count Footer */}
             <div className="pt-2 flex items-center justify-between text-xs text-slate-400 dark:text-mist-muted border-t border-slate-100 dark:border-obsidian-border">
-              <span>Showing {filteredMembers.length} of {members.length} members</span>
-              <div className="flex items-center gap-1">
-                <button type="button" disabled className="rounded-lg p-1 text-slate-300 dark:text-mist-muted/40 cursor-not-allowed">
-                  <ChevronLeft size={16} />
-                </button>
-                <button type="button" disabled className="rounded-lg p-1 text-slate-300 dark:text-mist-muted/40 cursor-not-allowed">
-                  <ChevronRight size={16} />
-                </button>
-              </div>
+              <span>Showing {pageMembers.length} of {filteredMembers.length} matches · {members.length} total</span>
+              {visibleCount < filteredMembers.length && <span className="text-[11px] font-semibold text-emerald-700 dark:text-mint">Scroll for more</span>}
             </div>
           </div>
 
           {/* Right Column: Governance to-do & Trust center (5/12 on lg, 4/12 on xl) */}
-          <div className="lg:col-span-5 xl:col-span-4 space-y-6">
+          <div className="grid gap-5 md:grid-cols-2 2xl:col-span-4 2xl:grid-cols-1">
             {/* Governance To-do */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+              <div className="rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card sm:p-6">
               <h2 className="text-base font-black text-slate-900 dark:text-mist">Governance to-do</h2>
               <p className="text-xs text-slate-400 mt-0.5">Action items required to keep the Chama compliant</p>
 
               <div className="mt-4 space-y-3">
-                <div className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 dark:border-obsidian-border/50 dark:bg-obsidian-raised/30">
-                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 dark:border-mint text-emerald-600 dark:text-mint">
-                    <Check size={11} strokeWidth={3} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-mist">Approve AGM agenda</p>
-                    <p className="text-[11px] text-slate-400 dark:text-mist-muted mt-0.5">
-                      Drafted by Secretary · Due in 3 days
-                    </p>
-                  </div>
-                </div>
-
-                <Link
-                  to={`/workspace/${workspaceId}/loans`}
-                  className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 dark:border-obsidian-border/50 dark:bg-obsidian-raised/30 hover:bg-slate-100/70 dark:hover:bg-obsidian-raised/60 transition group"
-                >
-                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-amber-500 text-amber-500">
-                    <Clock size={11} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-slate-900 dark:text-mist group-hover:text-emerald-600 dark:group-hover:text-mint transition">
-                      Review 2 loan applications
-                    </p>
-                    <p className="text-[11px] text-slate-400 dark:text-mist-muted mt-0.5">
-                      Awaiting committee sign-off
-                    </p>
-                  </div>
-                  <ExternalLink size={12} className="text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-mint" />
-                </Link>
-
-                <Link
-                  to={`/workspace/${workspaceId}/finance`}
-                  className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 dark:border-obsidian-border/50 dark:bg-obsidian-raised/30 hover:bg-slate-100/70 dark:hover:bg-obsidian-raised/60 transition group"
-                >
-                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-slate-300 dark:border-obsidian-border text-slate-400">
-                    <Clock size={11} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold text-slate-900 dark:text-mist group-hover:text-emerald-600 dark:group-hover:text-mint transition">
-                      Sign off March books
-                    </p>
-                    <p className="text-[11px] text-slate-400 dark:text-mist-muted mt-0.5">
-                      Treasurer submitted · 1 pending approval
-                    </p>
-                  </div>
-                  <ExternalLink size={12} className="text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-mint" />
-                </Link>
+                {(membersOverview?.todos || []).map((todo) => {
+                  const content = <><span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border ${todo.tone === "urgent" ? "border-rose-400 text-rose-500" : todo.tone === "warn" ? "border-amber-400 text-amber-500" : "border-slate-300 text-slate-400"}`}><Clock size={11}/></span><span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900 dark:text-mist">{todo.title}</span><span className="mt-0.5 block text-[11px] text-slate-400 dark:text-mist-muted">{todo.detail}</span></span>{todo.href && <ExternalLink size={12} className="shrink-0 text-slate-400"/>}</>;
+                  const classes = "flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 transition hover:bg-slate-100/70 dark:border-obsidian-border/50 dark:bg-obsidian-raised/30 dark:hover:bg-obsidian-raised/60";
+                  return todo.href ? <Link key={todo.id} to={todo.href} className={classes}>{content}</Link> : <div key={todo.id} className={classes}>{content}</div>;
+                })}
+                {!membersOverview?.todos?.length && <p className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-500 dark:bg-obsidian-raised/30 dark:text-mist-muted">{overviewLoading ? "Loading your governance actions…" : overviewError ? "Governance actions could not be loaded. Refresh to try again." : "No governance actions are waiting for you."}</p>}
               </div>
             </div>
 
             {/* Trust Center Card */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+            <div className="rounded-3xl border border-slate-200/70 bg-white p-5 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card sm:p-6">
               <h2 className="text-base font-black text-slate-900 dark:text-mist">Trust center</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Reputation and compliance score</p>
+              <p className="text-xs text-slate-400 mt-0.5">Group score from repayment, KYC, disputes, audit and official accountability. Role coverage is measured separately.</p>
 
               <div className="mt-5 flex items-center justify-center">
                 <div className="relative flex h-32 w-32 items-center justify-center">
@@ -1118,38 +1096,26 @@ export default function MembersPage() {
                       fill="none"
                       strokeLinecap="round"
                       strokeDasharray={2 * Math.PI * 40}
-                      strokeDashoffset={2 * Math.PI * 40 * (1 - (trustScore?.score ?? 94) / 100)}
+                      strokeDashoffset={2 * Math.PI * 40 * (1 - (trustScore?.score ?? 0) / 100)}
                       className="text-emerald-500 dark:text-mint"
                     />
                   </svg>
                   <div className="absolute flex flex-col items-center">
                     <span className="text-3xl font-black text-slate-900 dark:text-mist">
-                      {trustScore?.score ?? 94}
+                      {trustScore?.score ?? "—"}
                     </span>
                     <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 dark:text-mint">
-                      {trustScore?.grade ?? "EXCELLENT"}
+                      {trustScore?.grade ?? "NO RATING"}
                     </span>
                   </div>
                 </div>
               </div>
 
               <div className="mt-5 space-y-2 border-t border-slate-100 dark:border-obsidian-border pt-4">
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-slate-500 dark:text-mist-muted">Attendance rate</span>
-                  <span className="font-bold text-slate-900 dark:text-mist">
-                    {trustScore?.components?.attendance?.score ?? 96}%
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-slate-500 dark:text-mist-muted">On-time payments</span>
-                  <span className="font-bold text-slate-900 dark:text-mist">
-                    {trustScore?.components?.contributions?.score ?? 92}%
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-slate-500 dark:text-mist-muted">Rule compliance</span>
-                  <span className="font-bold text-slate-900 dark:text-mist">100%</span>
-                </div>
+                {[["Repayment reliability", "repayment"], ["KYC coverage", "kyc"], ["Dispute record", "disputes"], ["Audit integrity", "auditIntegrity"], ["Official accountability", "officialAccountability"]].map(([label, key]) => {
+                  const component = trustScore?.components?.[key];
+                  return <div key={key} className="flex items-center justify-between gap-3 text-xs font-semibold"><span className="text-slate-500 dark:text-mist-muted">{label}</span><span className="text-right font-bold text-slate-900 dark:text-mist">{component?.hasData && component?.score != null ? `${component.score}%` : "Not enough data"}</span></div>;
+                })}
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-obsidian-border text-center">
@@ -1164,6 +1130,8 @@ export default function MembersPage() {
           </div>
         </div>
       )}
+
+      {selectedMember && <MemberDetailsDrawer member={selectedMember} workspaceId={workspaceId} canViewContributions={canViewMemberContributions} attendance={attendanceByMember[selectedMember._id]} onClose={() => setSelectedMember(null)} />}
 
       {/* Invite Member Modal */}
       {showInviteModal && (

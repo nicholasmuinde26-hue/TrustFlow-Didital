@@ -7,11 +7,15 @@ import {
   searchMessages,
   sendMessage,
   getDirectMessages,
+  getDirectConversations,
+  getUnreadCounts,
+  markMessagesRead,
   sendDirectMessage,
   editMessage,
   deleteMessage,
 } from "./chat.controller.js";
 
+import { requireModule } from '../../middleware/module.middleware.js';
 // ============================================================================
 // ROUTER
 // ============================================================================
@@ -23,6 +27,7 @@ const router = express.Router();
 // ============================================================================
 
 router.use(protect);
+router.use("/workspace/:workspaceId", requireModule("chat"));
 
 // ============================================================================
 // WORKSPACE CHAT
@@ -38,6 +43,9 @@ router.get(
   "/workspace/:workspaceId",
   getMessages
 );
+
+router.get("/workspace/:workspaceId/unread", getUnreadCounts);
+router.post("/workspace/:workspaceId/read", markMessagesRead);
 
 // -----------------------------------------------------------------------------
 // Send workspace message
@@ -68,6 +76,10 @@ router.get(
 // ============================================================================
 // DIRECT MESSAGES
 // ============================================================================
+
+// List direct conversations for a workspace's active members. Keep this static
+// route above /:recipientUserId so Express does not treat "conversations" as an id.
+router.get("/direct", getDirectConversations);
 
 // -----------------------------------------------------------------------------
 // Get direct message conversation

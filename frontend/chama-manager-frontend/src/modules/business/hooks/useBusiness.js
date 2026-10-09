@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import businessService from "../services/business.service";
-import storefrontPublicService from "../services/storefront.public.service";
 
 // Dashboard Summary
 export function useBusinessSummary(workspaceId) {
@@ -20,6 +19,19 @@ export function useBusinessSummary(workspaceId) {
 }
 
 export const useBusiness = useBusinessSummary;
+
+// Chama oversight + category-aware insights. Only enabled for chama-owned
+// businesses (the endpoint 404s for personal ones).
+export function useChamaBusinessDashboard(workspaceId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["business", "chama-dashboard", workspaceId],
+    queryFn: () => businessService.getChamaDashboard(workspaceId),
+    enabled: Boolean(workspaceId) && enabled,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+    retry: false,
+  });
+}
 
 // Sales Hooks
 export function useBusinessSales(workspaceId, params = {}) {
@@ -148,7 +160,6 @@ export function useBusinessInventory(workspaceId, params = {}) {
     mutationFn: ({ itemId, ...payload }) => businessService.updateInventoryItem(workspaceId, itemId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
-      queryClient.invalidateQueries({ queryKey: ["business", "storefront", workspaceId] });
     },
   });
 
@@ -159,11 +170,31 @@ export function useBusinessInventory(workspaceId, params = {}) {
     },
   });
 
+  const publishInventoryMutation = useMutation({
+    mutationFn: (itemId) => businessService.publishInventoryItem(workspaceId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
+    },
+  });
+
+  const unpublishInventoryMutation = useMutation({
+    mutationFn: (itemId) => businessService.unpublishInventoryItem(workspaceId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
+    },
+  });
+
+  const publishAllInventoryMutation = useMutation({
+    mutationFn: (itemIds) => businessService.publishInventoryBulk(workspaceId, itemIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
+    },
+  });
+
   const restockInventoryMutation = useMutation({
     mutationFn: ({ itemId, ...payload }) => businessService.restockInventoryItem(workspaceId, itemId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
-      queryClient.invalidateQueries({ queryKey: ["business", "storefront", workspaceId] });
     },
   });
 
@@ -179,6 +210,12 @@ export function useBusinessInventory(workspaceId, params = {}) {
     isDeleting: deleteInventoryMutation.isPending,
     restockInventoryItem: restockInventoryMutation.mutateAsync,
     isRestocking: restockInventoryMutation.isPending,
+    publishInventoryItem: publishInventoryMutation.mutateAsync,
+    isPublishing: publishInventoryMutation.isPending,
+    unpublishInventoryItem: unpublishInventoryMutation.mutateAsync,
+    isUnpublishing: unpublishInventoryMutation.isPending,
+    publishAllInventory: publishAllInventoryMutation.mutateAsync,
+    isPublishingAll: publishAllInventoryMutation.isPending,
   };
 }
 
@@ -401,109 +438,5 @@ export function useInitiateBusinessStkPush() {
       queryClient.invalidateQueries({ queryKey: ["business", "summary", variables.workspaceId] });
       queryClient.invalidateQueries({ queryKey: ["business", "accounts", variables.workspaceId] });
     },
-  });
-}
-
-/**
- * ============================================================
- * STOREFRONT — ADMIN SIDE (owner configures branding + fulfills orders)
- * ============================================================
- */
-export function useStorefrontSettings(workspaceId) {
-  const queryClient = useQueryClient();
-
-  const storefrontQuery = useQuery({
-    queryKey: ["business", "storefront", workspaceId],
-    queryFn: () => businessService.getStorefront(workspaceId),
-    enabled: Boolean(workspaceId),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (payload) => businessService.updateStorefront(workspaceId, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["business", "storefront", workspaceId] });
-    },
-  });
-
-  return {
-    storefront: storefrontQuery.data,
-    isLoading: storefrontQuery.isLoading,
-    refetch: storefrontQuery.refetch,
-    updateStorefront: updateMutation.mutateAsync,
-    isUpdating: updateMutation.isPending,
-  };
-}
-
-export function useStorefrontOrders(workspaceId) {
-  const queryClient = useQueryClient();
-
-  const ordersQuery = useQuery({
-    queryKey: ["business", "storefront-orders", workspaceId],
-    queryFn: () => businessService.getStorefrontOrders(workspaceId),
-    enabled: Boolean(workspaceId),
-    refetchInterval: 20000,
-  });
-
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ orderId, status }) => businessService.updateStorefrontOrderStatus(workspaceId, orderId, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["business", "storefront-orders", workspaceId] });
-      queryClient.invalidateQueries({ queryKey: ["business", "inventory", workspaceId] });
-      queryClient.invalidateQueries({ queryKey: ["business", "summary", workspaceId] });
-    },
-  });
-
-  return {
-    orders: Array.isArray(ordersQuery.data) ? ordersQuery.data : [],
-    isLoading: ordersQuery.isLoading,
-    refetch: ordersQuery.refetch,
-    updateOrderStatus: updateStatusMutation.mutateAsync,
-    isUpdatingStatus: updateStatusMutation.isPending,
-  };
-}
-
-/**
- * ============================================================
- * STOREFRONT — PUBLIC SIDE (buyer, no auth, no workspace context)
- * ============================================================
- */
-export function usePublicStorefront(slug) {
-  const query = useQuery({
-    queryKey: ["storefront", "public", slug],
-    queryFn: () => storefrontPublicService.getStorefront(slug),
-    enabled: Boolean(slug),
-    // Live stock: keep this fresh without the buyer having to refresh
-    refetchInterval: 20000,
-    retry: 1,
-  });
-
-  return {
-    data: query.data,
-    storefront: query.data?.storefront,
-    business: query.data?.business,
-    items: Array.isArray(query.data?.items) ? query.data.items : [],
-    listings: Array.isArray(query.data?.listings) ? query.data.listings : [],
-    isLoading: query.isLoading,
-    isError: query.isError,
-    error: query.error,
-    refetch: query.refetch,
-  };
-}
-
-export function usePlaceStorefrontOrder(slug) {
-  return useMutation({
-    mutationFn: (payload) => storefrontPublicService.placeOrder(slug, payload),
-  });
-}
-
-export function useSubmitRentalInquiry(slug) {
-  return useMutation({
-    mutationFn: ({ listingId, ...payload }) => storefrontPublicService.submitInquiry(slug, listingId, payload),
-  });
-}
-
-export function useTrackStorefrontOrder() {
-  return useMutation({
-    mutationFn: ({ orderCode, phone }) => storefrontPublicService.trackOrder(orderCode, phone),
   });
 }

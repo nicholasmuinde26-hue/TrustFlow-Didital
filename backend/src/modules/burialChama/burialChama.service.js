@@ -37,7 +37,7 @@ class BurialChamaService {
             updated_by: userId,
             version: existingProfile.version + 1
           },
-          { new: true, runValidators: true }
+          { returnDocument: 'after', runValidators: true }
         );
       } else {
         // Create new profile
@@ -82,7 +82,7 @@ class BurialChamaService {
           activated_at: new Date(),
           activated_by: userId
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!profile) {
@@ -161,7 +161,7 @@ class BurialChamaService {
           changed_by: userId,
           effective_from: new Date()
         },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
 
       return updatedBeneficiary;
@@ -329,7 +329,7 @@ class BurialChamaService {
       const updatedCase = await BurialCase.findByIdAndUpdate(
         caseId,
         { ...updateFields, ...updateData },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
 
       return updatedCase;
@@ -357,7 +357,7 @@ class BurialChamaService {
           },
           status: 'benefit_calculated'
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       return updatedCase;
@@ -464,7 +464,7 @@ class BurialChamaService {
           'approval.approval_role': approvalData.approval_role,
           'approval.rejection_reason': approvalData.rejection_reason
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       return updatedWaiver;
@@ -517,7 +517,7 @@ class BurialChamaService {
             last_updated_by: userId,
             preferences_confirmed_at: new Date()
           },
-          { new: true, runValidators: true }
+          { returnDocument: 'after', runValidators: true }
         );
       } else {
         const membership = await ChamaMembership.findById(membershipId);

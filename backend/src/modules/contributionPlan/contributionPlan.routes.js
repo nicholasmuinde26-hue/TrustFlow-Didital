@@ -25,8 +25,9 @@ import {
 
     getPlanPayments,
 
-    getPlanFinancialSummary
+    getPlanFinancialSummary,
 
+    configurePlanSchedule
 }
 from "./contributionPlan.controller.js";
 
@@ -37,6 +38,19 @@ import {
     protect
 }
 from "../../middleware/auth.middleware.js";
+
+// Resetting a contribution's timings (due day, grace period, start/end
+// month) affects every member on that plan, so - like the calendar
+// routes in contributionCalendar.routes.js - it is restricted to the
+// Treasurer/Chairperson (or a ContributionGroup organizer, which the
+// membership resolver treats as equivalent). Previously this endpoint
+// only checked `protect`, so any authenticated user who knew a plan's
+// ID could reschedule any chama's contributions.
+import {
+    requireChamaMember,
+    requireChamaTreasurerOrChairperson
+}
+from "../../middleware/chama.middleware.js";
 
 
 
@@ -305,6 +319,22 @@ router.patch(
     protect,
 
     updatePlan
+
+);
+
+// CONFIGURE SCHEDULE
+
+router.patch(
+
+    "/:planId/configure-schedule",
+
+    protect,
+
+    requireChamaMember,
+
+    requireChamaTreasurerOrChairperson,
+
+    configurePlanSchedule
 
 );
 

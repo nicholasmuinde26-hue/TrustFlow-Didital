@@ -17,16 +17,83 @@ import {
   FileText,
   HeartHandshake,
   HeartPulse,
+  RefreshCw,
+  Landmark,
+  TrendingUp,
+  Sparkles,
+  Settings2,
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 import chamaService from "@/modules/chama/services/chama.service";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
+import WorkspaceSetupPicker from "@/modules/workspaces/components/WorkspaceSetupPicker";
+import { useModuleCatalog } from "@/modules/workspaces/hooks/useWorkspaceModules";
+import { dependencyProblems } from "@/modules/workspaces/utils/moduleSelection";
+
+// Presets are a shortcut, not a new kind of Chama — every option below
+// still creates a plain `standard` (or `burial`) Chama underneath.
+// Picking one just pre-wires the composable policy layers (MGR,
+// loan/table-banking) the backend already supports independently of
+// chama type, instead of leaving the chairperson to discover each one
+// separately. "Mixed" proves the point: one Chama, both policies, same
+// ledger.
+const PRESETS = [
+  {
+    id: "merry_go_round",
+    label: "Merry-Go-Round",
+    icon: RefreshCw,
+    blurb: "Classic rotating pot — one member is paid out each round.",
+    chamaType: "standard",
+  },
+  {
+    id: "table_banking",
+    label: "Table Banking",
+    icon: Landmark,
+    blurb: "Members save together and borrow from the pool, with interest.",
+    chamaType: "standard",
+  },
+  {
+    id: "investment",
+    label: "Investment Group",
+    icon: TrendingUp,
+    blurb: "Pool funds to grow and share out returns periodically.",
+    chamaType: "standard",
+  },
+  {
+    id: "burial",
+    label: "Burial / Welfare",
+    icon: HeartPulse,
+    blurb: "Welfare and burial benefits, cases and beneficiary payouts.",
+    chamaType: "burial",
+  },
+  {
+    id: "mixed",
+    label: "Mixed",
+    icon: Sparkles,
+    blurb: "Rotate a pot AND lend internally — both, on one ledger.",
+    chamaType: "standard",
+  },
+  {
+    id: "custom",
+    label: "Start Blank",
+    icon: Settings2,
+    blurb: "Skip the presets — configure everything yourself later.",
+    chamaType: "standard",
+  },
+];
 
 export default function CreateChamaPage() {
   const { createChama, selectWorkspace } = useWorkspace();
   const navigate = useNavigate();
+
+  // Workspace Setup: preset + the exact feature modules this chama starts with.
+  // Filled from the "standard" preset once the catalog loads.
+  const [setup, setSetup] = useState({ preset: "standard", modules: [] });
+  const { data: moduleCatalog } = useModuleCatalog();
+  const preset = setup.preset;
+  const [presetResult, setPresetResult] = useState(null);
 
   const [form, setForm] = useState({
     chamaType: "standard",
@@ -57,10 +124,6 @@ export default function CreateChamaPage() {
     if (name === "treasurerInput") setTreasurerUser(null);
     if (name === "secretaryInput") setSecretaryUser(null);
     if (name === "patronInput") setPatronUser(null);
-  }
-
-  function handleTypeChange(chamaType) {
-    setForm((prev) => ({ ...prev, chamaType }));
   }
 
   function handleCommitteeInputChange(index, value) {
@@ -157,14 +220,25 @@ export default function CreateChamaPage() {
       return;
     }
 
+    if (moduleCatalog && dependencyProblems(moduleCatalog, setup.modules).length > 0) {
+      setError("Some workspace features need others to be switched on. Fix the warnings under Workspace Setup.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const workspace = await createChama({
+      // The burial shell is only meaningful when burial cover is switched on.
+      const chamaType = setup.modules.includes("burial_welfare") ? "burial" : "standard";
+
+      const { workspace, presetSummary } = await createChama({
         name: form.name,
         monthlySavings: Number(form.monthlySavings),
         visibility: form.visibility,
-        chamaType: form.chamaType,
+        chamaType,
+        // Provisioning (MGR/loan policies) keys off the preset; "standard" has none.
+        preset: setup.preset === "standard" ? "custom" : setup.preset,
+        workspaceModules: { preset: setup.preset, modules: setup.modules },
         treasurerUserId: treasurerUser._id,
         treasurerInput: form.treasurerInput.trim(),
         secretaryUserId: secretaryUser._id,
@@ -179,14 +253,11 @@ export default function CreateChamaPage() {
 
       const workspaceId = workspace.id ?? workspace._id;
 
-      // Burial chamas still need their benefit rules, membership classes,
-      // beneficiaries, etc. configured before they're usable — send them
-      // straight into that wizard instead of the generic overview.
-      if (form.chamaType === "burial") {
-        navigate(`/workspace/${workspaceId}/burial-chama-setup`, { replace: true });
-      } else {
-        navigate(`/workspace/${workspaceId}`, { replace: true });
-      }
+      // Pause on a confirmation screen showing exactly what the preset
+      // provisioned, instead of jumping straight into the workspace —
+      // this is the moment that actually proves "one chama, several
+      // policies, wired automatically" rather than just claiming it.
+      setPresetResult({ workspaceId, chamaType, presetSummary });
     } catch (err) {
       setError(err?.response?.data?.message || "Could not create the Chama.");
     } finally {
@@ -194,7 +265,82 @@ export default function CreateChamaPage() {
     }
   }
 
-  const isBurial = form.chamaType === "burial";
+  function continueFromPresetResult() {
+    if (!presetResult) return;
+    if (presetResult.chamaType === "burial") {
+      navigate(`/workspace/${presetResult.workspaceId}/burial-chama-setup`, { replace: true });
+    } else {
+      navigate(`/workspace/${presetResult.workspaceId}`, { replace: true });
+    }
+  }
+
+  const isBurial = setup.modules.includes("burial_welfare");
+
+  // ----------------------------------------
+  // Post-creation confirmation: what the preset actually provisioned
+  // ----------------------------------------
+  if (presetResult) {
+    const { presetSummary } = presetResult;
+    const presetLabel = PRESETS.find((p) => p.id === presetSummary?.preset)?.label || "Custom";
+    const PROVISIONED_LABELS = {
+      mgr_policy: "Merry-Go-Round policy (draft — ready to activate)",
+      loan_policy: "Table-banking / loan policy (active with default terms)",
+    };
+
+    return (
+      <div className="mx-auto max-w-xl space-y-6 pb-12 font-sans">
+        <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-6 sm:p-8 dark:border-emerald-900 dark:bg-emerald-950/30">
+          <div className="flex items-center gap-3 mb-1">
+            <span className="rounded-2xl bg-emerald-600 p-2.5 text-white">
+              <CheckCircle2 size={22} />
+            </span>
+            <div>
+              <h1 className="text-xl font-black text-slate-900 dark:text-white">Chama created</h1>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                Preset: <span className="font-bold text-emerald-700 dark:text-emerald-400">{presetLabel}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2">
+            <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Set up automatically
+            </p>
+            {presetSummary?.provisioned?.length ? (
+              presetSummary.provisioned.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                  {PROVISIONED_LABELS[item.type] || item.type}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                Just the base chama — nothing extra to configure yet.
+              </div>
+            )}
+          </div>
+
+          {presetSummary?.nextSteps?.length ? (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Next steps
+              </p>
+              {presetSummary.nextSteps.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                  {step}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <Button type="button" className="mt-6 w-full" onClick={continueFromPresetResult}>
+            Continue
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-12 font-sans">
@@ -236,65 +382,17 @@ export default function CreateChamaPage() {
         onSubmit={handleSubmit}
         className="space-y-6 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-xs dark:border-slate-800 dark:bg-slate-900"
       >
-        {/* Section 0: Chama Type */}
+        {/* Section 0: Workspace Setup - preset picker + module checklist (shared component) */}
         <div className="space-y-3">
           <h2 className="text-sm font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-            0. Chama Type
+            0. Workspace Setup
           </h2>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-2">
+            Choose what this Chama starts with. You can turn features on or off later from the
+            Leadership Desk (changes need approval from two officials).
+          </p>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label
-              className={`flex flex-col p-3 rounded-2xl border cursor-pointer transition-all ${
-                form.chamaType === "standard"
-                  ? "border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/40 dark:border-indigo-500"
-                  : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
-                  <Building2 size={14} className="text-indigo-600 dark:text-indigo-400" />
-                  <span>Standard Chama</span>
-                </div>
-                <input
-                  type="radio"
-                  name="chamaType"
-                  value="standard"
-                  checked={form.chamaType === "standard"}
-                  onChange={() => handleTypeChange("standard")}
-                  className="accent-indigo-600"
-                />
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-                Savings, contributions, loans and merry-go-round rotations.
-              </p>
-            </label>
-
-            <label
-              className={`flex flex-col p-3 rounded-2xl border cursor-pointer transition-all ${
-                form.chamaType === "burial"
-                  ? "border-rose-600 bg-rose-50/50 dark:bg-rose-950/40 dark:border-rose-500"
-                  : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-950"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 dark:text-white">
-                  <HeartPulse size={14} className="text-rose-600 dark:text-rose-400" />
-                  <span>Burial Chama</span>
-                </div>
-                <input
-                  type="radio"
-                  name="chamaType"
-                  value="burial"
-                  checked={form.chamaType === "burial"}
-                  onChange={() => handleTypeChange("burial")}
-                  className="accent-rose-600"
-                />
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
-                Welfare & burial benefits, cases and beneficiary payouts.
-              </p>
-            </label>
-          </div>
+          <WorkspaceSetupPicker value={setup} onChange={setSetup} defaultPreset="standard" />
         </div>
 
         {/* Section 1: Basic Information */}

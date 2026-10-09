@@ -270,13 +270,13 @@ class NotificationPreferenceService {
   /**
    * Check if user wants to receive notification in a channel
    */
-  shouldReceiveChannel(userId, channel, category = null) {
+  async shouldReceiveChannel(userId, channel, category = null) {
     try {
-      const preferences = this.getUserPreferences(userId);
+      const preferences = await this.getUserPreferences(userId);
 
       // Check do not disturb mode
       if (preferences.do_not_disturb.enabled) {
-        if (preferences.do_not_disturb.until && preferences.do_not_disturb.until > new Date()) {
+        if (!preferences.do_not_disturb.until || preferences.do_not_disturb.until > new Date()) {
           return false;
         }
       }
@@ -289,13 +289,15 @@ class NotificationPreferenceService {
         }
       }
 
-      // Check category-specific preferences
-      if (category && preferences.category_preferences[category]) {
-        return preferences.category_preferences[category][channel] || false;
-      }
-
-      // Check default channel preferences
-      return preferences.default_channels[channel] || false;
+      // Default channels are the master switches; category settings can further
+      // mute a channel but cannot turn it back on after its master switch is off.
+      if (preferences.default_channels?.[channel] === false) return false;
+      const categoryPreference = category
+        ? preferences.category_preferences?.[category]?.[channel]
+        : undefined;
+      return categoryPreference === undefined
+        ? preferences.default_channels?.[channel] !== false
+        : categoryPreference === true;
 
     } catch (error) {
       console.error('Check channel preference error:', error);
@@ -341,20 +343,27 @@ class NotificationPreferenceService {
   /**
    * Get all channels a user wants to receive notifications for
    */
-  getEnabledChannels(userId, category = null) {
+  async getEnabledChannels(userId, category = null) {
     try {
-      const preferences = this.getUserPreferences(userId);
+      const preferences = await this.getUserPreferences(userId);
       const enabledChannels = [];
-
-      const channelCheck = category
-        ? (channel) => this.shouldReceiveChannel(userId, channel, category)
-        : (channel) => this.shouldReceiveChannel(userId, channel);
-
-      if (channelCheck('in_app')) enabledChannels.push('in-app');
-      if (channelCheck('toast')) enabledChannels.push('toast');
-      if (channelCheck('push')) enabledChannels.push('push');
-      if (channelCheck('sms')) enabledChannels.push('sms');
-      if (channelCheck('email')) enabledChannels.push('email');
+      const mapping = [
+        ['in_app', 'in-app'],
+        ['toast', 'toast'],
+        ['push', 'push'],
+        ['sms', 'sms'],
+        ['email', 'email']
+      ];
+      const dnd = preferences.do_not_disturb;
+      if (dnd?.enabled && (!dnd.until || dnd.until > new Date())) return [];
+      if (preferences.quiet_hours?.enabled && this.isInQuietHours(preferences.quiet_hours)) return [];
+      for (const [preferenceKey, deliveryChannel] of mapping) {
+        if (preferences.default_channels?.[preferenceKey] === false) continue;
+        const categoryValue = category
+          ? preferences.category_preferences?.[category]?.[preferenceKey]
+          : undefined;
+        if (categoryValue === undefined || categoryValue === true) enabledChannels.push(deliveryChannel);
+      }
 
       return enabledChannels;
 

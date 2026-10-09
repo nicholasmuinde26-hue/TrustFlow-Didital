@@ -20,6 +20,8 @@ import {
 
 import chamaApi from "@/modules/chama/api/chama.api";
 import loansApi from "@/modules/loans/api/loans.api";
+import useAuth from "@/app/hooks/useAuth";
+import KycSubmitModal from "@/modules/chama/components/KycSubmitModal";
 
 /* ============================================================================
  * CONFIGURATION
@@ -140,7 +142,12 @@ export default function BurialMemberDashboardPage() {
     };
 
     loadDashboard();
-    return () => controller.abort();
+    window.addEventListener("chama:kyc-updated", loadDashboard);
+
+    return () => {
+      controller.abort();
+      window.removeEventListener("chama:kyc-updated", loadDashboard);
+    };
   }, [workspaceId]);
 
   if (status === "loading") {
@@ -159,9 +166,14 @@ export default function BurialMemberDashboardPage() {
  * ========================================================================== */
 
 function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
+  const { user } = useAuth();
+  const [showKycModal, setShowKycModal] = useState(false);
+
   const membership = getMembership(data);
   const role = getRole(membership);
   const kycStatus = getKycStatus(data);
+  const canSubmitKyc =
+    kycStatus !== CONFIG.kycStatuses.approved && kycStatus !== CONFIG.kycStatuses.pending;
   const memberId = getMemberId(membership);
 
   const activeLoan = loanSummary?.active_loan || null;
@@ -197,6 +209,7 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
   const base = `/workspace/${workspaceId}`;
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -217,7 +230,7 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
               Your Welfare Cover at a Glance
             </h1>
             <p className="max-w-xl text-sm text-emerald-100">
-              Welfare fund contributions, beneficiary cover, emergency loan position, and your
+              Welfare cover, beneficiaries, emergency loan position, and your
               digital membership card — all in one place.
             </p>
           </div>
@@ -264,7 +277,7 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
         />
         <SummaryCard title="Emergency Loan Limit" value={money(loanLimit)} icon={CreditCard} accent="sky" />
         <SummaryCard
-          title="Next contribution due"
+          title="Next loan repayment"
           value={nextPaymentDate}
           icon={CalendarClock}
           accent="amber"
@@ -356,7 +369,7 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
             </span>
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">My Member Statement</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Download or share your contribution & benefit history</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Download or share your member statement</p>
             </div>
           </div>
           <ChevronRight size={16} className="text-slate-400" />
@@ -385,6 +398,23 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
             <MemberDetail label="KYC status" value={kycStatus} badgeClassName={kycAccent} />
             <MemberDetail label="Member ID" value={displayMemberId} mono />
           </div>
+
+          {canSubmitKyc && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+              <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
+                {kycStatus === CONFIG.kycStatuses.rejected
+                  ? "Your last KYC submission was rejected. Resubmit your ID to try again."
+                  : "You haven't submitted your ID for this group yet. Submit it so leadership can verify your membership and activate cover."}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowKycModal(true)}
+                className="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-md transition hover:bg-emerald-500"
+              >
+                {kycStatus === CONFIG.kycStatuses.rejected ? "Resubmit KYC" : "Submit KYC"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 to-teal-800 p-5 text-white shadow-xl flex flex-col justify-between">
@@ -407,6 +437,17 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
         </div>
       </section>
     </motion.div>
+
+      {showKycModal && (
+        <KycSubmitModal
+          workspaceId={workspaceId}
+          initialIdNumber={user?.id_number}
+          status={kycStatus}
+          onClose={() => setShowKycModal(false)}
+          onSubmitted={() => window.dispatchEvent(new Event("chama:kyc-updated"))}
+        />
+      )}
+    </>
   );
 }
 

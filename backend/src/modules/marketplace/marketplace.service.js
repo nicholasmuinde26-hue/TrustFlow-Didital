@@ -11,11 +11,16 @@ import Product from "../../models/Product.js";
 import RentalListing from "../../models/RentalListing.js";
 import BusinessItem from "../../models/BusinessItem.js";
 import BusinessTransaction from "../../models/BusinessTransaction.js";
-import Storefront from "../../models/Storefront.js";
 import PlatformAdmin from "../../models/PlatformAdmin.js";
 import * as mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import AppError from "../../utils/AppError.js";
+import { getHubSlugForBusinessCategory, isBusinessEligibleForHub } from "./marketplaceHubs.js";
+import { pushListingEditsToItem } from "./inventoryMarketplaceSync.service.js";
+import { getOwnedBusiness } from "../business/business.service.js";
 import { DEFAULT_RENTAL_PROPERTIES } from "./defaultRentals.data.js";
+import { DEFAULT_RETAIL_STORES, DEFAULT_RETAIL_PRODUCTS } from "./defaultRetail.data.js";
+import { DEFAULT_FOOD_RESTAURANTS, DEFAULT_FOOD_MENU } from "./defaultFood.data.js";
+import { DEFAULT_SERVICE_PROVIDERS } from "./defaultServices.data.js";
 
 // ============================================================================
 // DEFAULT CATEGORY HUBS INITIALIZATION
@@ -31,14 +36,16 @@ const DEFAULT_HUBS = [
     hero_subtitle: "Order directly from verified businesses across the country with fast delivery and secure M-Pesa checkout.",
     theme_color: "#059669",
     theme_gradient: "from-emerald-950 via-slate-900 to-teal-950",
-    filter_keys: ["price", "in_stock", "location", "subcategory"],
+    filter_keys: ["price", "in_stock", "brand", "rating", "subcategory"],
     subcategories: [
       { slug: "electronics", name: "Electronics & Gadgets", icon: "Tv" },
-      { slug: "fashion", name: "Fashion & Apparel", icon: "Shirt" },
-      { slug: "groceries", name: "Groceries & Supermarket", icon: "Apple" },
-      { slug: "home", name: "Home & Furniture", icon: "Home" },
-      { slug: "hardware", name: "Hardware & Construction", icon: "Wrench" },
+      { slug: "appliances", name: "Home & Kitchen Appliances", icon: "Tv" },
+      { slug: "mobiles", name: "Mobiles & Smartwatches", icon: "Smartphone" },
+      { slug: "clothing", name: "Clothing & Fashion", icon: "Shirt" },
+      { slug: "footwear", name: "Footwear & Shoes", icon: "Footprints" },
+      { slug: "furniture", name: "Furniture & Office", icon: "Armchair" },
       { slug: "beauty", name: "Beauty & Personal Care", icon: "Sparkles" },
+      { slug: "groceries", name: "Groceries & Supermarket", icon: "Apple" },
     ],
     featured_collections: [
       { name: "Top Electronics", tag: "electronics", badge_color: "blue" },
@@ -81,21 +88,33 @@ const DEFAULT_HUBS = [
     tagline: "Book verified professionals, artisans, and service providers",
     description: "Find trusted plumbers, electricians, consultants, beauty technicians, and maintenance experts.",
     icon: "Briefcase",
-    hero_title: "Hire Trusted Professionals Nearby",
-    hero_subtitle: "Transparent pricing, verified client reviews, and direct service dispatch.",
+    hero_title: "Find trusted help for everyday jobs",
+    hero_subtitle: "Compare local professionals by service, rating, and area. Contact the provider directly to agree on a time.",
     theme_color: "#7c3aed",
     theme_gradient: "from-purple-950 via-slate-900 to-violet-950",
     filter_keys: ["service_mode", "location", "price"],
     subcategories: [
-      { slug: "home_repairs", name: "Plumbing & Electrical", icon: "Hammer" },
-      { slug: "cleaning", name: "Cleaning & Fumigation", icon: "Sparkles" },
-      { slug: "tech_support", name: "IT & Tech Support", icon: "Laptop" },
-      { slug: "consulting", name: "Financial & Tax Services", icon: "FileText" },
-      { slug: "events", name: "Event Planning & Catering", icon: "Calendar" },
+      { slug: "plumbing", name: "Plumbing", icon: "Wrench" },
+      { slug: "electrical", name: "Electrical", icon: "Zap" },
+      { slug: "home-cleaning", name: "Home Cleaning", icon: "Sparkles" },
+      { slug: "painting", name: "Painting", icon: "Paintbrush" },
+      { slug: "carpentry", name: "Carpentry", icon: "Hammer" },
+      { slug: "appliance-repair", name: "Appliance Repair", icon: "Refrigerator" },
+      { slug: "tailoring", name: "Tailoring", icon: "Scissors" },
+      { slug: "photography", name: "Photography", icon: "Camera" },
+      { slug: "beauty-grooming", name: "Beauty & Grooming", icon: "Sparkles" },
+      { slug: "moving", name: "Moving", icon: "Truck" },
+      { slug: "gardening", name: "Gardening", icon: "Flower2" },
+      { slug: "tech-support", name: "Tech Support", icon: "Laptop" },
+      { slug: "tutoring", name: "Tutoring", icon: "BookOpen" },
+      { slug: "catering", name: "Catering", icon: "Utensils" },
+      { slug: "pest-control", name: "Pest Control", icon: "Bug" },
+      { slug: "auto-repair", name: "Auto Repair", icon: "Car" },
     ],
     featured_collections: [
-      { name: "Emergency Dispatch", tag: "emergency", badge_color: "rose" },
-      { name: "Top Rated Pros", tag: "top_rated", badge_color: "amber" },
+      { name: "Top Rated Nearby", tag: "top_rated", badge_color: "emerald" },
+      { name: "Home Repairs", tag: "home_repairs", badge_color: "blue" },
+      { name: "Home Cleaning", tag: "home-cleaning", badge_color: "violet" },
     ],
     is_active: true,
     sort_order: 3,
@@ -112,10 +131,16 @@ const DEFAULT_HUBS = [
     theme_gradient: "from-amber-950 via-slate-900 to-orange-950",
     filter_keys: ["cuisine_type", "price", "is_vegetarian"],
     subcategories: [
-      { slug: "fast_food", name: "Burgers, Fries & Grills", icon: "Flame" },
-      { slug: "local_cuisine", name: "African & Local Dishes", icon: "Utensils" },
-      { slug: "bakery", name: "Pastries & Cakes", icon: "Cookie" },
-      { slug: "drinks", name: "Juices & Beverages", icon: "Coffee" },
+      { slug: "local-dishes", name: "Kenyan Plates", icon: "Utensils" },
+      { slug: "burgers", name: "Burgers", icon: "Sandwich" },
+      { slug: "pizza", name: "Pizza", icon: "Pizza" },
+      { slug: "grills", name: "Grills", icon: "Flame" },
+      { slug: "pasta", name: "Pasta", icon: "Utensils" },
+      { slug: "salads", name: "Fresh Bowls", icon: "Salad" },
+      { slug: "sides", name: "Sides", icon: "Soup" },
+      { slug: "drinks", name: "Drinks", icon: "Coffee" },
+      { slug: "desserts", name: "Desserts", icon: "Cake" },
+      { slug: "bakery", name: "Bakery", icon: "Cookie" },
     ],
     featured_collections: [
       { name: "Lunch Specials", tag: "lunch", badge_color: "orange" },
@@ -131,9 +156,9 @@ export async function ensureDefaultCategories() {
     const exists = await MarketplaceCategory.findOne({ slug: hub.slug });
     if (!exists) {
       await MarketplaceCategory.create(hub);
-    } else if (hub.slug === "rentals") {
+    } else if (hub.slug === "rentals" || hub.slug === "retail" || hub.slug === "food" || hub.slug === "services") {
       await MarketplaceCategory.updateOne(
-        { slug: "rentals" },
+        { slug: hub.slug },
         {
           $set: {
             hero_title: hub.hero_title,
@@ -141,6 +166,7 @@ export async function ensureDefaultCategories() {
             theme_color: hub.theme_color,
             theme_gradient: hub.theme_gradient,
             subcategories: hub.subcategories,
+            filter_keys: hub.filter_keys,
           },
         }
       );
@@ -148,7 +174,18 @@ export async function ensureDefaultCategories() {
   }
 }
 
-export async function ensureDefaultRentals() {
+let defaultRentalsSeedPromise = null;
+
+export function ensureDefaultRentals() {
+  if (!defaultRentalsSeedPromise) {
+    defaultRentalsSeedPromise = seedDefaultRentals().finally(() => {
+      defaultRentalsSeedPromise = null;
+    });
+  }
+  return defaultRentalsSeedPromise;
+}
+
+async function seedDefaultRentals() {
   await ensureDefaultCategories();
   const rentalCount = await MarketplaceListing.countDocuments({ category_slug: "rentals" });
   if (rentalCount >= 10) return;
@@ -227,6 +264,285 @@ export async function ensureDefaultRentals() {
   }
 }
 
+let defaultRetailSeedPromise = null;
+
+// Several requests hit the retail hub at once (categories, listings, stores).
+// Without this guard each one seeded its own copy of the demo stores, which is
+// where the repeated stores in the directory came from.
+export function ensureDefaultRetail() {
+  if (!defaultRetailSeedPromise) {
+    defaultRetailSeedPromise = seedDefaultRetail().finally(() => {
+      defaultRetailSeedPromise = null;
+    });
+  }
+  return defaultRetailSeedPromise;
+}
+
+async function seedDefaultRetail() {
+  await ensureDefaultCategories();
+  const retailCount = await MarketplaceListing.countDocuments({ category_slug: "retail" });
+  if (retailCount >= 20) return;
+
+  // Find or create a user for created_by
+  let user = await mongoose.model("User").findOne();
+  const fallbackUserId = user ? user._id : new mongoose.Types.ObjectId();
+
+  // Create or retrieve the 6 verified retail stores
+  const storeMap = {};
+  for (const store of DEFAULT_RETAIL_STORES) {
+    let business = await Business.findOne({
+      $or: [{ slug: store.slug }, { name: store.name }],
+    });
+
+    if (!business) {
+      business = await Business.create({
+        name: store.name,
+        slug: store.slug,
+        category: "retail",
+        category_label: "Retail & Wholesale",
+        currency: "KES",
+        location: store.location,
+        created_by: fallbackUserId,
+      });
+    }
+
+    let enrollment = await MarketplaceEnrollment.findOne({
+      business_id: business._id,
+      category_slug: "retail",
+    });
+
+    if (!enrollment) {
+      await MarketplaceEnrollment.create({
+        business_id: business._id,
+        category_slug: "retail",
+        status: "approved",
+        merchant_profile: {
+          display_name: store.name,
+          tagline: store.tagline,
+          description: store.description,
+          badges: store.badges,
+          rating: store.rating,
+          review_count: store.review_count,
+          banner_url: store.banner,
+          avatar_url: store.avatar,
+        },
+      });
+    }
+
+    storeMap[store.slug] = business._id;
+  }
+
+  const firstStoreId = Object.values(storeMap)[0] || fallbackUserId;
+
+  // Seed the 28 products
+  for (const product of DEFAULT_RETAIL_PRODUCTS) {
+    const existing = await MarketplaceListing.findOne({ slug: product.slug });
+    if (!existing) {
+      const bizId = storeMap[product.storeSlug] || firstStoreId;
+      await MarketplaceListing.create({
+        business_id: bizId,
+        category_slug: "retail",
+        source_type: "Product",
+        source_id: new mongoose.Types.ObjectId(),
+        title: product.title,
+        slug: product.slug,
+        brand: product.brand,
+        discount_pct: product.discount_pct,
+        description: product.description,
+        short_description: product.short_description,
+        price: product.price,
+        compare_price: product.compare_price,
+        currency: "KES",
+        stock: product.stock || 20,
+        track_stock: true,
+        images: product.images,
+        thumbnail: product.thumbnail,
+        subcategory: product.subcategory,
+        tags: product.tags,
+        moderation_status: "approved",
+        visibility: "public",
+        is_featured: Boolean(product.is_featured),
+        featured_rank: product.featured_rank || 0,
+        rating: product.rating || 4.8,
+        review_count: product.review_count || 15,
+      });
+    }
+  }
+}
+
+let defaultFoodSeedPromise = null;
+
+export function ensureDefaultFood() {
+  if (!defaultFoodSeedPromise) {
+    defaultFoodSeedPromise = seedDefaultFood().finally(() => {
+      defaultFoodSeedPromise = null;
+    });
+  }
+  return defaultFoodSeedPromise;
+}
+
+async function seedDefaultFood() {
+  await ensureDefaultCategories();
+  const defaultSlugs = DEFAULT_FOOD_MENU.map((item) => item.slug);
+  const seededCount = await MarketplaceListing.countDocuments({ category_slug: "food", slug: { $in: defaultSlugs } });
+  if (seededCount >= DEFAULT_FOOD_MENU.length) return;
+
+  const user = await mongoose.model("User").findOne();
+  const createdBy = user?._id || new mongoose.Types.ObjectId();
+  const businessMap = {};
+
+  for (const restaurant of DEFAULT_FOOD_RESTAURANTS) {
+    let business = await Business.findOne({ $or: [{ slug: restaurant.slug }, { name: restaurant.name }] });
+    if (!business) {
+      business = await Business.create({
+        name: restaurant.name,
+        slug: restaurant.slug,
+        category: "restaurant",
+        category_label: "Restaurant & Food",
+        currency: "KES",
+        location: restaurant.location,
+        created_by: createdBy,
+      });
+    }
+
+    let enrollment = await MarketplaceEnrollment.findOne({ business_id: business._id, category_slug: "food" });
+    if (!enrollment) {
+      await MarketplaceEnrollment.create({
+        business_id: business._id,
+        category_slug: "food",
+        status: "approved",
+        merchant_profile: {
+          display_name: restaurant.name,
+          tagline: restaurant.tagline,
+          description: restaurant.description,
+          banner_url: restaurant.banner,
+          logo_url: restaurant.avatar,
+          physical_location: restaurant.location,
+          badges: ["Verified Kitchen", "Made Fresh"],
+        },
+      });
+    }
+    businessMap[restaurant.slug] = business._id;
+  }
+
+  for (const [index, item] of DEFAULT_FOOD_MENU.entries()) {
+    if (await MarketplaceListing.exists({ slug: item.slug })) continue;
+    await MarketplaceListing.create({
+      business_id: businessMap[item.restaurantSlug],
+      category_slug: "food",
+      source_type: "BusinessItem",
+      source_id: new mongoose.Types.ObjectId(),
+      title: item.title,
+      slug: item.slug,
+      description: item.description,
+      short_description: item.description,
+      price: item.price,
+      currency: "KES",
+      stock: 50,
+      track_stock: false,
+      images: [item.photo],
+      thumbnail: item.photo,
+      subcategory: item.subcategory,
+      tags: [item.cuisine.toLowerCase(), item.vegetarian ? "vegetarian" : "popular"],
+      food_attributes: {
+        cuisine_type: item.cuisine,
+        is_vegetarian: item.vegetarian,
+        preparation_time_minutes: item.prepTime,
+      },
+      moderation_status: "approved",
+      visibility: "public",
+      is_featured: index < 6,
+      featured_rank: index < 6 ? index + 1 : 0,
+      rating: 4.6 + ((index % 4) * 0.1),
+      review_count: 18 + index * 3,
+    });
+  }
+}
+
+let defaultServicesSeedPromise = null;
+
+export function ensureDefaultServices() {
+  if (!defaultServicesSeedPromise) {
+    defaultServicesSeedPromise = seedDefaultServices().finally(() => {
+      defaultServicesSeedPromise = null;
+    });
+  }
+  return defaultServicesSeedPromise;
+}
+
+async function seedDefaultServices() {
+  await ensureDefaultCategories();
+  const defaultSlugs = DEFAULT_SERVICE_PROVIDERS.map((provider) => provider.slug);
+  const seededCount = await MarketplaceListing.countDocuments({ category_slug: "services", slug: { $in: defaultSlugs } });
+  if (seededCount >= DEFAULT_SERVICE_PROVIDERS.length) return;
+
+  const user = await mongoose.model("User").findOne();
+  const createdBy = user?._id || new mongoose.Types.ObjectId();
+
+  for (const [index, provider] of DEFAULT_SERVICE_PROVIDERS.entries()) {
+    let business = await Business.findOne({ name: provider.name });
+    if (!business) {
+      business = await Business.create({
+        name: provider.name,
+        category: "service",
+        category_label: provider.category,
+        currency: "KES",
+        location: provider.area,
+        created_by: createdBy,
+      });
+    }
+
+    let enrollment = await MarketplaceEnrollment.findOne({ business_id: business._id, category_slug: "services" });
+    if (!enrollment) {
+      await MarketplaceEnrollment.create({
+        business_id: business._id,
+        category_slug: "services",
+        status: "approved",
+        merchant_profile: {
+          display_name: provider.name,
+          tagline: `${provider.category} professional serving ${provider.area}`,
+          description: provider.description,
+          logo_url: provider.avatar,
+          banner_url: provider.banner,
+          physical_location: provider.area,
+          badges: ["Verified Professional", `${provider.years}+ years experience`],
+        },
+      });
+    }
+
+    if (await MarketplaceListing.exists({ slug: provider.slug })) continue;
+    await MarketplaceListing.create({
+      business_id: business._id,
+      category_slug: "services",
+      source_type: "BusinessItem",
+      source_id: new mongoose.Types.ObjectId(),
+      title: provider.offer,
+      slug: provider.slug,
+      description: provider.description,
+      short_description: `${provider.category} · ${provider.area} · ${provider.years}+ years experience`,
+      price: provider.price,
+      currency: "KES",
+      stock: 1,
+      track_stock: false,
+      images: [provider.banner],
+      thumbnail: provider.avatar,
+      subcategory: provider.subcategory,
+      tags: [provider.category.toLowerCase(), "verified", provider.area.toLowerCase()],
+      service_attributes: {
+        duration_minutes: provider.duration,
+        service_mode: provider.mode,
+        service_area: provider.area,
+      },
+      moderation_status: "approved",
+      visibility: "public",
+      is_featured: provider.featured,
+      featured_rank: provider.featured ? index + 1 : 0,
+      rating: provider.rating,
+      review_count: provider.reviews,
+    });
+  }
+}
+
 // ============================================================================
 // CATEGORY HUBS MANAGEMENT
 // ============================================================================
@@ -241,6 +557,15 @@ export async function getMarketplaceCategoryBySlug(slug) {
   if (slug && slug.toLowerCase() === "rentals") {
     await ensureDefaultRentals();
   }
+  if (slug && slug.toLowerCase() === "food") {
+    await ensureDefaultFood();
+  }
+  if (slug && slug.toLowerCase() === "services") {
+    await ensureDefaultServices();
+  }
+  if (slug && (slug.toLowerCase() === "retail" || slug.toLowerCase() === "all")) {
+    await ensureDefaultRetail();
+  }
   const category = await MarketplaceCategory.findOne({ slug: slug.toLowerCase(), is_active: true }).lean();
   if (!category) {
     throw new AppError(`Marketplace category '${slug}' not found`, 404);
@@ -248,12 +573,101 @@ export async function getMarketplaceCategoryBySlug(slug) {
   return category;
 }
 
+export async function getCategoryStores(categorySlug = "retail") {
+  const catSlug = String(categorySlug).toLowerCase().trim();
+  if (catSlug === "retail") await ensureDefaultRetail();
+  if (catSlug === "rentals") await ensureDefaultRentals();
+  if (catSlug === "food") await ensureDefaultFood();
+  if (catSlug === "services") await ensureDefaultServices();
+
+  const enrollments = await MarketplaceEnrollment.find({
+    category_slug: catSlug,
+    status: "approved",
+  })
+    .populate("business_id", "name category location currency marketplace_slug marketplace_paused")
+    .lean();
+
+  // 1) Eligible approved stores, one per business (a business can hold more
+  //    than one enrollment row, e.g. after a re-apply).
+  const seenBusiness = new Set();
+  const candidates = [];
+  for (const en of enrollments) {
+    const biz = en.business_id;
+    if (!biz || biz.marketplace_paused) continue;
+    if (!isBusinessEligibleForHub(biz.category, catSlug)) continue;
+    const key = String(biz._id);
+    if (seenBusiness.has(key)) continue;
+    seenBusiness.add(key);
+
+    const count = await MarketplaceListing.countDocuments({
+      business_id: biz._id,
+      category_slug: catSlug,
+      moderation_status: "approved",
+      visibility: "public",
+    });
+    candidates.push({ en, biz, count });
+  }
+
+  // 2) Collapse accidental copies: same store name AND same location is the
+  //    same store. Keep the copy that actually has the most live products.
+  //    A different business that merely shares a name (different location) is
+  //    a separate store and stays.
+  const norm = (v) => String(v || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const bestByKey = new Map();
+  for (const c of candidates) {
+    const name = c.en.merchant_profile?.display_name || c.biz.name;
+    const key = `${norm(name)}|${norm(c.biz.location)}`;
+    const current = bestByKey.get(key);
+    if (!current || c.count > current.count) bestByKey.set(key, c);
+  }
+  const unique = candidates.filter((c) => bestByKey.get(
+    `${norm(c.en.merchant_profile?.display_name || c.biz.name)}|${norm(c.biz.location)}`
+  ) === c);
+
+  const stores = [];
+  for (const { en, biz, count } of unique) {
+    // Every store needs its own URL. Stores without one get a unique slug saved
+    // now, so a store link can never open somebody else's page.
+    if (!biz.marketplace_slug) {
+      const doc = await Business.findById(biz._id);
+      if (doc) biz.marketplace_slug = await ensureMarketplaceSlug(doc);
+    }
+
+    const profile = en.merchant_profile || {};
+    stores.push({
+      _id: biz._id,
+      name: profile.display_name || biz.name,
+      slug: biz.marketplace_slug || slugify(biz.name, { lower: true, strict: true }),
+      category: biz.category,
+      tagline: profile.tagline || `Verified ${catSlug.toUpperCase()} Merchant`,
+      description: profile.description || "",
+      location: profile.physical_location || biz.location || "Nairobi, Kenya",
+      rating: profile.rating || 4.8,
+      review_count: profile.review_count || 120,
+      badges: profile.badges || ["Verified Store"],
+      primary_color: profile.primary_color || "#064e3b",
+      hero_style: profile.hero_style || "gradient",
+      banner: profile.banner_url || "https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&w=1200&q=80",
+      avatar: profile.logo_url || profile.avatar_url || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=300&q=80",
+      productCount: count,
+      verifiedAt: en.reviewed_at || en.updatedAt || en.createdAt || null,
+    });
+  }
+  // Newly verified stores first, so a store shows up at the top the moment it is approved.
+  stores.sort((a, b) => new Date(b.verifiedAt || 0) - new Date(a.verifiedAt || 0));
+  return stores;
+}
+
+export async function getRetailStores() {
+  return getCategoryStores("retail");
+}
+
 export async function updateMarketplaceCategoryDesign(slug, designData, adminUser) {
   assertMarketplaceScope(adminUser, slug, "manageMarketplaceDesign");
   const category = await MarketplaceCategory.findOneAndUpdate(
     { slug: slug.toLowerCase() },
     { $set: designData },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!category) throw new AppError("Category hub not found", 404);
   return category;
@@ -285,40 +699,7 @@ export function assertMarketplaceScope(adminUser, targetCategorySlug, requiredPe
 // BUSINESS CATEGORY & HUB ELIGIBILITY HELPERS
 // ============================================================================
 
-export function getHubSlugForBusinessCategory(businessCategory) {
-  if (!businessCategory) return "retail";
-  const b = String(businessCategory).toLowerCase().trim();
-  switch (b) {
-    case "retail":
-      return "retail";
-    case "rental":
-    case "rentals":
-      return "rentals";
-    case "service":
-    case "services":
-      return "services";
-    case "restaurant":
-    case "food":
-      return "food";
-    default:
-      return "retail";
-  }
-}
-
-export function isBusinessEligibleForHub(businessCategory, hubSlug) {
-  if (!businessCategory || !hubSlug) return false;
-  const b = String(businessCategory).toLowerCase().trim();
-  const h = String(hubSlug).toLowerCase().trim();
-
-  if (b === h) return true;
-  if (b === "retail" && h === "retail") return true;
-  if ((b === "rental" || b === "rentals") && (h === "rentals" || h === "rental")) return true;
-  if ((b === "service" || b === "services") && (h === "services" || h === "service")) return true;
-  if ((b === "restaurant" || b === "food") && (h === "food" || h === "restaurant")) return true;
-  if (b === "other" && h === "retail") return true;
-
-  return false;
-}
+export { getHubSlugForBusinessCategory, isBusinessEligibleForHub };
 
 // ============================================================================
 // MERCHANT ENROLLMENT (OPT-IN TO CATEGORY HUBS)
@@ -351,21 +732,17 @@ export async function enrollBusinessInMarketplace(businessId, categorySlug, merc
     category_slug: categorySlug.toLowerCase(),
   });
 
-  const storefront = await Storefront.findOne({ business_id: businessId }).lean();
+  await ensureMarketplaceSlug(business);
 
   const profile = {
-    display_name: merchantProfile.display_name || storefront?.name || business.name,
-    tagline: merchantProfile.tagline || storefront?.headline || "",
-    description: merchantProfile.description || storefront?.subtitle || "",
-    logo_url: merchantProfile.logo_url || "",
-    banner_url: merchantProfile.banner_url || "",
-    phone: merchantProfile.phone || business.mpesa_paybill || business.mpesa_till || "",
-    email: merchantProfile.email || "",
-    physical_location: merchantProfile.physical_location || business.location || storefront?.location_text || "",
-    return_policy: merchantProfile.return_policy || "7-day inspection and return policy on defective goods.",
-    delivery_info: merchantProfile.delivery_info || "Fast delivery across major cities.",
+    ...sanitizeMerchantProfile(merchantProfile),
     badges: ["Verified Merchant"],
   };
+  profile.display_name = profile.display_name || business.name;
+  profile.phone = profile.phone || business.mpesa_paybill || business.mpesa_till || "";
+  profile.physical_location = profile.physical_location || business.location || "";
+  profile.return_policy = profile.return_policy || "7-day inspection and return policy on defective goods.";
+  profile.delivery_info = profile.delivery_info || "Fast delivery across major cities.";
 
   if (enrollment) {
     if (enrollment.status === "approved") {
@@ -390,6 +767,113 @@ export async function enrollBusinessInMarketplace(businessId, categorySlug, merc
   });
 
   return enrollment;
+}
+
+// ============================================================================
+// MERCHANT PROFILE (seller-controlled branding inside the marketplace)
+// ============================================================================
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const PROFILE_TEXT_LIMITS = {
+  display_name: 80,
+  tagline: 140,
+  description: 600,
+  logo_url: 500,
+  banner_url: 500,
+  phone: 30,
+  email: 120,
+  physical_location: 160,
+  return_policy: 400,
+  delivery_info: 400,
+};
+
+/** Keeps only seller-editable fields, trims/limits them, and validates theme values. */
+function sanitizeMerchantProfile(input = {}) {
+  const out = {};
+  for (const [key, limit] of Object.entries(PROFILE_TEXT_LIMITS)) {
+    if (input[key] === undefined) continue;
+    out[key] = String(input[key] ?? "").trim().slice(0, limit);
+  }
+  if (input.primary_color !== undefined) {
+    if (!HEX_COLOR.test(String(input.primary_color))) {
+      throw new AppError("Colours must be hex values like #064e3b", 400);
+    }
+    out.primary_color = String(input.primary_color).toLowerCase();
+  }
+  if (input.hero_style !== undefined) {
+    if (!["gradient", "solid"].includes(input.hero_style)) {
+      throw new AppError("Banner style must be gradient or solid", 400);
+    }
+    out.hero_style = input.hero_style;
+  }
+  return out;
+}
+
+/** Gives a business a unique, stable marketplace URL slug (existing slugs are never changed). */
+export async function ensureMarketplaceSlug(business) {
+  if (business.marketplace_slug) return business.marketplace_slug;
+  const base = slugify(business.name || "", { lower: true, strict: true }) || `store-${String(business._id).slice(-6)}`;
+  let candidate = base;
+  let attempt = 1;
+  while (await Business.exists({ marketplace_slug: candidate, _id: { $ne: business._id } })) {
+    attempt += 1;
+    candidate = `${base}-${attempt}`;
+  }
+  business.marketplace_slug = candidate;
+  await business.save();
+  return candidate;
+}
+
+/**
+ * Seller edits how their business appears in the marketplace: store name,
+ * tagline, description, colours, banner style, contact/policy text.
+ * Applies to every hub the business is enrolled in. Also lets the seller
+ * hide / show the whole business in the marketplace.
+ */
+export async function updateMerchantProfile(businessId, user, payload = {}) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+
+  const enrollments = await MarketplaceEnrollment.find({ business_id: business._id });
+  if (enrollments.length === 0) {
+    throw new AppError("Enroll in your marketplace hub first, then you can customise your store page", 400);
+  }
+
+  const patch = sanitizeMerchantProfile(payload.merchant_profile || payload);
+  if (patch.display_name !== undefined && !patch.display_name) {
+    throw new AppError("Store name cannot be empty", 400);
+  }
+  if (Object.keys(patch).length) {
+    for (const enrollment of enrollments) {
+      const current = enrollment.merchant_profile?.toObject
+        ? enrollment.merchant_profile.toObject()
+        : { ...(enrollment.merchant_profile || {}) };
+      enrollment.merchant_profile = { ...current, ...patch };
+      await enrollment.save();
+    }
+  }
+
+  if (typeof payload.paused === "boolean") {
+    business.marketplace_paused = payload.paused;
+    await business.save();
+  }
+
+  return {
+    paused: Boolean(business.marketplace_paused),
+    slug: await ensureMarketplaceSlug(business),
+    enrollments: await MarketplaceEnrollment.find({ business_id: business._id }).lean(),
+  };
+}
+
+/** Seller-side read of the store profile + pause state (used to prefill the editor). */
+export async function getMerchantProfile(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user);
+  const enrollment = await MarketplaceEnrollment.findOne({ business_id: business._id }).sort({ createdAt: 1 }).lean();
+  return {
+    enrolled: Boolean(enrollment),
+    paused: Boolean(business.marketplace_paused),
+    slug: business.marketplace_slug || null,
+    business_name: business.name,
+    profile: enrollment?.merchant_profile || {},
+  };
 }
 
 export async function getBusinessEnrollments(businessId) {
@@ -599,6 +1083,9 @@ export async function updateMerchantMarketplaceListing(businessId, listingId, pa
   }
 
   await listing.save();
+  // Listings linked to an inventory item write their edits back to it,
+  // so Inventory, POS and the marketplace keep one shared truth.
+  await pushListingEditsToItem(listing, payload);
   return listing;
 }
 
@@ -627,6 +1114,17 @@ export async function toggleListingVisibility(businessId, listingId, userId, vis
   const newVis = visibility || (listing.visibility === "public" ? "unlisted" : "public");
   listing.visibility = newVis;
   await listing.save();
+  if (listing.source_type === "BusinessItem") {
+    await BusinessItem.updateOne(
+      { _id: listing.source_id, business_id: business._id },
+      { $set: { visible_online: newVis === "public" } }
+    );
+  } else if (listing.source_type === "RentalListing") {
+    await RentalListing.updateOne(
+      { _id: listing.source_id, business_id: business._id },
+      { $set: { visible_online: newVis === "public" } }
+    );
+  }
   return listing;
 }
 
@@ -647,6 +1145,10 @@ export async function toggleListingOccupancy(businessId, listingId, userId, isOc
     listing.rental_attributes = {};
   }
   listing.rental_attributes.is_occupied = targetOccupied;
+  await RentalListing.updateOne(
+    { _id: listing.source_id, business_id: business._id },
+    { $set: { status: targetOccupied ? "occupied" : "vacant", visible_online: !targetOccupied } }
+  );
   if (targetOccupied) {
     listing.stock = 0;
   } else {
@@ -712,6 +1214,8 @@ export async function reviewMarketplaceListing(listingId, { decision, notes, isF
 export async function searchPublicListings({
   categorySlug,
   subcategory,
+  brand,
+  rating,
   search,
   minPrice,
   maxPrice,
@@ -726,23 +1230,55 @@ export async function searchPublicListings({
   isVegetarian,
   sortBy = "featured",
   page = 1,
-  limit = 20,
+  limit = 24,
 }) {
-  if (categorySlug === "rentals" || !categorySlug || categorySlug === "all") {
+  const targetCategory = (categorySlug && categorySlug !== "all") ? categorySlug.toLowerCase().trim() : "retail";
+
+  if (targetCategory === "rentals") {
     await ensureDefaultRentals();
+  } else if (targetCategory === "retail") {
+    await ensureDefaultRetail();
+  } else if (targetCategory === "food") {
+    await ensureDefaultFood();
+  } else if (targetCategory === "services") {
+    await ensureDefaultServices();
   }
 
   const query = {
+    category_slug: targetCategory,
     moderation_status: "approved",
     visibility: "public",
     "rental_attributes.is_occupied": { $ne: true },
   };
 
-  if (categorySlug && categorySlug !== "all") {
-    query.category_slug = categorySlug.toLowerCase();
-  }
+  // Strictly enforce category isolation: only include businesses eligible for this category hub
+  let allowedBizCategories = [targetCategory];
+  if (targetCategory === "retail") allowedBizCategories = ["retail", "Retail & Wholesale", "other"];
+  else if (targetCategory === "rentals") allowedBizCategories = ["rental", "rentals"];
+  else if (targetCategory === "services") allowedBizCategories = ["service", "services"];
+  else if (targetCategory === "food") allowedBizCategories = ["restaurant", "food"];
+
+  const eligibleBusinesses = await Business.find({
+    category: { $in: allowedBizCategories },
+    marketplace_paused: { $ne: true },
+  }).select("_id").lean();
+  query.business_id = { $in: eligibleBusinesses.map((b) => b._id) };
+
   if (subcategory && subcategory !== "All") {
     query.subcategory = subcategory;
+  }
+
+  if (brand && brand !== "All" && brand !== "any") {
+    const brandRegex = new RegExp(`^${brand}$`, "i");
+    query.$or = [
+      { brand: brandRegex },
+      { tags: { $in: [brandRegex] } },
+      { title: new RegExp(brand, "i") },
+    ];
+  }
+
+  if (rating !== undefined && rating !== "" && rating !== "any") {
+    query.rating = { $gte: Number(rating) };
   }
 
   if (inStock) {
@@ -779,20 +1315,28 @@ export async function searchPublicListings({
   if (search?.trim()) {
     const s = search.trim();
     const searchRegex = new RegExp(s, "i");
-    query.$or = [
+    const searchConditions = [
       { title: searchRegex },
       { description: searchRegex },
+      { brand: searchRegex },
       { tags: { $in: [searchRegex] } },
       { "rental_attributes.location_text": searchRegex },
       { "rental_attributes.city": searchRegex },
       { "rental_attributes.neighborhood": searchRegex },
       { "rental_attributes.property_type": searchRegex },
     ];
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, { $or: searchConditions }];
+      delete query.$or;
+    } else {
+      query.$or = searchConditions;
+    }
   }
 
   const sort = {};
   if (sortBy === "price_asc") sort.price = 1;
   else if (sortBy === "price_desc") sort.price = -1;
+  else if (sortBy === "rating" || sortBy === "rating_desc") sort.rating = -1;
   else if (sortBy === "newest") sort.createdAt = -1;
   else if (sortBy === "popular") sort.sales_count = -1;
   else {
@@ -805,7 +1349,7 @@ export async function searchPublicListings({
   const skip = (Number(page) - 1) * Number(limit);
   const [listings, total] = await Promise.all([
     MarketplaceListing.find(query)
-      .populate("business_id", "name category location currency")
+      .populate("business_id", "name category location currency slug")
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
@@ -829,33 +1373,43 @@ export async function getPublicListingBySlug(categorySlug, slug) {
   if (categorySlug === "rentals" || categorySlug === "any") {
     await ensureDefaultRentals();
   }
+  if (categorySlug === "retail" || !categorySlug || categorySlug === "any") {
+    await ensureDefaultRetail();
+  }
+  if (categorySlug === "food") {
+    await ensureDefaultFood();
+  }
+  if (categorySlug === "services") {
+    await ensureDefaultServices();
+  }
 
-  const query = { slug: slug.toLowerCase() };
+  const query = { slug: slug.toLowerCase(), visibility: "public" };
   if (categorySlug && categorySlug !== "any") {
     query.category_slug = categorySlug.toLowerCase();
   }
 
   const listing = await MarketplaceListing.findOne(query)
-    .populate("business_id", "name category location currency created_by")
+    .populate("business_id", "name category location currency created_by marketplace_paused marketplace_slug")
     .lean();
 
-  if (!listing || listing.moderation_status !== "approved") {
+  if (!listing || listing.moderation_status !== "approved" || listing.visibility !== "public" || listing.business_id?.marketplace_paused) {
     throw new AppError("Listing not found or not currently available", 404);
   }
 
   // Increment view count asynchronously
   MarketplaceListing.updateOne({ _id: listing._id }, { $inc: { view_count: 1 } }).catch(() => {});
 
-  // Fetch owning business storefront/enrollment profile
-  const [enrollment, storefront, relatedListings] = await Promise.all([
+  // Fetch owning business marketplace profile
+  const [enrollment, relatedListings] = await Promise.all([
     MarketplaceEnrollment.findOne({
       business_id: listing.business_id._id,
       category_slug: listing.category_slug,
     }).lean(),
-    Storefront.findOne({ business_id: listing.business_id._id }).lean(),
     MarketplaceListing.find({
       category_slug: listing.category_slug,
       moderation_status: "approved",
+      visibility: "public",
+      business_id: { $nin: await Business.find({ marketplace_paused: true }).distinct("_id") },
       _id: { $ne: listing._id },
     })
       .limit(4)
@@ -863,7 +1417,7 @@ export async function getPublicListingBySlug(categorySlug, slug) {
   ]);
 
   const merchantProfile = enrollment?.merchant_profile || {};
-  const businessSlug = storefront?.slug || slugify(listing.business_id.name, { lower: true });
+  const businessSlug = listing.business_id.marketplace_slug || slugify(listing.business_id.name, { lower: true });
 
   return {
     listing,
@@ -872,9 +1426,10 @@ export async function getPublicListingBySlug(categorySlug, slug) {
       name: listing.business_id.name,
       slug: businessSlug,
       display_name: merchantProfile.display_name || listing.business_id.name,
-      tagline: merchantProfile.tagline || storefront?.headline || "",
-      description: merchantProfile.description || storefront?.subtitle || "",
+      tagline: merchantProfile.tagline || "",
+      description: merchantProfile.description || "",
       logo_url: merchantProfile.logo_url || "",
+      primary_color: merchantProfile.primary_color || "#064e3b",
       phone: merchantProfile.phone || "",
       location: merchantProfile.physical_location || listing.business_id.location || "",
       badges: merchantProfile.badges || ["Verified Merchant"],
@@ -887,14 +1442,25 @@ export async function getPublicListingBySlug(categorySlug, slug) {
 
 export async function getPublicBusinessProfile(businessSlug) {
   const cleanSlug = slugify(businessSlug, { lower: true });
-  // Find storefront or match business by name
-  let storefront = await Storefront.findOne({ slug: cleanSlug }).lean();
-  let businessId = storefront?.business_id;
+  // Resolve by marketplace slug first, then fall back to matching the business name
+  const bySlug = await Business.findOne({ marketplace_slug: cleanSlug }).select("_id").lean();
+  let businessId = bySlug?._id;
 
   if (!businessId) {
-    const businesses = await Business.find().lean();
-    const matched = businesses.find((b) => slugify(b.name, { lower: true }) === cleanSlug);
-    if (matched) businessId = matched._id;
+    // Name fallback for businesses without a slug. If several businesses share
+    // the name, pick the one that actually has live listings.
+    const businesses = await Business.find().select("name").lean();
+    const matches = businesses.filter((b) => slugify(b.name, { lower: true }) === cleanSlug);
+    if (matches.length === 1) {
+      businessId = matches[0]._id;
+    } else if (matches.length > 1) {
+      const counts = await Promise.all(
+        matches.map((b) =>
+          MarketplaceListing.countDocuments({ business_id: b._id, moderation_status: "approved", visibility: "public" })
+        )
+      );
+      businessId = matches[counts.indexOf(Math.max(...counts))]._id;
+    }
   }
 
   if (!businessId) throw new AppError("Business merchant profile not found", 404);
@@ -902,8 +1468,10 @@ export async function getPublicBusinessProfile(businessSlug) {
   const [business, enrollments, listings] = await Promise.all([
     Business.findById(businessId).lean(),
     MarketplaceEnrollment.find({ business_id: businessId, status: "approved" }).lean(),
-    MarketplaceListing.find({ business_id: businessId, moderation_status: "approved" }).sort({ is_featured: -1, createdAt: -1 }).lean(),
+    MarketplaceListing.find({ business_id: businessId, moderation_status: "approved", visibility: "public" }).sort({ is_featured: -1, createdAt: -1 }).lean(),
   ]);
+
+  if (business?.marketplace_paused) throw new AppError("This store is currently paused", 404);
 
   const activeEnrollment = enrollments[0];
   const merchantProfile = activeEnrollment?.merchant_profile || {};
@@ -912,14 +1480,18 @@ export async function getPublicBusinessProfile(businessSlug) {
     business: {
       id: business._id,
       name: business.name,
-      slug: storefront?.slug || cleanSlug,
+      slug: business.marketplace_slug || cleanSlug,
+      category: business.category,
+      category_slug: getHubSlugForBusinessCategory(business.category),
       currency: business.currency || "KES",
-      location: merchantProfile.physical_location || business.location || storefront?.location_text || "",
-      display_name: merchantProfile.display_name || storefront?.name || business.name,
-      tagline: merchantProfile.tagline || storefront?.headline || "",
-      description: merchantProfile.description || storefront?.subtitle || "",
+      location: merchantProfile.physical_location || business.location || "",
+      display_name: merchantProfile.display_name || business.name,
+      tagline: merchantProfile.tagline || "",
+      description: merchantProfile.description || "",
       logo_url: merchantProfile.logo_url || "",
       banner_url: merchantProfile.banner_url || "",
+      primary_color: merchantProfile.primary_color || "#064e3b",
+      hero_style: merchantProfile.hero_style || "gradient",
       badges: merchantProfile.badges || ["Verified Merchant"],
       return_policy: merchantProfile.return_policy || "",
       delivery_info: merchantProfile.delivery_info || "",
@@ -1202,6 +1774,9 @@ export async function listMerchantMarketplaceOrders(businessId, { fulfillmentSta
 }
 
 export async function updateMerchantFulfillmentStatus(businessId, orderId, { fulfillmentStatus }) {
+  if (!["pending", "processing", "fulfilled", "cancelled"].includes(fulfillmentStatus)) {
+    throw new AppError("Invalid fulfillment status", 400);
+  }
   const order = await MarketplaceOrder.findById(orderId);
   if (!order) throw new AppError("Order not found", 404);
 

@@ -10,6 +10,9 @@ export default function BusinessMpesaModal({
   onSuccess,
   workspaceId,
   title = "Business M-Pesa STK Collection",
+  initialAmount = "",
+  initialCustomerName = "",
+  initialDescription = "",
 }) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState("");
@@ -49,9 +52,9 @@ export default function BusinessMpesaModal({
   useEffect(() => {
     if (isOpen) {
       setPhoneNumber("");
-      setAmount("");
-      setCustomerName("");
-      setDescription("");
+      setAmount(initialAmount ? String(initialAmount) : "");
+      setCustomerName(initialCustomerName);
+      setDescription(initialDescription);
       setFormError(null);
       reset();
     }

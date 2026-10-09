@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import financeService from "../services/finance.service";
 
 export default function useLedger(workspaceId, filters = {}) {
-  const { data, isLoading: loading, error, refetch } = useQuery({
+  const { data, isLoading: loading, isFetching, error, refetch } = useQuery({
     queryKey: ["ledger", workspaceId, filters],
     queryFn: () => financeService.getLedger(workspaceId, filters),
     enabled: !!workspaceId,
+    keepPreviousData: true,
     refetchOnWindowFocus: true,
   });
 
@@ -28,6 +29,7 @@ export default function useLedger(workspaceId, filters = {}) {
     entries,
     totals,
     loading,
+    isFetching,
     error,
     refetch
   };

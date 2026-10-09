@@ -1,0 +1,43 @@
+const serviceImage = (photo) => `https://images.unsplash.com/${photo}?auto=format&fit=crop&w=1000&q=85`;
+
+const providers = [
+  ["Samuel Otieno", "samuel-otieno-services", "Plumbing", "Emergency leak repair", 1800, "photo-1500648767791-00dcc994a43e", "Kilimani", 8, 4.9, 126, "at_customer"],
+  ["David Mwangi", "david-mwangi-services", "Plumbing", "Tap and pipe installation", 2200, "photo-1506794778202-cad84cf45f1d", "Westlands", 6, 4.8, 84, "at_customer"],
+  ["Brian Kamau", "brian-kamau-electrical", "Electrical", "Home electrical inspection", 2500, "photo-1519085360753-af0119f7cbe7", "Lavington", 9, 4.9, 103, "at_customer"],
+  ["Peter Njoroge", "peter-njoroge-electrical", "Electrical", "Lighting and socket installation", 1600, "photo-1507003211169-0a1dd7228f2d", "Kileleshwa", 5, 4.7, 62, "at_customer"],
+  ["Joy Wanjiku", "joy-wanjiku-cleaning", "Home Cleaning", "Deep home cleaning", 3200, "photo-1494790108377-be9c29b29330", "Kilimani", 7, 4.9, 148, "at_customer"],
+  ["Amina Hassan", "amina-hassan-cleaning", "Home Cleaning", "Move-in and move-out clean", 3800, "photo-1517841905240-472988babdf9", "Parklands", 6, 4.8, 92, "at_customer"],
+  ["Faith Chebet", "faith-chebet-cleaning", "Home Cleaning", "Weekly home refresh", 2400, "photo-1524504388940-b1c1722653e1", "Karen", 4, 4.8, 76, "at_customer"],
+  ["Lucy Atieno", "lucy-atieno-painting", "Painting", "Interior room painting", 4500, "photo-1504593811423-6dd665756598", "Ngara", 10, 4.9, 111, "at_customer"],
+  ["Moses Maina", "moses-maina-carpentry", "Carpentry", "Custom shelves and cabinets", 5000, "photo-1531384441138-2736e62e0919", "South B", 12, 4.8, 88, "at_customer"],
+  ["Hassan Ali", "hassan-ali-appliance-repair", "Appliance Repair", "Fridge diagnostics and repair", 2800, "photo-1504257432389-52343af06ae3", "Eastleigh", 9, 4.7, 71, "at_customer"],
+  ["Mercy Njeri", "mercy-njeri-tailoring", "Tailoring", "Made-to-measure alterations", 1200, "photo-1534528741775-53994a69daeb", "CBD", 8, 4.9, 157, "at_provider"],
+  ["Kevin Kiptoo", "kevin-kiptoo-photography", "Photography", "Portrait and event photography", 6500, "photo-1535713875002-d1d0cf377fde", "Nairobi", 7, 4.9, 95, "at_customer"],
+  ["Naomi Wairimu", "naomi-wairimu-beauty", "Beauty & Grooming", "Bridal makeup appointment", 5500, "photo-1531123897727-8f129e1688ce", "Westlands", 6, 4.8, 82, "at_customer"],
+  ["Joseph Karanja", "joseph-karanja-moving", "Moving", "Local home and office move", 7000, "photo-1519085360753-af0119f7cbe7", "Nairobi", 11, 4.8, 68, "at_customer"],
+  ["Esther Muthoni", "esther-muthoni-gardening", "Gardening", "Garden tidy and planting", 2600, "photo-1488426862026-3ee34a7d66df", "Runda", 5, 4.7, 51, "at_customer"],
+  ["Daniel Ouma", "daniel-ouma-tech-support", "Tech Support", "Laptop setup and troubleshooting", 2000, "photo-1500648767791-00dcc994a43e", "Remote / Nairobi", 6, 4.9, 109, "remote"],
+  ["Irene Wambui", "irene-wambui-tutoring", "Tutoring", "Mathematics tutoring session", 1500, "photo-1517841905240-472988babdf9", "Nairobi", 9, 4.9, 134, "remote"],
+  ["George Mutua", "george-mutua-catering", "Catering", "Small event catering service", 12000, "photo-1560250097-0b93528c311a", "Nairobi", 10, 4.8, 73, "at_customer"],
+  ["Ruth Achieng", "ruth-achieng-pest-control", "Pest Control", "Home pest inspection and treatment", 4200, "photo-1531123897727-8f129e1688ce", "Kasarani", 8, 4.8, 89, "at_customer"],
+  ["Anthony Barasa", "anthony-barasa-auto-repair", "Auto Repair", "Mobile vehicle diagnostics", 3500, "photo-1507003211169-0a1dd7228f2d", "Nairobi", 10, 4.7, 64, "at_customer"],
+];
+
+export const DEFAULT_SERVICE_PROVIDERS = providers.map(([name, slug, category, offer, price, photo, area, years, rating, reviews, mode], index) => ({
+  name,
+  slug,
+  category,
+  subcategory: category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
+  offer,
+  price,
+  avatar: serviceImage(photo),
+  banner: serviceImage(photo),
+  area,
+  years,
+  rating,
+  reviews,
+  mode,
+  duration: category === "Photography" || category === "Catering" || category === "Moving" ? 180 : 60,
+  featured: index < 6,
+  description: `${name} provides reliable ${category.toLowerCase()} services across ${area}. Agree on the scope and schedule directly with the provider.`,
+}));

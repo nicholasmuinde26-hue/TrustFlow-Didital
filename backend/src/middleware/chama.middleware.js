@@ -25,6 +25,14 @@ const getChamaId = async (req) => {
   if (req.params.workspaceId) return req.params.workspaceId;
   if (req.body?.chamaId) return req.body.chamaId;
   if (req.query?.chamaId) return req.query.chamaId;
+  // Generic cross-owner routes (e.g. contribution-plans, which serve
+  // Chama, ContributionGroup and Business owners alike) identify the
+  // owner as { owner_type, owner_id } rather than chamaId. Without this,
+  // getChamaId() returns null for those calls, requireChamaMember() 400s
+  // before req.membership is ever attached, and any role-gate chained
+  // after it (e.g. requireChamaTreasurerOrChairperson) never even runs.
+  if (req.body?.owner_id) return req.body.owner_id;
+  if (req.query?.owner_id) return req.query.owner_id;
 
   if (req.params.roundId && mongoose.Types.ObjectId.isValid(req.params.roundId)) {
     const MgrRound = (await import('../models/MgrRound.js')).default;
@@ -93,6 +101,15 @@ const getChamaId = async (req) => {
     if (obligation && String(obligation.owner_type) === 'Chama') {
       return String(obligation.owner_id);
     }
+  }
+
+  // Plan-based contribution payments send { planId } with no chamaId: the
+  // plan knows which chama it belongs to.
+  const bodyPlanId = req.body?.planId;
+  if (bodyPlanId && mongoose.Types.ObjectId.isValid(bodyPlanId)) {
+    const ContributionPlan = (await import('../models/ContributionPlan.js')).default;
+    const plan = await ContributionPlan.findById(bodyPlanId).select('owner_type owner_id').lean();
+    if (plan && String(plan.owner_type) === 'Chama') return String(plan.owner_id);
   }
 
   const burialChamaProfileId =
@@ -654,6 +671,72 @@ export const requireChamaTreasurerOrChairperson = async (
 
       throw new AppError(
         'Only the treasurer or chairperson can perform this action',
+        403
+      );
+
+    }
+
+
+    next();
+
+  } catch (error) {
+
+    next(error);
+
+  }
+
+};
+
+
+// ========================================
+// REQUIRE CHAMA LEADERSHIP OFFICIAL
+// ========================================
+//
+// Broader than requireChamaTreasurerOrChairperson: also admits
+// secretary/auditor/committee_member, since these can be required to stand
+// in for a recused chairperson or treasurer seat on a 2-of-N approval (see
+// payout.service.js / Loanapproval.service.js resolvePayoutApprovalPlan /
+// resolveApprovalPlan). This is a coarse route-level gate only — exact
+// per-request eligibility (which seat is actually still open, recusal) is
+// enforced inside the service.
+//
+// ========================================
+
+export const requireChamaLeadershipOfficial = async (
+  req,
+  res,
+  next
+) => {
+
+  try {
+
+    validateChamaContext(req);
+
+    const isSystemAdmin = req.user?.systemRole === 'super_admin' || req.user?.systemRole === 'sub_admin';
+
+    const allowedRoles = [
+
+      'treasurer',
+
+      'chairperson',
+
+      'secretary',
+
+      'auditor',
+
+      'committee_member'
+
+    ];
+
+
+    if (
+      !allowedRoles.includes(
+        req.membership.role
+      ) && !isSystemAdmin
+    ) {
+
+      throw new AppError(
+        'Only a Chama official (chairperson, treasurer, secretary, auditor, or committee member) can perform this action',
         403
       );
 

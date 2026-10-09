@@ -3,7 +3,8 @@ import User from '../../models/User.js';
 import PlatformAdmin from '../../models/PlatformAdmin.js';
 import Chama from '../../models/Chama.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
-import Business from '../../models/Business.js';
+import Business, { BUSINESS_CATEGORIES } from '../../models/Business.js';
+import ChamaAsset from '../../models/ChamaAsset.js';
 import ContributionGroup from '../../models/ContributionGroup.js';
 import ContributionGroupMember from '../../models/ContributionGroupMember.js';
 import WorkspaceRequest from '../../models/WorkspaceRequest.js';
@@ -18,6 +19,12 @@ import ApprovalRequest from '../../models/ApprovalRequest.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
 import { findUnbalancedOwners } from '../finance/accounting/glBalance.service.js';
 import AppError from '../../utils/AppError.js';
+import {
+  WORKSPACE_PRESETS,
+  PRESET_KEYS,
+  buildWorkspaceConfig,
+  validateModuleSelection,
+} from '../../constants/workspaceModules.constants.js';
 import { generateUniqueJoinCode } from '../../utils/joinCode.js';
 import { formatPhone } from '../../utils/phone.js';
 import { sendWorkspaceRequestStatusEmail } from '../../services/notifications/email.service.js';
@@ -186,6 +193,7 @@ export const getOverviewStats = async () => {
     totalGroups,
     pendingRequests,
     totalSubAdmins,
+    pendingModuleChanges,
   ] = await Promise.all([
     User.countDocuments(),
     Chama.countDocuments(),
@@ -193,6 +201,7 @@ export const getOverviewStats = async () => {
     ContributionGroup.countDocuments(),
     WorkspaceRequest.countDocuments({ status: { $in: ['pending', 'PENDING', 'UNDER_REVIEW'] } }),
     PlatformAdmin.countDocuments({ adminRole: 'PLATFORM_ADMIN', status: 'ACTIVE' }),
+    ApprovalRequest.countDocuments({ resource_type: 'WORKSPACE_MODULES', status: 'pending' }),
   ]);
 
   return {
@@ -200,7 +209,9 @@ export const getOverviewStats = async () => {
     totalChamas,
     totalBusinesses,
     totalGroups,
-    pendingRequests,
+    // Sidebar badge counts new-workspace requests plus chama feature changes.
+    pendingRequests: pendingRequests + pendingModuleChanges,
+    pendingModuleChanges,
     totalSubAdmins,
   };
 };
@@ -558,6 +569,7 @@ export const listWorkspaceRequests = async ({ status = '', entityType = '' }) =>
 
   return WorkspaceRequest.find(filter)
     .populate('requestedBy', 'name phone email')
+    .populate('chamaId', 'name')
     .populate('reviewedBy', 'name phone email')
     .sort({ createdAt: -1 });
 };
@@ -572,6 +584,7 @@ export const getWorkspaceRequestById = async (requestId) => {
 
   const request = await WorkspaceRequest.findById(requestId)
     .populate('requestedBy', 'name phone email')
+    .populate('chamaId', 'name')
     .populate('reviewedBy', 'name phone email');
 
   if (!request) {
@@ -600,16 +613,71 @@ const applyPersonEdits = (target, edits) => {
   return next;
 };
 
+// Validates a { preset, modules[] } selection from the admin and returns the
+// clean shape to store on the request. Throws a 400 listing every problem
+// (unknown module, missing dependency) so the admin can fix it in one go.
+const normalizeWorkspaceConfigInput = (input) => {
+  if (!input || typeof input !== 'object') return null;
+  const modules = Array.isArray(input.modules) ? input.modules : [];
+  const preset = PRESET_KEYS.includes(input.preset) ? input.preset : (modules.length ? 'custom' : '');
+  if (modules.length === 0) return { preset, modules: [] };
+
+  const result = validateModuleSelection(modules);
+  if (!result.ok) {
+    throw new AppError(`Workspace modules are not valid: ${result.errors.join('; ')}`, 400);
+  }
+  return { preset, modules: result.enabled };
+};
+
+// What the new chama should be created with. An explicit module selection
+// wins; otherwise the chama gets the legacy set for its category, which is
+// exactly what it showed before workspaces were configurable.
+const resolveChamaWorkspaceSetup = (request, adminUser) => {
+  const selection = normalizeWorkspaceConfigInput(
+    request.workspaceConfig?.toObject ? request.workspaceConfig.toObject() : request.workspaceConfig
+  );
+
+  if (selection && selection.modules.length > 0) {
+    const config = buildWorkspaceConfig({
+      preset: selection.preset || 'custom',
+      enabled: selection.modules,
+      configuredBy: adminUser?._id || null,
+    });
+    // `chama_type` picks the workspace shell (dashboard + overview). The
+    // burial shell is only meaningful when burial cover is switched on.
+    const chamaType = selection.modules.includes('burial_welfare') ? 'burial' : 'standard';
+    return { config, chamaType };
+  }
+
+  const legacyPreset = request.category === 'burial' ? 'burial' : 'standard';
+  return {
+    config: buildWorkspaceConfig({
+      preset: legacyPreset,
+      enabled: WORKSPACE_PRESETS[legacyPreset].modules,
+      configuredBy: adminUser?._id || null,
+    }),
+    chamaType: legacyPreset === 'burial' ? 'burial' : 'standard',
+  };
+};
+
 const applyEditsToRequest = (request, edits = {}) => {
   if (!edits || typeof edits !== 'object') return request;
 
   if (edits.name !== undefined && edits.name.trim()) request.name = edits.name.trim();
   if (edits.description !== undefined) request.description = edits.description;
   if (edits.category !== undefined && edits.category) request.category = edits.category;
+  if (Array.isArray(edits.businessWorkspaceSettings?.enabled_sections)) {
+    request.businessWorkspaceSettings = { enabled_sections: edits.businessWorkspaceSettings.enabled_sections };
+  }
   if (edits.monthlySavings !== undefined && edits.monthlySavings !== '') {
     request.monthlySavings = Number(edits.monthlySavings) || request.monthlySavings;
   }
   if (edits.adminNotes !== undefined) request.adminNotes = edits.adminNotes;
+
+  if (edits.workspaceConfig !== undefined) {
+    const normalized = normalizeWorkspaceConfigInput(edits.workspaceConfig);
+    if (normalized) request.workspaceConfig = normalized;
+  }
 
   if (edits.details && typeof edits.details === 'object') {
     request.details = { ...(request.details?.toObject ? request.details.toObject() : request.details), ...edits.details };
@@ -667,7 +735,15 @@ export const updateWorkspaceRequest = async (requestId, edits, adminUser) => {
   return request;
 };
 
-// Helper: Find existing user or create unverified stub
+// Platform admins run the panel; they are never silently made a member or
+// office-bearer of a workspace they provision.
+const isPlatformAdminUser = (user) =>
+  user?.systemRole === 'super_admin' || user?.systemRole === 'sub_admin';
+
+// Helper: Find existing user or create unverified stub.
+// `fallbackUserId` (the requester) is only used when NO identity was given for
+// this seat - and never when it resolves to a platform admin. An admin who
+// filed or approved a request must not end up as chairperson by default.
 const findOrCreateUserStub = async ({ name, fullName, phone, email, fallbackUserId }) => {
   const displayName = (fullName || name || '').trim();
   let user = null;
@@ -681,10 +757,8 @@ const findOrCreateUserStub = async ({ name, fullName, phone, email, fallbackUser
     user = await User.findOne({ email: email.trim().toLowerCase() });
   }
 
-  if (!user && fallbackUserId) {
-    user = await User.findById(fallbackUserId);
-  }
-
+  // A named person who hasn't registered yet gets their own stub account
+  // BEFORE any fallback, so the seat never silently goes to the requester.
   if (!user && phone) {
     const formatted = formatPhone(phone);
     user = await User.create({
@@ -695,6 +769,11 @@ const findOrCreateUserStub = async ({ name, fullName, phone, email, fallbackUser
       isPhoneVerified: false,
       systemRole: 'user',
     });
+  }
+
+  if (!user && fallbackUserId) {
+    const fallback = await User.findById(fallbackUserId);
+    if (fallback && !isPlatformAdminUser(fallback)) user = fallback;
   }
 
   return user;
@@ -731,17 +810,22 @@ export const approveWorkspaceRequest = async (requestId, adminUser, edits = {}) 
     });
 
     if (!chairUser) {
-      throw new AppError('Could not resolve or create Chairperson account', 400);
+      throw new AppError(
+        'Add the chairperson\'s name and phone number before approving. A platform admin cannot be made the chairperson by default.',
+        400
+      );
     }
 
     // 2. Generate join code
     const joinCode = await generateUniqueJoinCode();
 
-    // 3. Create Chama
+    // 3. Create Chama (with the workspace modules the admin chose)
+    const { config: workspaceConfig, chamaType } = resolveChamaWorkspaceSetup(request, adminUser);
     const chama = await Chama.create({
       name: request.name,
       monthly_savings: request.monthlySavings || 1000,
-      chama_type: request.category === 'burial' ? 'burial' : 'standard',
+      chama_type: chamaType,
+      workspace_config: workspaceConfig,
       created_by: chairUser._id,
       status: 'active',
       visibility: 'public',
@@ -828,52 +912,120 @@ export const approveWorkspaceRequest = async (requestId, adminUser, edits = {}) 
       }
     }
 
-    // 8. Provision Default Financial Structure
+    // 8. Provision the chart of accounts.
+    // One path only: FinancialAccount.bootstrapSystemAccounts, the same one every
+    // posting rule falls back to. It is idempotent (creates only what is missing).
+    // An earlier block here built "Main Treasury Account" / "Welfare & Emergency
+    // Fund" with upper-case enums ('ASSET', 'ACTIVE') and a `balance` field the
+    // schema does not have, so it always failed validation and the surrounding
+    // catch hid that. Nothing reads those system keys. A welfare fund now comes
+    // from a contribution plan with behavior 'welfare', not from a fixed account.
+    // Not fatal: postings re-run the bootstrap on demand, but say so if it fails.
     try {
-      await FinancialAccount.create([
-        {
-          owner_type: 'Chama',
-          owner_id: chama._id,
-          name: 'Main Treasury Account',
-          account_type: 'ASSET',
-          system_key: 'main_treasury',
-          account_code: '1010',
-          currency: 'KES',
-          balance: 0,
-          status: 'ACTIVE',
-        },
-        {
-          owner_type: 'Chama',
-          owner_id: chama._id,
-          name: 'Welfare & Emergency Fund',
-          account_type: 'EQUITY',
-          system_key: 'welfare_fund',
-          account_code: '3010',
-          currency: 'KES',
-          balance: 0,
-          status: 'ACTIVE',
-        },
-      ]);
-    } catch {
-      // Ignore if accounts already initialized
+      await FinancialAccount.bootstrapSystemAccounts({
+        owner_type: 'Chama',
+        owner_id: chama._id,
+        created_by: adminUser._id,
+      });
+    } catch (err) {
+      console.error(`[admin] chart of accounts not provisioned for chama ${chama._id}: ${err.message}`);
     }
   } else if (request.entityType === 'business') {
-    const ownerUser = await findOrCreateUserStub({
-      fullName: request.chairperson?.fullName || request.chairperson?.name,
-      phone: request.chairperson?.phone,
-      email: request.chairperson?.email,
-      fallbackUserId: request.requestedBy?._id,
-    });
+    const category = BUSINESS_CATEGORIES.includes(request.category) ? request.category : 'other';
+    const requesterId = request.requestedBy?._id || request.requestedBy;
 
-    const business = await Business.create({
-      name: request.name,
-      category: request.category || 'retail',
-      category_label: request.category || 'Retail',
-      created_by: ownerUser._id,
-      location: request.details?.location || '',
-    });
+    if (request.ownerType === 'chama') {
+      // CHAMA-OWNED: the chama is the owner. The treasurer/chairperson who
+      // filed the request is only recorded as the creator for audit; they are
+      // never the owner, and the platform admin approving it is not recorded
+      // as anything but `reviewedBy`.
+      const chama = request.chamaId ? await Chama.findById(request.chamaId).select('_id name') : null;
+      if (!chama) throw new AppError('The chama this business was requested for no longer exists', 400);
 
-    createdEntityId = business._id;
+      const { ensureAssetPaymentRefCode } = await import('../chamaAssets/chamaAsset.service.js');
+      const { ensureBusinessAccounts } = await import('../business/business.service.js');
+
+      const duplicateAsset = await ChamaAsset.findOne({
+        chama_id: chama._id,
+        name: request.name,
+        status: { $in: ['pending_approval', 'active'] },
+      }).select('_id');
+      if (duplicateAsset) {
+        throw new AppError(`${chama.name} already has an asset or business called "${request.name}". Ask them to pick a different name.`, 409);
+      }
+
+      // A chama business is registered as a "founding" asset so it appears in
+      // the chama's portfolio and member dashboards. No purchase is posted:
+      // nothing was bought, the business is being registered.
+      const asset = await ChamaAsset.create({
+        chama_id: chama._id,
+        asset_type: category === 'rental' ? 'property' : 'business',
+        name: request.name,
+        description: request.description || '',
+        acquisition: {
+          method: 'founding',
+          acquisition_date: new Date(),
+          purchase_price: 0,
+          acquisition_costs: 0,
+          funding_source: 'n/a',
+        },
+        status: 'active',
+        activated_at: new Date(),
+        requested_by: requesterId,
+      });
+
+      let business;
+      try {
+        business = await Business.create({
+          name: request.name,
+          category,
+          category_label: '',
+          owner_type: 'chama',
+          owner_id: chama._id,
+          chama_asset_id: asset._id,
+          workspace_request_id: request._id,
+          location: request.details?.location || '',
+          created_by: requesterId,
+          ...(request.businessWorkspaceSettings?.enabled_sections?.length && {
+            workspace_settings: { enabled_sections: request.businessWorkspaceSettings.enabled_sections },
+          }),
+        });
+        asset.operations_ref = { business_id: business._id };
+        await asset.save();
+        await ensureAssetPaymentRefCode(asset);
+        await ensureBusinessAccounts(business._id, requesterId);
+      } catch (err) {
+        // Don't leave a half-registered asset behind.
+        if (business) await Business.deleteOne({ _id: business._id });
+        await ChamaAsset.deleteOne({ _id: asset._id });
+        throw err;
+      }
+
+      createdEntityId = business._id;
+    } else {
+      const ownerUser = await findOrCreateUserStub({
+        fullName: request.chairperson?.fullName || request.chairperson?.name,
+        phone: request.chairperson?.phone,
+        email: request.chairperson?.email,
+        fallbackUserId: requesterId,
+      });
+
+      const business = await Business.create({
+        name: request.name,
+        category,
+        category_label: '',
+        owner_type: 'user',
+        owner_id: ownerUser._id,
+        workspace_request_id: request._id,
+        created_by: ownerUser._id,
+        location: request.details?.location || '',
+      });
+
+      const { ensureBusinessAccounts } = await import('../business/business.service.js');
+      await ensureBusinessAccounts(business._id, ownerUser._id);
+
+      createdEntityId = business._id;
+    }
   } else if (request.entityType === 'contribution_group') {
     const organizerUser = await findOrCreateUserStub({
       fullName: request.chairperson?.fullName || request.chairperson?.name,
@@ -1161,6 +1313,52 @@ export const getEntityDetail = async (type, id) => {
 // someone to chairperson automatically demotes whoever currently holds
 // it, since a Chama can only have one active chairperson at a time.
 // ========================================
+// Seats only one active person can hold at a time. Giving the seat to someone
+// new always takes it away from whoever held it.
+const SINGLE_SEAT_ROLES = ['chairperson', 'treasurer'];
+// Roles that carry a Leadership Desk PIN and desk access.
+const LEADERSHIP_ROLES = ['treasurer', 'chairperson'];
+
+// Strip every leftover of leadership from a seat: the desk PIN is wiped and its
+// version bumped, so any unlocked desk / step-up token still in the browser dies
+// on its next request, and the person must set a NEW PIN if they ever lead again.
+// Permissions themselves need no cleanup - they are read from the live role on
+// every request - but a stale PIN must not survive a demotion.
+const clearLeadershipAccess = (membership) => {
+  membership.leadership_pin_hash = null;
+  membership.leadership_pin_set_at = null;
+  membership.leadership_pin_failed_attempts = 0;
+  membership.leadership_pin_locked_until = null;
+  membership.leadership_pin_version = Number(membership.leadership_pin_version || 0) + 1;
+};
+
+// Tell the affected people's open browsers straight away so their workspace
+// re-reads its role instead of waiting for a refresh. Best-effort only.
+const broadcastRoleChange = async (chamaId, changes) => {
+  try {
+    const { getIO } = await import('../realtime/socketServer.js');
+    const io = getIO();
+    for (const c of changes) {
+      io.to(`user:${String(c.userId)}`).emit('membership:role_changed', {
+        chama_id: String(chamaId),
+        membership_id: String(c.membershipId),
+        previous_role: c.previousRole,
+        role: c.role,
+        status: c.status,
+        lost_leadership: LEADERSHIP_ROLES.includes(c.previousRole) && !LEADERSHIP_ROLES.includes(c.role),
+        at: Date.now(),
+      });
+    }
+    io.to(`chama:${String(chamaId)}`).emit('chama:activity', {
+      category: 'governance',
+      notification_type: 'ROLE_CHANGED',
+      at: Date.now(),
+    });
+  } catch {
+    // Socket layer not running (scripts/tests) - the DB change already stands.
+  }
+};
+
 export const updateChamaMemberRole = async (chamaId, membershipId, { role, status } = {}, adminUser) => {
   if (!mongoose.Types.ObjectId.isValid(chamaId) || !mongoose.Types.ObjectId.isValid(membershipId)) {
     throw new AppError('Invalid chama or member ID', 400);
@@ -1174,60 +1372,106 @@ export const updateChamaMemberRole = async (chamaId, membershipId, { role, statu
   const VALID_ROLES = ['member', 'treasurer', 'secretary', 'auditor', 'chairperson', 'committee_member', 'patron'];
   const VALID_STATUSES = ['active', 'inactive', 'suspended'];
 
-  let demoted = null;
+  if (role && !VALID_ROLES.includes(role)) throw new AppError('Invalid role', 400);
+  if (status && !VALID_STATUSES.includes(status)) throw new AppError('Invalid status', 400);
+
   const before = { role: membership.role, status: membership.status };
+  const nextRole = role || membership.role;
+  const nextStatus = status || membership.status;
+  const roleChanging = nextRole !== membership.role;
 
-  if (role && role !== membership.role) {
-    if (!VALID_ROLES.includes(role)) {
-      throw new AppError('Invalid role', 400);
-    }
+  // A seat can't be handed to someone who can't use it.
+  if (roleChanging && LEADERSHIP_ROLES.includes(nextRole) && nextStatus !== 'active') {
+    throw new AppError('Only an active member can be made treasurer or chairperson. Reactivate them first.', 409);
+  }
 
-    if (role === 'chairperson') {
-      const currentChair = await ChamaMembership.findOne({
+  const displaced = []; // leaders pushed out of the seat being handed over
+  const changes = [];
+
+  if (roleChanging) {
+    // One chairperson, one treasurer. Whoever holds the seat now steps down to
+    // plain member and loses leadership access in the same operation, so the
+    // chama is never left with two holders or an outgoing leader still in charge.
+    if (SINGLE_SEAT_ROLES.includes(nextRole)) {
+      const holders = await ChamaMembership.find({
         chama_id: chamaId,
-        role: 'chairperson',
-        status: 'active',
+        role: nextRole,
         _id: { $ne: membership._id },
       });
-
-      if (currentChair) {
-        currentChair.role = 'member';
-        await currentChair.save();
-        demoted = currentChair;
+      for (const holder of holders) {
+        const previousRole = holder.role;
+        holder.role = 'member';
+        clearLeadershipAccess(holder);
+        await holder.save();
+        displaced.push(holder);
+        changes.push({ userId: holder.user_id, membershipId: holder._id, previousRole, role: 'member', status: holder.status });
       }
     }
 
-    membership.role = role;
+    // Losing a leadership seat (to member, secretary, auditor... or swapping
+    // between chair and treasurer) invalidates the old desk PIN and sessions.
+    // Gaining one starts clean: no inherited PIN, the new leader sets their own.
+    if (LEADERSHIP_ROLES.includes(membership.role) || LEADERSHIP_ROLES.includes(nextRole)) {
+      clearLeadershipAccess(membership);
+    }
+
+    // Patron is advisory-only and holds no rotational payout slot
+    // (matches the chama-side role change).
+    if (nextRole === 'patron') membership.payout_position = null;
+
+    membership.role = nextRole;
   }
 
   if (status && status !== membership.status) {
-    if (!VALID_STATUSES.includes(status)) {
-      throw new AppError('Invalid status', 400);
-    }
     membership.status = status;
     membership.suspended_at = status === 'suspended' ? new Date() : null;
     membership.returned_at = status === 'active' && before.status === 'suspended' ? new Date() : membership.returned_at;
   }
 
-  await membership.save();
+  try {
+    await membership.save();
+  } catch (err) {
+    // Don't leave a seat vacated if the new holder couldn't be saved.
+    for (const d of displaced) {
+      const original = changes.find((c) => String(c.membershipId) === String(d._id));
+      if (original) {
+        d.role = original.previousRole;
+        await d.save().catch(() => {});
+      }
+    }
+    throw err;
+  }
+
+  if (roleChanging || (status && status !== before.status)) {
+    changes.push({ userId: membership.user_id, membershipId: membership._id, previousRole: before.role, role: membership.role, status: membership.status });
+    await broadcastRoleChange(chamaId, changes);
+  }
 
   try {
+    const handedOverSeat = roleChanging && SINGLE_SEAT_ROLES.includes(nextRole);
     await createAuditLog({
       actorUserId: adminUser._id,
       scopeType: 'CHAMA',
       chamaId,
-      action: role === 'chairperson' && before.role !== 'chairperson' ? 'ADMIN_CHAIRPERSON_TRANSFER' : 'ADMIN_MEMBERSHIP_UPDATE',
+      action: handedOverSeat && displaced.length
+        ? 'ADMIN_LEADERSHIP_TRANSFER'
+        : 'ADMIN_MEMBERSHIP_UPDATE',
       resourceType: 'ChamaMembership',
       resourceId: membership._id,
       before,
       after: { role: membership.role, status: membership.status },
       metadata: {
         performedByAdmin: adminUser.name || adminUser.phone,
-        demotedMembershipId: demoted?._id || null,
+        seat: handedOverSeat ? nextRole : null,
+        displacedMembershipIds: displaced.map((d) => d._id),
+        leadershipAccessRevoked: [
+          ...displaced.map((d) => d._id),
+          ...(roleChanging && (LEADERSHIP_ROLES.includes(before.role) || LEADERSHIP_ROLES.includes(nextRole)) ? [membership._id] : []),
+        ],
       },
     });
   } catch {
-    // Non-blocking — the membership change itself already succeeded.
+    // Non-blocking - the membership change itself already succeeded.
   }
 
   return getChamaDetail(chamaId);

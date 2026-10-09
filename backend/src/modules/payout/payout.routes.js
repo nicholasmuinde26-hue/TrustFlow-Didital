@@ -17,11 +17,12 @@ import {
 import {
   requireChamaMember,
   requireChamaTreasurer,
-  requireChamaChairperson,
-  requireChamaTreasurerOrChairperson
+  requireChamaTreasurerOrChairperson,
+  requireChamaLeadershipOfficial
 } from '../../middleware/chama.middleware.js';
 
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 
@@ -40,7 +41,7 @@ router.use(
 
 router.get(
   '/:id/payouts',
-  requireChamaMember,
+  requireChamaMember, requireModule('payouts'),
   getPayoutHistoryController
 );
 
@@ -51,7 +52,7 @@ router.get(
 
 router.get(
   '/:id/payouts/current',
-  requireChamaMember,
+  requireChamaMember, requireModule('payouts'),
   getCurrentPayoutController
 );
 
@@ -62,7 +63,7 @@ router.get(
 
 router.get(
   '/:id/payouts/:payoutId',
-  requireChamaMember,
+  requireChamaMember, requireModule('payouts'),
   getPayoutController
 );
 
@@ -74,7 +75,7 @@ router.get(
 
 router.post(
   '/:id/payouts/start',
-  requireChamaMember,
+  requireChamaMember, requireModule('payouts'),
   requireChamaTreasurer,
   startPayoutController
 );
@@ -82,19 +83,22 @@ router.post(
 
 // ========================================
 // APPROVE PAYOUT
-// CHAIRPERSON ONLY
+// 2-OF-N COMMITTEE APPROVAL
 // ========================================
 //
-// Must happen before /pay below will accept
-// this payout — markPayoutPaid rejects any
-// payout that isn't already 'approved'.
+// Chairperson AND treasurer must each sign off (or, when one of them is
+// this round's recipient, a standing-in independent official) before /pay
+// below will accept this payout — markPayoutPaid rejects any payout that
+// isn't already fully 'approved'. Route-level gate is coarse (any Chama
+// official); payout.service.js#approvePayout enforces exactly who still
+// needs to sign.
 //
 // ========================================
 
 router.patch(
   '/:id/payouts/:payoutId/approve',
-  requireChamaMember,
-  requireChamaChairperson,
+  requireChamaMember, requireModule('payouts'),
+  requireChamaLeadershipOfficial,
   approvePayoutController
 );
 
@@ -106,7 +110,7 @@ router.patch(
 
 router.patch(
   '/:id/payouts/:payoutId/pay',
-  requireChamaMember,
+  requireChamaMember, requireModule('payouts'),
   requireChamaTreasurer,
   markPayoutPaidController
 );
@@ -119,7 +123,7 @@ router.patch(
 
 router.patch(
   '/:id/payouts/:payoutId/cancel',
-  requireChamaMember,
+  requireChamaMember, requireModule('payouts'),
   requireChamaTreasurerOrChairperson,
   cancelPayoutController
 );

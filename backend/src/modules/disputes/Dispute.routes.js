@@ -9,12 +9,13 @@ import {
 import { protect } from '../../middleware/auth.middleware.js';
 import { requireChamaMember, requireSecretaryOrManager } from '../../middleware/chama.middleware.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 // Any active member can raise a dispute, and can list (their own — see
 // listDisputes' viewerCanSeeAll scoping) disputes.
-router.post('/:chamaId/disputes', protect, requireChamaMember, raiseDisputeController);
-router.get('/:chamaId/disputes', protect, requireChamaMember, listDisputesController);
+router.post('/:chamaId/disputes', protect, requireChamaMember, requireModule('disputes'), raiseDisputeController);
+router.get('/:chamaId/disputes', protect, requireChamaMember, requireModule('disputes'), listDisputesController);
 
 // Moving a dispute along (investigate/resolve/dismiss) is an official
 // action — chairperson, treasurer, or secretary — with self-resolution
@@ -22,7 +23,7 @@ router.get('/:chamaId/disputes', protect, requireChamaMember, listDisputesContro
 router.patch(
   '/:chamaId/disputes/:disputeId',
   protect,
-  requireChamaMember,
+  requireChamaMember, requireModule('disputes'),
   requireSecretaryOrManager,
   updateDisputeStatusController
 );

@@ -3,7 +3,7 @@ import chamaApi from "../api/chama.api";
 const chamaService = {
   async create(payload) {
     const { data } = await chamaApi.create(payload);
-    return data.data.chama;
+    return { chama: data.data.chama, presetSummary: data.data.presetSummary };
   },
 
   async verifyTreasurer(query) {

@@ -8,9 +8,10 @@ import {
 } from '../../middleware/leadershipSession.middleware.js';
 import * as loan from './Loan.controller.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 router.use(protect);
-router.use('/:chamaId/loans', requireChamaMember);
+router.use('/:chamaId/loans', requireChamaMember, requireModule('loans'));
 
 // Loan viewing - basic permissions
 router.get('/:chamaId/loans/me/summary', requirePermission('loans.view'), loan.getMySummary);

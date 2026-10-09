@@ -52,7 +52,7 @@ export async function updatePolicy(chamaId, updates, userId) {
   const policy = await ChamaLoanPolicy.findOneAndUpdate(
     { chama_id: chamaId },
     { $set, $setOnInsert: { chama_id: chamaId } },
-    { new: true, upsert: true, runValidators: true }
+    { returnDocument: 'after', upsert: true, runValidators: true }
   );
 
   if (!policy) throw new AppError('Unable to update loan policy', 500);

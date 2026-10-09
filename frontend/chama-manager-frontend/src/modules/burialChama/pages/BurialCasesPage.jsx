@@ -54,7 +54,7 @@ export default function BurialCasesPage() {
   const { data: cases, isLoading } = useQuery({
     queryKey: ['burial-cases', workspaceId],
     queryFn: async () => {
-      const response = await api.get(`/api/v1/burial-chama/chama/${workspaceId}/cases`);
+      const response = await api.get(`/burial-chama/chama/${workspaceId}/cases`);
       return response.data.data;
     }
   });
@@ -62,7 +62,7 @@ export default function BurialCasesPage() {
   // Create case mutation
   const createCaseMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await api.post('/api/v1/burial-chama/cases', {
+      const response = await api.post('/burial-chama/cases', {
         ...data,
         burial_chama_profile_id: workspaceId
       });

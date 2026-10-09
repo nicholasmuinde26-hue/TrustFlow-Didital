@@ -4,6 +4,12 @@ import FinancialAccount from "../../models/FinancialAccount.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import LedgerEntry from "../../models/LedgerEntry.js";
 import ContributionPayment from "../../models/ContributionPayment.js";
+import {
+  isBusinessFundAccount,
+  BUSINESS_FUND_ACCOUNT_CODES,
+  BUSINESS_TRANSACTION_TYPES,
+  PROFIT_WALLET_PAYABLE_CODE,
+} from "./accounting/businessFunds.constants.js";
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
@@ -99,9 +105,20 @@ class FinanceService {
     let assets = 0;
     let liabilities = 0;
     let equity = 0;
+    // Money earned by chama-owned businesses and properties. Kept out of every figure
+    // above (the chama balance, savings, contributions, assets, liabilities, equity)
+    // and reported on its own. See accounting/businessFunds.constants.js.
+    let businessBalance = 0;
+    let businessOwedToMembers = 0;
 
     for (const account of accounts) {
       const balance = toNumber(account.current_balance);
+
+      if (isBusinessFundAccount(account)) {
+        if (BUSINESS_FUND_ACCOUNT_CODES.includes(account.account_code)) businessBalance += balance;
+        else if (account.account_code === PROFIT_WALLET_PAYABLE_CODE) businessOwedToMembers += balance;
+        continue;
+      }
 
       switch (account.account_type) {
         case "asset":
@@ -115,6 +132,13 @@ class FinanceService {
           break;
         default:
           break;
+      }
+
+      // Per-plan contribution accounts (planLedgerAccount.service.js) are
+      // children of MEMBER_CONTRIBUTIONS and count toward the contributions
+      // total alongside it.
+      if (account.account_category === "contribution" && account.parent_account_id) {
+        contributions += balance;
       }
 
       switch (account.account_code) {
@@ -142,6 +166,18 @@ class FinanceService {
 
         default:
           break;
+      }
+    }
+
+    // Business income posted before the business fund existed is still sitting inside
+    // cash_balance. Report how much, so the dashboard can offer to move it out.
+    let businessSeparationPending = 0;
+    if (ownerType === "Chama" && accounts.some((a) => /^(ASI_|ASE_)/.test(a.account_code || ""))) {
+      try {
+        const { previewSeparation } = await import("./businessFundsSeparation.service.js");
+        businessSeparationPending = (await previewSeparation(ownerId)).pending;
+      } catch (err) {
+        console.warn("[finance.summary] could not check business fund separation:", err.message);
       }
     }
 
@@ -259,6 +295,13 @@ class FinanceService {
       pending_payouts: payouts,
       total_transactions: transactions,
 
+      // Business & property money: NOT part of cash_balance, savings_balance or
+      // total_contributions above. It has its own statements (finance/reports?scope=business).
+      business_balance: businessBalance,
+      business_owed_to_members: businessOwedToMembers,
+      // > 0: this much business income is still counted inside cash_balance until it is moved.
+      business_separation_pending: businessSeparationPending,
+
       cash_in: cashIn,
       cash_out: cashOut,
       assets,
@@ -343,10 +386,15 @@ class FinanceService {
    * FINANCIAL ACCOUNTS
    * ============================================================
    */
-  async getAccounts(ownerType, ownerId, session = null) {
+  /**
+   * scope: "chama" (default) the pooled member accounts, "business" the business &
+   * property fund, "all" everything. The Chama Wallet page uses the default so business
+   * money does not appear next to member balances.
+   */
+  async getAccounts(ownerType, ownerId, session = null, scope = "chama") {
     const opts = getOpts(session);
 
-    return FinancialAccount.find(
+    const accounts = await FinancialAccount.find(
       {
         owner_type: ownerType,
         owner_id: ownerId,
@@ -356,6 +404,9 @@ class FinanceService {
     ).sort({
       account_code: 1,
     });
+
+    if (scope === "all") return accounts;
+    return accounts.filter((a) => (scope === "business" ? isBusinessFundAccount(a) : !isBusinessFundAccount(a)));
   }
 
   /**
@@ -372,7 +423,7 @@ class FinanceService {
   async getTransactions(
     ownerType,
     ownerId,
-    { membershipId = null, session = null } = {}
+    { membershipId = null, session = null, scope = "chama" } = {}
   ) {
     const opts = getOpts(session);
 
@@ -380,6 +431,9 @@ class FinanceService {
       owner_type: ownerType,
       owner_id: ownerId,
     };
+    // Business and property postings are not part of the chama's own activity feed.
+    if (scope === "chama") query.transaction_type = { $nin: BUSINESS_TRANSACTION_TYPES };
+    else if (scope === "business") query.transaction_type = { $in: BUSINESS_TRANSACTION_TYPES };
 
     if (membershipId) {
       const myPayments = await ContributionPayment.find(
@@ -477,8 +531,48 @@ class FinanceService {
    * LEDGER
    * ============================================================
    */
-  async getLedger(ownerType, ownerId, session = null) {
+  async getLedger(ownerType, ownerId, session = null, scope = "all", filters = {}) {
     const opts = getOpts(session);
+
+    const query = { owner_type: ownerType, owner_id: ownerId };
+    const { accountId, dateFrom, dateTo } = filters || {};
+    const validAccountId = accountId && mongoose.Types.ObjectId.isValid(accountId) ? String(accountId) : null;
+
+    if (scope === "business" || scope === "chama" || validAccountId) {
+      const all = await FinancialAccount.find({ owner_type: ownerType, owner_id: ownerId }, "_id account_code fund_scope parent_account_id", opts).lean();
+      let allowed = all;
+
+      if (scope === "business" || scope === "chama") {
+        allowed = allowed.filter((a) => (scope === "business" ? isBusinessFundAccount(a) : !isBusinessFundAccount(a)));
+      }
+
+      // A selected account also pulls in its sub-ledger children (e.g. a
+      // per-contribution account under Member Contributions).
+      if (validAccountId) {
+        allowed = allowed.filter(
+          (a) => String(a._id) === validAccountId || String(a.parent_account_id || "") === validAccountId
+        );
+      }
+
+      query.account_id = { $in: allowed.map((a) => a._id) };
+    }
+
+    if (dateFrom || dateTo) {
+      const range = {};
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        if (!Number.isNaN(from.getTime())) range.$gte = from;
+      }
+      if (dateTo) {
+        const to = new Date(dateTo);
+        if (!Number.isNaN(to.getTime())) {
+          // A bare YYYY-MM-DD means "through the end of that day".
+          if (/^\d{4}-\d{2}-\d{2}$/.test(String(dateTo))) to.setUTCHours(23, 59, 59, 999);
+          range.$lte = to;
+        }
+      }
+      if (Object.keys(range).length) query.posted_at = range;
+    }
 
     // Populate transaction_id (not just account_id) so callers can tell
     // WHAT KIND of money movement each entry belongs to - savings deposit,
@@ -487,14 +581,7 @@ class FinanceService {
     // way to trace a payment back to the product it belongs to. Sorted
     // newest-first (chronological, most recent on top) so activity can be
     // followed in the order it actually happened.
-    return LedgerEntry.find(
-      {
-        owner_type: ownerType,
-        owner_id: ownerId,
-      },
-      null,
-      opts
-    )
+    return LedgerEntry.find(query, null, opts)
       .populate("account_id")
       .populate({
         path: "transaction_id",

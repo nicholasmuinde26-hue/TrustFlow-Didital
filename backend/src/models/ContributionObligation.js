@@ -117,6 +117,8 @@ const contributionObligationSchema =
 
       },
 
+      mgr_round_id: { type: mongoose.Schema.Types.ObjectId, ref: 'MgrRound', default: null, index: true },
+
 
       // ========================================
       // CONTRIBUTION GROUP / CHAMA OWNER
@@ -647,6 +649,56 @@ const contributionObligationSchema =
         maxlength:
           500
 
+      },
+      // ========================================
+      // CALENDAR FIELDS
+      // ========================================
+      //
+      // NOTE: contributioncalendar.service.js reads and writes these. If your
+      // ContributionObligation.js already defines them, delete this block.
+      //
+      // period_key = 'YYYY-MM' of the period this obligation belongs to
+      // (null for legacy rolling obligations).
+      //
+      // ========================================
+
+      period_key: { type: String, default: null, index: true },
+
+      // Late penalty obligations (see planPenalty.service.js). A penalty is its
+      // own obligation in the chama's "Late penalties" plan, so it is paid,
+      // receipted and posted to the ledger by the normal payment pipeline.
+      // penalty_for_obligation_id points at the contribution that was late.
+      penalty_for_obligation_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ContributionObligation', default: null, index: true },
+      penalty_intervals: { type: Number, default: 0, min: 0 },
+      penalty_computed_at: { type: Date, default: null },
+      paid_at: { type: Date, default: null },
+      closed_at: { type: Date, default: null },
+      advance_amount: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      advance_sources: {
+        type: [
+          new mongoose.Schema(
+            {
+              obligation_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ContributionObligation', default: null },
+              period_key: { type: String, default: null },
+              amount: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+              credited_at: { type: Date, default: null }
+            },
+            { _id: false }
+          )
+        ],
+        default: []
+      },
+      carried_out_amount: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      carried_to_obligation_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ContributionObligation', default: null },
+      unallocated_credit: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      reminder_log: {
+        type: [
+          new mongoose.Schema(
+            { kind: { type: String, required: true }, sent_at: { type: Date, default: Date.now } },
+            { _id: false }
+          )
+        ],
+        default: []
       }
 
     },
@@ -880,6 +932,18 @@ contributionObligationSchema.index(
 );
 
 
+// One penalty obligation per late contribution (keeps the penalty sweep
+// idempotent even if two runs overlap).
+contributionObligationSchema.index(
+  { penalty_for_obligation_id: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { penalty_for_obligation_id: { $type: 'objectId' } },
+    name: 'unique_penalty_per_late_obligation'
+  }
+);
+
+
 // ========================================
 // JSON TRANSFORM
 // ========================================
@@ -906,6 +970,12 @@ contributionObligationSchema.set('toJSON', {
 // ========================================
 // EXPORT MODEL
 // ========================================
+
+// Month lookups for the contributions dashboard and member month view.
+contributionObligationSchema.index({ owner_type: 1, owner_id: 1, period_key: 1, status: 1 });
+contributionObligationSchema.index({ plan_id: 1, period_key: 1 });
+contributionObligationSchema.index({ participant_id: 1, period_start: 1 });
+
 
 export default mongoose.model(
 

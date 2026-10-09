@@ -202,6 +202,21 @@ export async function maybeAutoSubmit(loan, policy, { chama, membership } = {}) 
   loan.submitted_at = new Date();
   if (!loan.reference) loan.reference = loanReference();
 
+  // The loan is now waiting on the officials: ask them to decide. Emitted here
+  // (not at submission) so a loan still waiting on guarantors does not nag
+  // the chairperson/treasurer early, and fires again only once it truly
+  // reaches the approval queue after the last guarantor accepts.
+  domainEventEmitter.emitDomainEvent('LOAN_REQUIRES_APPROVAL', {
+    chamaId: loan.chama_id,
+    loanId: loan._id,
+    amount: loan.amount,
+    memberName: resolvedMembership?.user_id?.name || 'A member',
+    sentBy: resolvedMembership?._id,
+    excludeInitiator: true, // an official must not be asked to approve their own loan
+    entityType: 'ChamaLoan',
+    entityId: loan._id
+  });
+
   return loan;
 }
 

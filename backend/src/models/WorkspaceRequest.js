@@ -30,6 +30,43 @@ const workspaceRequestSchema = new mongoose.Schema(
       maxlength: 120,
     },
 
+    // Business requests only. A chama-owned business is requested by the
+    // chama's chairperson or treasurer on the chama's behalf: ownership of
+    // the approved business goes to the chama itself (never to the officer
+    // who filed the request). `requestedByRole` records which office filed it.
+    ownerType: {
+      type: String,
+      enum: ['user', 'chama'],
+      default: 'user',
+      index: true,
+    },
+    chamaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Chama',
+      default: null,
+      index: true,
+    },
+    requestedByRole: {
+      type: String,
+      enum: ['chairperson', 'treasurer', ''],
+      default: '',
+    },
+
+    // Starting capital the chama leadership is asking its chama to put in.
+    // Informational at approval time: money only moves when the treasurer
+    // records funding against the business asset afterwards.
+    requestedCapital: { type: Number, default: 0, min: 0 },
+
+    // Sections the approving admin enables on the new business workspace.
+    // Empty means the Business model default (all sections).
+    businessWorkspaceSettings: {
+      enabled_sections: {
+        type: [String],
+        enum: ['overview', 'operations', 'people', 'finance', 'statements', 'reports', 'settings'],
+        default: [],
+      },
+    },
+
     description: {
       type: String,
       trim: true,
@@ -45,6 +82,16 @@ const workspaceRequestSchema = new mongoose.Schema(
     monthlySavings: {
       type: Number,
       default: 1000,
+    },
+
+    // Which workspace modules this entity should get. Proposed by the
+    // requester (optional) and finalised by the reviewing admin at approval
+    // time. `modules` is an array of enabled module keys; when empty the
+    // chama gets the legacy default for its category. Validated against
+    // constants/workspaceModules.constants.js before it is stored.
+    workspaceConfig: {
+      preset: { type: String, trim: true, default: '' },
+      modules: { type: [String], default: [] },
     },
 
     // Detailed metadata for Kenyan Chamas and organizations

@@ -59,7 +59,7 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
   const { data: burialCases } = useQuery({
     queryKey: ["burial-cases", workspaceId],
     queryFn: async () => {
-      const response = await api.get(`/api/v1/burial-chama/chama/${workspaceId}/cases`);
+      const response = await api.get(`/burial-chama/chama/${workspaceId}/cases`);
       return response.data.data;
     },
     enabled: !!workspaceId,
@@ -69,7 +69,7 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
   const { data: beneficiaries } = useQuery({
     queryKey: ["beneficiaries", workspaceId],
     queryFn: async () => {
-      const response = await api.get(`/api/v1/burial-chama/chama/${workspaceId}/beneficiaries`);
+      const response = await api.get(`/burial-chama/chama/${workspaceId}/beneficiaries`);
       return response.data.data;
     },
     enabled: !!workspaceId,
@@ -387,6 +387,7 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
           <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4">Grow the Welfare Fund</h2>
 
           <div className="space-y-3">
+            {workspaceCtx.hasModule("equipment_hire") && (
             <Link to={`${base}/equipment-hire`} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3.5 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400"><Tent size={16} /></div>
@@ -397,7 +398,9 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
               </div>
               <ChevronRight size={14} className="text-slate-400" />
             </Link>
+            )}
 
+            {workspaceCtx.hasModule("fundraising") && (
             <Link to={`${base}/fundraising`} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3.5 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400"><Megaphone size={16} /></div>
@@ -408,7 +411,9 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
               </div>
               <ChevronRight size={14} className="text-slate-400" />
             </Link>
+            )}
 
+            {workspaceCtx.hasModule("loans") && (
             <Link to={`${base}/loans`} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3.5 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-400"><Wallet size={16} /></div>
@@ -419,6 +424,7 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
               </div>
               <ChevronRight size={14} className="text-slate-400" />
             </Link>
+            )}
           </div>
         </div>
       </div>

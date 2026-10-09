@@ -24,7 +24,7 @@ export default function AuthProvider({ children }) {
   //-----------------------------------------------------
 
   async function loadUser() {
-    const token = localStorage.getItem("access_token");
+    const token = localStorage.getItem("accessToken");
 
     if (!token) {
       setUser(null);
@@ -36,7 +36,7 @@ export default function AuthProvider({ children }) {
       const data = await authService.me();
       setUser(data.user ?? data);
     } catch {
-      localStorage.removeItem("access_token");
+      localStorage.removeItem("accessToken");
       setUser(null);
     } finally {
       setLoading(false);
@@ -70,7 +70,8 @@ export default function AuthProvider({ children }) {
     const data = await authService.verifyOtp(payload);
 
     // authService.verifyOtp already persists accessToken/refreshToken
-    // to localStorage — just sync the user into context here.
+    // to localStorage under the same "accessToken" key loadUser() reads
+    // — just sync the user into context here.
     setUser(data.user ?? null);
 
     return data;
@@ -94,7 +95,7 @@ export default function AuthProvider({ children }) {
     try {
       await authService.logout();
     } finally {
-      localStorage.removeItem("access_token");
+      localStorage.removeItem("accessToken");
       setUser(null);
       setSuppressGuestRedirect(false);
     }

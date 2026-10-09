@@ -5,6 +5,7 @@ import ContributionGroup from "../../models/ContributionGroup.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
 import Business from "../../models/Business.js";
 import Announcement from "../../models/Announcement.js";
+import notificationService from "../../services/notification.service.js";
 import AppError from "../../utils/AppError.js";
 
 // ==========================================================
@@ -58,9 +59,10 @@ function toAnnouncementDTO(announcement) {
 // ANNOUNCEMENT APPROVAL ROLES
 // ==========================================================
 // For workspace types listed here, only the roles in the array can
-// post an announcement directly. Any other manage-eligible role has
-// their announcement land as "pending" until one of these roles
-// approves or rejects it. Business has no entry, so it always
+// post an announcement directly. Any other active Chama member may
+// submit an announcement as "pending" until one of these roles
+// approves or rejects it. For contribution groups, co-organizer posts
+// need approval. Business has no entry, so it always
 // publishes immediately (single owner — nobody to approve against).
 //
 //   chama:               Chairperson / Secretary approve; Treasurer's
@@ -108,7 +110,12 @@ async function getWorkspaceContext(workspaceId, userId) {
     // Chairperson, Secretary, and Treasurer can manage announcements
     const allowedRoles = ["chairperson", "secretary", "treasurer"];
     const canManage = allowedRoles.includes(membership.role);
-    return { workspaceType: "chama", canManage, role: membership.role };
+    return {
+      workspaceType: "chama",
+      canManage,
+      role: membership.role,
+      membershipId: membership._id,
+    };
   }
 
   // 2. Check if it's a Contribution Group
@@ -187,7 +194,8 @@ export async function createAnnouncement(req, res, next) {
     const { workspaceId } = req.params;
     const context = await getWorkspaceContext(workspaceId, req.user._id);
 
-    if (!context.canManage) {
+    const canSubmit = context.workspaceType === "chama" || context.canManage;
+    if (!canSubmit) {
       throw new AppError("You do not have authorization to post announcements in this workspace", 403);
     }
 
@@ -266,10 +274,16 @@ export async function createAnnouncement(req, res, next) {
     }
 
     // Approval gate: an approver role for this workspace type (see
-    // ANNOUNCEMENT_APPROVER_ROLES) publishes immediately; anyone else
-    // with manage rights (Treasurer in a Chama, Co-organizer in a
-    // Contribution Group) needs an approver to sign off first.
+    // ANNOUNCEMENT_APPROVER_ROLES) publishes immediately; other Chama
+    // members and co-organizers need an approver to sign off first.
     const needsApproval = announcementNeedsApproval(context);
+
+    // Only a post that is being published immediately by a manager can be
+    // pinned at creation time. Pending submissions cannot jump the queue.
+    if (req.body?.pinned === true && context.canManage && !needsApproval) {
+      announcementData.is_pinned = true;
+      announcementData.pinned_at = new Date();
+    }
 
     if (needsApproval) {
       announcementData.status = "pending";
@@ -281,6 +295,45 @@ export async function createAnnouncement(req, res, next) {
 
     let announcement = await Announcement.create(announcementData);
     announcement = await announcement.populate("created_by", "name");
+
+    if (needsApproval && context.workspaceType === "chama") {
+      const approverMemberships = await ChamaMembership.find({
+        chama_id: workspaceId,
+        status: "active",
+        role: { $in: getApproverRoles("chama") },
+        user_id: { $ne: req.user._id },
+      }).select("_id");
+
+      if (approverMemberships.length > 0) {
+        try {
+          await notificationService.sendBulkNotification({
+            chamaId: workspaceId,
+            recipientMembershipIds: approverMemberships.map(({ _id }) => _id),
+            notificationType: "RESOLUTION_CREATED",
+            title: "Announcement needs approval",
+            message: `${announcement.created_by?.name || "A member"} submitted “${announcement.title}” for review.`,
+            description: announcement.content,
+            metadata: {
+              type: "announcement_approval",
+              announcement_id: String(announcement._id),
+              workspace_id: String(workspaceId),
+            },
+            relatedEntityType: "announcement",
+            relatedEntityId: announcement._id,
+            actionUrl: `/workspace/${workspaceId}/announcements`,
+            actionText: "Review announcement",
+            priority: "high",
+            requiresAction: true,
+            sentBy: context.membershipId,
+          });
+        } catch (notificationError) {
+          // Keep a successfully submitted announcement even if notification
+          // delivery is temporarily unavailable. The approval queue remains
+          // available from the announcement page.
+          console.error("Failed to notify announcement approvers:", notificationError);
+        }
+      }
+    }
 
     res.status(201).json({
       success: true,

@@ -97,7 +97,16 @@ const chamaTrustScoreSchema = new mongoose.Schema(
 
     share_token: {
       type: String,
-      default: null,
+      // `default: undefined` (NOT null) is load-bearing here. A sparse
+      // index only excludes documents where the field is entirely
+      // ABSENT — not documents where it's present with value null.
+      // `default: null` makes Mongoose write `share_token: null` onto
+      // every snapshot, so the unique+sparse index sees every private
+      // (unshared) snapshot as sharing the same key and throws E11000
+      // on the second one ever created. Leaving it undefined means
+      // Mongoose omits the key entirely until createShareLink() sets a
+      // real token, which is what sparse+unique actually requires.
+      default: undefined,
       unique: true,
       sparse: true,
       index: true,

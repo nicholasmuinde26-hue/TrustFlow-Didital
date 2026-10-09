@@ -1,514 +1,90 @@
-import { useEffect, useState, useCallback } from "react";
-import {
-  Plus,
-  HeartHandshake,
-  X,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Lock,
-  Send,
-  Wallet,
-  Banknote,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Plus, Search, Loader2, HeartHandshake, X } from "lucide-react";
 import useWorkspace from "@/app/hooks/useWorkspace";
 import chamaContributionApi from "../api/chamaContribution.api";
 import mgrApi from "../api/mgr.api";
+import ContributionCard from "../components/chamaContributions/ContributionCard";
+import ContributionDrawer from "../components/chamaContributions/ContributionDrawer";
+import {
+  CreateModal,
+  ChipInModal,
+  RecordCashModal,
+  ProposePayoutModal,
+  ConfirmModal,
+} from "../components/chamaContributions/modals";
+import {
+  OFFICIAL_ROLES,
+  PURPOSES,
+  getCollected,
+  getPct,
+  daysLeft,
+  beneficiaryName,
+  nextStepFor,
+  compactMoney,
+  money,
+  toNumber,
+  purposeOf,
+} from "../components/chamaContributions/helpers";
 
-const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
-
-const PURPOSE_LABELS = {
-  emergency: "Emergency",
-  wedding: "Wedding",
-  medical: "Medical",
-  funeral: "Funeral",
-  purchase: "Chama Purchase",
-  other: "Other",
+const TAB_FILTERS = {
+  attention: () => true, // resolved separately, needs the viewer's next step
+  active: (c) => c.status === "active",
+  pending: (c) => c.status === "pending_approval",
+  payouts: (c) => ["closed", "payout_pending"].includes(c.status),
+  past: (c) => ["completed", "rejected", "cancelled"].includes(c.status),
+  all: () => true,
 };
 
-const STATUS_BADGE = {
-  pending_approval: { label: "Awaiting Approval", color: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
-  active: { label: "Collecting", color: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" },
-  rejected: { label: "Rejected", color: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" },
-  closed: { label: "Closed", color: "bg-slate-100 text-slate-600 dark:bg-obsidian-raised dark:text-mist-muted" },
-  payout_pending: { label: "Payout Pending Approval", color: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300" },
-  completed: { label: "Disbursed", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
-  cancelled: { label: "Cancelled", color: "bg-slate-100 text-slate-500 dark:bg-obsidian-raised dark:text-mist-muted" },
+const SORTS = {
+  newest: { label: "Newest first", fn: (a, b) => new Date(b.createdAt) - new Date(a.createdAt) },
+  closing: {
+    label: "Closing soonest",
+    fn: (a, b) => {
+      const da = a.deadline && a.status === "active" ? new Date(a.deadline).getTime() : Infinity;
+      const db = b.deadline && b.status === "active" ? new Date(b.deadline).getTime() : Infinity;
+      return da - db;
+    },
+  },
+  raised: { label: "Most raised", fn: (a, b) => getCollected(b) - getCollected(a) },
+  nearly: { label: "Nearest to target", fn: (a, b) => (getPct(b) ?? -1) - (getPct(a) ?? -1) },
 };
 
-function StatusBadge({ status }) {
-  const s = STATUS_BADGE[status] || { label: status, color: "bg-slate-100 text-slate-500" };
+const raisedOf = (c) => (c.status === "completed" ? toNumber(c.disbursed_amount) : getCollected(c));
+
+function Stat({ label, value, note }) {
   return (
-    <span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${s.color}`}>
-      {s.label}
-    </span>
-  );
-}
-
-// ============================================================
-// CREATE MODAL
-// ============================================================
-function CreateModal({ members, onClose, onSubmit }) {
-  const [form, setForm] = useState({
-    title: "",
-    purpose: "emergency",
-    description: "",
-    beneficiary_membership_id: "",
-    target_amount: "",
-    deadline: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSubmit = async () => {
-    if (!form.title.trim()) {
-      setError("A title is required");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      await onSubmit({
-        ...form,
-        target_amount: form.target_amount ? Number(form.target_amount) : null,
-        beneficiary_membership_id: form.beneficiary_membership_id || null,
-        deadline: form.deadline || null,
-      });
-      onClose();
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans">
-      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 dark:bg-obsidian-card dark:border-obsidian-border max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-obsidian-border">
-          <div className="flex items-center gap-3">
-            <HeartHandshake className="text-rose-500" size={22} />
-            <h3 className="text-base font-black text-slate-900 dark:text-mist">Start a Chama Contribution</h3>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-mist">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="mt-4 space-y-4">
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Title</label>
-            <input
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              placeholder='e.g. "Hospital bill for James"'
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Purpose</label>
-            <select
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              value={form.purpose}
-              onChange={(e) => setForm({ ...form, purpose: e.target.value })}
-            >
-              {Object.entries(PURPOSE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">
-              Beneficiary (optional — the member this is being raised for)
-            </label>
-            <select
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              value={form.beneficiary_membership_id}
-              onChange={(e) => setForm({ ...form, beneficiary_membership_id: e.target.value })}
-            >
-              <option value="">— None (e.g. a chama purchase) —</option>
-              {members.map((m) => (
-                <option key={m._id} value={m._id}>
-                  {m.user_id?.name || "Member"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Target amount (optional)</label>
-              <input
-                type="number"
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-                placeholder="KES"
-                value={form.target_amount}
-                onChange={(e) => setForm({ ...form, target_amount: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Deadline (optional)</label>
-              <input
-                type="date"
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-                value={form.deadline}
-                onChange={(e) => setForm({ ...form, deadline: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Description (optional)</label>
-            <textarea
-              rows={3}
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-          </div>
-
-          {error && <p className="text-xs font-semibold text-rose-500">{error}</p>}
-
-          <p className="text-[11px] text-slate-400 dark:text-mist-muted">
-            This won't start collecting money until an official (chairperson, treasurer, or secretary) approves it.
-          </p>
-
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full rounded-xl bg-rose-500 py-2.5 text-sm font-bold text-white hover:bg-rose-600 disabled:opacity-60"
-          >
-            {loading ? <Loader2 className="mx-auto animate-spin" size={18} /> : "Submit for approval"}
-          </button>
-        </div>
-      </div>
+    <div className="flex-1 px-5 py-4">
+      <p className="text-xs font-medium text-slate-500 dark:text-mist-muted">{label}</p>
+      <p className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 dark:text-mist">{value}</p>
+      {note && <p className="mt-0.5 text-[11px] text-slate-400 dark:text-mist-muted">{note}</p>}
     </div>
   );
 }
 
-// ============================================================
-// CONTRIBUTE (CHIP IN) MODAL
-// ============================================================
-function ContributeModal({ contribution, onClose, onSubmit }) {
-  const [amount, setAmount] = useState("");
-  const [phone, setPhone] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSubmit = async () => {
-    if (!Number(amount) || Number(amount) <= 0) return setError("Enter a valid amount");
-    if (!phone.trim()) return setError("M-Pesa phone number is required");
-    setLoading(true);
-    setError("");
-    try {
-      await onSubmit({ amount: Number(amount), phone_number: phone.trim() });
-      onClose();
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 dark:bg-obsidian-card dark:border-obsidian-border">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-obsidian-border">
-          <h3 className="text-base font-black text-slate-900 dark:text-mist">Chip in — {contribution.title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-mist">
-            <X size={20} />
-          </button>
-        </div>
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Amount (KES)</label>
-            <input
-              type="number"
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">M-Pesa phone number</label>
-            <input
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              placeholder="07XXXXXXXX"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
-          {error && <p className="text-xs font-semibold text-rose-500">{error}</p>}
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
-          >
-            {loading ? <Loader2 className="mx-auto animate-spin" size={18} /> : "Send STK push"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// PROPOSE PAYOUT MODAL
-// ============================================================
-function ProposePayoutModal({ contribution, onClose, onSubmit }) {
-  const [method, setMethod] = useState("mpesa");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSubmit = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      await onSubmit({ disbursement_method: method, phone_number: phone.trim() || null, notes: notes.trim() });
-      onClose();
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 dark:bg-obsidian-card dark:border-obsidian-border">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-obsidian-border">
-          <h3 className="text-base font-black text-slate-900 dark:text-mist">Propose Payout</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-mist">
-            <X size={20} />
-          </button>
-        </div>
-        <p className="mt-3 text-xs text-slate-500 dark:text-mist-muted">
-          Collected: <span className="font-bold">{money(contribution.balance)}</span>. This needs sign-off from 2
-          officials before it can be disbursed.
-        </p>
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Disbursement method</label>
-            <select
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              value={method}
-              onChange={(e) => setMethod(e.target.value)}
-            >
-              <option value="mpesa">M-Pesa</option>
-              <option value="bank">Bank</option>
-              <option value="cash">Cash</option>
-            </select>
-          </div>
-          {method === "mpesa" && (
-            <div>
-              <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Recipient phone number</label>
-              <input
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-                placeholder="07XXXXXXXX"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-mist-muted">Notes (optional)</label>
-            <textarea
-              rows={2}
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-          {error && <p className="text-xs font-semibold text-rose-500">{error}</p>}
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full rounded-xl bg-purple-500 py-2.5 text-sm font-bold text-white hover:bg-purple-600 disabled:opacity-60"
-          >
-            {loading ? <Loader2 className="mx-auto animate-spin" size={18} /> : "Submit for approval"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// CONTRIBUTION CARD
-// ============================================================
-function ContributionCard({ contribution, isOfficial, onAction, workspaceId }) {
-  const [expanded, setExpanded] = useState(false);
-  const [showContribute, setShowContribute] = useState(false);
-  const [showPayout, setShowPayout] = useState(false);
-  const [payments, setPayments] = useState(null);
-
-  const target = contribution.target_amount ? Number(contribution.target_amount) : null;
-  const collected = Number(contribution.balance || contribution.collected_amount || 0);
-  const pct = target ? Math.min(100, Math.round((collected / target) * 100)) : null;
-
-  const toggleExpanded = async () => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next && payments === null && workspaceId) {
-      try {
-        const { data } = await chamaContributionApi.get(workspaceId, contribution._id);
-        setPayments(data?.data?.contribution?.payments || []);
-      } catch {
-        setPayments([]);
-      }
-    }
-  };
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-obsidian-border dark:bg-obsidian-card">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h4 className="text-sm font-black text-slate-900 dark:text-mist">{contribution.title}</h4>
-            <StatusBadge status={contribution.status} />
-          </div>
-          <p className="mt-1 text-xs text-slate-500 dark:text-mist-muted">
-            {PURPOSE_LABELS[contribution.purpose] || contribution.purpose}
-            {contribution.beneficiary_membership_id?.user_id?.name
-              ? ` · for ${contribution.beneficiary_membership_id.user_id.name}`
-              : ""}
-          </p>
-        </div>
-        <button onClick={toggleExpanded} className="text-slate-400 hover:text-slate-700 dark:hover:text-mist">
-          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-        </button>
-      </div>
-
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">{money(collected)}</span>
-        {target && <span className="text-xs text-slate-400">of {money(target)} target</span>}
-      </div>
-
-      {target && (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-obsidian-raised">
-          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
-        </div>
-      )}
-
-      {expanded && contribution.description && (
-        <p className="mt-3 text-xs text-slate-500 dark:text-mist-muted">{contribution.description}</p>
-      )}
-
-      {expanded && Array.isArray(payments) && (
-        <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 dark:border-obsidian-border">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Contributions</p>
-          {payments.length === 0 && <p className="text-xs text-slate-400">No chip-ins yet.</p>}
-          {payments.map((p) => (
-            <div key={p._id} className="flex items-center justify-between text-xs">
-              <span className="text-slate-600 dark:text-mist-muted">
-                {p.participant_id?.user_id?.name || "Member"} · {p.status}
-              </span>
-              <span className="font-bold text-slate-800 dark:text-mist">{money(p.amount)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {contribution.status === "pending_approval" && isOfficial && (
-          <>
-            <button
-              onClick={() => onAction("approve", contribution)}
-              className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600"
-            >
-              <CheckCircle2 size={14} /> Approve
-            </button>
-            <button
-              onClick={() => onAction("reject", contribution)}
-              className="flex items-center gap-1 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-600"
-            >
-              <XCircle size={14} /> Reject
-            </button>
-          </>
-        )}
-
-        {contribution.status === "active" && (
-          <button
-            onClick={() => setShowContribute(true)}
-            className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600"
-          >
-            <Wallet size={14} /> Chip in
-          </button>
-        )}
-
-        {contribution.status === "active" && isOfficial && (
-          <button
-            onClick={() => onAction("close", contribution)}
-            className="flex items-center gap-1 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-700"
-          >
-            <Lock size={14} /> Close Collection
-          </button>
-        )}
-
-        {contribution.status === "closed" && isOfficial && (
-          <button
-            onClick={() => setShowPayout(true)}
-            className="flex items-center gap-1 rounded-lg bg-purple-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-600"
-          >
-            <Send size={14} /> Propose Payout
-          </button>
-        )}
-
-        {contribution.status === "payout_pending" && isOfficial && (
-          <button
-            onClick={() => onAction("disburse", contribution)}
-            className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
-          >
-            <Banknote size={14} /> Disburse (once approved)
-          </button>
-        )}
-      </div>
-
-      {showContribute && (
-        <ContributeModal
-          contribution={contribution}
-          onClose={() => setShowContribute(false)}
-          onSubmit={(payload) => onAction("contribute", contribution, payload)}
-        />
-      )}
-      {showPayout && (
-        <ProposePayoutModal
-          contribution={contribution}
-          onClose={() => setShowPayout(false)}
-          onSubmit={(payload) => onAction("proposePayout", contribution, payload)}
-        />
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// MAIN PAGE
-// ============================================================
 export default function ChamaContributionsPage() {
   const workspace = useWorkspace();
   const workspaceId = workspace?.workspaceId;
-  const role = workspace?.activeWorkspace?.role || workspace?.currentWorkspace?.role;
-  const isOfficial = ["chairperson", "treasurer", "secretary"].includes(role);
+  const role = workspace?.activeWorkspace?.role || workspace?.currentWorkspace?.role || workspace?.membership?.role;
+  const isOfficial = OFFICIAL_ROLES.includes(role);
+  const myMembershipId = String(workspace?.membership?._id || workspace?.activeWorkspace?.membershipId || "");
 
   const [contributions, setContributions] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [toast, setToast] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [toast, setToast] = useState(null);
+
+  const [tab, setTab] = useState(null);
+  const [query, setQuery] = useState("");
+  const [purposeFilter, setPurposeFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
+
+  const [openId, setOpenId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [modal, setModal] = useState(null); // { type, contribution }
 
   const load = useCallback(async () => {
     if (!workspaceId) return;
-    setLoading(true);
     try {
       const [{ data: listRes }, membersRes] = await Promise.all([
         chamaContributionApi.list(workspaceId),
@@ -516,6 +92,9 @@ export default function ChamaContributionsPage() {
       ]);
       setContributions(listRes?.data?.contributions || []);
       setMembers(membersRes?.data?.data?.members || membersRes?.data?.members || []);
+      setLoadError("");
+    } catch (err) {
+      setLoadError(err?.response?.data?.message || "Couldn't load contributions. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -525,99 +104,423 @@ export default function ChamaContributionsPage() {
     load();
   }, [load]);
 
-  const notify = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3500);
+  const toastTimer = useRef(null);
+  const notify = (message, kind = "ok") => {
+    setToast({ message, kind });
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
   };
 
-  const handleCreate = async (payload) => {
-    await chamaContributionApi.create(workspaceId, payload);
-    notify("Submitted for official approval");
-    load();
+  const stepFor = useCallback((c) => nextStepFor(c, { isOfficial, myMembershipId }), [isOfficial, myMembershipId]);
+
+  // ---- derived data -------------------------------------------------------
+  const counts = useMemo(() => {
+    const out = {};
+    for (const key of Object.keys(TAB_FILTERS)) {
+      out[key] =
+        key === "attention"
+          ? contributions.filter((c) => stepFor(c)?.attention).length
+          : contributions.filter(TAB_FILTERS[key]).length;
+    }
+    return out;
+  }, [contributions, stepFor]);
+
+  // Land the viewer on whatever is most useful the first time data arrives.
+  useEffect(() => {
+    if (tab !== null || loading) return;
+    if (isOfficial && counts.attention > 0) setTab("attention");
+    else if (counts.active > 0) setTab("active");
+    else setTab("all");
+  }, [tab, loading, isOfficial, counts]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const activeTab = tab || "all";
+    return contributions
+      .filter((c) => (activeTab === "attention" ? stepFor(c)?.attention : TAB_FILTERS[activeTab](c)))
+      .filter((c) => purposeFilter === "all" || c.purpose === purposeFilter)
+      .filter((c) => {
+        if (!q) return true;
+        const hay = `${c.title} ${beneficiaryName(c) || ""} ${purposeOf(c.purpose).label}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .sort(SORTS[sort].fn);
+  }, [contributions, tab, query, purposeFilter, sort, stepFor]);
+
+  const summary = useMemo(() => {
+    const active = contributions.filter((c) => c.status === "active");
+    const closingSoon = active.filter((c) => {
+      const d = daysLeft(c);
+      return d !== null && d <= 7;
+    });
+    return {
+      activeCount: active.length,
+      activeRaised: active.reduce((sum, c) => sum + getCollected(c), 0),
+      closingSoon: closingSoon.length,
+      totalRaised: contributions
+        .filter((c) => ["active", "closed", "payout_pending", "completed"].includes(c.status))
+        .reduce((sum, c) => sum + raisedOf(c), 0),
+      iGave: contributions.reduce((sum, c) => sum + toNumber(c.my_contributed), 0),
+    };
+  }, [contributions]);
+
+  const openContribution = contributions.find((c) => c._id === openId) || null;
+
+  // ---- actions ------------------------------------------------------------
+  const refresh = async () => {
+    await load();
+    setRefreshKey((k) => k + 1);
   };
 
-  const handleAction = async (action, contribution, payload) => {
-    try {
-      switch (action) {
-        case "approve":
-          await chamaContributionApi.approve(workspaceId, contribution._id);
-          notify("Contribution approved — members can now chip in");
-          break;
-        case "reject":
-          await chamaContributionApi.reject(workspaceId, contribution._id, "Declined");
-          notify("Contribution rejected");
-          break;
-        case "close":
-          await chamaContributionApi.closeCollection(workspaceId, contribution._id);
-          notify("Collection closed");
-          break;
-        case "contribute":
-          await chamaContributionApi.contribute(workspaceId, contribution._id, payload);
-          notify("STK push sent — check your phone");
-          break;
-        case "proposePayout":
-          await chamaContributionApi.proposePayout(workspaceId, contribution._id, payload);
-          notify("Payout proposed — awaiting official sign-off");
-          break;
-        case "disburse":
-          await chamaContributionApi.disburse(workspaceId, contribution._id);
-          notify("Contribution disbursed");
-          break;
-        default:
-          break;
-      }
-      load();
-    } catch (err) {
-      notify(err?.response?.data?.message || err?.message || "Something went wrong");
+  const run = async (fn, success) => {
+    await fn();
+    if (success) notify(success);
+    await refresh();
+  };
+
+  const handleCreate = (payload) =>
+    run(() => chamaContributionApi.create(workspaceId, payload), "Submitted. An official needs to approve it before money can come in.");
+
+  // Entry point for every button on cards and in the drawer.
+  const handleAction = async (key, c) => {
+    switch (key) {
+      case "review":
+        setOpenId(c._id);
+        break;
+      case "approve":
+        try {
+          await run(() => chamaContributionApi.approve(workspaceId, c._id), "Approved. Members can now chip in.");
+        } catch (err) {
+          notify(err?.response?.data?.message || err?.message || "Couldn't approve", "error");
+        }
+        break;
+      default:
+        setModal({ type: key, contribution: c });
     }
   };
 
+  const approvalId = (c) => c.payout_approval?._id || c.approval_request_id;
+
+  const renderModal = () => {
+    if (!modal) return null;
+    const { type, contribution: c } = modal;
+    const close = () => setModal(null);
+
+    switch (type) {
+      case "create":
+        return <CreateModal members={members} isOfficial={isOfficial} onClose={close} onSubmit={handleCreate} />;
+      case "chip_in":
+        return (
+          <ChipInModal
+            contribution={c}
+            onClose={close}
+            onSubmit={(p) => run(() => chamaContributionApi.contribute(workspaceId, c._id, p), "Check your phone and enter your M-Pesa PIN. It will show here once it goes through.")}
+          />
+        );
+      case "record_cash":
+        return (
+          <RecordCashModal
+            contribution={c}
+            members={members}
+            onClose={close}
+            onSubmit={(p) => run(() => chamaContributionApi.recordCash(workspaceId, c._id, p), "Cash recorded")}
+          />
+        );
+      case "propose_payout":
+        return (
+          <ProposePayoutModal
+            contribution={c}
+            onClose={close}
+            onSubmit={(p) => run(() => chamaContributionApi.proposePayout(workspaceId, c._id, p), "Payout sent for sign-off")}
+          />
+        );
+      case "reject":
+        return (
+          <ConfirmModal
+            title={`Reject "${c.title}"?`}
+            body="The person who proposed it will see the reason you give."
+            confirmLabel="Reject"
+            tone="bg-rose-500 hover:bg-rose-600"
+            withReason
+            reasonRequired
+            onClose={close}
+            onSubmit={(reason) => run(() => chamaContributionApi.reject(workspaceId, c._id, reason), "Rejected")}
+          />
+        );
+      case "close":
+        return (
+          <ConfirmModal
+            title="Close this collection?"
+            body={`Nobody will be able to chip in to "${c.title}" after this. You can then propose a payout of ${money(getCollected(c))}.`}
+            confirmLabel="Close collection"
+            onClose={close}
+            onSubmit={() => run(() => chamaContributionApi.closeCollection(workspaceId, c._id), "Collection closed")}
+          />
+        );
+      case "cancel":
+        return (
+          <ConfirmModal
+            title={`Cancel "${c.title}"?`}
+            body="This is only possible before any money has come in."
+            confirmLabel="Cancel contribution"
+            tone="bg-rose-500 hover:bg-rose-600"
+            withReason
+            reasonLabel="Reason (optional)"
+            onClose={close}
+            onSubmit={(reason) => run(() => chamaContributionApi.cancel(workspaceId, c._id, reason), "Cancelled")}
+          />
+        );
+      case "sign_off":
+        return (
+          <ConfirmModal
+            title="Sign off this payout?"
+            body={`You are confirming that ${money(getCollected(c))} from "${c.title}" can be paid out.`}
+            confirmLabel="Sign off"
+            tone="bg-violet-600 hover:bg-violet-700"
+            withReason
+            reasonLabel="Comment (optional)"
+            onClose={close}
+            onSubmit={(comment) =>
+              run(() => mgrApi.submitApprovalSignoff(approvalId(c), { status: "approved", comment }), "Signed off")
+            }
+          />
+        );
+      case "reject_payout":
+        return (
+          <ConfirmModal
+            title="Decline this payout?"
+            body="Declining stops the payout request for everyone. The collection stays closed."
+            confirmLabel="Decline payout"
+            tone="bg-rose-500 hover:bg-rose-600"
+            withReason
+            reasonRequired
+            onClose={close}
+            onSubmit={(comment) =>
+              run(() => mgrApi.submitApprovalSignoff(approvalId(c), { status: "rejected", comment }), "Payout declined")
+            }
+          />
+        );
+      case "disburse":
+        return (
+          <ConfirmModal
+            title={`Disburse ${money(getCollected(c))}?`}
+            body={`This pays out "${c.title}" and records it in the books. It can't be undone.`}
+            confirmLabel="Disburse"
+            tone="bg-emerald-600 hover:bg-emerald-700"
+            onClose={close}
+            onSubmit={() => run(() => chamaContributionApi.disburse(workspaceId, c._id), "Paid out")}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  // ---- render -------------------------------------------------------------
+  const tabs = [
+    ...(isOfficial ? [["attention", "Needs you"]] : []),
+    ["active", "Collecting"],
+    ["pending", "Awaiting approval"],
+    ["payouts", "Payouts"],
+    ["past", "Past"],
+    ["all", "All"],
+  ];
+
+  const filtersActive = query.trim() || purposeFilter !== "all";
+
   return (
-    <div className="mx-auto max-w-4xl p-4 font-sans md:p-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-black text-slate-900 dark:text-mist">Chama Contributions</h1>
-          <p className="text-sm text-slate-500 dark:text-mist-muted">
+    <div className="mx-auto max-w-6xl p-4 font-sans md:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-xl">
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-mist">Chama contributions</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-mist-muted">
             Chip in for a member's emergency or wedding, or raise money for something the chama wants to buy.
           </p>
         </div>
         <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1 rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-600"
+          onClick={() => setModal({ type: "create" })}
+          className="flex items-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-rose-600"
         >
-          <Plus size={16} /> New
+          <Plus size={16} /> New contribution
         </button>
       </div>
 
-      {toast && (
-        <div className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-mint dark:text-obsidian-rail">
-          {toast}
+      {/* Summary strip: one panel with dividers, not four separate cards */}
+      {!loading && contributions.length > 0 && (
+        <div className="mt-6 flex flex-col divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white sm:flex-row sm:divide-x sm:divide-y-0 dark:divide-obsidian-border dark:border-obsidian-border dark:bg-obsidian-card">
+          <Stat label="Collecting now" value={summary.activeCount} note={`${compactMoney(summary.activeRaised)} raised so far`} />
+          <Stat
+            label="Closing within a week"
+            value={summary.closingSoon}
+            note={summary.closingSoon ? "Remind members to chip in" : "No deadlines close to"}
+          />
+          {isOfficial ? (
+            <Stat label="Waiting on you" value={counts.attention} note={counts.attention ? "Approvals, payouts and sign-offs" : "You're all caught up"} />
+          ) : (
+            <Stat label="You've given" value={compactMoney(summary.iGave)} note="Across all contributions" />
+          )}
+          <Stat label="Raised in total" value={compactMoney(summary.totalRaised)} note="Active and paid out" />
         </div>
       )}
 
-      <div className="mt-6 space-y-4">
-        {loading && <Loader2 className="mx-auto animate-spin text-slate-400" size={24} />}
+      {/* Tabs + filters */}
+      {!loading && contributions.length > 0 && (
+        <div className="mt-6 space-y-3">
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1" role="tablist">
+            {tabs.map(([key, label]) => {
+              const on = tab === key;
+              return (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setTab(key)}
+                  className={`flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    on
+                      ? "bg-slate-900 text-white dark:bg-mint dark:text-obsidian"
+                      : "text-slate-600 hover:bg-slate-100 dark:text-mist-muted dark:hover:bg-obsidian-raised"
+                  }`}
+                >
+                  {label}
+                  <span
+                    className={`rounded-full px-1.5 text-[11px] ${
+                      on ? "bg-white/20 dark:bg-obsidian/20" : key === "attention" && counts[key] ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-500 dark:bg-obsidian-raised dark:text-mist-muted"
+                    }`}
+                  >
+                    {counts[key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-        {!loading && contributions.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-400 dark:border-obsidian-border">
-            No contributions yet. Start one for an emergency, a wedding, or something the chama wants to buy.
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by title or member"
+                aria-label="Search contributions"
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist"
+              />
+              {query && (
+                <button onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+            <select
+              value={purposeFilter}
+              onChange={(e) => setPurposeFilter(e.target.value)}
+              aria-label="Filter by type"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist"
+            >
+              <option value="all">All types</option>
+              {Object.entries(PURPOSES).map(([key, p]) => (
+                <option key={key} value={key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              aria-label="Sort"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist"
+            >
+              {Object.entries(SORTS).map(([key, s]) => (
+                <option key={key} value={key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="mt-6">
+        {loading && <Loader2 className="mx-auto mt-16 animate-spin text-slate-400" size={26} />}
+
+        {!loading && loadError && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+            {loadError}
+            <button onClick={load} className="ml-3 font-bold underline">
+              Try again
+            </button>
           </div>
         )}
 
-        {contributions.map((c) => (
-          <ContributionCard
-            key={c._id}
-            contribution={c}
-            isOfficial={isOfficial}
-            onAction={handleAction}
-            workspaceId={workspaceId}
-          />
-        ))}
+        {!loading && !loadError && contributions.length === 0 && (
+          <div className="rounded-3xl border border-dashed border-slate-300 px-6 py-16 text-center dark:border-obsidian-border">
+            <HeartHandshake className="mx-auto text-rose-400" size={34} />
+            <h2 className="mt-4 text-base font-bold text-slate-900 dark:text-mist">No contributions yet</h2>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500 dark:text-mist-muted">
+              Start one when a member needs support or the chama wants to buy something. Members can chip in once it is approved.
+            </p>
+            <button onClick={() => setModal({ type: "create" })} className="mt-5 rounded-xl bg-rose-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-rose-600">
+              Start a contribution
+            </button>
+          </div>
+        )}
+
+        {!loading && contributions.length > 0 && visible.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-12 text-center text-sm text-slate-500 dark:border-obsidian-border dark:text-mist-muted">
+            {filtersActive ? "Nothing matches those filters." : tab === "attention" ? "Nothing needs your attention right now." : "Nothing here yet."}
+            {filtersActive && (
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setPurposeFilter("all");
+                }}
+                className="ml-2 font-bold text-emerald-600 underline dark:text-mint"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {visible.map((c) => (
+            <ContributionCard
+              key={c._id}
+              contribution={c}
+              nextStep={stepFor(c)}
+              onOpen={(item) => setOpenId(item._id)}
+              onQuickAction={handleAction}
+            />
+          ))}
+        </div>
       </div>
 
-      {showCreate && (
-        <CreateModal members={members} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
+      {openContribution && (
+        <ContributionDrawer
+          contribution={openContribution}
+          workspaceId={workspaceId}
+          isOfficial={isOfficial}
+          myMembershipId={myMembershipId}
+          nextStep={stepFor(openContribution)}
+          refreshKey={refreshKey}
+          onClose={() => setOpenId(null)}
+          onAction={handleAction}
+        />
       )}
+
+      {renderModal()}
+
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex justify-center px-4">
+        {toast && (
+          <div
+            className={`pointer-events-auto max-w-md rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl ${
+              toast.kind === "error" ? "bg-rose-600" : "bg-slate-900 dark:bg-mint dark:text-obsidian"
+            }`}
+          >
+            {toast.message}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

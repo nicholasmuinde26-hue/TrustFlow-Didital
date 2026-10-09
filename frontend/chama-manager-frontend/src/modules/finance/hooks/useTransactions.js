@@ -13,6 +13,7 @@ export default function useTransactions(workspaceId, filters = {}) {
     queryFn: () => financeService.getTransactions(workspaceId, filters),
     enabled: !!workspaceId,
     staleTime: 0, // always refetch
+    keepPreviousData: true, // switching My / Chama keeps the page on screen
     refetchOnWindowFocus: true, // refresh when user comes back to tab
   });
 
@@ -28,6 +29,8 @@ export default function useTransactions(workspaceId, filters = {}) {
     items: data?.items ?? data ?? [],
     total: data?.total ?? 0,
     page: data?.page ?? 1,
+    view: data?.view ?? null,
+    canToggle: data?.canToggle ?? false,
   };
 
   return {

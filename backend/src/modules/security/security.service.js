@@ -234,4 +234,4 @@ export async function getRiskSignals() {
 
 export const listAlerts = (query = {}) => SecurityAlert.find(query).sort({ createdAt: -1 }).limit(100).populate('eventId').lean();
 export const getAlert = (id) => SecurityAlert.findById(id).populate('eventId').lean();
-export async function respondToAlert(id, action, userId) { return SecurityAlert.findByIdAndUpdate(id, { $set: { status: action === 'resolve' ? 'RESOLVED' : 'ACKNOWLEDGED', response: { action, performedAt: new Date(), performedBy: userId } } }, { new: true }); }
+export async function respondToAlert(id, action, userId) { return SecurityAlert.findByIdAndUpdate(id, { $set: { status: action === 'resolve' ? 'RESOLVED' : 'ACKNOWLEDGED', response: { action, performedAt: new Date(), performedBy: userId } } }, { returnDocument: 'after' }); }

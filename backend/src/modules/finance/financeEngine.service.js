@@ -601,7 +601,26 @@ class FinancialEngine {
             // balance summary / next-due screens) stays stuck at "pending".
             // ==================================================================
 
-            if (
+            // A contribution that carries { planId, period_key? } in its
+            // allocation metadata is settled by the allocation service: one
+            // payment, split across months (a specific month, or oldest-first
+            // for a lump sum), with any excess carried forward as an advance.
+            const usesAllocation =
+                ruleName === "CONTRIBUTION_PAYMENT" &&
+                Boolean(event.payment?.metadata?.allocation);
+
+            if (usesAllocation) {
+
+                const { applyContributionPayment } = await import(
+                    "../contributionPlan/contributionAllocation.service.js"
+                );
+
+                await applyContributionPayment({
+                    paymentId: event.payment.id || event.payment._id,
+                    session: sessionLocal,
+                });
+
+            } else if (
                 ruleName === "CONTRIBUTION_PAYMENT" ||
                 ruleName === "MGR_CONTRIBUTION" ||
                 ruleName === "SAVINGS_DEPOSIT"
@@ -618,11 +637,24 @@ class FinancialEngine {
                         await import("../contributionPlan/contributionObligation.service.js")
                     ).default;
 
-                    await contributionObligationService.markPaid(
+                    const settled = await contributionObligationService.markPaid(
                         obligationId,
                         event.payment.amount,
                         sessionLocal
                     );
+
+                    // Paid more than the month needed? Carry the excess into the
+                    // next month(s) as an advance. This was built in the calendar
+                    // service but nothing ever called it after a payment.
+                    // Merry-go-round rounds are not calendar months, so they skip it.
+                    if (settled?.period_key && ruleName !== "MGR_CONTRIBUTION") {
+
+                        const { applyCarryForward } = await import(
+                            "../contributionPlan/contributioncalendar.service.js"
+                        );
+
+                        await applyCarryForward(settled._id, sessionLocal);
+                    }
 
                 } else {
 
@@ -844,6 +876,8 @@ class FinancialEngine {
                         await mgrService.syncRoundCollection({
                             chamaId,
                             policyId: activePolicy._id,
+                            roundId: event.context?.mgrRoundId || event.context?.metadata?.mgrRoundId,
+                            obligationId: event.context?.obligationId || event.context?.metadata?.obligationId,
                             amount: event.payment?.amount,
                             actorUserId: event.actor?.userId,
                         }).catch((err) => {

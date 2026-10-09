@@ -12,8 +12,28 @@ const payoutService = {
     return data.data;
   },
 
+  async approve(workspaceId, payoutId, payload) {
+    const { data } = await payoutApi.approve(
+      workspaceId,
+      payoutId,
+      payload
+    );
+
+    return data.data;
+  },
+
   async pay(workspaceId, payoutId, payload) {
     const { data } = await payoutApi.pay(
+      workspaceId,
+      payoutId,
+      payload
+    );
+
+    return data.data;
+  },
+
+  async cancel(workspaceId, payoutId, payload) {
+    const { data } = await payoutApi.cancel(
       workspaceId,
       payoutId,
       payload

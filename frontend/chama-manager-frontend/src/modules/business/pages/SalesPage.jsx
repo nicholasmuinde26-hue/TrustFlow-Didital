@@ -62,6 +62,7 @@ export default function SalesPage() {
             <tr>
               <th className="px-6 py-3">Receipt / ID</th>
               <th className="px-6 py-3">{copy.partyColumn}</th>
+              {isRental && <th className="px-6 py-3">Unit / Property</th>}
               <th className="px-6 py-3">Amount (KES)</th>
               <th className="px-6 py-3">Payment Method</th>
               <th className="px-6 py-3">Status</th>
@@ -71,7 +72,7 @@ export default function SalesPage() {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {completedSales.length === 0 ? (
               <tr>
-                <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={isRental ? 7 : 6} className="px-6 py-8 text-center text-gray-500">
                   {copy.emptyMessage}
                 </td>
               </tr>
@@ -82,6 +83,7 @@ export default function SalesPage() {
                     {sale.mpesa_receipt_number || sale.external_reference || sale.receiptNo || sale.id || sale._id}
                   </td>
                   <td className="px-6 py-4">{sale.customer_name || sale.customerName || sale.customer || copy.walkIn}</td>
+                  {isRental && <td className="px-6 py-4">{sale.rental_listing_id?.title || "Unassigned"}</td>}
                   <td className="px-6 py-4 font-semibold text-gray-900 dark:text-white">
                     {Number(sale.amount || 0).toLocaleString()}
                   </td>

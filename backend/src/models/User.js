@@ -130,8 +130,22 @@ const userSchema = new mongoose.Schema(
     // OTP AUTHENTICATION FIELDS
     // ========================================
 
-    otpCode: {
+    // Stores a SHA-256 HMAC of the OTP, never the code itself. Anyone
+    // with read access to this collection - a backup, a log shipper, a
+    // compromised read replica, a support tool - could previously read
+    // live login codes straight out of the document and use them
+    // before they expired.
+    otpCodeHash: {
       type: String,
+      select: false,
+    },
+
+    // Wrong guesses against the currently pending OTP. Reset whenever a
+    // new code is issued; once it passes env.otpMaxAttempts the code is
+    // burned and a fresh one has to be requested.
+    otpAttempts: {
+      type: Number,
+      default: 0,
       select: false,
     },
 
@@ -155,6 +169,54 @@ const userSchema = new mongoose.Schema(
     refreshToken: {
       type: String,
       select: false,
+    },
+
+    // ========================================
+    // USSD PIN (SEPARATE FROM THE WEB/APP PASSWORD)
+    // ========================================
+    //
+    // A short numeric PIN used only to authenticate *XXX# USSD sessions.
+    // Kept distinct from `password` since a USSD PIN has different
+    // strength/format constraints (4 digits) and a different lockout
+    // policy. bcrypt-hashed, never returned to the client.
+    // ========================================
+
+    ussd_pin: {
+      type: String,
+      select: false,
+    },
+
+    ussd_pin_set_at: {
+      type: Date,
+      default: null,
+    },
+
+    ussd_failed_pin_attempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+
+    ussd_pin_locked_until: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    // Language for the USSD menus ('en' | 'sw'). Null = platform default
+    // (USSD_DEFAULT_LANGUAGE, else English). Set from USSD menu 8.
+    ussd_language: {
+      type: String,
+      enum: ['en', 'sw', null],
+      default: null,
+    },
+
+    // Any access token issued before this moment is rejected. Set by
+    // platform support's "force logout" so it takes effect immediately
+    // instead of waiting for the short-lived access token to expire.
+    tokensValidAfter: {
+      type: Date,
+      default: null,
     },
 
     // ========================================
@@ -190,9 +252,13 @@ const userSchema = new mongoose.Schema(
 userSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.password;
-    delete ret.otpCode;
+    delete ret.otpCodeHash;
+    delete ret.otpAttempts;
     delete ret.otpExpiresAt;
     delete ret.otpChannel;
+    delete ret.ussd_pin;
+    delete ret.ussd_failed_pin_attempts;
+    delete ret.ussd_pin_locked_until;
     delete ret.refreshToken;
     delete ret.__v;
 

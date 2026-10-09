@@ -202,14 +202,13 @@ const savingsSharePolicySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-savingsSharePolicySchema.pre('validate', function guardPercentage(next) {
+savingsSharePolicySchema.pre('validate', function guardPercentage() {
   if (this.share_rule?.share_percentage > 100) {
     this.share_rule.share_percentage = 100;
   }
   if (this.share_rule?.share_percentage < 0) {
     this.share_rule.share_percentage = 0;
   }
-  next();
 });
 
 savingsSharePolicySchema.set('toJSON', {

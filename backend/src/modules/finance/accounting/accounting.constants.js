@@ -48,6 +48,18 @@ export const TRANSACTION_TYPES = Object.freeze({
         "payout_cancellation",
 
 
+    WITHDRAWAL_OBLIGATION:
+        "withdrawal_obligation",
+
+
+    WITHDRAWAL_SETTLEMENT:
+        "withdrawal_settlement",
+
+
+    WITHDRAWAL_CANCELLATION:
+        "withdrawal_cancellation",
+
+
     LOAN_DISBURSEMENT:
         "loan_disbursement",
 
@@ -298,6 +310,10 @@ export const ACCOUNT_CODES = Object.freeze({
 
     PAYOUT_PAYABLE:
         "PAYOUT_PAYABLE",
+
+
+    WITHDRAWAL_CLEARING:
+        "WITHDRAWAL_CLEARING",
 
 
     LOAN_RECEIVABLE:

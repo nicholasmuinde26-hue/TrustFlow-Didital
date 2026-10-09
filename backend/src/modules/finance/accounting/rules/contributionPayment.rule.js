@@ -6,6 +6,8 @@
 
 import mongoose from "mongoose";
 import FinancialAccount from "../../../../models/FinancialAccount.js";
+import ContributionObligation from "../../../../models/ContributionObligation.js";
+import { resolvePlanLedgerAccount } from "../../../contributionPlan/planLedgerAccount.service.js";
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
@@ -14,6 +16,26 @@ const canUseTransactions = () => {
 
 // FIXED: added :
 const getOpts = (session) => canUseTransactions() && session? { session } : {};
+
+// Resolve the plan behind this payment and return ITS ledger account, if it
+// has one (assigned when the plan was activated). Null = use the shared
+// MEMBER_CONTRIBUTIONS account exactly as before. Read-only: this never
+// creates an account, so a plan that started life on the shared account keeps
+// posting there for its whole life. Never blocks a payment.
+const resolvePlanCreditAccount = async (context, inner, metadata) => {
+    try {
+        const obligationId = context?.obligationId || inner?.obligationId || metadata?.obligationId || metadata?.obligation_id;
+        let planId = context?.planId || inner?.planId || metadata?.planId || metadata?.plan_id || metadata?.contribution_plan_id;
+        if (!planId && obligationId) {
+            const ob = await ContributionObligation.findById(obligationId).select("plan_id").lean();
+            planId = ob?.plan_id;
+        }
+        return await resolvePlanLedgerAccount(planId);
+    } catch (err) {
+        console.warn("[ContributionPaymentRule] plan ledger lookup failed, using shared account:", err.message);
+        return null;
+    }
+};
 
 class ContributionPaymentRule {
 
@@ -99,9 +121,11 @@ class ContributionPaymentRule {
         throw new Error("MEMBER_CONTRIBUTIONS account not configured.");
     }
 
+    const planAccount = await resolvePlanCreditAccount(context, inner, metadata);
+
     return {
         debitAccount: assetAccount._id,
-        creditAccount: equityAccount._id
+        creditAccount: (planAccount || equityAccount)._id
     };
 }
 

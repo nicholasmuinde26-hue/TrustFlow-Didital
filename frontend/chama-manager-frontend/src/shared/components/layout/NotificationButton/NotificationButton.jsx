@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Bell,
   Check,
@@ -27,6 +27,19 @@ import {
   useMarkNotificationAsRead,
   useMarkAllNotificationsAsRead,
 } from "@/modules/notifications/hooks/useNotifications";
+
+// Keep in sync with NOTIFICATION_CATEGORIES on the backend
+// (backend/src/constants/notification.constants.js).
+const CATEGORY_TABS = [
+  { id: "all", label: "All" },
+  { id: "financial", label: "Financial" },
+  { id: "approval", label: "Approvals" },
+  { id: "governance", label: "Governance" },
+  { id: "membership", label: "Members" },
+  { id: "system", label: "System" },
+  { id: "alert", label: "Alerts" },
+  { id: "burial", label: "Burial" },
+];
 
 function getTimeAgo(dateString) {
   if (!dateString) return "";
@@ -84,15 +97,28 @@ export default function NotificationButton() {
   const [activeTab, setActiveTab] = useState("all");
   const popoverRef = useRef(null);
   const navigate = useNavigate();
+  const { workspaceId } = useParams();
 
-  const { data: notifications, isLoading } = useUnreadNotifications({ limit: 20 });
+  // Fetch a larger sample than we display so every category tab has
+  // something to filter down to - the popover only shows 20 rows at a
+  // time regardless of which tab is active.
+  const { data: notifications, isLoading } = useUnreadNotifications({ limit: 100 });
   const { data: counts } = useNotificationCounts();
 
   const markReadMutation = useMarkNotificationAsRead();
   const markAllReadMutation = useMarkAllNotificationsAsRead();
 
-  const notificationList = notifications || [];
+  const allNotifications = notifications || [];
   const unreadCount = counts?.unread || 0;
+  const byCategory = counts?.byCategory || {};
+
+  // This is the actual "detect notifications by section/category" bit -
+  // previously the tabs rendered and could be clicked, but the list below
+  // them never filtered, so every tab showed the same unfiltered feed.
+  const notificationList =
+    activeTab === "all"
+      ? allNotifications
+      : allNotifications.filter((item) => item.category === activeTab);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -123,14 +149,11 @@ export default function NotificationButton() {
     markAllReadMutation.mutate();
   }
 
-  const tabs = [
-    { id: "all", label: "All" },
-    { id: "financial", label: "Financial" },
-    { id: "approval", label: "Approvals" },
-    { id: "governance", label: "Governance" },
-    { id: "membership", label: "Members" },
-    { id: "system", label: "System" },
-  ];
+  // Only show "All" plus categories that actually have unread items, so
+  // the tab row doesn't fill up with empty categories for every user.
+  const tabs = CATEGORY_TABS.filter(
+    (tab) => tab.id === "all" || (byCategory[tab.id] || 0) > 0
+  );
 
   return (
     <div className="relative" ref={popoverRef}>
@@ -143,8 +166,10 @@ export default function NotificationButton() {
         className="
           relative
           flex
-          h-11
-          w-11
+          h-9
+          w-9
+          sm:h-11
+          sm:w-11
           items-center
           justify-center
           rounded-xl
@@ -227,23 +252,37 @@ export default function NotificationButton() {
 
           {/* Category Tabs */}
           <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50/80 px-3 py-1.5 overflow-x-auto scrollbar-none dark:border-obsidian-border/80 dark:bg-obsidian/40">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`
-                  rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all whitespace-nowrap
-                  ${
-                    activeTab === tab.id
-                      ? "bg-white text-slate-900 shadow-sm border border-slate-200 dark:bg-obsidian-raised dark:text-mist dark:border-obsidian-border"
-                      : "text-slate-500 hover:text-slate-900 dark:text-mist-muted dark:hover:text-mist"
-                  }
-                `}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {tabs.map((tab) => {
+              const tabCount = tab.id === "all" ? unreadCount : byCategory[tab.id] || 0;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`
+                    flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all whitespace-nowrap
+                    ${
+                      activeTab === tab.id
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200 dark:bg-obsidian-raised dark:text-mist dark:border-obsidian-border"
+                        : "text-slate-500 hover:text-slate-900 dark:text-mist-muted dark:hover:text-mist"
+                    }
+                  `}
+                >
+                  {tab.label}
+                  {tabCount > 0 && (
+                    <span
+                      className={`rounded-full px-1.5 text-[9px] ${
+                        activeTab === tab.id
+                          ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-mint"
+                          : "bg-slate-200 text-slate-600 dark:bg-obsidian-border dark:text-mist-muted"
+                      }`}
+                    >
+                      {tabCount > 99 ? "99+" : tabCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Notifications List */}
@@ -315,12 +354,35 @@ export default function NotificationButton() {
 
           {/* Footer link */}
           <div className="border-t border-slate-100 bg-slate-50/50 p-2.5 text-center dark:border-obsidian-border dark:bg-obsidian/30">
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-slate-200"
-            >
-              Close
-            </button>
+            {workspaceId ? (
+              <div className="flex items-center justify-center gap-4">
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate(`/workspace/${workspaceId}/notifications`);
+                  }}
+                  className="text-[11px] font-bold text-slate-700 hover:text-slate-900 dark:text-mist dark:hover:text-white"
+                >
+                  View all notifications
+                </button>
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate(`/workspace/${workspaceId}/notifications/preferences`);
+                  }}
+                  className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-slate-200"
+                >
+                  Preferences
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:text-mist-muted dark:hover:text-slate-200"
+              >
+                Close
+              </button>
+            )}
           </div>
         </div>
       )}

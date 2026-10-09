@@ -764,7 +764,7 @@ burialCaseSchema.index({
 // PRE-SAVE HOOKS
 // ======================================================
 
-burialCaseSchema.pre('save', function(next) {
+burialCaseSchema.pre('save', function() {
   // Build full name for deceased
   if (this.deceased) {
     this.deceased.full_name = `${this.deceased.first_name} ${this.deceased.other_names ? this.deceased.other_names + ' ' : ''}${this.deceased.last_name}`.trim();
@@ -789,8 +789,6 @@ burialCaseSchema.pre('save', function(next) {
     });
     this.fundraising.raised_amount = total;
   }
-
-  next();
 });
 
 // ======================================================

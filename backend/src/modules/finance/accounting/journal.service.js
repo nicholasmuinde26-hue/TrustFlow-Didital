@@ -125,7 +125,7 @@ class JournalService {
      * ============================================================
      */
 
-    async markPosted(journalId, session = null) {
+    async markPosted(journalId, session = null, postingDate = new Date()) {
 
         return Journal.findByIdAndUpdate(
 
@@ -135,7 +135,7 @@ class JournalService {
 
                 status: "POSTED",
 
-                postingDate: new Date()
+                postingDate
 
             },
 

@@ -126,14 +126,14 @@ export default function AiAssistantWidget({ workspaceId, workspaceType, workspac
       {/* Launcher */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-mint text-obsidian-rail shadow-lg shadow-black/30 transition-transform hover:scale-105 lg:bottom-6 sm:right-6"
+        className="fixed bottom-20 right-3 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-mint text-obsidian-rail shadow-lg shadow-black/30 transition-transform hover:scale-105 sm:bottom-24 sm:right-6 sm:h-14 sm:w-14 lg:bottom-6"
         aria-label={open ? "Close AI assistant" : "Open AI assistant"}
       >
         {open ? (
-          <X size={22} />
+          <X size={18} className="sm:h-[22px] sm:w-[22px]" />
         ) : (
           <>
-            <Sparkles size={22} />
+            <Sparkles size={18} className="sm:h-[22px] sm:w-[22px]" />
             {hasUrgent && (
               <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-white bg-amber-500 dark:border-slate-950" />
             )}

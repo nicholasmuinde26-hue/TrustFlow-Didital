@@ -18,6 +18,24 @@ export function useMembers(type, workspaceId) {
   });
 }
 
+export function useMembersOverview(type, workspaceId) {
+  return useQuery({
+    queryKey: ["members-overview", workspaceId],
+    queryFn: () => membersService.overview(type, workspaceId),
+    enabled: Boolean(workspaceId && type && (type === "chama" || type === "burial-chama")),
+    refetchInterval: 60000,
+  });
+}
+
+export function useMemberContributionMatrix(workspaceId, month, enabled) {
+  return useQuery({
+    queryKey: ["member-contribution-matrix", workspaceId, month],
+    queryFn: () => membersService.contributionMatrix(workspaceId, month),
+    enabled: Boolean(enabled && workspaceId && month),
+    staleTime: 60_000,
+  });
+}
+
 export function useAddMember(type, workspaceId) {
   const queryClient = useQueryClient();
 

@@ -30,6 +30,26 @@ export const enrollInHub = async (req, res, next) => {
   }
 };
 
+// GET /api/v1/businesses/:businessId/marketplace/profile
+export const getProfile = async (req, res, next) => {
+  try {
+    const data = await marketplaceService.getMerchantProfile(req.params.businessId, req.user);
+    res.json({ success: true, data });
+  } catch (err) {
+    sendError(err, res, next);
+  }
+};
+
+// PUT /api/v1/businesses/:businessId/marketplace/profile
+export const updateProfile = async (req, res, next) => {
+  try {
+    const data = await marketplaceService.updateMerchantProfile(req.params.businessId, req.user, req.body);
+    res.json({ success: true, message: "Store profile updated", data });
+  } catch (err) {
+    sendError(err, res, next);
+  }
+};
+
 // GET /api/v1/businesses/:businessId/marketplace/listings
 export const getMerchantListings = async (req, res, next) => {
   try {

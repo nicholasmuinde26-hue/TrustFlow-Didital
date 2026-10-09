@@ -3,9 +3,11 @@ import express from "express";
 import { protect } from "../../middleware/auth.middleware.js";
 import * as controller from "./poll.controller.js";
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 router.use(protect);
+router.use("/:workspaceId/polls", requireModule("polls"));
 
 router.get("/:workspaceId/polls", controller.listPolls);
 router.post("/:workspaceId/polls", controller.createPoll);

@@ -16,6 +16,7 @@ import {
   deleteLoanTypeController
 } from './chairpersonLoanSettings.controller.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 // NOTE: intentionally NOT `router.use(protect); router.use(requireChamaMember);`
@@ -29,7 +30,7 @@ const router = express.Router();
 // the router that actually owns that path. Attaching the guard per-route
 // instead means it only runs once one of *this file's* own ":chamaId"
 // routes has actually matched.
-const guard = [protect, requireChamaMember];
+const guard = [protect, requireChamaMember, requireModule('loans')];
 
 // ========================================
 // GET CHAIRPERSON LOAN SETTINGS

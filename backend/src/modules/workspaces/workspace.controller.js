@@ -1,6 +1,7 @@
 import * as WorkspaceService
 from "./workspace.service.js";
 import { getWorkspaceDashboard as getDashboard } from './workspaceDashboard.service.js';
+import { getCatalogForClient } from '../../constants/workspaceModules.constants.js';
 
 export async function getWorkspaces(
 
@@ -61,4 +62,12 @@ export async function getWorkspaceDirectory(req, res, next) {
   } catch (error) {
     next(error);
   }
+}
+
+// Static catalog of switchable modules and presets (no per-user data).
+export function getModuleCatalog(req, res) {
+    res.json({
+        success: true,
+        data: getCatalogForClient()
+    });
 }

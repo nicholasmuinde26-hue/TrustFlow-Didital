@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 
+import env from "./config/env.js";
+import { globalLimiter } from "./middleware/Ratelimit.middleware.js";
+
 // ============================================================================
 // ROUTES
 // ============================================================================
@@ -20,6 +23,9 @@ import workspaceRoutes from "./modules/workspaces/workspace.routes.js";
 // Chamas
 import chamaRoutes from "./modules/chama/chama.routes.js";
 import chamaOperationsRoutes from "./modules/chama/chamaOperations.routes.js";
+import chamaAssetRoutes from "./modules/chamaAssets/chamaAsset.routes.js";
+import assetLeaseRoutes from "./modules/chamaAssets/assetLease.routes.js";
+import assetComplianceRoutes from "./modules/chamaAssets/assetCompliance.routes.js";
 import leadershipPinRoutes from "./modules/leadership/leadershipPin.routes.js";
 import chamaInvitationRoutes from "./modules/chama/chamaInvitation.routes.js";
 import memberRoutes from "./modules/member/member.routes.js";
@@ -30,6 +36,12 @@ import contributionGroupRoutes from "./modules/contributionGroups/contributionGr
 import contributionFundRoutes from "./modules/contributionGroups/contributionFund.routes.js";
 import contributionGroupPlanRoutes from "./modules/contributionPlan/contributionGroupPlan.routes.js";
 import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
+import financialYearRoutes from "./modules/contributionPlan/financialYear.routes.js";
+import yearEndRoutes from "./modules/yearEnd/yearEnd.routes.js";
+import contributionCalendarRoutes from "./modules/contributionPlan/contributionCalendar.routes.js";
+import billingRoutes from "./modules/billing/billing.routes.js";
+import billingAdminRoutes from "./modules/billing/billingAdmin.routes.js";
+import adminSupportRoutes from "./modules/support/adminSupport.routes.js";
 import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
 import mpesaRoutes from "./payment/providers/mpesa/mpesa.routes.js";
 import mpesaC2bRoutes from "./modules/mpesaC2b/c2b.routes.js";
@@ -39,6 +51,7 @@ import financeRoutes from "./modules/finance/finance.routes.js";
 
 // Payouts
 import payoutRoutes from "./modules/payout/payout.routes.js";
+import withdrawalRoutes from "./modules/withdrawal/withdrawal.routes.js";
 import savingsShareoutRoutes from "./modules/savingsShareout/savingsShareout.routes.js";
 
 // Chat
@@ -68,7 +81,6 @@ import disputeRoutes from "./modules/disputes/Dispute.routes.js";
 import businessRoutes from "./modules/business/business.routes.js";
 import productRoutes from "./modules/business/product.routes.js";
 import cartRoutes from "./modules/business/cart.routes.js";
-import storefrontPublicRoutes from "./modules/business/storefront.public.routes.js";
 import loanRoutes from "./modules/loans/loan.routes.js";
 import marketplaceRoutes from "./modules/marketplace/marketplace.routes.js";
 import marketplaceAdminRoutes from "./modules/marketplace/marketplaceAdmin.routes.js";
@@ -99,6 +111,7 @@ import ussdRoutes from "./modules/ussd/ussd.routes.js";
 
 // Chairperson Loan Settings
 import chairpersonLoanSettingsRoutes from "./modules/chairperson/chairpersonLoanSettings.routes.js";
+import workspaceModuleRoutes from "./modules/workspaces/workspaceModules.routes.js";
 
 // Platform Inquiries & Support
 import inquiryRoutes, { adminInquiryRouter } from "./modules/inquiries/inquiry.routes.js";
@@ -131,9 +144,60 @@ const app = express();
 
 app.use(helmet());
 
+// ============================================================================
+// TRUST PROXY
+// ============================================================================
+// req.ip is used for the M-Pesa C2B IP allowlist and for rate limiting, and
+// both are worthless if Express reports the load balancer's address for every
+// request. Set TRUST_PROXY to the number of proxies in front of this app
+// (1 for a single LB on Render/Railway/Heroku).
+//
+// Do NOT set this to `true` blindly: that trusts the entire X-Forwarded-For
+// chain, letting a caller spoof their own source address and walk straight
+// past both the allowlist and the limiter.
+const trustProxy = process.env.TRUST_PROXY;
+if (trustProxy) {
+    app.set('trust proxy', Number.isNaN(Number(trustProxy)) ? trustProxy : Number(trustProxy));
+}
+
+// ============================================================================
+// CORS
+// ============================================================================
+//
+// This was `origin: true` with `credentials: true`, which reflects whatever
+// Origin header the caller sends and tells the browser to allow credentialed
+// requests to it. That is functionally "allow every website on the internet
+// to make authenticated cross-origin calls on behalf of anyone logged in" —
+// the exact thing the same-origin policy exists to prevent.
+//
+// Now an explicit allowlist from CORS_ALLOWED_ORIGINS.
+const allowedOrigins = env.corsAllowedOrigins;
+
+if (!allowedOrigins.length && env.isProduction) {
+    throw new Error(
+        'CORS_ALLOWED_ORIGINS must be set in production (comma-separated list of exact origins).'
+    );
+}
+
 app.use(
     cors({
-        origin: true,
+        origin(origin, callback) {
+            // Same-origin requests, curl, mobile apps and server-to-server
+            // calls send no Origin header at all. CORS is a browser
+            // protection, so there is nothing to enforce for these.
+            if (!origin) return callback(null, true);
+
+            if (allowedOrigins.includes(origin)) return callback(null, true);
+
+            // In development, allow localhost on any port so the Vite dev
+            // server doesn't need re-configuring every time its port moves.
+            if (!env.isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+                return callback(null, true);
+            }
+
+            console.warn(`[cors] blocked origin: ${origin}`);
+            return callback(new Error('Not allowed by CORS'));
+        },
         credentials: true,
     })
 );
@@ -149,6 +213,14 @@ app.use(
         limit: "5mb",
     })
 );
+
+// ============================================================================
+// RATE LIMITING
+// ============================================================================
+// Broad backstop across the whole API. Auth-specific, much tighter limits are
+// applied per-route in auth.routes.js. See the note in the middleware about
+// moving to a shared Redis store before running more than one instance.
+app.use(globalLimiter);
 
 // ============================================================================
 // HEALTH CHECK
@@ -184,6 +256,12 @@ app.use(
     "/api/v1/admin/marketplace",
     marketplaceAdminRoutes
 );
+
+// Platform revenue (Super Admin only) - mounted before the general admin router.
+app.use("/api/v1/admin/billing", billingAdminRoutes);
+
+// Platform support console: billing help, payment review, user tools, notes and cases.
+app.use("/api/v1/admin/support", adminSupportRoutes);
 
 app.use(
     "/api/v1/admin",
@@ -228,6 +306,13 @@ app.use(
 );
 
 app.use("/api/v1/chamas/:chamaId", chamaOperationsRoutes);
+app.use("/api/v1/chamas/:chamaId/assets", chamaAssetRoutes);
+app.use("/api/v1/chamas/:chamaId/leases", assetLeaseRoutes);
+app.use("/api/v1/chamas/:chamaId/compliance-obligations", assetComplianceRoutes);
+app.use("/api/v1/chamas/:chamaId/financial-years", financialYearRoutes);
+app.use("/api/v1/chamas/:chamaId/year-end", yearEndRoutes);
+app.use("/api/v1/chamas/:chamaId/contribution-calendar", contributionCalendarRoutes);
+app.use("/api/v1/chamas/:chamaId/billing", billingRoutes);
 
 // ============================================================================
 // LEADERSHIP DESK (PIN)
@@ -273,12 +358,22 @@ app.use(
     "/api/v1/chamas",
     payoutRoutes
 );
+
+// ============================================================================
+// WITHDRAWALS (member-initiated, mirrors PAYOUTS above)
+// ============================================================================
+
+app.use(
+    "/api/v1/chamas",
+    withdrawalRoutes
+);
 app.use(
     "/api/v1/chamas",
     savingsShareoutRoutes
 );
 app.use("/api/v1/chamas", loanRoutes);
 app.use("/api/v1/chamas", chairpersonLoanSettingsRoutes);
+app.use("/api/v1/chamas", workspaceModuleRoutes);
 
 // ============================================================================
 // CONTRIBUTION GROUPS
@@ -344,24 +439,6 @@ app.use(
 app.use(
     "/api/v1",
     cartRoutes
-);
-
-// ============================================================================
-// PUBLIC STOREFRONT (buyer-facing, no authentication)
-// ============================================================================
-//
-// A seller's storefront lives at /store/:slug on the frontend and calls
-// these endpoints directly. Buyers never see the business-management app.
-//
-// GET  /api/v1/storefront/:slug            live catalog + branding
-// POST /api/v1/storefront/:slug/orders     place an order (no account)
-// GET  /api/v1/storefront/track/:orderCode track an order by code
-//
-// ============================================================================
-
-app.use(
-    "/api/v1/storefront",
-    storefrontPublicRoutes
 );
 
 app.use(

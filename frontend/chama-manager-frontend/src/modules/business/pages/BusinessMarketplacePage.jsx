@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import {
   Store,
   ShoppingBag,
@@ -30,6 +30,7 @@ import {
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import marketplaceService from "../../marketplace/services/marketplace.service";
 import businessApi from "../api/business.api";
+import MerchantStoreProfile from "../components/MerchantStoreProfile";
 import Spinner from "@/shared/components/ui/Spinner";
 import toast from "react-hot-toast";
 
@@ -77,6 +78,7 @@ function isBusinessEligibleForHub(businessCategory, hubSlug) {
 
 export default function BusinessMarketplacePage() {
   const { workspaceId } = useParams();
+  const [searchParams] = useSearchParams();
   const { currentWorkspace } = useWorkspace();
   const businessId = currentWorkspace?._id || currentWorkspace?.id || workspaceId;
   const businessCategory = currentWorkspace?.category || "retail";
@@ -96,7 +98,10 @@ export default function BusinessMarketplacePage() {
   const [loading, setLoading] = useState(true);
 
   // Active section
-  const [activeSection, setActiveSection] = useState("listings"); // "listings" | "orders" | "settlements" | "hubs"
+  const [activeSection, setActiveSection] = useState(() => {
+    const requested = searchParams.get("section");
+    return ["listings", "orders", "settlements", "hubs"].includes(requested) ? requested : "listings";
+  });
 
   // Modals
   const [showEnrollModal, setShowEnrollModal] = useState(false);
@@ -521,6 +526,9 @@ export default function BusinessMarketplacePage() {
         })}
       </div>
 
+      {/* Store name & look — how buyers see this business inside the marketplace */}
+      <MerchantStoreProfile businessId={businessId} hubSlug={allowedHubSlug} onSaved={loadAllData} />
+
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
         <button
@@ -912,16 +920,19 @@ export default function BusinessMarketplacePage() {
                         >
                           {ord.allocation?.fulfillment_status || "Pending"}
                         </span>
+                        <span className="mt-1 block text-[10px] capitalize text-slate-500">
+                          Payment: {ord.payment_status || "pending"}
+                        </span>
                       </td>
                       <td className="p-4 text-right">
-                        {ord.allocation?.fulfillment_status !== "fulfilled" && (
-                          <button
-                            onClick={() => handleFulfillmentChange(ord._id, "fulfilled")}
-                            className="rounded-xl bg-emerald-600 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-700"
-                          >
-                            Mark Fulfilled
-                          </button>
-                        )}
+                        {ord.allocation?.fulfillment_status === "pending" && <button
+                          onClick={() => handleFulfillmentChange(ord._id, "processing")}
+                          className="rounded-lg border border-blue-200 px-2.5 py-1.5 text-[11px] font-bold text-blue-700 hover:bg-blue-50"
+                        >Start processing</button>}
+                        {ord.allocation?.fulfillment_status === "processing" && <button
+                          onClick={() => handleFulfillmentChange(ord._id, "fulfilled")}
+                          className="rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-800"
+                        >Mark fulfilled</button>}
                       </td>
                     </tr>
                   ))}

@@ -12,7 +12,12 @@ import {
   getChamaJoinRequestsController,
   assessMemberExitController,
   initiateMemberExitController,
-  completeMemberExitController
+  completeMemberExitController,
+  listMemberExitQueueController,
+  listMyMemberExitsController,
+  decideMemberExitController,
+  cancelMemberExitController,
+  getMembersOverviewController
 } from './member.controller.js';
 
 import {
@@ -45,6 +50,8 @@ import {
 
 const router =
   express.Router();
+
+router.get('/:chamaId/members-overview', protect, requireChamaMember, getMembersOverviewController);
 
 
 // ========================================
@@ -410,6 +417,11 @@ router.get(
   assessMemberExitController
 );
 
+router.get('/:chamaId/member-exits/mine', protect, requireChamaMember, listMyMemberExitsController);
+router.get('/:chamaId/member-exits', protect, requireChamaMember, requireLeadershipSession, listMemberExitQueueController);
+router.post('/:chamaId/member-exits/:exitRequestId/decision', protect, requireChamaMember, requireLeadershipSession, decideMemberExitController);
+router.post('/:chamaId/member-exits/:exitRequestId/cancel', protect, requireChamaMember, cancelMemberExitController);
+
 router.post(
   '/:chamaId/members/:memberId/exit',
   protect,
@@ -421,6 +433,7 @@ router.post(
   '/:chamaId/member-exits/:exitRequestId/disburse',
   protect,
   requireChamaMember,
+  requireLeadershipSession,
   completeMemberExitController
 );
 

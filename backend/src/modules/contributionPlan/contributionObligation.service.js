@@ -79,7 +79,7 @@ class ContributionObligationService {
         return ContributionObligation.findByIdAndUpdate(
             obligationId,
             { status: "overdue" },
-            {...opts, new: true }
+            {...opts, returnDocument: 'after' }
         );
     }
 

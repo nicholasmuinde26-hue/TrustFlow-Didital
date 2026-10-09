@@ -31,6 +31,24 @@ class NotificationEventHandler {
     }
     this.#listenersInitialized = true;
 
+    // Approval events: one generic handler, the routing lives in notification.service.js
+    [
+      'LOAN_REQUIRES_APPROVAL',
+      'LOAN_REQUIRES_DISBURSEMENT',
+      'EXPENSE_REQUIRES_APPROVAL',
+      'WITHDRAWAL_REQUIRES_APPROVAL',
+      'ROLE_CHANGE_REQUIRES_APPROVAL',
+      'MEMBER_REMOVAL_REQUIRES_APPROVAL'
+    ].forEach((eventName) => {
+      domainEventEmitter.onDomainEvent(eventName, (eventData) =>
+        notificationService.sendDomainEventNotification({
+          domainEvent: eventName,
+          chamaId: eventData.chamaId,
+          eventData
+        })
+      );
+    });
+
     // Financial events
     domainEventEmitter.onDomainEvent('CONTRIBUTION_RECEIVED', this.handleContributionReceived.bind(this));
     domainEventEmitter.onDomainEvent('CONTRIBUTION_MISSED', this.handleContributionMissed.bind(this));

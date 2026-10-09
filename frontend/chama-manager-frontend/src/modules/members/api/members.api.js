@@ -18,6 +18,15 @@ const membersApi = {
     return api.get(`/contribution-groups/${workspaceId}/members`);
   },
 
+  overview(type, workspaceId) {
+    if (isChamaType(type)) return api.get(`/chamas/${workspaceId}/members-overview`);
+    throw new Error("Members overview is only available for Chamas");
+  },
+
+  contributionMatrix(workspaceId, month) {
+    return api.get(`/workspaces/${workspaceId}/finance/contribution-matrix`, { params: { month } });
+  },
+
   // Adds a member directly using their raw database user id. Both
   // backends require this exact field — there is no phone/email lookup
   // endpoint (see CHANGES doc), so the caller must already know it.
@@ -72,6 +81,31 @@ const membersApi = {
   disburseExit(type, workspaceId, exitRequestId, payload) {
     if (isChamaType(type)) return api.post(`/chamas/${workspaceId}/member-exits/${exitRequestId}/disburse`, payload);
     throw new Error("Member exit disbursement is only supported for Chamas");
+  },
+
+  requestOwnExit(type, workspaceId, memberId, reason = "") {
+    if (isChamaType(type)) return api.post(`/chamas/${workspaceId}/members/${memberId}/exit`, { reason });
+    throw new Error("Member exit is only supported for Chamas");
+  },
+
+  myExitRequests(type, workspaceId) {
+    if (isChamaType(type)) return api.get(`/chamas/${workspaceId}/member-exits/mine`);
+    throw new Error("Member exit is only supported for Chamas");
+  },
+
+  exitQueue(type, workspaceId, scope = "open") {
+    if (isChamaType(type)) return api.get(`/chamas/${workspaceId}/member-exits`, { params: { scope } });
+    throw new Error("Member exit is only supported for Chamas");
+  },
+
+  decideExit(type, workspaceId, exitRequestId, decision, comment = "") {
+    if (isChamaType(type)) return api.post(`/chamas/${workspaceId}/member-exits/${exitRequestId}/decision`, { decision, comment });
+    throw new Error("Member exit is only supported for Chamas");
+  },
+
+  cancelExit(type, workspaceId, exitRequestId) {
+    if (isChamaType(type)) return api.post(`/chamas/${workspaceId}/member-exits/${exitRequestId}/cancel`);
+    throw new Error("Member exit is only supported for Chamas");
   },
 
   updateStatus(type, workspaceId, memberId, status) {

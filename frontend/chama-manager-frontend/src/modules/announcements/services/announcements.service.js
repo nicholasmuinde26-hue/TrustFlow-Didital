@@ -15,38 +15,48 @@ function normalize(announcement) {
   };
 }
 
+function unwrap(responseData) {
+  const body = responseData?.data ?? responseData;
+  return body?.data ?? body;
+}
+
 const announcementsService = {
   async list(workspaceId) {
-    const { data } = await announcementsApi.list(workspaceId);
-    return (data.announcements || []).map(normalize);
+    const response = await announcementsApi.list(workspaceId);
+    const payload = unwrap(response?.data);
+    return (payload?.announcements || []).map(normalize);
   },
 
   async create(workspaceId, payload) {
-    const { data } = await announcementsApi.create(workspaceId, payload);
-    return normalize(data.announcement || data);
+    const response = await announcementsApi.create(workspaceId, payload);
+    const body = unwrap(response?.data);
+    return normalize(body?.announcement || body);
   },
 
   async setPinned(workspaceId, announcementId, pinned) {
-    const { data } = await announcementsApi.setPinned(
+    const response = await announcementsApi.setPinned(
       workspaceId,
       announcementId,
       pinned
     );
-    return normalize(data.announcement || data);
+    const body = unwrap(response?.data);
+    return normalize(body?.announcement || body);
   },
 
   async approve(workspaceId, announcementId) {
-    const { data } = await announcementsApi.approve(workspaceId, announcementId);
-    return normalize(data.announcement || data);
+    const response = await announcementsApi.approve(workspaceId, announcementId);
+    const body = unwrap(response?.data);
+    return normalize(body?.announcement || body);
   },
 
   async reject(workspaceId, announcementId, reason) {
-    const { data } = await announcementsApi.reject(
+    const response = await announcementsApi.reject(
       workspaceId,
       announcementId,
       reason
     );
-    return normalize(data.announcement || data);
+    const body = unwrap(response?.data);
+    return normalize(body?.announcement || body);
   },
 
   async remove(workspaceId, announcementId) {

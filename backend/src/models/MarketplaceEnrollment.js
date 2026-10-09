@@ -32,6 +32,8 @@ const marketplaceEnrollmentSchema = new mongoose.Schema(
       physical_location: { type: String, trim: true, default: "" },
       return_policy: { type: String, trim: true, default: "" },
       delivery_info: { type: String, trim: true, default: "" },
+      primary_color: { type: String, trim: true, default: "#064e3b" },
+      hero_style: { type: String, enum: ["gradient", "solid"], default: "gradient" },
       badges: {
         type: [String],
         default: ["Verified Merchant"],

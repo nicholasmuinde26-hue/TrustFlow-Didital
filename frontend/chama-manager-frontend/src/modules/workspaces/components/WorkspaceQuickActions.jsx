@@ -25,6 +25,7 @@ const baseActions = [
   },
   {
     title: "Contributions",
+    module: "contributions",
     description: "Record contributions",
     icon: CircleDollarSign,
     path: "contributions",
@@ -37,18 +38,21 @@ const baseActions = [
   },
   {
     title: "Chat",
+    module: "chat",
     description: "Open discussion",
     icon: MessageCircle,
     path: "chat",
   },
   {
     title: "Meetings",
+    module: "meetings",
     description: "Upcoming meetings",
     icon: CalendarDays,
     path: "meetings",
   },
   {
     title: "Announcements",
+    module: "announcements",
     description: "Post updates",
     icon: Megaphone,
     path: "announcements",
@@ -83,7 +87,7 @@ export default function WorkspaceQuickActions() {
         </h2>
 
         {/* Top Header Trigger — savings deposits only apply to chamas */}
-        {isChama && (
+        {isChama && workspaceCtx.hasModule("savings") && (
           <button
             type="button"
             onClick={() => setIsStkOpen(true)}
@@ -97,7 +101,7 @@ export default function WorkspaceQuickActions() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* Dedicated M-Pesa Interactive Action Card — savings deposits only apply to chamas */}
-        {isChama && (
+        {isChama && workspaceCtx.hasModule("savings") && (
           <button
             type="button"
             onClick={() => setIsStkOpen(true)}
@@ -125,7 +129,10 @@ export default function WorkspaceQuickActions() {
         )}
 
         {/* Standard Navigation Actions */}
-        {baseActions.map((action) => {
+        {baseActions
+          // Hide actions whose module this chama switched off (untagged = core).
+          .filter((action) => !action.module || workspaceCtx.hasModule(action.module))
+          .map((action) => {
           const Icon = action.icon;
 
           return (
@@ -158,7 +165,7 @@ export default function WorkspaceQuickActions() {
       </div>
 
       {/* Payment STK Modal */}
-      {isChama && (
+      {isChama && workspaceCtx.hasModule("savings") && (
         <MpesaStkModal
           isOpen={isStkOpen}
           onClose={() => setIsStkOpen(false)}

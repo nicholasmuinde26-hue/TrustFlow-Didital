@@ -1,39 +1,69 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
-  Users,
-  Building2,
-  Store,
-  Wallet,
-  Clock,
-  UserCheck,
   ArrowRight,
-  ShieldCheck,
-  CheckCircle,
-  AlertCircle,
-  PlusCircle,
-  MessageSquare,
-  Banknote,
-  ShieldAlert,
   BadgeCheck,
+  Banknote,
+  Building2,
+  CheckCircle2,
+  Clock,
+  FolderKanban,
+  Inbox,
+  LifeBuoy,
+  MessageSquare,
+  PlusCircle,
   Receipt,
+  ShieldAlert,
+  Store,
+  UserCheck,
+  Users,
+  Wallet,
 } from "lucide-react";
+import clsx from "clsx";
 import useAuth from "@/app/hooks/useAuth";
-import adminService from "../services/admin.service";
 import inquiryService from "@/app/services/inquiry.service";
-import Spinner from "@/shared/components/ui/Spinner";
-import useAdminProfile from "../hooks/useAdminProfile";
+import adminService from "../services/admin.service";
+import useAdminAccess from "../hooks/useAdminAccess";
 import { ComplianceWorkspacePage, FinanceWorkspacePage, SupportWorkspacePage } from "./CategoryWorkspacePages";
+import {
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  PanelLink,
+  Pill,
+  TONES,
+  adminBtn,
+  panelSurface,
+} from "../components/ui/AdminUi";
+
+const kes = (n) => `KES ${Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
+const num = (n) => Number(n || 0).toLocaleString("en-KE");
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function timeAgo(value) {
+  if (!value) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)}h ago`;
+  return `${Math.round(minutes / 1440)}d ago`;
+}
 
 export default function AdminDashboardPage() {
-  const { profile, loading } = useAdminProfile();
+  const { loading, category } = useAdminAccess();
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageSkeleton />;
 
-  // Category is assigned and permission-scoped on the server. These entry
-  // routes intentionally lead with the work that matters to each operator,
-  // while the Super Admin keeps the whole-platform executive overview.
-  switch (profile?.category) {
+  // Category is assigned and permission-scoped on the server. Each entry
+  // route leads with the work that matters to that operator, while the
+  // Super Admin keeps the whole-platform overview.
+  switch (category) {
     case "security":
       return <Navigate to="/admin/security" replace />;
     case "finance":
@@ -45,329 +75,342 @@ export default function AdminDashboardPage() {
     case "onboarding":
       return <Navigate to="/admin/requests" replace />;
     default:
-      return <PlatformOverviewDashboard />;
+      return <PlatformOverview />;
   }
 }
 
-function PlatformOverviewDashboard() {
+function PlatformOverview() {
   const { user } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [execStats, setExecStats] = useState(null);
-  const [inqStats, setInqStats] = useState(null);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const isSuperAdmin = user?.systemRole === "super_admin";
+  const { isSuperAdmin, can } = useAdminAccess();
+  const [state, setState] = useState({ loading: true, stats: null, exec: null, inq: null, requests: [] });
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [overview, executive, requests, inqs] = await Promise.all([
-          adminService.getOverview(),
-          adminService.getExecutiveOverview().catch(() => null),
-          adminService.getWorkspaceRequests("pending"),
-          inquiryService.getAdminInquiryStats().catch(() => null),
-        ]);
-        setStats(overview);
-        setExecStats(executive);
-        setInqStats(inqs);
-        setPendingRequests(requests.slice(0, 5));
-      } catch (err) {
-        console.error("Failed to load admin stats:", err);
-      } finally {
-        setLoading(false);
+    let cancelled = false;
+    (async () => {
+      const [stats, exec, requests, inq] = await Promise.all([
+        adminService.getOverview().catch(() => null),
+        adminService.getExecutiveOverview().catch(() => null),
+        adminService.getWorkspaceRequests("pending").catch(() => []),
+        inquiryService.getAdminInquiryStats().catch(() => null),
+      ]);
+      if (!cancelled) {
+        setState({ loading: false, stats, exec, inq, requests: (requests || []).slice(0, 5) });
       }
-    }
-    loadData();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  if (state.loading) return <PageSkeleton />;
 
-  if (loading) {
-    return <Spinner />;
-  }
+  const { stats, exec, inq, requests } = state;
+  const firstName = (user?.name || "Admin").split(" ")[0];
+  const today = new Date().toLocaleDateString("en-KE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
-  const statCards = [
+  const attention = [
     {
-      title: "Active Inquiries",
-      value: inqStats?.openCount ?? 0,
-      icon: MessageSquare,
-      color: "rose",
-      to: "/admin/inquiries",
-    },
-    {
-      title: "Pending Requests",
+      label: "Pending requests",
       value: stats?.pendingRequests ?? 0,
-      icon: Clock,
-      color: "amber",
+      hint: "Workspace creation awaiting a decision",
+      icon: Inbox,
+      tone: "amber",
       to: "/admin/requests",
-    },
-
-    {
-      title: "Total Chamas",
-      value: stats?.totalChamas ?? 0,
-      icon: Building2,
-      color: "violet",
-      to: "/admin/directory?tab=chamas",
+      show: can("onboarding"),
     },
     {
-      title: "Total Businesses",
-      value: stats?.totalBusinesses ?? 0,
-      icon: Store,
-      color: "blue",
-      to: "/admin/directory?tab=businesses",
+      label: "Open inquiries",
+      value: inq?.openCount ?? 0,
+      hint: "Member and workspace reports to triage",
+      icon: MessageSquare,
+      tone: "rose",
+      to: "/admin/inquiries",
+      show: can("support"),
     },
     {
-      title: "Contribution Groups",
-      value: stats?.totalGroups ?? 0,
-      icon: Wallet,
-      color: "emerald",
-      to: "/admin/directory?tab=groups",
-    },
-    {
-      title: "Registered Users",
-      value: stats?.totalUsers ?? 0,
-      icon: Users,
-      color: "indigo",
-      to: "/admin/requests",
-    },
-    {
-      title: "Active Sub-Admins",
-      value: stats?.totalSubAdmins ?? 0,
-      icon: UserCheck,
-      color: "rose",
-      to: isSuperAdmin ? "/admin/sub-admins" : "/admin",
-    },
-  ];
-
-  const money = (n) =>
-    `KES ${Number(n || 0).toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
-
-  const execCards = execStats && [
-    {
-      title: "Groups",
-      value: execStats.groups ?? 0,
-      icon: Building2,
-      color: "violet",
-    },
-    {
-      title: "Members",
-      value: execStats.members ?? 0,
-      icon: Users,
-      color: "indigo",
-    },
-    {
-      title: "Transactions",
-      value: execStats.transactions ?? 0,
-      icon: Receipt,
-      color: "blue",
-    },
-    {
-      title: "Money Processed",
-      value: money(execStats.moneyProcessed),
-      icon: Banknote,
-      color: "emerald",
-    },
-    {
-      title: "Verified Transactions",
-      value:
-        execStats.verifiedTransactionPercent != null
-          ? `${execStats.verifiedTransactionPercent}%`
-          : "—",
-      icon: BadgeCheck,
-      color: "teal",
-    },
-    {
-      title: "Risk Alerts",
-      value: execStats.riskAlerts ?? 0,
+      label: "Risk signals",
+      value: exec?.riskAlerts ?? 0,
+      hint: "Unresolved financial & fraud signals",
       icon: ShieldAlert,
-      color: "rose",
-      to: "/admin/directory",
+      tone: "rose",
+      to: can("security") ? "/admin/security" : "/admin/directory",
+      show: Boolean(exec),
     },
-    {
-      title: "Pending Approvals",
-      value: execStats.pendingApprovals ?? 0,
-      icon: Clock,
-      color: "amber",
-      to: "/admin/requests",
-    },
+  ].filter((item) => item.show);
+
+  const totalAttention = attention.reduce((sum, item) => sum + item.value, 0);
+
+  const composition = [
+    { label: "Chamas", value: stats?.totalChamas ?? 0, icon: Building2, tone: "violet", to: "/admin/directory?tab=chamas" },
+    { label: "Businesses", value: stats?.totalBusinesses ?? 0, icon: Store, tone: "sky", to: "/admin/directory?tab=businesses" },
+    { label: "Contribution groups", value: stats?.totalGroups ?? 0, icon: Wallet, tone: "emerald", to: "/admin/directory?tab=groups" },
   ];
+  const workspaceTotal = composition.reduce((sum, item) => sum + item.value, 0);
+
+  const verified = exec?.verifiedTransactionPercent;
+
+  const quickActions = [
+    { label: "Create workspace", icon: PlusCircle, to: "/admin/create", show: can("onboarding") },
+    { label: "Review requests", icon: Inbox, to: "/admin/requests", show: can("onboarding") },
+    { label: "Browse workspaces", icon: FolderKanban, to: "/admin/directory", show: can("chamas") || can("businesses") || can("contributionGroups") },
+    { label: "Find a person", icon: Users, to: "/admin/people", show: can("users") },
+    { label: "Support desk", icon: LifeBuoy, to: "/admin/support", show: isSuperAdmin || can("support") || can("finance") },
+    { label: "Marketplace moderation", icon: Store, to: "/admin/marketplace", show: isSuperAdmin || can("marketplace") || can("approveListings") },
+    { label: "Security center", icon: ShieldAlert, to: "/admin/security", show: can("security") },
+  ].filter((item) => item.show);
 
   return (
-    <div className="space-y-8">
-      {/* Welcome banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 p-8 text-white shadow-xl">
-        <div className="relative z-10 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-violet-200 backdrop-blur-md mb-2">
-              <ShieldCheck size={14} />
-              <span>{isSuperAdmin ? "Super Admin Console" : "Sub-Admin Console"}</span>
-            </div>
-            <h1 className="text-3xl font-black tracking-tight">
-              Welcome, {user?.name || "Admin"}
-            </h1>
-            <p className="mt-1 text-sm text-violet-200/80 max-w-xl leading-relaxed">
-              Manage system-wide workspaces, review and approve entity creation
-              requests with complete governance committee details, and oversee platform operations.
-            </p>
-          </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow={today}
+        title={`${greeting()}, ${firstName}`}
+        description={
+          totalAttention > 0
+            ? `${num(totalAttention)} item${totalAttention === 1 ? "" : "s"} across the platform need your attention.`
+            : "Everything on the platform is in good order."
+        }
+        actions={
+          can("onboarding") && (
+            <>
+              <Link to="/admin/requests" className={adminBtn.secondary}>
+                Review requests
+                {stats?.pendingRequests > 0 && (
+                  <span className="rounded-full bg-amber-500/15 px-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                    {stats.pendingRequests}
+                  </span>
+                )}
+              </Link>
+              <Link to="/admin/create" className={adminBtn.primary}>
+                <PlusCircle size={16} />
+                Create workspace
+              </Link>
+            </>
+          )
+        }
+      />
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              to="/admin/create"
-              className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-xs font-black text-slate-950 shadow-md transition hover:bg-violet-50"
-            >
-              <PlusCircle size={16} />
-              Create Workspace
-            </Link>
-            <Link
-              to="/admin/requests"
-              className="inline-flex items-center gap-2 rounded-2xl bg-violet-700/60 px-5 py-3 text-xs font-black text-white backdrop-blur-md transition hover:bg-violet-700"
-            >
-              Review Requests ({stats?.pendingRequests ?? 0})
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Executive Snapshot — cross-platform numbers: money processed, verified
-          transactions, live risk signals. Distinct from the directory-count
-          cards below, which are per-entity totals rather than financial/risk
-          signals. */}
-      {execCards && (
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Executive Snapshot
-            </h2>
-          </div>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
-            {execCards.map((card, idx) => {
-              const Icon = card.icon;
-              const content = (
-                <div className="group flex h-full flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                      {card.title}
-                    </span>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-violet-100 group-hover:text-violet-700 dark:bg-slate-800 dark:text-slate-300">
-                      <Icon size={16} />
-                    </div>
+      {/* Needs attention */}
+      {attention.length > 0 && (
+        <section aria-label="Needs attention" className="grid gap-4 md:grid-cols-3">
+          {attention.map((item) => {
+            const Icon = item.icon;
+            const t = TONES[item.value > 0 ? item.tone : "emerald"];
+            return (
+              <Link
+                key={item.label}
+                to={item.to}
+                className={clsx(
+                  panelSurface,
+                  "group relative overflow-hidden p-5 transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                )}
+              >
+                <span className={clsx("absolute inset-y-0 left-0 w-1", t.edge)} />
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.label}</p>
+                    <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+                      {num(item.value)}
+                    </p>
                   </div>
-                  <div className="mt-4">
-                    <span className="text-xl font-black text-slate-950 dark:text-white">
-                      {card.value}
-                    </span>
-                  </div>
+                  <span className={clsx("flex h-9 w-9 items-center justify-center rounded-lg", t.chip)}>
+                    {item.value > 0 ? <Icon size={18} /> : <CheckCircle2 size={18} />}
+                  </span>
                 </div>
-              );
-              return card.to ? (
-                <Link key={idx} to={card.to}>
-                  {content}
-                </Link>
-              ) : (
-                <div key={idx}>{content}</div>
-              );
-            })}
-          </div>
-        </div>
+                <p className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  {item.value > 0 ? item.hint : "All clear"}
+                  <ArrowRight size={14} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-violet-500" />
+                </p>
+              </Link>
+            );
+          })}
+        </section>
       )}
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-        {statCards.map((card, idx) => {
-          const Icon = card.icon;
-          return (
-            <Link
-              key={idx}
-              to={card.to}
-              className="group flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {card.title}
-                </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition group-hover:bg-violet-100 group-hover:text-violet-700 dark:bg-slate-800 dark:text-slate-300">
-                  <Icon size={16} />
-                </div>
-              </div>
-              <div className="mt-4">
-                <span className="text-2xl font-black text-slate-950 dark:text-white">
-                  {card.value}
-                </span>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* Pending Workspace Requests Preview */}
-      <div className="rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-100 p-6 dark:border-slate-800">
-          <div>
-            <h2 className="text-lg font-black text-slate-900 dark:text-white">
-              Recent Workspace Creation Requests
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Submitted by prospective chairpersons and organizers awaiting approval
-            </p>
-          </div>
-
-          <Link
-            to="/admin/requests"
-            className="inline-flex items-center gap-1 text-xs font-bold text-violet-600 hover:text-violet-700 dark:text-violet-400"
-          >
-            View All Requests
-            <ArrowRight size={14} />
-          </Link>
-        </div>
-
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {pendingRequests.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-                <CheckCircle size={24} />
-              </div>
-              <p className="text-sm font-bold text-slate-900 dark:text-white">
-                No Pending Requests!
-              </p>
-              <p className="text-xs text-slate-500">
-                All workspace creation requests have been reviewed and resolved.
-              </p>
-            </div>
-          ) : (
-            pendingRequests.map((req) => (
-              <div
-                key={req._id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40"
-              >
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Platform pulse */}
+        <Panel
+          title="Platform pulse"
+          description="Money and activity processed across every workspace"
+          className="lg:col-span-2"
+        >
+          {exec ? (
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-slate-900 dark:text-white">
-                      {req.name}
-                    </span>
-                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black uppercase text-violet-700 dark:bg-violet-950 dark:text-violet-300">
-                      {req.entityType}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Chairperson:{" "}
-                    <strong>{req.chairperson?.name || "Not specified"}</strong> (
-                    {req.chairperson?.phone || req.chairperson?.email || "No contact"}) •{" "}
-                    {req.committeeMembers?.length || 0} Committee Members
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Money processed</p>
+                  <p className="mt-1 text-4xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+                    {kes(exec.moneyProcessed)}
                   </p>
                 </div>
-
-                <Link
-                  to="/admin/requests"
-                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-violet-700 sm:w-auto"
-                >
-                  Review Details
-                  <ArrowRight size={14} />
-                </Link>
+                <div className="w-full sm:w-56">
+                  <div className="mb-1.5 flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 font-medium text-slate-500 dark:text-slate-400">
+                      <BadgeCheck size={14} className="text-emerald-500" />
+                      Verified transactions
+                    </span>
+                    <span className="font-semibold tabular-nums text-slate-900 dark:text-white">
+                      {verified != null ? `${verified}%` : "—"}
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${Math.min(Math.max(verified ?? 0, 0), 100)}%` }}
+                    />
+                  </div>
+                </div>
               </div>
-            ))
+
+              <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-100 bg-slate-100 dark:border-slate-800 dark:bg-slate-800 sm:grid-cols-4">
+                {[
+                  { label: "Transactions", value: num(exec.transactions), icon: Receipt },
+                  { label: "Members", value: num(exec.members), icon: Users },
+                  { label: "Groups", value: num(exec.groups), icon: Building2 },
+                  { label: "Pending approvals", value: num(exec.pendingApprovals), icon: Clock },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="bg-white p-4 dark:bg-slate-900">
+                    <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      <Icon size={13} />
+                      {label}
+                    </dt>
+                    <dd className="mt-1.5 text-xl font-semibold tabular-nums text-slate-950 dark:text-white">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Banknote size={22} className="text-slate-300" />
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Executive metrics are unavailable</p>
+              <p className="max-w-sm text-xs text-slate-500">
+                Your account may not include financial reporting, or the service didn&apos;t respond. Directory and queue
+                data below is unaffected.
+              </p>
+            </div>
           )}
-        </div>
+        </Panel>
+
+        {/* Quick actions */}
+        <Panel title="Quick actions" description="Jump straight into common work">
+          <div className="-m-1.5 grid gap-1">
+            {quickActions.map(({ label, icon: Icon, to }) => (
+              <Link
+                key={to}
+                to={to}
+                className="group flex items-center gap-3 rounded-lg p-2.5 text-[13px] font-medium text-slate-700 transition hover:bg-violet-500/10 hover:text-violet-700 dark:text-slate-200 dark:hover:text-violet-200"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition group-hover:bg-violet-500/15 group-hover:text-violet-600 dark:bg-slate-800 dark:text-slate-400">
+                  <Icon size={16} />
+                </span>
+                {label}
+                <ArrowRight size={14} className="ml-auto text-slate-300 opacity-0 transition group-hover:opacity-100" />
+              </Link>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* Composition */}
+        <Panel
+          title="Platform footprint"
+          description={`${num(workspaceTotal)} workspaces · ${num(stats?.totalUsers)} registered users`}
+          className="lg:col-span-2"
+        >
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            {workspaceTotal > 0 &&
+              composition.map((item) => (
+                <div
+                  key={item.label}
+                  className={TONES[item.tone].bar}
+                  style={{ width: `${(item.value / workspaceTotal) * 100}%` }}
+                  title={`${item.label}: ${item.value}`}
+                />
+              ))}
+          </div>
+
+          <ul className="mt-5 divide-y divide-slate-100 dark:divide-slate-800">
+            {composition.map(({ label, value, icon: Icon, tone, to }) => (
+              <li key={label}>
+                <Link to={to} className="flex items-center gap-3 py-3 text-[13px] transition hover:text-violet-600 dark:hover:text-violet-300">
+                  <span className={clsx("h-2 w-2 rounded-full", TONES[tone].bar)} />
+                  <Icon size={15} className="text-slate-400" />
+                  <span className="font-medium text-slate-700 dark:text-slate-200">{label}</span>
+                  <span className="ml-auto font-semibold tabular-nums text-slate-950 dark:text-white">{num(value)}</span>
+                </Link>
+              </li>
+            ))}
+            {can("users") && (
+              <li>
+                <Link to="/admin/people" className="flex items-center gap-3 py-3 text-[13px] transition hover:text-violet-600 dark:hover:text-violet-300">
+                  <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                  <Users size={15} className="text-slate-400" />
+                  <span className="font-medium text-slate-700 dark:text-slate-200">Registered users</span>
+                  <span className="ml-auto font-semibold tabular-nums text-slate-950 dark:text-white">{num(stats?.totalUsers)}</span>
+                </Link>
+              </li>
+            )}
+            {isSuperAdmin && (
+              <li>
+                <Link to="/admin/sub-admins" className="flex items-center gap-3 py-3 text-[13px] transition hover:text-violet-600 dark:hover:text-violet-300">
+                  <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                  <UserCheck size={15} className="text-slate-400" />
+                  <span className="font-medium text-slate-700 dark:text-slate-200">Active sub-admins</span>
+                  <span className="ml-auto font-semibold tabular-nums text-slate-950 dark:text-white">{num(stats?.totalSubAdmins)}</span>
+                </Link>
+              </li>
+            )}
+          </ul>
+        </Panel>
+
+        {/* Approval queue */}
+        <Panel
+          title="Approval queue"
+          description="Newest workspace creation requests"
+          className="lg:col-span-3"
+          flush
+          action={can("onboarding") ? <PanelLink to="/admin/requests">View all</PanelLink> : null}
+        >
+          {requests.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                <CheckCircle2 size={22} />
+              </span>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Queue is clear</p>
+              <p className="text-xs text-slate-500">Every workspace request has been reviewed.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {requests.map((req) => {
+                const age = timeAgo(req.createdAt);
+                return (
+                  <li key={req._id} className="flex items-center gap-4 px-5 py-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-white">{req.name}</p>
+                        <Pill tone="violet">{req.entityType}</Pill>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                        {req.chairperson?.name || "Chairperson not specified"} ·{" "}
+                        {req.committeeMembers?.length || 0} committee member
+                        {(req.committeeMembers?.length || 0) === 1 ? "" : "s"}
+                        {age ? ` · ${age}` : ""}
+                      </p>
+                    </div>
+                    <Link to="/admin/requests" className={clsx(adminBtn.secondary, "!px-3 !py-1.5")}>
+                      Review
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
       </div>
     </div>
   );

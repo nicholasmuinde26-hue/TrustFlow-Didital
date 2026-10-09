@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { creditMemberWallet } from "../finance/memberWallet.service.js";
 
 import Payout from "../../models/Payout.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
@@ -77,8 +78,19 @@ const OWNER_TYPE = "Chama";
 const DISBURSEMENT_METHODS = [
     "cash",
     "bank",
-    "mpesa"
+    "mpesa",
+    "wallet"
 ];
+
+
+// Every role treated as a Chama "official" for payout governance — able to
+// stand in for a recused chairperson/treasurer seat. Kept in one place, same
+// list loans use (LOAN_OFFICIAL_ROLES), so approval-chain and eligibility
+// checks can't drift apart between the two maker-checker flows.
+const PAYOUT_OFFICIAL_ROLES = ["treasurer", "chairperson", "secretary", "auditor", "committee_member"];
+
+// The two seats that must always sign off on a payout, absent a recusal.
+const BASE_PAYOUT_APPROVAL_ROLES = ["chairperson", "treasurer"];
 
 
 
@@ -160,6 +172,62 @@ const getActiveTreasurerMembership = (
 
     ) || null;
 
+
+};
+
+
+
+
+// ============================================================
+// RESOLVE PAYOUT APPROVAL PLAN — CONFLICT-OF-INTEREST RECUSAL
+// ============================================================
+//
+// "The chairperson and treasurer ran off with the merry-go-round pot" is
+// exactly the failure mode maker-checker exists to prevent — but it still
+// fails if the person collecting the payout THIS round also happens to be
+// one of the two people who sign off on it. So: if the recipient holds
+// chairperson or treasurer, that seat is recused and one other independent
+// official (secretary / auditor / committee_member — never the recipient)
+// must stand in, mirroring ChamaLoan's recusal_quorum_required. Computed
+// once at payout creation and stored on the Payout so approvePayout can
+// enforce it without re-deriving it on every sign-off.
+//
+// ============================================================
+
+const resolvePayoutApprovalPlan = async (chamaId, recipientMembership, session) => {
+
+    const recipientRole = recipientMembership.role;
+    const recusedRoles = BASE_PAYOUT_APPROVAL_ROLES.filter(role => role === recipientRole);
+    const requiredRoles = BASE_PAYOUT_APPROVAL_ROLES.filter(role => role !== recipientRole);
+
+    if (!recusedRoles.length) {
+        return { requiredRoles, recusalQuorumRequired: 0 };
+    }
+
+    const quorumRequired = 1;
+
+    const availableOfficialsCount = await ChamaMembership.countDocuments({
+        chama_id: chamaId,
+        _id: { $ne: recipientMembership._id },
+        status: "active",
+        role: { $in: PAYOUT_OFFICIAL_ROLES },
+    }).session(session);
+
+    const neededOfficials = requiredRoles.length + quorumRequired;
+
+    if (availableOfficialsCount < neededOfficials) {
+        throw new AppError(
+            `This round's payout recipient holds the ${recusedRoles.join(", ")} role and is automatically ` +
+            `recused from approving their own payout. This Chama needs ${neededOfficials} other independent ` +
+            `official(s) to approve (1 to stand in for the recused seat` +
+            `${requiredRoles.length ? ` plus the ${requiredRoles.join(", ")}` : ""}), but only ` +
+            `${availableOfficialsCount} are currently available. The payout cannot proceed until enough ` +
+            `independent officials are available.`,
+            400
+        );
+    }
+
+    return { requiredRoles, recusalQuorumRequired: quorumRequired };
 
 };
 
@@ -649,6 +717,21 @@ export const startPayout = async ({
 
 
         // ----------------------------------------------------
+        // 7b. Resolve the approval plan (conflict-of-interest recusal)
+        // ----------------------------------------------------
+
+
+        const approvalPlan =
+            await resolvePayoutApprovalPlan(
+                chamaId,
+                recipient,
+                session
+            );
+
+
+
+
+        // ----------------------------------------------------
         // 8. Create payout record
         // ----------------------------------------------------
 
@@ -684,7 +767,13 @@ export const startPayout = async ({
 
                     currency:"KES",
 
-                    status:"pending"
+                    status:"pending",
+
+                    required_approval_roles:
+                        approvalPlan.requiredRoles,
+
+                    recusal_quorum_required:
+                        approvalPlan.recusalQuorumRequired
 
                 }],
 
@@ -712,6 +801,7 @@ export const startPayout = async ({
 
                 referenceType:
                     "PAYOUT_OBLIGATION",
+                contribution_plan_id: contributionPlanId,
 
 
                 owner_type:
@@ -734,6 +824,7 @@ export const startPayout = async ({
 
                 source_id:
                     payout._id,
+
 
 
                 description:
@@ -862,19 +953,30 @@ export const startPayout = async ({
 // APPROVE PAYOUT
 // ============================================================
 //
-// PHASE 1.5 — CHAIRPERSON APPROVAL
+// PHASE 1.5 — 2-OF-N COMMITTEE APPROVAL
 //
 // A real Chama doesn't let the person who
 // controls the money also be the sole
-// authority on when it moves. Before the
-// Treasurer can mark a payout as disbursed,
-// the Chairperson must approve it.
+// authority on when it moves — and it can't
+// let ONE person from that committee move it
+// alone either. Before the Treasurer can mark
+// a payout as disbursed, every role in
+// payout.required_approval_roles must sign
+// off (chairperson AND treasurer, by default)
+// — the same maker-checker pattern loan
+// disbursement already uses.
+//
+// If the recipient themself holds one of
+// those seats this round, that seat is
+// recused and an independent official
+// (secretary / auditor / committee_member)
+// must stand in — see resolvePayoutApprovalPlan.
 //
 // This does NOT move money and does NOT
 // touch the ledger — it only flips the
-// Payout from 'pending' to 'approved',
-// which is the gate markPayoutPaid checks
-// below.
+// Payout from 'pending' to 'approved' once
+// the full quorum is in, which is the gate
+// markPayoutPaid checks below.
 //
 // ============================================================
 
@@ -885,14 +987,18 @@ export const approvePayout = async ({
 
     payoutId,
 
-    approved_by,
+    membership,
+
+    comment = '',
+
+    ipAddress = null,
 
     session: existingSession = null
 
 }) => {
 
 
-    if(!approved_by){
+    if(!membership || !membership._id){
 
         throw new AppError(
             "Approving member is required",
@@ -984,18 +1090,132 @@ export const approvePayout = async ({
 
 
         // ----------------------------------------------------
-        // 3. Record approval
+        // 3. Conflict-of-interest recusal — the recipient can
+        //    never approve their own payout, committee seat or not.
         // ----------------------------------------------------
 
 
-        payout.status =
-            "approved";
+        if(String(payout.member_id) === String(membership._id)){
 
-        payout.approved_by =
-            approved_by;
+            throw new AppError(
+                "Conflict of interest recusal: You cannot approve your own payout.",
+                403
+            );
 
-        payout.approved_at =
-            new Date();
+        }
+
+
+
+
+        // ----------------------------------------------------
+        // 4. Role eligibility — must hold a still-required seat,
+        //    or be standing in for a recused one.
+        // ----------------------------------------------------
+
+
+        const requiredRoles =
+            (payout.required_approval_roles && payout.required_approval_roles.length > 0)
+                ? payout.required_approval_roles
+                : BASE_PAYOUT_APPROVAL_ROLES;
+
+        const quorumRequired =
+            Number(payout.recusal_quorum_required || 0);
+
+        const isOfficial =
+            PAYOUT_OFFICIAL_ROLES.includes(membership.role);
+
+        const isEligibleApprover =
+            requiredRoles.includes(membership.role) ||
+            (quorumRequired > 0 && isOfficial);
+
+
+        if(!isEligibleApprover){
+
+            throw new AppError(
+                `Your role (${membership.role}) is not part of the approval chain for this payout`,
+                403
+            );
+
+        }
+
+
+
+
+        // ----------------------------------------------------
+        // 5. One sign-off per official
+        // ----------------------------------------------------
+
+
+        const alreadyDecided =
+            payout.approvals.some(
+                a => String(a.membership_id) === String(membership._id)
+            );
+
+        if(alreadyDecided){
+
+            throw new AppError(
+                "You have already recorded a decision for this payout",
+                400
+            );
+
+        }
+
+
+
+
+        // ----------------------------------------------------
+        // 6. Record this sign-off
+        // ----------------------------------------------------
+
+
+        payout.approvals.push({
+            membership_id: membership._id,
+            role: membership.role,
+            decision: 'approved',
+            comment: comment || null,
+            decided_at: new Date(),
+            ip_address: ipAddress || null,
+        });
+
+
+
+
+        // ----------------------------------------------------
+        // 7. Evaluate whether the full quorum is now in
+        // ----------------------------------------------------
+
+
+        const approvedDecisions =
+            payout.approvals.filter(a => a.decision === 'approved');
+
+        const approvedRoles =
+            new Set(approvedDecisions.map(a => a.role));
+
+        const allRequiredRolesApproved =
+            requiredRoles.every(role => approvedRoles.has(role));
+
+        let quorumMet = true;
+
+        if(quorumRequired > 0){
+
+            const quorumFillers = new Set(
+                approvedDecisions
+                    .filter(a => !requiredRoles.includes(a.role))
+                    .map(a => String(a.membership_id))
+            );
+
+            quorumMet = quorumFillers.size >= quorumRequired;
+
+        }
+
+
+        if(allRequiredRolesApproved && quorumMet){
+
+            payout.status = "approved";
+            payout.approved_by = membership._id;
+            payout.approved_at = new Date();
+
+        }
 
 
 
@@ -1026,7 +1246,6 @@ export const approvePayout = async ({
         );
 
 
-
     }
     catch(error){
 
@@ -1046,7 +1265,6 @@ export const approvePayout = async ({
         throw error;
 
 
-
     }
     finally{
 
@@ -1063,6 +1281,7 @@ export const approvePayout = async ({
 
 
 };
+
 
 // ============================================================
 // MARK PAYOUT PAID
@@ -1314,7 +1533,7 @@ export const markPayoutPaid = async ({
 
                 metadata:{
 
-                    disbursement_method,
+                        wallet_destination: disbursement_method === "wallet",
 
                     external_reference
 
@@ -1362,6 +1581,18 @@ export const markPayoutPaid = async ({
 
         payout.external_reference =
             external_reference;
+
+        if (disbursement_method === "wallet") {
+            await creditMemberWallet({
+                userId: membership.user_id,
+                amount,
+                sourceType: "Payout",
+                sourceId: payout._id,
+                createdBy: created_by,
+                externalReference: external_reference,
+                session,
+            });
+        }
 
 
 
@@ -1615,6 +1846,7 @@ export const cancelPayout = async ({
 
                 referenceType:
                     "PAYOUT_CANCELLATION",
+                contribution_plan_id: payout.contribution_plan_id,
 
 
 

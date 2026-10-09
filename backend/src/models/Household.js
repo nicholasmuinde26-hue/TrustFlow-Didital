@@ -255,7 +255,7 @@ householdSchema.index({
 // PRE-SAVE HOOKS
 // ======================================================
 
-householdSchema.pre('save', function(next) {
+householdSchema.pre('save', function () {
   // Validate contribution split percentages sum to 100
   if (this.contribution_config && this.contribution_config.contribution_split) {
     const totalPercentage = this.contribution_config.contribution_split.reduce(
@@ -264,8 +264,7 @@ householdSchema.pre('save', function(next) {
     );
     
     if (totalPercentage !== 100) {
-      next(new Error('Contribution split percentages must sum to 100'));
-      return;
+      throw new Error('Contribution split percentages must sum to 100');
     }
   }
 
@@ -282,8 +281,6 @@ householdSchema.pre('save', function(next) {
       });
     }
   }
-
-  next();
 });
 
 // ======================================================

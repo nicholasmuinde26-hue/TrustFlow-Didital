@@ -96,7 +96,7 @@ export default function AdminPeoplePage() {
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                     {person.name?.charAt(0) || "?"}
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <span className="text-sm font-black text-slate-900 dark:text-white">
                       {person.name || "Unnamed User"}
                     </span>
@@ -113,6 +113,12 @@ export default function AdminPeoplePage() {
                       )}
                     </div>
                   </div>
+                  <Link
+                    to={`/admin/support/users/${person._id}`}
+                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-[11px] font-bold text-violet-600 hover:bg-violet-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    Support
+                  </Link>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2 pl-13">

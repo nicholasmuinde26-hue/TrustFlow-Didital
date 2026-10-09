@@ -19,7 +19,7 @@ import { useMarketplaceCart } from "../context/MarketplaceCartContext";
 import marketplaceService from "../services/marketplace.service";
 import toast from "react-hot-toast";
 
-export default function MarketplaceCartDrawer() {
+export default function MarketplaceCartDrawer({ categorySlug }) {
   const {
     isCartOpen,
     closeCart,
@@ -30,10 +30,11 @@ export default function MarketplaceCartDrawer() {
     updateQty,
     removeFromCart,
     clearCart,
-  } = useMarketplaceCart();
+    fulfillmentType,
+    setFulfillmentType,
+  } = useMarketplaceCart(categorySlug);
 
   const [step, setStep] = useState("cart"); // "cart" | "checkout" | "success"
-  const [fulfillmentType, setFulfillmentType] = useState("delivery");
   const [formData, setFormData] = useState({
     customer_name: "",
     customer_phone: "",

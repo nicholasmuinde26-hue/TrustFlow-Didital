@@ -1,4 +1,11 @@
 import * as AdminService from './admin.service.js';
+import { listOrgKycForAdmin, getOrgKycForAdmin, reviewOrgKyc } from '../chama/publicProfiles.service.js';
+import {
+  listModuleChangeRequestsForAdmin,
+  adminDecideModuleChange,
+  listChamasForModuleAdmin,
+  adminConfigureWorkspaceModules,
+} from '../workspaces/workspacemodulechange.service.js';
 
 export const createAdminStepUpController = async (req, res, next) => {
   try {
@@ -225,7 +232,10 @@ export const updateChamaMemberController = async (req, res, next) => {
     const detail = await AdminService.updateChamaMemberRole(chamaId, membershipId, { role, status }, req.user);
     res.status(200).json({
       success: true,
-      message: role === 'chairperson' ? 'Chairperson updated successfully' : 'Member updated successfully',
+      message:
+        role === 'chairperson' ? 'Chairperson updated. The previous chairperson is now a member and their Leadership Desk access has been revoked.'
+        : role === 'treasurer' ? 'Treasurer updated. The previous treasurer is now a member and their Leadership Desk access has been revoked.'
+        : 'Member updated successfully',
       data: detail,
     });
   } catch (error) {
@@ -260,3 +270,48 @@ export const rejectWorkspaceRequestController = async (req, res, next) => {
     next(error);
   }
 };
+// Feature-change requests (turn chama modules on/off), raised from the Leadership Desk.
+export const listModuleChangeRequestsController = async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, data: await listModuleChangeRequestsForAdmin({ status: req.query.status || 'pending' }) });
+  } catch (error) { next(error); }
+};
+
+const decideModuleChange = (decision) => async (req, res, next) => {
+  try {
+    const data = await adminDecideModuleChange({
+      requestId: req.params.requestId,
+      adminUser: req.user,
+      decision,
+      note: req.body?.note,
+    });
+    res.status(200).json({ success: true, data });
+  } catch (error) { next(error); }
+};
+export const approveModuleChangeController = decideModuleChange('approved');
+export const rejectModuleChangeController = decideModuleChange('rejected');
+
+export const listFeatureManagedChamasController = async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, data: await listChamasForModuleAdmin() });
+  } catch (error) { next(error); }
+};
+
+export const configureChamaFeaturesController = async (req, res, next) => {
+  try {
+    const data = await adminConfigureWorkspaceModules({
+      chamaId: req.params.chamaId,
+      adminUser: req.user,
+      modules: req.body?.modules,
+      preset: req.body?.preset,
+      note: req.body?.note,
+    });
+    res.status(200).json({ success: true, data });
+  } catch (error) { next(error); }
+};
+
+// Chama (organisation) KYC review. Reuses the onboarding permission: the
+// same admins who approve new workspaces verify the group behind them.
+export const listChamaKycController = async (req, res, next) => { try { res.json({ success: true, data: await listOrgKycForAdmin(req.query.status) }); } catch (error) { next(error); } };
+export const getChamaKycController = async (req, res, next) => { try { res.json({ success: true, data: await getOrgKycForAdmin(req.params.chamaId) }); } catch (error) { next(error); } };
+export const reviewChamaKycController = async (req, res, next) => { try { res.json({ success: true, data: await reviewOrgKyc(req.params.chamaId, req.user._id, req.body?.status, req.body?.reason) }); } catch (error) { next(error); } };

@@ -89,6 +89,7 @@ const LEGACY_ACCOUNT_NAME_BY_CODE = Object.freeze({
   MEMBER_CONTRIBUTIONS: "Member Contributions",
   MEMBER_SAVINGS: "Member Savings",
   PAYOUT_CLEARING: "Payout Clearing",
+  WITHDRAWAL_CLEARING: "Withdrawal Clearing",
   LOAN_RECEIVABLE: "Loans Receivable",
   INTEREST_INCOME: "Loan Interest Income",
   PENALTY_INCOME: "Loan Penalty Income",
@@ -198,6 +199,73 @@ class FinanceAccountService {
         }
         return account;
     }
+
+    // ========================================================================
+    // RESERVE / RELEASE FUNDS ("reserved money" — see FinancialAccount.js)
+    // ========================================================================
+    //
+    // Used when an obligation is APPROVED but not yet SETTLED (e.g. an
+    // approved-but-not-yet-paid member withdrawal) to stop the same cash
+    // being committed twice. This does NOT touch current_balance or post
+    // any ledger entries — it only shrinks the account's available_balance
+    // until the reservation is released (by settlement or cancellation).
+    //
+    // Both operations use an atomic conditional findOneAndUpdate so two
+    // concurrent approvals can never both succeed against the same cash.
+    //
+    async reserveFunds({ accountId, amount, session = null }){
+        const opts = getOpts(session);
+        const value = toDecimal(amount);
+        if(!value.gt(0)) throw new Error("Reservation amount must be greater than zero");
+
+        // Only reserve if doing so would not exceed the account's current
+        // balance — i.e. reserved_balance + amount <= current_balance.
+        // Expressed with $expr so it's evaluated atomically against the
+        // account's live fields, not a value read moments earlier.
+        const updated = await FinancialAccount.findOneAndUpdate(
+            {
+                _id: accountId,
+                $expr: {
+                    $lte: [
+                        { $add: [{ $toDecimal: "$reserved_balance" }, value.toNumber()] },
+                        { $toDecimal: "$current_balance" }
+                    ]
+                }
+            },
+            { $inc: { reserved_balance: mongoose.Types.Decimal128.fromString(value.toFixed(2)) } },
+            { returnDocument: 'after', ...opts }
+        );
+
+        if(!updated){
+            const account = await FinancialAccount.findById(accountId, null, opts);
+            if(!account) throw new Error(`Financial account '${accountId}' not found`);
+            throw new Error(
+                `Insufficient available funds in '${account.name}' to reserve KES ${value.toFixed(2)}`
+            );
+        }
+
+        return updated;
+    }
+
+    async releaseFunds({ accountId, amount, session = null }){
+        const opts = getOpts(session);
+        const value = toDecimal(amount);
+        if(!value.gt(0)) throw new Error("Release amount must be greater than zero");
+
+        const account = await FinancialAccount.findById(accountId, null, opts);
+        if(!account) throw new Error(`Financial account '${accountId}' not found`);
+
+        const currentReserved = toDecimal(account.reserved_balance);
+        const rawNext = currentReserved.minus(value);
+        // Never go negative — a double-release (e.g. settle called after a
+        // race with cancel) just clamps to zero instead of corrupting the
+        // figure other reservations depend on.
+        const nextReserved = rawNext.lt(0) ? toDecimal(0) : rawNext;
+
+        account.reserved_balance = mongoose.Types.Decimal128.fromString(nextReserved.toFixed(2));
+        await account.save(opts);
+        return account;
+    }
 }
 
 /**
@@ -219,6 +287,23 @@ export const getSavingsLiabilityAccount = async ({ owner_type, owner_id, session
 export const getPayoutPayableAccount = async ({ owner_type, owner_id, session = null })=>{
     const opts = getOpts(session);
     return FinancialAccount.findOne({ owner_type, owner_id, account_code: "PAYOUT_CLEARING" }, null, opts);
+};
+
+export const getWithdrawalClearingAccount = async ({ owner_type, owner_id, session = null })=>{
+    const opts = getOpts(session);
+    return FinancialAccount.findOne({ owner_type, owner_id, account_code: "WITHDRAWAL_CLEARING" }, null, opts);
+};
+
+// Maps a member's chosen disbursement channel to the real asset account
+// that will be credited (mirrors PayoutRule.resolveDisbursementAccount,
+// exposed here too since withdrawal.service.js needs the account
+// document itself — not just its code — to reserve/release funds on it).
+export const getDisbursementAssetAccount = async ({ owner_type, owner_id, method, session = null })=>{
+    const opts = getOpts(session);
+    const map = { cash: "CASH", bank: "BANK", mpesa: "MPESA_CLEARING" };
+    const code = map[method];
+    if(!code) throw new Error(`Unsupported disbursement method '${method}'`);
+    return FinancialAccount.findOne({ owner_type, owner_id, account_code: code }, null, opts);
 };
 
 export const getContributionPaymentAssetAccount = async ({ owner_type, owner_id, payment_method, session = null })=>{

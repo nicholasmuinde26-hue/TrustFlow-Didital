@@ -21,6 +21,11 @@ export const businessService = {
     return res.data?.data || res.data;
   },
 
+  async getChamaDashboard(workspaceId) {
+    const res = await businessApi.getChamaDashboard(workspaceId);
+    return res.data?.data || res.data;
+  },
+
   async getSales(workspaceId, params) {
     const res = await businessApi.getSales(workspaceId, params);
     return extractArray(res, "sales");
@@ -76,6 +81,21 @@ export const businessService = {
     return res.data?.data || res.data;
   },
 
+  async publishInventoryItem(workspaceId, itemId) {
+    const res = await businessApi.publishInventoryItem(workspaceId, itemId);
+    return res.data?.data || res.data;
+  },
+
+  async unpublishInventoryItem(workspaceId, itemId) {
+    const res = await businessApi.unpublishInventoryItem(workspaceId, itemId);
+    return res.data?.data || res.data;
+  },
+
+  async publishInventoryBulk(workspaceId, itemIds = []) {
+    const res = await businessApi.publishInventoryBulk(workspaceId, itemIds);
+    return res.data?.data || res.data;
+  },
+
   async getRentalListings(workspaceId) {
     const res = await businessApi.getRentalListings(workspaceId);
     return extractArray(res, "listings");
@@ -113,26 +133,6 @@ export const businessService = {
 
   async createPosSale(workspaceId, payload) {
     const res = await businessApi.createPosSale(workspaceId, payload);
-    return res.data?.data || res.data;
-  },
-
-  async getStorefront(workspaceId) {
-    const res = await businessApi.getStorefront(workspaceId);
-    return res.data?.data || res.data;
-  },
-
-  async updateStorefront(workspaceId, payload) {
-    const res = await businessApi.updateStorefront(workspaceId, payload);
-    return res.data?.data || res.data;
-  },
-
-  async getStorefrontOrders(workspaceId) {
-    const res = await businessApi.getStorefrontOrders(workspaceId);
-    return extractArray(res, "orders");
-  },
-
-  async updateStorefrontOrderStatus(workspaceId, orderId, status) {
-    const res = await businessApi.updateStorefrontOrderStatus(workspaceId, orderId, status);
     return res.data?.data || res.data;
   },
 

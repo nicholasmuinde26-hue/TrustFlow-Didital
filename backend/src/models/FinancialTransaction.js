@@ -73,13 +73,30 @@ const TRANSACTION_TYPES = [
   'loan_repayment',
   'deposit',
   'withdrawal',
+  'withdrawal_obligation',
+  'withdrawal_settlement',
+  'withdrawal_cancellation',
   'transfer',
   'fee',
   'penalty',
   'adjustment',
   'sale',
   'expense',
-  'customer_payout'
+  'customer_payout',
+  // Chama-owned assets and businesses (chamaAsset.service.js / chamaAsset*.rule.js).
+  // These were posted with no matching enum value, so every income, expense,
+  // acquisition, funding and profit posting failed validation.
+  'chama_asset_income',
+  'chama_asset_expense',
+  'chama_asset_acquisition',
+  'chama_business_funding',
+  'business_capital_funding',
+  'chama_profit_distribution',
+  'chama_profit_wallet_credit',
+  'chama_profit_wallet_withdrawal',
+  // One-off move of historic business money out of the pooled chama accounts
+  // (scripts/separateBusinessFunds.js, rules/businessFundsReclass.rule.js).
+  'business_funds_reclass'
 ];
 
 

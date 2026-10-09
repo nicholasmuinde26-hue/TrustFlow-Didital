@@ -105,6 +105,7 @@ export default function WorkspaceSwitcher() {
       <button
         onClick={() => setOpen((prev) => !prev)}
         className="
+          workspace-switcher-trigger
           flex
           items-center
           gap-2.5
@@ -112,7 +113,7 @@ export default function WorkspaceSwitcher() {
           border
           border-slate-200
           bg-white
-          px-2.5
+          px-1.5
           py-1.5
           sm:px-4
           sm:py-2.5
@@ -121,7 +122,8 @@ export default function WorkspaceSwitcher() {
           dark:border-obsidian-border
           dark:bg-obsidian-raised
           dark:hover:bg-slate-700
-          max-w-[200px]
+          max-w-[104px]
+          min-[380px]:max-w-[150px]
           sm:max-w-xs
         "
       >

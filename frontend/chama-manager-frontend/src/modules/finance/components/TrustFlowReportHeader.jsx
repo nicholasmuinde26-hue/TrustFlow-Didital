@@ -1,19 +1,15 @@
 import React from "react";
-import { ShieldCheck, Download, Printer, Sparkles, Building2, Users, Calendar } from "lucide-react";
+import { ShieldCheck, Download, Printer, Sparkles, Calendar } from "lucide-react";
 
 export default function TrustFlowReportHeader({
   title,
   subtitle,
-  mode, // 'CHAMA' | 'BUSINESS'
-  onModeChange,
   asAtDate,
   onDateChange,
   onExportPdf,
   onExportExcel,
   workspaceName = "ChamaManager Workspace",
 }) {
-  const isChama = mode === "CHAMA";
-
   return (
     <header className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 p-6 sm:p-8 text-white shadow-xl space-y-6 print:border-none print:bg-white print:p-0 print:shadow-none print:text-black">
       {/* Top Brand Bar */}
@@ -37,34 +33,6 @@ export default function TrustFlowReportHeader({
 
         {/* Action Controls (Hidden on Print) */}
         <div className="flex flex-wrap items-center gap-3 print:hidden">
-          {/* Mode Switcher */}
-          <div className="flex rounded-2xl border border-white/30 bg-black/20 p-1 backdrop-blur">
-            <button
-              type="button"
-              onClick={() => onModeChange?.("CHAMA")}
-              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${
-                isChama
-                  ? "bg-white text-emerald-900 shadow-md font-extrabold"
-                  : "text-emerald-100 hover:text-white"
-              }`}
-            >
-              <Users className="h-3.5 w-3.5" />
-              <span>CHAMA MODE</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onModeChange?.("BUSINESS")}
-              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${
-                !isChama
-                  ? "bg-white text-sky-900 shadow-md font-extrabold"
-                  : "text-emerald-100 hover:text-white"
-              }`}
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              <span>BUSINESS MODE</span>
-            </button>
-          </div>
-
           {/* Date Picker */}
           {asAtDate && (
             <div className="flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-3 py-1.5 text-xs text-white backdrop-blur">
@@ -103,7 +71,7 @@ export default function TrustFlowReportHeader({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <span className="inline-block rounded-full bg-white/20 border border-white/30 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white mb-1.5 print:border-black print:text-black">
-            {isChama ? "MEMBER FINANCIAL STATEMENT — CHAMA MODE" : "IFRS / GAAP CORPORATE STATEMENT — BUSINESS MODE"}
+            MEMBER FINANCIAL STATEMENT
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight print:text-black">
             {title}

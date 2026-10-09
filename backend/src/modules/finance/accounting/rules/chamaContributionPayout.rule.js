@@ -26,7 +26,7 @@ const canUseTransactions = () => {
 };
 const getOpts = (session) => (canUseTransactions() && session ? { session } : {});
 
-const ASSET_ACCOUNT_BY_METHOD = { cash: "CASH", bank: "BANK", mpesa: "MPESA_CLEARING" };
+const ASSET_ACCOUNT_BY_METHOD = { cash: "CASH", bank: "BANK", mpesa: "MPESA_CLEARING", wallet: "MPESA_CLEARING" };
 
 class ChamaContributionPayoutRule {
   async build(context, session = null) {

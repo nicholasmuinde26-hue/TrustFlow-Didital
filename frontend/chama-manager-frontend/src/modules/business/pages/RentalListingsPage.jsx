@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Pencil, Trash2, X, Home, MapPin, BedDouble, Bath, Ruler, ImagePlus, Share2, Copy, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Home, MapPin, BedDouble, Bath, Ruler, ImagePlus, Share2 } from "lucide-react";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
-import { useRentalListings, useStorefrontSettings } from "../hooks/useBusiness";
+import { useRentalListings } from "../hooks/useBusiness";
+import { useInitiateBusinessStkPush } from "../hooks/useBusiness";
+import BusinessMpesaModal from "../components/BusinessMpesaModal";
 import { RentalOccupancySnapshot } from "../components/RentalOccupancySnapshot";
 import PageHeader from "../../../shared/components/ui/PageHeader";
 import Spinner from "../../../shared/components/ui/Spinner";
 import { readImageAsDataUri } from "../../../shared/utils/readImageAsDataUri";
+import toast from "react-hot-toast";
 
 const MAX_IMAGES = 8;
 
@@ -37,6 +40,8 @@ function formatMoney(amount, currency = "KES") {
 export default function RentalListingsPage() {
   const { workspaceId, currentWorkspace } = useWorkspace();
   const currency = currentWorkspace?.currency || "KES";
+  const [rentTarget, setRentTarget] = useState(null);
+  const rentPayment = useInitiateBusinessStkPush();
 
   const {
     listings,
@@ -50,19 +55,6 @@ export default function RentalListingsPage() {
   } = useRentalListings(workspaceId);
   const listingList = Array.isArray(listings) ? listings : [];
 
-  const { storefront } = useStorefrontSettings(workspaceId);
-  const storefrontUrl = storefront?.slug ? `${window.location.origin}/store/${storefront.slug}` : "";
-  const [copied, setCopied] = useState(false);
-  const copyShareLink = async () => {
-    if (!storefrontUrl) return;
-    try {
-      await navigator.clipboard.writeText(storefrontUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API unavailable — link is still visible to select manually.
-    }
-  };
 
   const [modalMode, setModalMode] = useState(null); // "add" | "edit" | null
   const [form, setForm] = useState(EMPTY_FORM);
@@ -188,7 +180,7 @@ export default function RentalListingsPage() {
     <div className="p-6 space-y-6">
       <PageHeader
         title="Rooms & Plots"
-        subtitle="Post vacant rooms, apartments, or plots with photos for tenants to browse on your storefront."
+        subtitle="Post vacant rooms, apartments, or plots with photos for tenants to browse on the marketplace."
         action={
           <button
             onClick={openAdd}
@@ -199,42 +191,21 @@ export default function RentalListingsPage() {
         }
       />
 
-      {/* Share link — the fastest way for a landlord to get their public
-          listings in front of tenants, right where they manage them. */}
+      {/* Where these listings appear to the public */}
       <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-bold text-gray-900 dark:text-white">Your public storefront</p>
-          {storefrontUrl ? (
-            <p className="truncate font-mono text-xs text-primary">{storefrontUrl}</p>
-          ) : (
-            <p className="text-xs text-gray-500">
-              Set up your storefront link in{" "}
-              <Link to={`/workspace/${workspaceId}/business/storefront`} className="font-semibold text-primary hover:underline">
-                Online Storefront
-              </Link>
-              .
-            </p>
-          )}
+          <p className="text-xs font-bold text-gray-900 dark:text-white">Listed on the Rentals Marketplace</p>
+          <p className="text-xs text-gray-500">
+            Tenants find your rooms and plots in the VeriCircle Rentals Marketplace. Publish listings and customise your
+            store page from the Marketplace section.
+          </p>
         </div>
-        {storefrontUrl && (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={copyShareLink}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
-            >
-              {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? "Copied" : "Copy link"}
-            </button>
-            <a
-              href={storefrontUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white hover:opacity-90"
-            >
-              <Share2 size={14} /> View public page
-            </a>
-          </div>
-        )}
+        <Link
+          to={`/workspace/${workspaceId}/business/marketplace`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white hover:opacity-90"
+        >
+          <Share2 size={14} /> Open Marketplace
+        </Link>
       </div>
 
       {/* Occupancy stats — shared with the Business Dashboard so the
@@ -318,6 +289,13 @@ export default function RentalListingsPage() {
 
                   <div className="flex items-center gap-2 pt-2">
                     <button
+                      type="button"
+                      onClick={() => setRentTarget(listing)}
+                      className="flex-1 rounded-lg bg-emerald-700 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-800"
+                    >
+                      Collect rent
+                    </button>
+                    <button
                       onClick={() => toggleStatus(listing)}
                       className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold transition ${
                         vacant
@@ -348,6 +326,21 @@ export default function RentalListingsPage() {
           })
         )}
       </div>
+
+      <BusinessMpesaModal
+        isOpen={Boolean(rentTarget)}
+        onClose={() => setRentTarget(null)}
+        workspaceId={workspaceId}
+        title={rentTarget ? `Collect rent · ${rentTarget.title}` : "Collect rent"}
+        initialAmount={rentTarget?.rent_amount || ""}
+        initialDescription={rentTarget ? `Rent payment for ${rentTarget.title}` : "Rent payment"}
+        onSubmit={(payload) => rentPayment.mutateAsync({
+          workspaceId,
+          ...payload,
+          rentalListingId: rentTarget?._id || rentTarget?.id,
+        })}
+        onSuccess={() => toast.success("Rent payment received and recorded")}
+      />
 
       {/* ADD / EDIT MODAL */}
       {modalMode && (
@@ -539,7 +532,7 @@ export default function RentalListingsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, visible_online: e.target.checked }))}
                   className="h-4 w-4 rounded border-gray-300"
                 />
-                Show on online storefront
+                Show on marketplace
               </label>
 
               <div className="flex gap-3 pt-2">

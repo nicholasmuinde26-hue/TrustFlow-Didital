@@ -5,22 +5,20 @@ import {
   Clock,
   Crown,
   Loader2,
-  Phone,
   Send,
   ShieldAlert,
   UserCheck,
   UserPlus,
-  UserX,
   UsersRound,
   X,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
+import MemberAvatar from "@/modules/members/components/MemberAvatar";
 import {
   useMembers,
   useAddMember,
   useUpdateMemberRole,
-  useRemoveMember,
   useUpdateMemberStatus,
 } from "@/modules/members/hooks/useMembers";
 import {
@@ -30,6 +28,7 @@ import {
 } from "@/modules/chama/hooks/useChamaInvite";
 
 import {
+  ChoiceCards,
   EmptyState,
   InputField,
   Notice,
@@ -92,7 +91,6 @@ export default function MembersOfficialsTab({
   const addMember = useAddMember(type, workspaceId);
   const updateRole = useUpdateMemberRole(type, workspaceId);
   const updateStatus = useUpdateMemberStatus(type, workspaceId);
-  const removeMember = useRemoveMember(type, workspaceId);
 
   const createInvite = useCreateChamaInvite(workspaceId);
   const { data: joinRequests = [] } = useChamaJoinRequests(workspaceId, true);
@@ -105,7 +103,6 @@ export default function MembersOfficialsTab({
   const [decidingId, setDecidingId] = useState(null);
   const [roleTarget, setRoleTarget] = useState(null);
   const [selectedRole, setSelectedRole] = useState("member");
-  const [removeTarget, setRemoveTarget] = useState(null);
 
   const isSystemAdmin = ["super_admin", "sub_admin"].includes(
     String(user?.systemRole || "").toLowerCase()
@@ -208,27 +205,6 @@ export default function MembersOfficialsTab({
     }
   };
 
-  const handleRemove = async () => {
-    if (!removeTarget) return;
-
-    try {
-      const result = await removeMember.mutateAsync(removeTarget._id);
-      const amount =
-        result?.exitRequest?.savings_amount ??
-        result?.data?.exitRequest?.savings_amount;
-
-      setRemoveTarget(null);
-      say(
-        "success",
-        Number(amount || 0) > 0
-          ? `Exit started. KES ${Number(amount).toLocaleString()} in savings awaits approval before disbursement.`
-          : "Exit started. No withdrawable savings; approval will be recorded before the membership closes."
-      );
-    } catch (error) {
-      report(error, "Could not start the exit process.");
-    }
-  };
-
   const handleInviteLink = async () => {
     try {
       const result = await createInvite.mutateAsync({});
@@ -273,9 +249,7 @@ export default function MembersOfficialsTab({
                   className="flex flex-wrap items-center justify-between gap-3 py-3.5"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-amber-100 text-sm font-black text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                      {initials(name)}
-                    </span>
+                    <MemberAvatar name={name} src={requester.avatar_url} size="md" tone="amber" />
                     <div>
                       <p className="text-sm font-black text-slate-900 dark:text-white">
                         {name}
@@ -329,22 +303,17 @@ export default function MembersOfficialsTab({
               onChange={setNewName}
               placeholder="e.g. John Doe"
             />
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Phone number
-              </label>
-              <div className="relative">
-                <Phone size={15} className="absolute left-3.5 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  required
-                  value={newPhone}
-                  onChange={(event) => setNewPhone(event.target.value)}
-                  placeholder="e.g. 0712345678"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-2.5 pl-10 pr-4 text-xs font-medium text-slate-900 outline-none transition focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-            </div>
+            <InputField
+              label="Phone number"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              required
+              value={newPhone}
+              onChange={setNewPhone}
+              placeholder="e.g. 0712345678"
+              hint="They must already have an account on the platform."
+            />
             <button
               type="submit"
               disabled={addMember.isPending}
@@ -412,7 +381,8 @@ export default function MembersOfficialsTab({
                 key={official._id}
                 className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-800/50"
               >
-                <div>
+                <MemberAvatar name={official.user_id?.name || "Official"} src={official.user_id?.avatar_url} size="md" />
+                <div className="mr-auto ml-3">
                   <p className="text-sm font-black text-slate-900 dark:text-white">
                     {official.user_id?.name || "Official"}
                   </p>
@@ -439,12 +409,13 @@ export default function MembersOfficialsTab({
       <SectionCard
         icon={UsersRound}
         title="Manage members"
-        description="Roles, suspensions and exits. The member-facing directory is read-only."
+        description="Manage roles and membership status. Members request their own exit from the member directory after returning to the ordinary Member role."
       >
         {!canChangeRoles && (
           <RoleLocked>
-            Only the chairperson can change roles, suspend members, or start an
-            exit. You can still add members and approve join requests.
+            Only the chairperson can change roles or suspend members. Members
+            request their own exit after any leadership role is removed. You
+            can still add members and approve join requests.
           </RoleLocked>
         )}
 
@@ -475,9 +446,7 @@ export default function MembersOfficialsTab({
                     <tr key={member._id}>
                       <td className="px-3 py-3.5">
                         <div className="flex items-center gap-3">
-                          <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-100 text-sm font-black text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                            {initials(memberUser.name || memberUser.first_name)}
-                          </span>
+                          <MemberAvatar name={memberUser.name || memberUser.first_name} src={memberUser.avatar_url} size="md" />
                           <div>
                             <p className="font-black text-slate-900 dark:text-white">
                               {memberUser.name || memberUser.first_name || "Member"}
@@ -530,7 +499,7 @@ export default function MembersOfficialsTab({
                             </button>
                           )}
 
-                          {canSuspendOrRemove && !isSelf && (
+                          {canSuspendOrRemove && !isSelf && member.role === "member" && member.status === "active" && (
                             <button
                               type="button"
                               onClick={() => handleToggleStatus(member)}
@@ -545,15 +514,6 @@ export default function MembersOfficialsTab({
                             </button>
                           )}
 
-                          {canSuspendOrRemove && !isSelf && (
-                            <button
-                              type="button"
-                              onClick={() => setRemoveTarget(member)}
-                              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/30"
-                            >
-                              <UserX size={13} /> Exit
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -580,35 +540,23 @@ export default function MembersOfficialsTab({
             </header>
 
             <form onSubmit={handleRoleSave} className="space-y-4">
-              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                {ROLE_OPTIONS.map((option) => (
-                  <label
-                    key={option.value}
-                    className={`flex cursor-pointer flex-col rounded-2xl border p-3 transition ${
-                      selectedRole === option.value
-                        ? "border-emerald-600 bg-emerald-50/60 dark:border-emerald-500 dark:bg-emerald-950/40"
-                        : "border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/40"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900 dark:text-white">
-                        {option.label}
-                      </span>
-                      <input
-                        type="radio"
-                        name="role"
-                        value={option.value}
-                        checked={selectedRole === option.value}
-                        onChange={(event) => setSelectedRole(event.target.value)}
-                        className="accent-emerald-600"
-                      />
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">
-                      {option.description}
-                    </p>
-                  </label>
-                ))}
+              <div className="max-h-72 overflow-y-auto pr-1">
+                <ChoiceCards
+                  label="Role"
+                  value={selectedRole}
+                  onChange={setSelectedRole}
+                  options={ROLE_OPTIONS.map((option) => ({ value: option.value, label: option.label, detail: option.description }))}
+                />
               </div>
+
+              {selectedRole === "chairperson" && roleTarget.role !== "chairperson" && (
+                <Notice tone="warn">
+                  This makes {roleTarget.user_id?.name || "this member"} an
+                  additional chairperson — it does not remove the seat from
+                  whoever currently holds it. Change the current
+                  chairperson's role separately if you mean to hand it over.
+                </Notice>
+              )}
 
               <div className="flex gap-2">
                 <button
@@ -631,44 +579,6 @@ export default function MembersOfficialsTab({
         </Modal>
       )}
 
-      {/* ---------------- Exit modal ---------------- */}
-      {removeTarget && (
-        <Modal onClose={() => setRemoveTarget(null)}>
-          <div className="space-y-4 text-center">
-            <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-              <UserX size={22} />
-            </span>
-            <div>
-              <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                Start the exit process
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                This begins a formal exit for{" "}
-                <strong>{removeTarget.user_id?.name || "this member"}</strong>.
-                Arrears and outstanding loans are checked first; any withdrawable
-                savings still need approval before they're disbursed.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setRemoveTarget(null)}
-                className="w-1/2 rounded-2xl border border-slate-200 py-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleRemove}
-                disabled={removeMember.isPending}
-                className="w-1/2 rounded-2xl bg-rose-600 py-3 text-xs font-black text-white shadow-md transition hover:bg-rose-500 disabled:opacity-50"
-              >
-                {removeMember.isPending ? "Checking…" : "Start exit"}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

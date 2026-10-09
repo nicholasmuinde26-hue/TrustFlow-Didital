@@ -44,6 +44,12 @@ export const CONDITION_TYPES = {
   // reporting it. Backed by Chamatrustscore.service.js#getLatestTrustScore.
   TRUST_SCORE_MIN: 'TRUST_SCORE_MIN',               // params: { score }
   OFFICIAL_RATING_MIN: 'OFFICIAL_RATING_MIN',       // params: { score, role? }
+  // Withdrawal-specific gates (first real consumer of this engine — see
+  // WithdrawalPolicy.js / withdrawal.service.js). Kept generic enough that
+  // any future "member takes money out" flow can reuse them.
+  MAX_AMOUNT_PER_REQUEST: 'MAX_AMOUNT_PER_REQUEST', // params: { amount }
+  MAX_AMOUNT_PER_PERIOD: 'MAX_AMOUNT_PER_PERIOD',   // params: { amount, days } — rolling window, e.g. { amount, days: 30 } for "max per month"
+  MIN_DAYS_SINCE_LAST: 'MIN_DAYS_SINCE_LAST',       // params: { days } — cooling-period between requests
 };
 
 // ----------------------------------------

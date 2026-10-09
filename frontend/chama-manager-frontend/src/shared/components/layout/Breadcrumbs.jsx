@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ChevronRight, Home } from "lucide-react";
 import useWorkspace from "@/app/hooks/useWorkspace";
+import { findWorkspaceNavigationMatch } from "@/modules/workspaces/config/workspaceNavigation";
 
 const segmentMap = {
   business: { title: "Business Dashboard", path: "business" },
@@ -29,6 +30,7 @@ const segmentMap = {
   "balance-sheet": { title: "Balance Sheet", path: "finance/balance-sheet" },
   "income-statement": { title: "Income Statement", path: "finance/income-statement" },
   "cash-flow": { title: "Cash Flow Statement", path: "finance/cash-flow" },
+  "receipts-payments": { title: "Receipts & Payments", path: "finance/receipts-payments" },
   payouts: { title: "Payouts", path: "finance/payouts" },
   members: { title: "Members", path: "members" },
   chat: { title: "Chat", path: "chat" },
@@ -37,7 +39,7 @@ const segmentMap = {
   settings: { title: "Settings", path: "settings" },
 };
 
-export default function Breadcrumbs() {
+export default function Breadcrumbs({ sections = [] }) {
   const { workspaceId } = useParams();
   const { activeWorkspace } = useWorkspace();
   const location = useLocation();
@@ -46,6 +48,7 @@ export default function Breadcrumbs() {
 
   // Split path into parts, e.g., ["workspace", "123", "finance", "ledger"]
   const pathParts = location.pathname.split("/").filter(Boolean);
+  const routeOwner = findWorkspaceNavigationMatch(sections, location.pathname);
 
   // We are interested in segments after /workspace/:workspaceId
   const workspaceIndex = pathParts.findIndex(
@@ -77,9 +80,13 @@ export default function Breadcrumbs() {
     currentRelativePath += (currentRelativePath ? "/" : "") + segment;
 
     let title = "";
+    let crumbPath = currentRelativePath;
     const mapped = segmentMap[segment] || segmentMap[currentRelativePath];
 
-    if (mapped) {
+    if (currentRelativePath === "finance" && routeOwner?.section?.title) {
+      title = routeOwner.section.title;
+      crumbPath = routeOwner.section.items?.[0]?.to?.replace(`/workspace/${workspaceId}/`, "") || currentRelativePath;
+    } else if (mapped) {
       title = mapped.title;
     } else {
       // Fallback formatting
@@ -101,7 +108,7 @@ export default function Breadcrumbs() {
 
     breadcrumbs.push({
       title,
-      to: `/workspace/${workspaceId}/${currentRelativePath}`,
+      to: `/workspace/${workspaceId}/${crumbPath}`,
       isRoot: false,
     });
   });
@@ -116,12 +123,16 @@ export default function Breadcrumbs() {
           const isLast = idx === breadcrumbs.length - 1;
 
           return (
-            <li key={crumb.to} className="inline-flex items-center">
+            <li key={`${crumb.to}-${idx}`} className="inline-flex items-center">
               {idx > 0 && (
                 <ChevronRight className="mx-1 h-4 w-4 text-slate-400 dark:text-slate-600" />
               )}
               {isLast ? (
                 <span className="text-sm font-semibold text-slate-800 dark:text-mist">
+                  {crumb.title}
+                </span>
+              ) : crumb.to === location.pathname ? (
+                <span className="inline-flex items-center text-sm font-medium text-slate-500 dark:text-mist-muted">
                   {crumb.title}
                 </span>
               ) : (

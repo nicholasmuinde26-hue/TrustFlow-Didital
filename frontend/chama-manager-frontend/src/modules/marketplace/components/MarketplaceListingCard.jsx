@@ -15,6 +15,9 @@ import {
   Calendar,
   Sparkles,
   ArrowRight,
+  Star,
+  Plus,
+  Check,
 } from "lucide-react";
 import { useMarketplaceCart } from "../context/MarketplaceCartContext";
 import RentalTourBookingModal from "./RentalTourBookingModal";
@@ -276,72 +279,126 @@ export default function MarketplaceListingCard({ listing }) {
   }
 
   // ==========================================================================
-  // STANDARD RETAIL / SERVICE / FOOD CARD
+  // STANDARD RETAIL / SERVICE / FOOD CARD (Matching Image 1 & Image 2)
   // ==========================================================================
-  return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-      {/* Image & Badges */}
-      <Link to={itemUrl} className="relative aspect-4/3 w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-        {listing.thumbnail ? (
-          <img
-            src={listing.thumbnail}
-            alt={listing.title}
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-700">
-            <Store size={36} />
-          </div>
-        )}
+  const discountPct =
+    listing.discount_pct ||
+    (listing.compare_price && listing.compare_price > listing.price
+      ? Math.round(((listing.compare_price - listing.price) / listing.compare_price) * 100)
+      : null);
 
-        {listing.is_featured && (
+  const ratingValue = listing.rating || 4.8;
+  const reviewCount = listing.review_count || 12;
+  const brandName = listing.brand || listing.tags?.[0] || "";
+
+  return (
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs transition duration-200 hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+      {/* Product Image & Badges */}
+      <div className="relative aspect-4/3 w-full overflow-hidden bg-slate-50 dark:bg-slate-800/60">
+        <Link to={itemUrl} className="block h-full w-full">
+          {listing.thumbnail ? (
+            <img
+              src={listing.thumbnail}
+              alt={listing.title}
+              className="h-full w-full object-contain p-2.5 transition duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-700">
+              <Store size={40} />
+            </div>
+          )}
+        </Link>
+
+        {/* Discount Badge (Matching Image 1: Pink/Rose -21%, -41%) */}
+        {discountPct ? (
+          <span className="absolute left-2.5 top-2.5 rounded-lg bg-pink-600 px-2 py-0.5 text-[11px] font-black text-white shadow-xs">
+            {discountPct}% OFF
+          </span>
+        ) : listing.is_featured ? (
           <span className="absolute left-2.5 top-2.5 rounded-lg bg-amber-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-xs">
             Featured
           </span>
-        )}
+        ) : null}
 
+        {/* Favorite Heart Button */}
+        <button
+          onClick={toggleFavorite}
+          className={`absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-md transition shadow-xs ${
+            isFavorited
+              ? "bg-rose-500 text-white"
+              : "bg-white/80 text-slate-400 hover:text-rose-500 dark:bg-slate-900/80"
+          }`}
+          title="Save to wishlist"
+        >
+          <Heart size={14} className={isFavorited ? "fill-white" : ""} />
+        </button>
+
+        {/* Out of stock overlay */}
         {listing.stock <= 0 && listing.track_stock && !isRental && (
-          <span className="absolute right-2.5 top-2.5 rounded-lg bg-rose-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-xs">
+          <span className="absolute bottom-2 left-2 rounded-md bg-rose-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-xs">
             Sold Out
           </span>
         )}
-      </Link>
+      </div>
 
-      {/* Content */}
+      {/* Card Details Body */}
       <div className="flex flex-1 flex-col p-4">
+        {/* Category / Brand Tag */}
+        <div className="flex items-center justify-between gap-1 text-[11px] text-slate-400 font-bold mb-1">
+          <span className="uppercase tracking-wider truncate">
+            {brandName ? `${brandName} • ` : ""}{listing.subcategory || "Retail"}
+          </span>
+        </div>
+
+        {/* Product Title */}
+        <Link
+          to={itemUrl}
+          className="font-bold text-slate-900 dark:text-white line-clamp-2 text-xs sm:text-sm leading-snug hover:text-emerald-600 transition"
+          title={listing.title}
+        >
+          {listing.title}
+        </Link>
+
+        {/* Star Rating Strip (Matching Image 1: Gold stars + reviews) */}
+        <div className="mt-2 flex items-center gap-1.5">
+          <div className="flex items-center text-amber-400">
+            {[...Array(5)].map((_, i) => (
+              <Star
+                key={i}
+                size={12}
+                className={i < Math.floor(ratingValue) ? "fill-amber-400 text-amber-400" : "text-slate-200 dark:text-slate-700"}
+              />
+            ))}
+          </div>
+          <span className="text-[11px] font-semibold text-slate-400">
+            ({reviewCount})
+          </span>
+        </div>
+
         {/* Merchant Attribution */}
-        <div className="mb-1.5 flex items-center gap-1.5 text-xs text-slate-500">
-          <Store size={13} className="text-emerald-600 shrink-0" />
+        <div className="mt-1.5 text-xs text-slate-500">
+          <span className="text-slate-400">By </span>
           <Link
             to={`/businesses/${businessSlug}`}
-            className="truncate font-semibold hover:text-emerald-600 hover:underline"
+            className="font-bold text-slate-700 hover:text-emerald-600 hover:underline dark:text-slate-300"
           >
             {businessName}
           </Link>
         </div>
 
-        {/* Title */}
-        <Link
-          to={itemUrl}
-          className="font-bold text-slate-900 dark:text-white line-clamp-2 text-sm leading-snug hover:text-emerald-600"
-        >
-          {listing.title}
-        </Link>
-
-        {/* Pricing & Actions */}
+        {/* Pricing & Cart Action Button (Image 1: Bold current price + strikethrough compare + + Add button) */}
         <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between gap-2 dark:border-slate-800">
           <div>
-            <span className="text-xs text-slate-400 font-semibold block">Price</span>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-base font-black text-slate-900 dark:text-white">
-                {listing.currency || "KES"} {listing.price?.toLocaleString()}
+              <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                KES {listing.price?.toLocaleString()}
               </span>
-              {listing.compare_price && (
-                <span className="text-xs text-slate-400 line-through">
-                  KES {listing.compare_price?.toLocaleString()}
-                </span>
-              )}
             </div>
+            {listing.compare_price && (
+              <span className="text-[11px] text-slate-400 line-through">
+                KES {listing.compare_price?.toLocaleString()}
+              </span>
+            )}
           </div>
 
           {isService ? (
@@ -355,7 +412,8 @@ export default function MarketplaceListingCard({ listing }) {
             <button
               onClick={() => addToCart(listing)}
               disabled={listing.track_stock && listing.stock <= 0}
-              className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-40 transition"
+              className="flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95 disabled:opacity-40 transition"
+              title="Add to Cart"
             >
               <ShoppingCart size={13} />
               <span>Add</span>

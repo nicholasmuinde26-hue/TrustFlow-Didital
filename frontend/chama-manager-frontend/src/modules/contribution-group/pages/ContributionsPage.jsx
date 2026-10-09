@@ -6,7 +6,6 @@ import {
   Download,
   Search,
   Calendar,
-  MoreVertical,
   ChevronLeft,
   ChevronRight,
   Filter,
@@ -17,10 +16,12 @@ import {
   Target,
   FileText,
 } from "lucide-react";
-import BusinessMpesaModal from "@/modules/business/components/BusinessMpesaModal";
+import MyContributions from "@/modules/finance/components/contributions/MyContributions";
+import useWorkspacePermissions from "@/modules/finance/hooks/useworkspacepermissions";
+import Spinner from "@/shared/components/ui/Spinner";
 import useFinanceSummary from "@/modules/finance/hooks/useFinanceSummary";
 import financeService from "@/modules/finance/services/finance.service";
-import mgrApi from "@/modules/chama/api/mgr.api";
+import contributionPlanApi from "@/modules/contribution-group/api/contributionPlan.api";
 import useWorkspace from "@/app/hooks/useWorkspace";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
@@ -58,8 +59,6 @@ export default function ContributionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [methodFilter, setMethodFilter] = useState("all");
-  const [isStkModalOpen, setIsStkModalOpen] = useState(false);
-  const [selectedMember, setSelectedMember] = useState(null);
   const [toastNotice, setToastNotice] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -70,14 +69,26 @@ export default function ContributionsPage() {
 
   const { summary: financeSummary } = useFinanceSummary(workspaceId);
 
+  // What this person may actually do comes from the API, not a role list kept
+  // in the UI. Only the treasurer holds contributions.record at 'all' scope,
+  // so only the treasurer gets any button that collects for another member.
+  const { role, isLoading: permsLoading, canForOthers } = useWorkspacePermissions(workspaceId);
+  const base = `/workspace/${workspaceId}`;
+  const canSeeAllMembers = canForOthers("contributions.view");
+  const canRecordForOthers = canForOthers("contributions.record");
+  const canOpenDesk = ["treasurer", "chairperson"].includes(role);
+
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || permsLoading || !canSeeAllMembers) {
+      setLoadingContrib(false);
+      return;
+    }
     setLoadingContrib(true);
-    mgrApi.getContributions(workspaceId)
+    contributionPlanApi.getMemberContributions(workspaceId)
       .then(res => setContribData(res.data?.data || { plans: [], activePlan: null, members: [] }))
       .catch(() => {})
       .finally(() => setLoadingContrib(false));
-  }, [workspaceId]);
+  }, [workspaceId, permsLoading, canSeeAllMembers]);
 
   // Same weekly trend the chama Overview page charts — reused here for
   // the "Balance trend" card so both pages read the same real numbers.
@@ -130,11 +141,6 @@ export default function ContributionsPage() {
     setTimeout(() => setToastNotice(null), 4000);
   };
 
-  const handleOpenStk = (member) => {
-    setSelectedMember(member);
-    setIsStkModalOpen(true);
-  };
-
   const currentDateStr = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const currentMonthName = new Date().toLocaleDateString("en-US", { month: "long" });
 
@@ -147,6 +153,31 @@ export default function ContributionsPage() {
   const trendPoints = trendWeeks.map((w, i) => [i * trendStepX, 76 - (Math.max(0, w.income) / trendMax) * 68]);
   const trendPath = trendPoints.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
   const lastTrendPoint = trendPoints[trendPoints.length - 1];
+
+  if (permsLoading) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
+  // MEMBER VIEW: a plain member sees only their own contributions and can
+  // only pay their own, to their own phone. The group-wide figures, other
+  // members' names and every collect-for-someone-else control never render.
+  if (!canSeeAllMembers) {
+    return (
+      <div className="space-y-6 pb-12">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-mist sm:text-3xl">My contributions</h1>
+          <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
+            What you owe, what you have paid, and a Pay button for your own contributions.
+          </p>
+        </div>
+        <MyContributions chamaId={workspaceId} base={base} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 font-sans text-slate-900 dark:text-mist pb-12">
@@ -169,18 +200,26 @@ export default function ContributionsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => handleOpenStk(null)}
-            className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist dark:hover:bg-obsidian-raised transition"
-          >
-            <Layers size={16} className="text-slate-400 dark:text-mist-muted" /> Contribution plans
-          </button>
-          <button
-            onClick={() => handleOpenStk(null)}
-            className="flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-violet-700 dark:bg-mint dark:text-mint-strong dark:hover:bg-mint-hover transition"
-          >
-            <Plus size={16} /> Record payment
-          </button>
+          {/* Contribution settings (create / edit / pause / archive) live in
+              the Leadership Desk, not on this collection page. */}
+          {canOpenDesk && (
+            <Link
+              to={`${base}/leadership?tab=contributions`}
+              className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist dark:hover:bg-obsidian-raised transition"
+            >
+              <Layers size={16} className="text-slate-400 dark:text-mist-muted" /> Contribution plans
+            </Link>
+          )}
+          {/* Treasurer only: goes through the real contribution flow, which
+              the API checks against contributions.record at 'all' scope. */}
+          {canRecordForOthers && (
+            <Link
+              to={`${base}/finance/record-contribution${activePlan?._id ? `?plan=${activePlan._id}` : ""}`}
+              className="flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-violet-700 dark:bg-mint dark:text-mint-strong dark:hover:bg-mint-hover transition"
+            >
+              <Plus size={16} /> Record payment
+            </Link>
+          )}
         </div>
       </div>
 
@@ -282,6 +321,7 @@ export default function ContributionsPage() {
           <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-6 dark:border-mint-strong/50 dark:bg-mint-strong/25">
             <h2 className="text-base font-bold text-slate-900 dark:text-mist">Quick actions</h2>
             <div className="mt-3 space-y-3">
+              {canRecordForOthers && (
               <button
                 onClick={handleSendReminders}
                 className="flex w-full items-start gap-3 rounded-2xl bg-white/70 p-3 text-left transition hover:bg-white dark:bg-obsidian-card/60 dark:hover:bg-obsidian-card"
@@ -294,6 +334,7 @@ export default function ContributionsPage() {
                   </span>
                 </span>
               </button>
+              )}
 
               <Link
                 to={`/workspace/${workspaceId}/reports`}
@@ -434,9 +475,19 @@ export default function ContributionsPage() {
                     </td>
                     <td className="px-6 py-4 text-slate-600 dark:text-mist-muted">{row.method}</td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={() => handleOpenStk(row)} className="text-slate-400 hover:text-slate-700 dark:hover:text-mist p-1">
-                        <MoreVertical size={16} />
-                      </button>
+                      {canRecordForOthers && row.status !== "paid" ? (
+                        <Link
+                          to={`${base}/finance/record-contribution?${new URLSearchParams({
+                            ...(activePlan?._id ? { plan: String(activePlan._id) } : {}),
+                            member: row.id,
+                          }).toString()}`}
+                          className="text-xs font-bold text-violet-700 hover:text-violet-800 dark:text-mint"
+                        >
+                          Collect
+                        </Link>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -461,7 +512,6 @@ export default function ContributionsPage() {
         </div>
       </div>
 
-      <BusinessMpesaModal isOpen={isStkModalOpen} onClose={() => setIsStkModalOpen(false)} workspaceId={workspaceId} title={`Record Payment${selectedMember ? ` (${selectedMember.name})` : ""}`} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import * as businessService from "./business.service.js";
+import { getChamaBusinessDashboard as buildChamaBusinessDashboard } from "./chamaBusinessDashboard.service.js";
 
 const sendError = (error, response, next) => {
-  if (error.statusCode) return response.status(error.statusCode).json({ success: false, message: error.message });
+  if (error.statusCode) return response.status(error.statusCode).json({ success: false, message: error.message, ...(error.code ? { code: error.code } : {}) });
   return next(error);
 };
 
@@ -125,6 +126,21 @@ export const removeInventoryItem = async (request, response, next) => {
   catch (error) { sendError(error, response, next); }
 };
 
+export const publishInventoryItem = async (request, response, next) => {
+  try { response.json({ success: true, message: "Submitted to the marketplace", data: await businessService.publishInventoryItemToMarketplace(request.params.businessId, request.params.itemId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const unpublishInventoryItem = async (request, response, next) => {
+  try { response.json({ success: true, message: "Removed from the marketplace", data: await businessService.unpublishInventoryItemFromMarketplace(request.params.businessId, request.params.itemId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
+export const publishInventoryBulk = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.publishInventoryBulkToMarketplace(request.params.businessId, request.user, request.body?.item_ids) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
 export const restockInventoryItem = async (request, response, next) => {
   try { response.json({ success: true, data: await businessService.restockInventoryItem(request.params.businessId, request.params.itemId, request.user, request.body) }); }
   catch (error) { sendError(error, response, next); }
@@ -182,34 +198,24 @@ export const posSale = async (request, response, next) => {
   } catch (error) { sendError(error, response, next); }
 };
 
-/**
- * ============================================================
- * STOREFRONT (ADMIN SIDE — owner configures & fulfills)
- * ============================================================
- */
-export const getStorefront = async (request, response, next) => {
-  try { response.json({ success: true, data: await businessService.getOrCreateStorefront(request.params.businessId, request.user) }); }
+export const getPosReceipt = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.getPosReceipt(request.params.businessId, request.params.transactionId, request.user) }); }
   catch (error) { sendError(error, response, next); }
 };
 
-export const putStorefront = async (request, response, next) => {
-  try { response.json({ success: true, data: await businessService.updateStorefront(request.params.businessId, request.user, request.body) }); }
+export const getSettings = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.getSettings(request.params.businessId, request.user) }); }
   catch (error) { sendError(error, response, next); }
 };
 
-export const getStorefrontOrders = async (request, response, next) => {
-  try { response.json({ success: true, data: await businessService.listStorefrontOrders(request.params.businessId, request.user) }); }
+export const updateSettings = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.updateSettings(request.params.businessId, request.user, request.body) }); }
   catch (error) { sendError(error, response, next); }
 };
 
-export const patchStorefrontOrderStatus = async (request, response, next) => {
-  try {
-    const result = await businessService.updateOrderFulfillmentStatus(
-      request.params.businessId,
-      request.params.orderId,
-      request.user,
-      request.body.status
-    );
-    response.json({ success: true, data: result });
-  } catch (error) { sendError(error, response, next); }
+
+// Chama oversight + category-aware insights for a chama-owned business.
+export const getChamaDashboard = async (request, response, next) => {
+  try { response.json({ success: true, data: await buildChamaBusinessDashboard(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
 };

@@ -104,7 +104,7 @@ export async function cancelMeeting(req, res, next) {
     const meeting = await Meeting.findOneAndUpdate(
       { _id: meetingId, workspace_id: workspaceId, cancelled_at: null },
       { cancelled_at: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!meeting) throw new AppError("Meeting not found", 404);
     res.json({ success: true, data: { meeting: toMeetingDTO(meeting) } });

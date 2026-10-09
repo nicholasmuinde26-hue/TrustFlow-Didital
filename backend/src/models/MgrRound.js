@@ -44,6 +44,10 @@ const mgrRoundSchema = new mongoose.Schema(
       required: true,
     },
 
+    round_start: { type: Date, default: null },
+    round_end: { type: Date, default: null },
+    interval_ended_at: { type: Date, default: null },
+
     expected_amount: {
       type: mongoose.Schema.Types.Decimal128,
       required: true,
@@ -63,6 +67,7 @@ const mgrRoundSchema = new mongoose.Schema(
       type: String,
       enum: [
         'upcoming',
+        'awaiting_confirmation',
         'collecting',
         'target_reached',
         'eligibility_checking',
@@ -72,6 +77,8 @@ const mgrRoundSchema = new mongoose.Schema(
         'disbursing',
         'paid',
         'reconciled',
+        'awaiting_receipt',
+        'received',
         'completed',
         'on_hold',
       ],
@@ -100,7 +107,7 @@ const mgrRoundSchema = new mongoose.Schema(
       proposed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       proposed_at: { type: Date, default: null },
       amount: { type: mongoose.Schema.Types.Decimal128, default: null },
-      disbursement_method: { type: String, enum: ['mpesa', 'bank', 'cash'], default: 'mpesa' },
+      disbursement_method: { type: String, enum: ['mpesa', 'bank', 'cash', 'wallet'], default: 'mpesa' },
       phone_number: { type: String, default: null },
       notes: { type: String, default: null },
     },
@@ -121,7 +128,7 @@ const mgrRoundSchema = new mongoose.Schema(
 
     disbursement_method: {
       type: String,
-      enum: ['mpesa', 'bank', 'cash'],
+      enum: ['mpesa', 'bank', 'cash', 'wallet'],
       default: null,
     },
 
@@ -145,6 +152,8 @@ const mgrRoundSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    payout_received_at: { type: Date, default: null },
+    payout_received_by: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaMembership', default: null },
   },
   { timestamps: true }
 );

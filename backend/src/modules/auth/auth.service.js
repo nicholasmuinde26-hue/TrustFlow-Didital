@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import User from '../../models/User.js';
 import {
@@ -57,6 +58,37 @@ const recordFailedOtp = async (reason, user, context) => {
 };
 
 // ========================================
+// OTP HASHING
+// ========================================
+//
+// OTPs were stored in plaintext, so any read access to the users
+// collection yielded live, usable login codes. They're hashed now.
+//
+// A plain SHA-256 is the right tool here rather than bcrypt: the input
+// is a 6-digit code with only a million possibilities, so no amount of
+// work factor makes it resistant to offline brute force. The keyed
+// HMAC is what actually protects it - an attacker with the database
+// but not JWT_ACCESS_SECRET cannot build the lookup table. The real
+// defence against online guessing is the attempt cap in verifyOtp().
+export const hashOtp = (code) =>
+  crypto
+    .createHmac('sha256', env.jwtAccessSecret)
+    .update(String(code).trim())
+    .digest('hex');
+
+// Constant-time compare so verification time doesn't leak how much of
+// the code was correct.
+export const otpMatches = (provided, storedHash) => {
+  if (!provided || !storedHash) return false;
+
+  const a = Buffer.from(hashOtp(provided), 'hex');
+  const b = Buffer.from(storedHash, 'hex');
+
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+
+// ========================================
 // INTERNAL HELPERS
 // ========================================
 
@@ -74,20 +106,26 @@ const issueTokens = async (user) => {
 
 // Generate 6-digit OTP, attach to user document, save, and dispatch via the
 // user's chosen delivery channel (sms | email | whatsapp)
-const generateAndSendOtp = async (user, requestedChannel) => {
+export const generateAndSendOtp = async (user, requestedChannel) => {
   const channel = resolveOtpChannel(requestedChannel, user);
 
   const otpCode = generateOtpCode(6);
   const expiryMinutes = env?.otpExpiresInMinutes || 5;
 
-  user.otpCode = otpCode;
+  // Persist only the hash. The plaintext lives in this function scope
+  // just long enough to be delivered, and is never written anywhere.
+  user.otpCodeHash = hashOtp(otpCode);
   user.otpExpiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
   user.otpChannel = channel;
+  user.otpAttempts = 0;
   await user.save();
 
   await deliverOtp({ channel, user, otpCode, expiryMinutes });
 
-  return { expiryMinutes, channel };
+  // otpCode is returned so the caller can echo it under the demo
+  // autofill flag (non-production only) without re-reading it from the
+  // user document, which no longer holds it.
+  return { expiryMinutes, channel, otpCode };
 };
 
 // ========================================
@@ -119,7 +157,7 @@ export const sendOtp = async ({ phone, email, identifier, channel }) => {
       throw new AppError('Invalid email address format', 400);
     }
     const cleanEmail = term.toLowerCase();
-    user = await User.findOne({ email: cleanEmail }).select('+otpCode +otpExpiresAt');
+    user = await User.findOne({ email: cleanEmail }).select('+otpCodeHash +otpExpiresAt +otpAttempts');
     if (!user) {
       throw new AppError('No account found with this email address', 404);
     }
@@ -133,7 +171,7 @@ export const sendOtp = async ({ phone, email, identifier, channel }) => {
     }
 
     user = await User.findOne({ phone: formattedPhone }).select(
-      '+otpCode +otpExpiresAt'
+      '+otpCodeHash +otpExpiresAt +otpAttempts'
     );
 
     if (!user) {
@@ -145,7 +183,8 @@ export const sendOtp = async ({ phone, email, identifier, channel }) => {
     }
   }
 
-  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
+  const { expiryMinutes, channel: usedChannel, otpCode: issuedOtpCode } =
+    await generateAndSendOtp(user, channel);
   const isDevEnv = isDev();
 
   return {
@@ -159,7 +198,7 @@ export const sendOtp = async ({ phone, email, identifier, channel }) => {
     channel: usedChannel,
     availableChannels: getAvailableOtpChannels(user),
     expiresInMinutes: expiryMinutes,
-    ...((isDevEnv || env.demoOtpAutofill) ? { devOtp: user.otpCode, demoAutofill: !isDevEnv && env.demoOtpAutofill } : {}),
+    ...(env.demoOtpAutofill ? { devOtp: issuedOtpCode, demoAutofill: true } : {}),
   };
 };
 
@@ -286,7 +325,8 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
   }
 
   // 7. Generate & send OTP via the chosen channel (DO NOT issue tokens here)
-  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, channel);
+  const { expiryMinutes, channel: usedChannel, otpCode: issuedOtpCode } =
+    await generateAndSendOtp(user, channel);
   const isDevEnv = isDev();
 
   return {
@@ -300,7 +340,7 @@ export const registerUser = async ({ name, phone, password, email, channel }) =>
       usedChannel === 'email' ? user.email : formattedPhone
     }`,
     expiresInMinutes: expiryMinutes,
-    ...((isDevEnv || env.demoOtpAutofill) ? { devOtp: user.otpCode, demoAutofill: !isDevEnv && env.demoOtpAutofill } : {}),
+    ...(env.demoOtpAutofill ? { devOtp: issuedOtpCode, demoAutofill: true } : {}),
   };
 };
 
@@ -328,7 +368,7 @@ export const loginUser = async ({ phone, email, identifier, password, channel, c
       throw new AppError('Enter a valid email address', 400);
     }
     user = await User.findOne({ email: term.toLowerCase() }).select(
-      '+password +otpCode +otpExpiresAt'
+      '+password +otpCodeHash +otpExpiresAt +otpAttempts'
     );
   } else {
     const formattedPhone = formatPhone(term);
@@ -341,7 +381,7 @@ export const loginUser = async ({ phone, email, identifier, password, channel, c
     }
 
     user = await User.findOne({ phone: formattedPhone }).select(
-      '+password +otpCode +otpExpiresAt'
+      '+password +otpCodeHash +otpExpiresAt +otpAttempts'
     );
   }
 
@@ -390,7 +430,8 @@ export const loginUser = async ({ phone, email, identifier, password, channel, c
   const requestedChannel = channel || (isEmailInput ? 'email' : undefined);
 
   // Send Security OTP via chosen channel
-  const { expiryMinutes, channel: usedChannel } = await generateAndSendOtp(user, requestedChannel);
+  const { expiryMinutes, channel: usedChannel, otpCode: issuedOtpCode } =
+    await generateAndSendOtp(user, requestedChannel);
   const isDevEnv = isDev();
 
   return {
@@ -404,7 +445,7 @@ export const loginUser = async ({ phone, email, identifier, password, channel, c
       usedChannel === 'email' ? user.email : user.phone
     }`,
     expiresInMinutes: expiryMinutes,
-    ...((isDevEnv || env.demoOtpAutofill) ? { devOtp: user.otpCode, demoAutofill: !isDevEnv && env.demoOtpAutofill } : {}),
+    ...(env.demoOtpAutofill ? { devOtp: issuedOtpCode, demoAutofill: true } : {}),
   };
 };
 
@@ -427,39 +468,80 @@ export const verifyOtp = async ({ phone, email, identifier, otpCode, context }) 
 
   if (term.includes('@')) {
     user = await User.findOne({ email: term.toLowerCase() }).select(
-      '+otpCode +otpExpiresAt +refreshToken'
+      '+otpCodeHash +otpExpiresAt +otpAttempts +refreshToken'
     );
   } else {
     const formattedPhone = formatPhone(term);
     user = await User.findOne({ phone: formattedPhone }).select(
-      '+otpCode +otpExpiresAt +refreshToken'
+      '+otpCodeHash +otpExpiresAt +otpAttempts +refreshToken'
     );
   }
 
-  if (!user || !user.otpCode) {
+  if (!user || !user.otpCodeHash) {
     await recordFailedOtp('no_pending_otp', user, context);
     throw new AppError('No pending OTP request found for this account', 400);
   }
 
   // Check OTP expiration
   if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+    user.otpCodeHash = undefined;
+    user.otpAttempts = 0;
+    await user.save();
     await recordFailedOtp('expired_otp', user, context);
     throw new AppError('OTP code has expired. Please log in again to receive a new code.', 400);
   }
 
-  const isDevEnv = isDev();
-  const isDevBypass = isDevEnv && (otpCode.trim() === '123456' || otpCode.trim() === user.otpCode);
+  // ----------------------------------------------------------
+  // ATTEMPT CAP
+  // ----------------------------------------------------------
+  //
+  // A 6-digit OTP is a 1,000,000-guess space. With no cap and no rate
+  // limit, that is minutes of automated guessing against a code that
+  // stays valid for ten of them. The cap burns the code once exceeded,
+  // so an attacker gets env.otpMaxAttempts tries per DELIVERED code
+  // rather than unlimited tries per code.
+  //
+  // The universal '123456' development bypass that used to sit here is
+  // gone. It was gated on NODE_ENV, which defaulted to 'development' —
+  // so an unset NODE_ENV on a live server turned '123456' into a valid
+  // OTP for every account on the platform.
+  const maxAttempts = env?.otpMaxAttempts || 5;
+  const attemptsSoFar = Number(user.otpAttempts || 0);
 
-  // Check OTP match
-  if (!isDevBypass && user.otpCode !== otpCode.trim()) {
+  if (attemptsSoFar >= maxAttempts) {
+    user.otpCodeHash = undefined;
+    user.otpExpiresAt = undefined;
+    user.otpChannel = undefined;
+    user.otpAttempts = 0;
+    await user.save();
+
+    await recordFailedOtp('too_many_attempts', user, context);
+    throw new AppError(
+      'Too many incorrect attempts. Request a new code to continue.',
+      429
+    );
+  }
+
+  if (!otpMatches(otpCode, user.otpCodeHash)) {
+    user.otpAttempts = attemptsSoFar + 1;
+    await user.save();
+
     await recordFailedOtp('invalid_otp', user, context);
-    throw new AppError('Invalid OTP code. Please try again.', 400);
+
+    const remaining = Math.max(0, maxAttempts - user.otpAttempts);
+    throw new AppError(
+      remaining > 0
+        ? `Invalid OTP code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
+        : 'Invalid OTP code. Request a new code to continue.',
+      400
+    );
   }
 
   // Clear OTP fields & activate status
-  user.otpCode = undefined;
+  user.otpCodeHash = undefined;
   user.otpExpiresAt = undefined;
   user.otpChannel = undefined;
+  user.otpAttempts = 0;
   user.isPhoneVerified = true;
 
   if (user.status === 'unverified') {

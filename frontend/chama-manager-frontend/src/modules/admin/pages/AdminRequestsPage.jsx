@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import adminService from "../services/admin.service";
 import Spinner from "@/shared/components/ui/Spinner";
+import WorkspaceSetupPicker from "@/modules/workspaces/components/WorkspaceSetupPicker";
+import AdminModuleChangesPanel from "../components/AdminModuleChangesPanel";
 
 const emptyPerson = () => ({ fullName: "", phone: "", email: "", idNumber: "" });
 
@@ -21,7 +23,7 @@ const emptyPerson = () => ({ fullName: "", phone: "", email: "", idNumber: "" })
 function buildFormFromRequest(req) {
   return {
     name: req.name || "",
-    category: req.category || "standard",
+    category: req.workspaceConfig?.modules?.includes("burial_welfare") || req.category === "burial" ? "burial" : "standard",
     monthlySavings: req.monthlySavings ?? 1000,
     description: req.description || "",
     chairperson: { ...emptyPerson(), ...(req.chairperson || {}) },
@@ -29,6 +31,12 @@ function buildFormFromRequest(req) {
     secretary: { ...emptyPerson(), ...(req.secretary || {}) },
     committeeMembers: (req.committeeMembers || []).map((cm) => ({ ...emptyPerson(), role: "Committee Member", ...cm })),
     adminNotes: req.adminNotes || "",
+    // Workspace Setup: what the requester proposed (empty = nothing proposed,
+    // the picker then fills in the preset matching the category).
+    workspaceConfig: {
+      preset: req.workspaceConfig?.preset || "",
+      modules: req.workspaceConfig?.modules || [],
+    },
   };
 }
 
@@ -43,6 +51,17 @@ export default function AdminRequestsPage() {
   const [rejectPromptId, setRejectPromptId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [alertMsg, setAlertMsg] = useState({ text: "", type: "" });
+  // "workspaces" = new workspace requests, "features" = chama module changes.
+  const [view, setView] = useState("workspaces");
+  const [featureCount, setFeatureCount] = useState(0);
+
+  function refreshFeatureCount() {
+    adminService
+      .getModuleChangeRequests("pending")
+      .then((items) => setFeatureCount(items.length))
+      .catch(() => {});
+  }
+  useEffect(refreshFeatureCount, []);
 
   async function loadRequests() {
     setLoading(true);
@@ -166,8 +185,60 @@ export default function AdminRequestsPage() {
     }
   }
 
+  if (view === "features") {
+    return (
+      <div className="space-y-6">
+      <div className="flex w-fit items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+        {[
+          { key: "workspaces", label: "New workspaces" },
+          { key: "features", label: "Feature changes", count: featureCount },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setView(tab.key)}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-1.5 text-xs font-bold transition ${
+              view === tab.key
+                ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            {tab.label}
+            {tab.count > 0 && (
+              <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{tab.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+        <AdminModuleChangesPanel onChanged={refreshFeatureCount} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex w-fit items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+        {[
+          { key: "workspaces", label: "New workspaces" },
+          { key: "features", label: "Feature changes", count: featureCount },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setView(tab.key)}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-1.5 text-xs font-bold transition ${
+              view === tab.key
+                ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            {tab.label}
+            {tab.count > 0 && (
+              <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{tab.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -254,6 +325,11 @@ export default function AdminRequestsPage() {
                       >
                         {req.entityType}
                       </span>
+                      {req.entityType === "business" && req.ownerType === "chama" && (
+                        <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+                          Chama-owned{req.chamaId?.name ? ` · ${req.chamaId.name}` : ""}
+                        </span>
+                      )}
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
                           isPending
@@ -441,12 +517,27 @@ export default function AdminRequestsPage() {
                         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                       />
                     </Field>
-                    <Field label="Category">
-                      <input
-                        className="input"
-                        value={form.category}
-                        onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                      />
+                    <Field label={selectedRequest.entityType === "chama" ? "Chama type" : "Category"}>
+                      {selectedRequest.entityType === "chama" ? (
+                        <select
+                          className="input"
+                          value={form.category === "burial" ? "burial" : "standard"}
+                          onChange={(event) => setForm((f) => ({
+                            ...f,
+                            category: event.target.value,
+                            workspaceConfig: { preset: "", modules: [] },
+                          }))}
+                        >
+                          <option value="standard">Standard Chama</option>
+                          <option value="burial">Burial &amp; welfare Chama</option>
+                        </select>
+                      ) : (
+                        <input
+                          className="input"
+                          value={form.category}
+                          onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                        />
+                      )}
                     </Field>
                     <Field label="Monthly Savings (KES)">
                       <input
@@ -560,6 +651,20 @@ export default function AdminRequestsPage() {
               ) : (
                 <>
                   {/* Read-only overview */}
+                  {selectedRequest.entityType === "business" && selectedRequest.ownerType === "chama" && (
+                    <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                      <p className="font-black">
+                        Chama-owned business{selectedRequest.chamaId?.name ? ` for ${selectedRequest.chamaId.name}` : ""}
+                      </p>
+                      <p className="mt-1">
+                        Requested by the chama&apos;s {selectedRequest.requestedByRole || "leadership"}
+                        {selectedRequest.requestedBy?.name ? ` (${selectedRequest.requestedBy.name})` : ""}. On approval the
+                        chama becomes the owner and the business is registered in its portfolio. The requester does not own
+                        it. Requested starting capital: KES {Number(selectedRequest.requestedCapital || 0).toLocaleString()}
+                        (not transferred automatically).
+                      </p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/40">
                     <div>
                       <span className="text-slate-400 block">Type</span>
@@ -568,9 +673,9 @@ export default function AdminRequestsPage() {
                       </span>
                     </div>
                     <div>
-                      <span className="text-slate-400 block">Category</span>
+                      <span className="text-slate-400 block">{selectedRequest.entityType === "chama" ? "Chama type" : "Category"}</span>
                       <span className="font-bold text-slate-900 dark:text-white">
-                        {form.category}
+                        {selectedRequest.entityType === "chama" ? (form.category === "burial" ? "Burial & welfare" : "Standard") : form.category}
                       </span>
                     </div>
                     <div>
@@ -658,6 +763,26 @@ export default function AdminRequestsPage() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* Workspace Setup - preset picker, then module checklist. Chamas only.
+                  Whatever is selected here is what the approved workspace is created with. */}
+              {selectedRequest.entityType === "chama" && form?.workspaceConfig && (
+                <div className="space-y-2 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                  <h4 className="font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Workspace Setup
+                  </h4>
+                  <WorkspaceSetupPicker
+                    value={form.workspaceConfig}
+                    onChange={(workspaceConfig) => setForm((f) => ({
+                      ...f,
+                      category: workspaceConfig.modules.includes("burial_welfare") ? "burial" : "standard",
+                      workspaceConfig,
+                    }))}
+                    readOnly={["APPROVED", "REJECTED"].includes(String(selectedRequest.status).toUpperCase())}
+                    defaultPreset={form.category === "burial" ? "burial" : "standard"}
+                  />
+                </div>
               )}
             </div>
 

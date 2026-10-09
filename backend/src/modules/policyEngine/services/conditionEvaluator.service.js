@@ -1,5 +1,5 @@
 import { CONDITION_TYPES } from '../constants/policyEngine.constants.js';
-import { getLatestTrustScore } from '../../services/Chamatrustscore.service.js';
+import { getLatestTrustScore } from '../../../services/Chamatrustscore.service.js';
 
 // ========================================
 // CONDITION EVALUATOR
@@ -95,6 +95,36 @@ const CHECKERS = {
     met: (ctx.officialRating ?? null) !== null && ctx.officialRating >= (params.score ?? 0),
     detail: `requires official rating >= ${params.score}`,
   }),
+
+  // Caller supplies ctx.requestedAmount — the amount of THIS request, as
+  // opposed to a running balance like MIN_SAVINGS_BALANCE above.
+  [CONDITION_TYPES.MAX_AMOUNT_PER_REQUEST]: (params, ctx) => ({
+    met: (ctx.requestedAmount ?? Infinity) <= (params.amount ?? Infinity),
+    detail: `requests may not exceed ${params.amount ?? 0} at a time`,
+  }),
+
+  // Caller supplies ctx.amountInPeriod — the sum of the member's already-
+  // approved/paid requests within params.days of "now", NOT including the
+  // current request. The domain service owns computing that window; this
+  // checker only compares it (plus the current request) against the cap.
+  [CONDITION_TYPES.MAX_AMOUNT_PER_PERIOD]: (params, ctx) => {
+    const alreadyTaken = ctx.amountInPeriod ?? 0;
+    const projected = alreadyTaken + (ctx.requestedAmount ?? 0);
+    return {
+      met: projected <= (params.amount ?? Infinity),
+      detail: `requires no more than ${params.amount ?? 0} taken in the last ${params.days ?? 30} day(s), already at ${alreadyTaken}`,
+    };
+  },
+
+  // Caller supplies ctx.daysSinceLastRequest — null/undefined means "no
+  // prior request", which always passes (nothing to cool down from).
+  [CONDITION_TYPES.MIN_DAYS_SINCE_LAST]: (params, ctx) => {
+    const days = ctx.daysSinceLastRequest;
+    return {
+      met: days === null || days === undefined || days >= (params.days ?? 0),
+      detail: `requires ${params.days ?? 0}+ day(s) since the last request`,
+    };
+  },
 };
 
 export async function evaluateConditions({ conditions = [], context = {} }) {

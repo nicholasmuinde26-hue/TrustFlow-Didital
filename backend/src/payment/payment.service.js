@@ -146,6 +146,58 @@ class PaymentService {
                 return { success: true, duplicate: true, intent };
             }
 
+            // ------------------------------------------------------
+            // AMOUNT RECONCILIATION
+            // ------------------------------------------------------
+            //
+            // The callback tells us what was ACTUALLY paid; the intent
+            // records what we ASKED for. These were never compared, so
+            // a callback reporting a different figure would settle the
+            // intent as fully paid regardless - a member prompted for
+            // 5,000 who paid 1 would have had their obligation cleared
+            // in full.
+            //
+            // A mismatch is not necessarily an attack (a partial
+            // payment is a real M-Pesa behaviour), so this doesn't
+            // discard the money. It refuses to auto-settle, records
+            // both figures, and leaves the intent for a human - the
+            // same posture the C2B path takes for unmatched payments.
+            if (targetStatus === PAYMENT_STATUS.COMPLETED && callback.amount != null) {
+                const paidAmount = Number(callback.amount);
+                const expectedAmount = Number(intent.amount);
+
+                // Tolerate sub-cent float noise only; anything larger is
+                // a genuine discrepancy.
+                const mismatched =
+                    Number.isFinite(paidAmount) &&
+                    Number.isFinite(expectedAmount) &&
+                    Math.abs(paidAmount - expectedAmount) > 0.01;
+
+                if (mismatched) {
+                    console.error(
+                        `[payment.service] AMOUNT MISMATCH on intent ${intent._id}: ` +
+                        `requested ${expectedAmount}, callback reported ${paidAmount}`
+                    );
+
+                    intent.status = PAYMENT_STATUS.FAILED;
+                    intent.completed_at = null;
+                    intent.failed_at = new Date();
+                    intent.failure_reason =
+                        `Amount mismatch: requested ${expectedAmount}, received ${paidAmount}. ` +
+                        'Held for manual reconciliation.';
+                    intent.provider_response = callback.raw;
+                    await intent.save({ session });
+
+                    return {
+                        success: false,
+                        amountMismatch: true,
+                        expectedAmount,
+                        paidAmount,
+                        intent,
+                    };
+                }
+            }
+
             intent.status = targetStatus;
             intent.provider_response = callback.raw;
             if (targetStatus === PAYMENT_STATUS.COMPLETED) {

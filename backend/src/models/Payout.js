@@ -2,6 +2,29 @@ import mongoose from 'mongoose';
 
 
 // ========================================
+// PAYOUT APPROVAL SCHEMA
+// ========================================
+//
+// One entry per official sign-off — mirrors ChamaLoan's approvalSchema so
+// payouts get the same 2-of-N maker-checker audit trail loans already have,
+// instead of a single approved_by/approved_at pair.
+//
+// ========================================
+
+const payoutApprovalSchema = new mongoose.Schema(
+  {
+    membership_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaMembership', required: true },
+    role: { type: String, required: true },
+    decision: { type: String, enum: ['approved', 'rejected'], required: true },
+    comment: { type: String, default: null },
+    decided_at: { type: Date, default: Date.now },
+    ip_address: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+
+// ========================================
 // PAYOUT SCHEMA
 // ========================================
 //
@@ -168,17 +191,43 @@ const payoutSchema = new mongoose.Schema(
 
 
     // ========================================
-    // APPROVAL
+    // APPROVAL — 2-OF-N MAKER-CHECKER
     // ========================================
     //
-    // The Chairperson must approve a payout
-    // before the Treasurer can mark it paid.
-    // References ChamaMembership (not User),
-    // same reasoning as member_id above —
-    // approver identity is scoped to the role
-    // held in THIS Chama.
+    // A payout needs sign-off from every role in required_approval_roles
+    // (chairperson AND treasurer by default) before the Treasurer can mark
+    // it paid — the same maker-checker pattern ChamaLoan uses, so a single
+    // chairperson (or single treasurer) can no longer move the pot alone.
+    //
+    // Conflict-of-interest recusal: if the payout recipient themself holds
+    // one of the required roles (they're due for the merry-go-round payout
+    // this round AND happen to be chairperson/treasurer), that role is
+    // recused and recusal_quorum_required independent officials (secretary,
+    // auditor, committee_member) must stand in for the recused seat —
+    // mirroring ChamaLoan's recusal_quorum_required. Computed once at
+    // payout creation by resolvePayoutApprovalPlan in payout.service.js.
+    //
+    // approved_by / approved_at are kept for backward compatibility with
+    // existing readers — they record the sign-off that completed the
+    // quorum (i.e. flipped status to 'approved'), not the sole approver.
     //
     // ========================================
+
+    required_approval_roles: {
+      type: [String],
+      default: ['chairperson', 'treasurer']
+    },
+
+    approvals: {
+      type: [payoutApprovalSchema],
+      default: []
+    },
+
+    recusal_quorum_required: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
 
     approved_by: {
       type: mongoose.Schema.Types.ObjectId,
@@ -232,7 +281,8 @@ const payoutSchema = new mongoose.Schema(
       enum: [
         'cash',
         'bank',
-        'mpesa'
+        'mpesa',
+        'wallet'
       ],
 
       default: null

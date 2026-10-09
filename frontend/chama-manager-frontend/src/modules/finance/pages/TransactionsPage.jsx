@@ -33,7 +33,16 @@ export default function TransactionsPage() {
   const [activeTab, setActiveTab] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
 
-  const { transactions, loading, error } = useTransactions(workspaceId, filters);
+  // null = let the server pick the default (members: their own, officials: whole chama).
+  const [viewChoice, setViewChoice] = useState(null);
+
+  const { transactions, loading, error } = useTransactions(
+    workspaceId,
+    viewChoice ? { ...filters, view: viewChoice } : filters
+  );
+  const view = viewChoice || transactions?.view || "chama";
+  const canToggle = Boolean(transactions?.canToggle);
+  const isMine = view === "mine";
   const { summary: financeSummary } = useFinanceSummary(workspaceId);
 
   const txList = (transactions?.items || transactions || []).map((tx, idx) => {
@@ -54,10 +63,15 @@ export default function TransactionsPage() {
   });
 
   // Calculate dynamic metrics strictly from backend API objects
-  const totalInflows = financeSummary?.cash_in ?? txList.reduce((acc, t) => acc + t.credit, 0);
-  const totalOutflows = financeSummary?.cash_out ?? txList.reduce((acc, t) => acc + t.debit, 0);
+  // The finance summary is chama-wide, so "My transactions" totals come from the rows themselves.
+  const totalInflows = isMine
+    ? txList.reduce((acc, t) => acc + t.credit, 0)
+    : financeSummary?.cash_in ?? txList.reduce((acc, t) => acc + t.credit, 0);
+  const totalOutflows = isMine
+    ? txList.reduce((acc, t) => acc + t.debit, 0)
+    : financeSummary?.cash_out ?? txList.reduce((acc, t) => acc + t.debit, 0);
   const netCashFlow = totalInflows - totalOutflows;
-  const totalTxCount = transactions?.total ?? txList.length;
+  const totalTxCount = isMine ? txList.length : transactions?.total ?? txList.length;
 
   const filteredTxList = txList.filter((tx) => {
     const matchesTab = activeTab === "all" || tx.account.toLowerCase().includes(activeTab.toLowerCase());
@@ -82,8 +96,38 @@ export default function TransactionsPage() {
             Transactions
           </h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
-            View and track all financial transactions
+            {isMine ? "Your own contributions and payments" : "View and track all financial transactions"}
           </p>
+          {canToggle && (
+            <div
+              role="tablist"
+              aria-label="Transactions view"
+              className="mt-3 inline-flex gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-obsidian"
+            >
+              {[
+                { id: "mine", label: "My Transactions" },
+                { id: "chama", label: "Chama Transactions" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === opt.id}
+                  onClick={() => {
+                    setViewChoice(opt.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
+                    view === opt.id
+                      ? "bg-indigo-600 text-white shadow-xs dark:bg-mint dark:text-obsidian-rail"
+                      : "text-slate-500 hover:text-slate-900 dark:text-mist-muted dark:hover:text-mist"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -108,7 +152,7 @@ export default function TransactionsPage() {
           <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">
             {totalTxCount.toLocaleString()}
           </p>
-          <span className="mt-1 text-xs font-bold text-slate-400 block">This Month</span>
+          <span className="mt-1 text-xs font-bold text-slate-400 block">{isMine ? "Your transactions" : "All chama transactions"}</span>
         </div>
 
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
@@ -256,7 +300,9 @@ export default function TransactionsPage() {
               ) : (
                 <tr>
                   <td colSpan="9" className="px-6 py-8 text-center text-slate-400 font-medium">
-                    No transactions match the selected criteria.
+                    {isMine && filteredTxList.length === 0 && txList.length === 0
+                      ? "You have no transactions yet."
+                      : "No transactions match the selected criteria."}
                   </td>
                 </tr>
               )}

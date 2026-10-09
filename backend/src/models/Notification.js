@@ -625,6 +625,18 @@ notificationSchema.statics.getNotificationCounts = function(recipientMembershipI
   ]);
 };
 
+// Get unread notification counts grouped by category (financial, approval,
+// governance, membership, system, alert, burial). Powers the per-category
+// badges on the notification bell's tabs, the section tab bar, and the
+// sidebar nav items - all three read from this same breakdown so a
+// reminder shows up consistently everywhere it's relevant.
+notificationSchema.statics.getUnreadCountsByCategory = function(recipientMembershipId) {
+  return this.aggregate([
+    { $match: { recipient_membership_id: recipientMembershipId, state: 'unread' } },
+    { $group: { _id: '$category', count: { $sum: 1 } } }
+  ]);
+};
+
 // Mark all notifications as read for a user
 notificationSchema.statics.markAllAsRead = function(recipientMembershipId) {
   return this.updateMany(

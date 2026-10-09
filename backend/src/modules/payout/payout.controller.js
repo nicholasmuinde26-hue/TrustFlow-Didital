@@ -161,14 +161,15 @@ export const startPayoutController = async (
 
 // ========================================
 // APPROVE PAYOUT
-// CHAIRPERSON ONLY
+// 2-OF-N COMMITTEE APPROVAL
 // ========================================
 //
-// The Chairperson signs off on a pending
-// payout before the Treasurer is allowed to
-// disburse it. This does not move money —
-// it only unlocks markPayoutPaidController
-// below.
+// Every official whose role sits in the
+// payout's required_approval_roles (or who
+// is standing in for a recused seat) signs
+// off here. This does not move money — it
+// only unlocks markPayoutPaidController below
+// once the full quorum is in.
 //
 // ========================================
 
@@ -184,7 +185,9 @@ export const approvePayoutController = async (
       await approvePayout({
         chamaId: req.params.id,
         payoutId: req.params.payoutId,
-        approved_by: req.membership._id
+        membership: req.membership,
+        comment: req.body?.comment,
+        ipAddress: req.ip
       });
 
     res.status(200).json({
@@ -192,7 +195,9 @@ export const approvePayoutController = async (
       success: true,
 
       message:
-        'Payout approved successfully',
+        payout.status === 'approved'
+          ? 'Payout approved successfully'
+          : 'Sign-off recorded — awaiting the remaining required approvals',
 
       data: {
         payout

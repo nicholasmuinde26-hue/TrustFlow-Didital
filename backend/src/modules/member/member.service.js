@@ -13,8 +13,10 @@ import accountingService from '../finance/accounting/accounting.service.js';
 import { OPEN_LOAN_STATUSES } from '../loans/Loan.constants.js';
 import { getMemberSavingsBalance } from '../savingsShareout/savingsShareout.service.js';
 import ContributionPlan from '../../models/ContributionPlan.js';
+import { creditMemberWallet } from '../finance/memberWallet.service.js';
 
 import AppError from '../../utils/AppError.js';
+import { assertMemberCapacity } from '../billing/billingEntitlement.service.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
 
 import {
@@ -484,6 +486,7 @@ export const addMemberToChama = async ({
       payout_position: existingMembership.payout_position
     };
 
+    await assertMemberCapacity(chamaId);
     existingMembership.status = 'active';
     existingMembership.role = 'member';
     existingMembership.payout_position = null;
@@ -519,6 +522,8 @@ export const addMemberToChama = async ({
   // ======================================
   // CREATE NEW MEMBERSHIP
   // ======================================
+
+  await assertMemberCapacity(chamaId);
 
   const membership =
     await ChamaMembership.create({
@@ -1084,6 +1089,10 @@ export const updateMemberStatus = async ({
   // 9. Update Status
   // --------------------------------------
 
+  if (status === 'active' && before.status !== 'active') {
+    await assertMemberCapacity(membership.chama_id);
+  }
+
   membership.status =
     status;
 
@@ -1316,22 +1325,15 @@ export const initiateMemberExit = async ({ chamaId, memberId, actorUserId, reaso
   validateObjectId(memberId, 'member ID');
   validateObjectId(actorUserId, 'actor user ID');
 
-  const actorUser = await User.findById(actorUserId).select('systemRole').lean();
-  const isSystemAdmin = actorUser?.systemRole === 'super_admin' || actorUser?.systemRole === 'sub_admin' || Boolean(await PlatformAdmin.exists({ userId: actorUserId, status: 'ACTIVE' }));
-  let actorMembership = null;
-  if (!isSystemAdmin) {
-    actorMembership = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
-    if (!actorMembership) throw new AppError('You are not an active member of this Chama.', 403);
-    const isChair = actorMembership.role === 'chairperson';
-    const isSelf = String(actorMembership._id) === String(memberId);
-    if (!isChair && !isSelf) throw new AppError('Only the Chairperson may initiate an exit for another member. A member may initiate their own withdrawal.', 403);
-  }
+  const actorMembership = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
+  if (!actorMembership) throw new AppError('You are not an active member of this Chama.', 403);
+  const isSelf = String(actorMembership._id) === String(memberId);
+  if (!isSelf) throw new AppError('Only a member can request their own exit. No one may start an exit on another member’s behalf.', 403);
 
   const assessment = await assessMemberExit({ chamaId, memberId });
   const membership = assessment.membership;
   if (membership.status === 'removed') throw new AppError('Member has already been removed', 409);
-  if (membership.role === 'chairperson' && !isSystemAdmin) throw new AppError('The Chairperson cannot be removed by Chama members. Only a system administrator can remove the Chairperson.', 403);
-  if (membership.role === 'treasurer') throw new AppError('Transfer the Treasurer role before starting a member exit.', 403);
+  if (membership.role !== 'member') throw new AppError('Leadership members must first be demoted to the ordinary Member role before they can request their own exit.', 403);
   if (assessment.blockingReasons.length) {
     throw new AppError(`Member cannot be removed until financial clearance is complete: ${assessment.blockingReasons.join('; ')}.`, 409);
   }
@@ -1372,6 +1374,17 @@ export const initiateMemberExit = async ({ chamaId, memberId, actorUserId, reaso
   exit.approval_request_id = approval._id;
   await exit.save();
 
+  await createAuditLog({
+    actorUserId,
+    scopeType: AUDIT_SCOPE_TYPES.CHAMA,
+    chamaId,
+    action: AUDIT_ACTIONS.MEMBER_EXIT_REQUESTED,
+    resourceType: 'MemberExitRequest',
+    resourceId: exit._id,
+    before: null,
+    after: { membership_id: memberId, savings_amount: assessment.savings, status: exit.status, reason: exit.reason },
+  }).catch(() => {});
+
   return { exitRequest: exit, assessment, approvalRequest: approval };
 };
 
@@ -1379,7 +1392,7 @@ export const completeMemberExit = async ({ chamaId, exitRequestId, actorUserId, 
   validateObjectId(chamaId, 'Chama ID');
   validateObjectId(exitRequestId, 'exit request ID');
   validateObjectId(actorUserId, 'actor user ID');
-  if (!['cash','bank','mpesa'].includes(disbursement_method)) throw new AppError('Disbursement method must be cash, bank or mpesa', 400);
+  if (!['cash','bank','mpesa','wallet'].includes(disbursement_method)) throw new AppError('Disbursement method must be cash, bank, mpesa or wallet', 400);
 
   const actor = await ChamaMembership.findOne({ chama_id: chamaId, user_id: actorUserId, status: 'active' });
   if (!actor || actor.role !== 'treasurer') throw new AppError('Only the active Treasurer can disburse an approved member exit refund.', 403);
@@ -1393,18 +1406,22 @@ export const completeMemberExit = async ({ chamaId, exitRequestId, actorUserId, 
   if (assessment.blockingReasons.length) throw new AppError(`Disbursement blocked: ${assessment.blockingReasons.join('; ')}`, 409);
   if (Math.abs(assessment.savings - moneyNumber(exit.savings_amount)) > 0.01) throw new AppError('The member savings balance changed after approval. Re-submit the exit request for a fresh approval.', 409);
 
-  const obligation = await accountingService.post({
+  const hasRefund = moneyNumber(exit.savings_amount) > 0;
+  const obligation = hasRefund ? await accountingService.post({
     referenceType: 'SAVINGS_SHAREOUT_OBLIGATION', owner_type: 'Chama', owner_id: chamaId,
     member: exit.membership_id._id, amount: exit.savings_amount, currency: 'KES', source_type: 'MemberExitRequest', source_id: exit._id,
     description: `Member exit savings refund obligation for ${exit.membership_id._id}`, created_by: actorUserId, posted_by: actorUserId,
-  });
-  const settlement = await accountingService.post({
+  }) : null;
+  const settlement = hasRefund ? await accountingService.post({
     referenceType: 'SAVINGS_SHAREOUT_SETTLEMENT', owner_type: 'Chama', owner_id: chamaId,
     member: exit.membership_id._id, amount: exit.savings_amount, currency: 'KES', source_type: 'MemberExitRequest', source_id: exit._id,
-    disbursement_method, description: `Member exit savings refund disbursement`, created_by: actorUserId, posted_by: actorUserId,
-  });
+    disbursement_method: disbursement_method === 'wallet' ? 'mpesa' : disbursement_method, description: `Member exit savings refund disbursement`, created_by: actorUserId, posted_by: actorUserId,
+  }) : null;
 
   const membership = exit.membership_id;
+  if (hasRefund && disbursement_method === 'wallet') {
+    await creditMemberWallet({ userId: membership.user_id, amount: exit.savings_amount, sourceType: 'MemberExitRequest', sourceId: exit._id, createdBy: actorUserId, externalReference: external_reference });
+  }
   membership.status = 'removed';
   membership.role = 'member';
   membership.payout_position = null;
@@ -1412,14 +1429,24 @@ export const completeMemberExit = async ({ chamaId, exitRequestId, actorUserId, 
   membership.removed_by = actorUserId;
   await membership.save();
 
-  exit.obligation_transaction_id = obligation.transactionId;
-  exit.settlement_transaction_id = settlement.transactionId;
+  exit.obligation_transaction_id = obligation?.transactionId || null;
+  exit.settlement_transaction_id = settlement?.transactionId || null;
   exit.disbursement_method = disbursement_method;
   exit.external_reference = external_reference;
   exit.status = 'disbursed';
   exit.disbursed_at = new Date();
   exit.completed_by = actorUserId;
   await exit.save();
+  await createAuditLog({
+    actorUserId,
+    scopeType: AUDIT_SCOPE_TYPES.CHAMA,
+    chamaId,
+    action: AUDIT_ACTIONS.MEMBER_EXIT_DISBURSED,
+    resourceType: 'MemberExitRequest',
+    resourceId: exit._id,
+    before: { status: 'approved' },
+    after: { status: 'disbursed', savings_amount: moneyNumber(exit.savings_amount), disbursement_method, external_reference },
+  }).catch(() => {});
   return exit;
 };
 

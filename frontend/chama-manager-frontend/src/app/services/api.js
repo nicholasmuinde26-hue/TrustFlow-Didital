@@ -18,9 +18,7 @@ const api = axios.create({
 // Helper to clear stored auth data
 const clearAuthStorage = () => {
   localStorage.removeItem("accessToken");
-  localStorage.removeItem("access_token");
   localStorage.removeItem("refreshToken");
-  localStorage.removeItem("refresh_token");
 };
 
 // Queue state for handling simultaneous requests during a token refresh
@@ -55,9 +53,7 @@ api.interceptors.request.use((config) => {
   // A pseudonymous per-browser identifier lets Security correlate anomalous
   // auth activity without making a browser fingerprint part of authentication.
   config.headers["X-Device-Id"] = config.headers["X-Device-Id"] || getDeviceId();
-  const token =
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("access_token");
+  const token = localStorage.getItem("accessToken");
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -173,9 +169,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken =
-        localStorage.getItem("refreshToken") ||
-        localStorage.getItem("refresh_token");
+      const refreshToken = localStorage.getItem("refreshToken");
 
       if (!refreshToken) {
         isRefreshing = false;
@@ -198,11 +192,9 @@ api.interceptors.response.use(
 
         if (newAccessToken) {
           localStorage.setItem("accessToken", newAccessToken);
-          localStorage.setItem("access_token", newAccessToken);
 
           if (newRefreshToken) {
             localStorage.setItem("refreshToken", newRefreshToken);
-            localStorage.setItem("refresh_token", newRefreshToken);
           }
 
           api.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;

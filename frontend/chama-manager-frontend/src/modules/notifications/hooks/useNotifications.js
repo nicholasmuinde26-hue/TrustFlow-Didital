@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import notificationsApi from "../api/notifications.api";
 
@@ -65,6 +67,112 @@ export function useNotificationCounts() {
     staleTime: 5000,
     refetchOnWindowFocus: true,
   });
+}
+
+// ========================================
+// NOTIFICATION BADGES (nav + section tabs + bell)
+// ========================================
+//
+// Single shared source of truth for "does this route/category have a
+// pending update" so the section tab bar, the sidebar nav, and the
+// notification bell's category tabs all agree with each other. Reads off
+// the same two queries the bell already fetches (useUnreadNotifications +
+// useNotificationCounts), so this adds no extra network calls beyond
+// raising the unread fetch's limit enough to sample every pending route.
+//
+// Route matching relies on each notification's `action_url` (backend now
+// fills this in for every domain-event notification - see
+// notification.constants.js's per-type `route`). A notification whose
+// action_url is `/workspace/123/loans` marks the "Loans" section tab and
+// sidebar item as having an update; `hasUpdateForRoute` prefix-matches so
+// a nested page like `/workspace/123/loans/42` still lights up "Loans".
+export function useNotificationBadges() {
+  const { data: notifications } = useUnreadNotifications({ limit: 100 });
+  const { data: counts } = useNotificationCounts();
+
+  return useMemo(() => {
+    const list = Array.isArray(notifications) ? notifications : [];
+    const routes = [];
+
+    list.forEach((item) => {
+      if (!item.action_url) return;
+      routes.push(normalizePath(item.action_url));
+    });
+
+    // How many unread items live on this page or anywhere beneath it. The
+    // sidebar icon for "Finance" counts everything under /finance/..., while
+    // the "Contributions" tab counts only its own page.
+    function countForRoute(to) {
+      if (!to) return 0;
+      const base = normalizePath(to);
+      return routes.reduce(
+        (total, path) =>
+          path === base || path.startsWith(`${base}/`) ? total + 1 : total,
+        0
+      );
+    }
+
+    return {
+      unreadTotal: counts?.unread || 0,
+      byCategory: counts?.byCategory || {},
+      actionRequiredTotal: counts?.actionRequired || 0,
+      countForRoute,
+      hasUpdateForRoute: (to) => countForRoute(to) > 0,
+    };
+  }, [notifications, counts]);
+}
+
+// Strip query string / hash / trailing slash so "/workspace/1/loans/?a=1"
+// and "/workspace/1/loans" compare equal.
+export function normalizePath(value) {
+  const path = String(value || "").split("?")[0].split("#")[0];
+  return path.length > 1 ? path.replace(/\/+$/, "") : path || "/";
+}
+
+// ========================================
+// CLEAR THE BADGE WHEN THE PAGE IS VIEWED
+// ========================================
+//
+// Mount once inside the workspace layout. Whenever the page the person is
+// looking at has unread notifications pointing at it (including ones that
+// arrive while they are already on it), mark them read. The badge on the
+// nav icon / section tab goes away immediately (optimistic), then the server
+// confirms. Exact-page match only: opening "Finance" does not clear the
+// "Contributions" badge.
+export function useClearNotificationsOnVisit() {
+  const { pathname } = useLocation();
+  const queryClient = useQueryClient();
+  const { data: unread } = useUnreadNotifications({ limit: 100 });
+  const sent = useRef(new Set());
+
+  useEffect(() => {
+    const list = Array.isArray(unread) ? unread : [];
+    const here = normalizePath(pathname);
+
+    const matching = list.filter(
+      (item) =>
+        item.action_url &&
+        normalizePath(item.action_url) === here &&
+        !sent.current.has(String(item._id))
+    );
+    if (matching.length === 0) return;
+
+    const ids = new Set(matching.map((item) => String(item._id)));
+    ids.forEach((id) => sent.current.add(id));
+
+    // Optimistic: drop them from every cached unread list and the counter.
+    queryClient.setQueriesData({ queryKey: ["notifications", "unread"] }, (old) =>
+      Array.isArray(old) ? old.filter((item) => !ids.has(String(item._id))) : old
+    );
+    queryClient.setQueryData(["notifications", "counts"], (old) =>
+      old ? { ...old, unread: Math.max((old.unread || 0) - ids.size, 0) } : old
+    );
+
+    notificationsApi
+      .markReadByRoute(here)
+      .catch(() => ids.forEach((id) => sent.current.delete(id)))
+      .finally(() => queryClient.invalidateQueries({ queryKey: ["notifications"] }));
+  }, [pathname, unread, queryClient]);
 }
 
 // Notification Management Hooks

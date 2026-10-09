@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 import AppError from "../../utils/AppError.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import ChamaProfile from "../../models/ChamaProfile.js";
@@ -7,6 +8,9 @@ import ChamaLoan from "../../models/ChamaLoan.js";
 import ChamaMemberKyc from "../../models/ChamaMemberKyc.js";
 import ChamaMeetingRecord from "../../models/ChamaMeetingRecord.js";
 import ChamaInvitation from "../../models/ChamaInvitation.js";
+import Chama from "../../models/Chama.js";
+import { assertImageDataUri, IMAGE_LIMITS, cleanText } from "../../utils/imageData.js";
+import { getChamaPublicPage } from "./publicProfiles.service.js";
 
 // officialRoles gates broad chama-management permissions (dashboard's
 // "officials" widget, who can create invites/goals/meeting records —
@@ -43,12 +47,13 @@ export const requireRole = (membership, roles) => { if (!roles.includes(membersh
 export const ASSIGNABLE_ROLES = ["member", "chairperson", "treasurer", "secretary", "auditor", "committee_member", "patron"];
 
 export async function dashboard(chamaId, membership) {
-  const [profile, goals, loans, kyc, meetings, officials, members] = await Promise.all([
+  const [profile, goals, loans, kyc, meetings, officials, members, pendingKyc] = await Promise.all([
     ChamaProfile.findOne({ chama_id: chamaId }), ChamaGoal.find({ chama_id: chamaId, status: "active" }).sort({ createdAt: -1 }),
-    ChamaLoan.find(canManage(membership) ? { chama_id: chamaId } : { chama_id: chamaId, membership_id: membership._id }).sort({ createdAt: -1 }), ChamaMemberKyc.findOne({ chama_id: chamaId, membership_id: membership._id }),
-    ChamaMeetingRecord.find({ chama_id: chamaId }).sort({ createdAt: -1 }).limit(5), ChamaMembership.find({ chama_id: chamaId, status: "active", role: { $in: officialRoles } }).populate("user_id", "name phone"), ChamaMembership.find({ chama_id: chamaId, status: "active" }).populate("user_id", "name phone")
+    ChamaLoan.find(canManage(membership) ? { chama_id: chamaId } : { chama_id: chamaId, membership_id: membership._id }).sort({ createdAt: -1 }), ChamaMemberKyc.findOne({ chama_id: chamaId, membership_id: membership._id }).select("-selfie_url -id_document_url").lean(),
+    ChamaMeetingRecord.find({ chama_id: chamaId }).sort({ createdAt: -1 }).limit(5), ChamaMembership.find({ chama_id: chamaId, status: "active", role: { $in: officialRoles } }).populate("user_id", "name phone"), ChamaMembership.find({ chama_id: chamaId, status: "active" }).populate("user_id", "name phone"),
+    ["chairperson", "treasurer"].includes(membership.role) ? ChamaMemberKyc.find({ chama_id: chamaId, status: "pending", membership_id: { $ne: membership._id } }).select("-selfie_url -id_document_url").populate({ path: "membership_id", select: "role user_id", populate: { path: "user_id", select: "name" } }).sort({ createdAt: 1 }).lean() : [],
   ]);
-  return { profile, goals, loans, kyc, meetings, officials, members, membership };
+  return { profile, goals, loans, kyc, meetings, officials, members, pendingKyc, membership };
 }
 export async function getProfile(chamaId) {
   let profile = await ChamaProfile.findOne({ chama_id: chamaId });
@@ -56,13 +61,25 @@ export async function getProfile(chamaId) {
     profile = await ChamaProfile.findOneAndUpdate(
       { chama_id: chamaId },
       { $setOnInsert: { chama_id: chamaId, contribution_cycle: "monthly", fine_amount: 0 } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
   }
   return profile;
 }
 
-export async function updateProfile(chamaId, data) { return ChamaProfile.findOneAndUpdate({ chama_id: chamaId }, { $set: { ...data, chama_id: chamaId } }, { new: true, upsert: true, runValidators: true }); }
+export async function updateProfile(chamaId, data) {
+  const allowed = ["constitution_url", "contribution_cycle", "fine_amount", "loan_policy", "meeting_day", "approval_threshold", "required_payout_approvals", "mpesa_shortcode", "mpesa_account_reference", "bank_name", "bank_account_name", "bank_account_number", "kyc_requirements", "public_profile"];
+  const safe = Object.fromEntries(allowed.filter((key) => Object.hasOwn(data || {}, key) && key !== "public_profile").map((key) => [key, data[key]]));
+  // Legacy clients still send public_profile here. Merge the text fields
+  // one by one: replacing the whole subdocument would erase the logo and
+  // cover image. Images are only ever changed via PUT /public-profile.
+  if (data?.public_profile && typeof data.public_profile === "object") {
+    for (const key of ["enabled", "description", "location", "purpose", "contact_email", "website"]) {
+      if (Object.hasOwn(data.public_profile, key)) safe[`public_profile.${key}`] = data.public_profile[key];
+    }
+  }
+  return ChamaProfile.findOneAndUpdate({ chama_id: chamaId }, { $set: safe, $setOnInsert: { chama_id: chamaId } }, { returnDocument: 'after', upsert: true, runValidators: true });
+}
 export async function assignOfficial(chamaId, membershipId, role) {
   if (!ASSIGNABLE_ROLES.includes(role)) {
     throw new AppError(`Role must be one of: ${ASSIGNABLE_ROLES.join(", ")}`, 400);
@@ -106,8 +123,31 @@ export async function assignOfficial(chamaId, membershipId, role) {
   return member;
 }
 export async function createGoal(chamaId, userId, data) { if (!data.name || Number(data.target_amount) <= 0) throw new AppError("Goal name and target amount are required", 400); return ChamaGoal.create({ chama_id: chamaId, name: data.name, target_amount: data.target_amount, target_date: data.target_date || null, created_by: userId }); }
-export async function submitKyc(chamaId, membershipId, data) { if (!data.id_number || !data.selfie_url || !data.id_document_url) throw new AppError("ID number, ID document URL, and selfie URL are required", 400); return ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { $set: { id_number: data.id_number, selfie_url: data.selfie_url, id_document_url: data.id_document_url, status: "pending", reviewed_by: null, reviewed_at: null } }, { upsert: true, new: true, runValidators: true }); }
-export async function reviewKyc(chamaId, membershipId, userId, status) { if (!["verified", "rejected"].includes(status)) throw new AppError("Invalid KYC review status", 400); const kyc = await ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { status, reviewed_by: userId, reviewed_at: new Date() }, { new: true }); if (!kyc) throw new AppError("KYC submission not found", 404); return kyc; }
+const KYC_FIELDS = new Set(["date_of_birth", "residential_area", "occupation", "next_of_kin_name", "next_of_kin_phone"]);
+export async function submitKyc(chamaId, membershipId, data) {
+  if (!data.id_number || !data.selfie_url || !data.id_document_url) throw new AppError("ID number, ID document, and selfie are required", 400);
+  assertImageDataUri(data.selfie_url, { label: "Selfie", maxChars: IMAGE_LIMITS.kyc });
+  assertImageDataUri(data.id_document_url, { label: "ID document", maxChars: IMAGE_LIMITS.kyc });
+  const current = await ChamaMemberKyc.findOne({ chama_id: chamaId, membership_id: membershipId }).select("status").lean();
+  if (current?.status === "verified") throw new AppError("Your identity is already verified. Ask the chairperson or treasurer if something needs to change.", 409);
+  const profile = await getProfile(chamaId);
+  const required = profile.kyc_requirements || [];
+  const details = data.additional_details || {};
+  for (const field of required) {
+    if (!KYC_FIELDS.has(field) || !String(details[field] || "").trim()) throw new AppError(`Please provide ${field.replaceAll("_", " ")}`, 400);
+  }
+  const safeDetails = Object.fromEntries(required.filter((field) => KYC_FIELDS.has(field)).map((field) => [field, String(details[field] || "").trim().slice(0, 300)]));
+  return ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { $set: { id_number: cleanText(data.id_number, 30), selfie_url: data.selfie_url, id_document_url: data.id_document_url, additional_details: safeDetails, status: "pending", rejection_reason: "", reviewed_by: null, reviewed_at: null } }, { upsert: true, returnDocument: 'after', runValidators: true });
+}
+export async function reviewKyc(chamaId, membershipId, userId, status, reason = "") {
+  if (!["verified", "rejected"].includes(status)) throw new AppError("Invalid KYC review status", 400);
+  if (status === "rejected" && !String(reason).trim()) throw new AppError("A reason is required when rejecting KYC", 400);
+  const kyc = await ChamaMemberKyc.findOneAndUpdate({ chama_id: chamaId, membership_id: membershipId }, { status, rejection_reason: status === "rejected" ? String(reason).trim().slice(0, 500) : "", reviewed_by: userId, reviewed_at: new Date() }, { returnDocument: 'after' }).select("-selfie_url -id_document_url");
+  if (!kyc) throw new AppError("KYC submission not found", 404);
+  return kyc;
+}
+
+export const getPublicProfile = (chamaId) => getChamaPublicPage(chamaId);
 export async function createInvite(chamaId, userId, data) { const token = crypto.randomBytes(24).toString("hex"); const invitation = await ChamaInvitation.create({ chama_id: chamaId, phone: data.phone || null, role: data.role || "member", token, invited_by: userId, expires_at: new Date(Date.now() + 7 * 86400000) }); return { invitation, token, join_path: `/chamas/join?token=${token}` }; }
 
 // ========================================
@@ -176,7 +216,7 @@ export async function acceptInvite(token, userId) {
       $setOnInsert: { invited_by: invite.invited_by, joined_at: new Date() },
       $set: { role: invite.role, status: "pending", payout_position: null, accepted_at: null, removed_at: null, removed_by: null },
     },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 
   // Records that the link has been used at least once. Informational

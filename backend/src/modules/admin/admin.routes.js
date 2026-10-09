@@ -16,6 +16,11 @@ import {
   updateWorkspaceRequestController,
   approveWorkspaceRequestController,
   rejectWorkspaceRequestController,
+  listModuleChangeRequestsController,
+  approveModuleChangeController,
+  rejectModuleChangeController,
+  listFeatureManagedChamasController,
+  configureChamaFeaturesController,
   getEntityDetailController,
   updateChamaMemberController,
   searchPeopleController,
@@ -23,6 +28,9 @@ import {
   createAdminStepUpController,
   listMyAdminSessionsController,
   revokeMyAdminSessionController,
+  listChamaKycController,
+  getChamaKycController,
+  reviewChamaKycController,
 } from './admin.controller.js';
 import { protect } from '../../middleware/auth.middleware.js';
 import { requireAdmin, requireSuperAdmin, requireAdminPermission, requireAdminStepUp } from '../../middleware/admin.middleware.js';
@@ -91,5 +99,18 @@ router.get('/workspace-requests/:requestId', requireAdminPermission('onboarding'
 router.patch('/workspace-requests/:requestId', requireAdminPermission('onboarding'), updateWorkspaceRequestController);
 router.post('/workspace-requests/:requestId/approve', requireAdminPermission('onboarding'), approveWorkspaceRequestController);
 router.post('/workspace-requests/:requestId/reject', requireAdminPermission('onboarding'), rejectWorkspaceRequestController);
+
+// Feature changes requested by a chama's chairperson/treasurer. Registered
+// after /workspace-requests/:requestId so the static segment is never shadowed.
+router.get('/workspace-module-requests', requireAdminPermission('onboarding'), listModuleChangeRequestsController);
+router.post('/workspace-module-requests/:requestId/approve', requireAdminPermission('onboarding'), approveModuleChangeController);
+router.post('/workspace-module-requests/:requestId/reject', requireAdminPermission('onboarding'), rejectModuleChangeController);
+router.get('/workspace-modules/chamas', requireAdminPermission('onboarding'), listFeatureManagedChamasController);
+router.put('/workspace-modules/chamas/:chamaId', requireAdminPermission('onboarding'), configureChamaFeaturesController);
+
+// Chama (organisation) KYC queue.
+router.get('/chama-kyc', requireAdminPermission('onboarding'), listChamaKycController);
+router.get('/chama-kyc/:chamaId', requireAdminPermission('onboarding'), getChamaKycController);
+router.post('/chama-kyc/:chamaId/review', requireAdminPermission('onboarding'), reviewChamaKycController);
 
 export default router;

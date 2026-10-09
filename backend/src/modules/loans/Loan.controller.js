@@ -196,6 +196,16 @@ export const confirmManualDisbursement = send((req) => {
 
 export const recordManualRepayment = send((req) => {
   requireOfficial(req);
+  // The route is guarded by 'contributions.record', which the chairperson
+  // (and plain members) now hold with scope 'own' so they can pay their own
+  // contribution / MGR obligation. Recording a MANUAL repayment against a
+  // loan is a treasurer-level action (scope 'all'): without this check the
+  // route has no owner to compare against, so an 'own' grant would let a
+  // chairperson record repayments on any member's loan. permissionResult is
+  // unset for platform admins (they bypass requirePermission), who stay allowed.
+  if (req.permissionResult && req.permissionResult.scope !== 'all') {
+    throw new AppError('Only the treasurer can record manual loan repayments', 403);
+  }
   return loanRepayment.recordRepayment({
     chama: req.chama,
     loanId: req.params.loanId,

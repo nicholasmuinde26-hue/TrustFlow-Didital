@@ -204,7 +204,7 @@ const appendToChain = async ({
       (await AuditChainState.findOneAndUpdate(
         scopeFilter,
         { $setOnInsert: { sequence: 0, lastHash: null } },
-        { new: true, upsert: true, session }
+        { returnDocument: 'after', upsert: true, session }
       ));
 
     const nextSequence = current.sequence + 1;

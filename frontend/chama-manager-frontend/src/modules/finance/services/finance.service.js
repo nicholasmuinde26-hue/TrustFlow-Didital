@@ -51,6 +51,10 @@ const formatCurrency = (value, currency = 'Ksh') => {
 };
 
 const financeService = {
+  depositMemberWallet(workspaceId, payload) { return financeApi.depositMemberWallet(workspaceId, payload); },
+  withdrawMemberWallet(workspaceId, payload) { return financeApi.withdrawMemberWallet(workspaceId, payload); },
+  setMemberWalletPin(workspaceId, pin) { return financeApi.setMemberWalletPin(workspaceId, pin); },
+  changeMemberWalletPin(workspaceId, payload) { return financeApi.changeMemberWalletPin(workspaceId, payload); },
   async getSummary(workspaceId) {
     try {
       const res = await financeApi.summary(workspaceId);
@@ -60,6 +64,9 @@ const financeService = {
         ...data,
         cash_balance: safeNumber(data.cash_balance),
         total_contributions: safeNumber(data.total_contributions),
+        business_balance: safeNumber(data.business_balance),
+        business_owed_to_members: safeNumber(data.business_owed_to_members),
+        business_separation_pending: safeNumber(data.business_separation_pending),
         outstanding_loans: safeNumber(data.outstanding_loans),
         pending_payouts: safeNumber(data.pending_payouts),
         cash_in: safeNumber(data.cash_in),
@@ -126,6 +133,102 @@ const financeService = {
     }
   },
 
+  // My Wallet — one rollup of the caller's own position. Backed by
+  // GET /finance/wallet (see finance.controller.js#getMyWalletController).
+  // `scope` is 'full' for a Chama workspace (savings/loan/payout/
+  // withdrawals all populated) or 'contributions_only' for a Contribution
+  // Group / Business workspace, where those concepts don't exist.
+  async getMyWallet(workspaceId) {
+    try {
+      const res = await financeApi.wallet(workspaceId);
+      const data = safeData(res);
+
+      const contributions = {
+        total: safeNumber(data.contributions?.my_total_contributions),
+        payment_count: safeNumber(data.contributions?.my_payment_count),
+        recent_activity: Array.isArray(data.contributions?.my_recent_activity)
+          ? data.contributions.my_recent_activity.map((p) => ({
+              ...p,
+              amount: safeNumber(p.amount),
+            }))
+          : [],
+      };
+      const memberWallet = {
+        ...(data.member_wallet || {}),
+        balance: safeNumber(data.member_wallet?.balance),
+        available_balance: safeNumber(data.member_wallet?.available_balance),
+        reserved_balance: safeNumber(data.member_wallet?.reserved_balance),
+        pin_set: Boolean(data.member_wallet?.pin_set),
+        pin_locked_until: data.member_wallet?.pin_locked_until || null,
+        entries: Array.isArray(data.member_wallet?.entries) ? data.member_wallet.entries.map((entry) => ({ ...entry, amount: safeNumber(entry.amount) })) : [],
+      };
+
+      if (data.scope !== "full") {
+        return {
+          scope: data.scope || "contributions_only",
+          contributions,
+          savings: null,
+          loan: null,
+          pending_payout: null,
+          withdrawals: null,
+          member_wallet: memberWallet,
+        };
+      }
+
+      const savingsPlans = Array.isArray(data.savings?.plans)
+        ? data.savings.plans.map((p) => ({
+            ...p,
+            balance: safeNumber(p.balance),
+            pending_withdrawal: safeNumber(p.pending_withdrawal),
+            available_to_withdraw: safeNumber(p.available_to_withdraw),
+          }))
+        : [];
+
+      return {
+        scope: "full",
+        contributions,
+        savings: {
+          total_balance: safeNumber(data.savings?.total_balance),
+          total_available_to_withdraw: safeNumber(
+            data.savings?.total_available_to_withdraw
+          ),
+          plans: savingsPlans,
+        },
+        loan: {
+          outstanding_total: safeNumber(data.loan?.outstanding_total),
+          active_loan: data.loan?.active_loan
+            ? {
+                ...data.loan.active_loan,
+                amount: safeNumber(data.loan.active_loan.amount),
+                outstanding: safeNumber(data.loan.active_loan.outstanding),
+              }
+            : null,
+        },
+        pending_payout: data.pending_payout
+          ? { ...data.pending_payout, amount: safeNumber(data.pending_payout.amount) }
+          : null,
+        withdrawals: {
+          total_pending: safeNumber(data.withdrawals?.total_pending),
+          items: Array.isArray(data.withdrawals?.items)
+            ? data.withdrawals.items.map((w) => ({ ...w, amount: safeNumber(w.amount) }))
+            : [],
+        },
+        member_wallet: memberWallet,
+      };
+    } catch (err) {
+      console.error("getMyWallet failed:", err);
+      return {
+        scope: "contributions_only",
+        contributions: { total: 0, payment_count: 0, recent_activity: [] },
+        savings: null,
+        loan: null,
+        pending_payout: null,
+        withdrawals: null,
+        member_wallet: { balance: 0, available_balance: 0, reserved_balance: 0, entries: [] },
+      };
+    }
+  },
+
   // Real week-by-week income vs expense totals for the Overview chart.
   // Officials-only (mirrors finance/summary scope) - a plain member gets
   // back an empty weeks array, same shape, nothing to special-case.
@@ -148,8 +251,10 @@ const financeService = {
     }
   },
 
-  async getAccounts(workspaceId) {
-    const res = await financeApi.accounts(workspaceId);
+  // `params.scope`: omit for the chama's pooled accounts (default), or pass
+  // 'business' / 'all' to include the business & income fund.
+  async getAccounts(workspaceId, params = {}) {
+    const res = await financeApi.accounts(workspaceId, params);
     const data = safeData(res);
     // Same bare-array trap as getTransactions/getLedger: backend returns
     // the accounts list directly, not wrapped in { accounts: [...] }.
@@ -185,10 +290,15 @@ const financeService = {
       amount: safeNumber(tx.amount),
       formatted_amount: formatCurrency(tx.amount)
     }));
+    const meta = res?.data?.meta || {};
     return {
       items,
       total: safeNumber(Array.isArray(data) ? items.length : data.total),
       page: safeNumber(Array.isArray(data) ? 1 : data.page || 1),
+      // Which book the server returned ("mine" | "chama") and whether the caller may switch.
+      view: meta.view || null,
+      defaultView: meta.default_view || null,
+      canToggle: Boolean(meta.can_toggle),
     };
   },
 
@@ -373,6 +483,61 @@ const financeService = {
     }));
   },
 
+  // ========================================
+  // CONTRIBUTIONS REGISTER
+  // ========================================
+  //
+  // Backed by GET /finance/contributions. Always returns the full shape
+  // (plans / payments / members / totals) even on failure, so no caller
+  // has to guard every field it reads.
+  async getContributionsRegister(workspaceId, params = {}) {
+    const empty = {
+      scope: "own",
+      plans: [],
+      payments: [],
+      members: [],
+      totals: {
+        expected: 0, collected: 0, outstanding: 0, in_flight: 0,
+        failed_count: 0, payment_count: 0, contributor_count: 0,
+        member_count: 0, collection_rate: 0, collected_this_month: 0,
+        overdue_amount: 0, overdue_member_count: 0,
+      },
+    };
+
+    try {
+      const res = await financeApi.contributions(workspaceId, params);
+      const data = safeData(res);
+
+      return {
+        ...empty,
+        ...data,
+        plans: Array.isArray(data.plans) ? data.plans : [],
+        payments: Array.isArray(data.payments) ? data.payments : [],
+        members: Array.isArray(data.members) ? data.members : [],
+        totals: { ...empty.totals, ...(data.totals || {}) },
+      };
+    } catch (err) {
+      console.error("getContributionsRegister failed:", err);
+      return empty;
+    }
+  },
+
+  // { role, permissions: { 'contributions.record': 'all' | 'own', ... } }
+  async getPermissions(workspaceId) {
+    try {
+      const res = await financeApi.permissions(workspaceId);
+      const data = safeData(res);
+      return {
+        role: data.role || null,
+        permissions: data.permissions || {},
+        membership_id: data.membership_id || null,
+      };
+    } catch (err) {
+      console.error("getPermissions failed:", err);
+      return { role: null, permissions: {}, membership_id: null };
+    }
+  },
+
   async recordContribution(payload) {
     const res = await financeApi.recordContribution(payload);
     return safeData(res);
@@ -383,19 +548,134 @@ const financeService = {
     return safeData(res).plans || [];
   },
 
-  async getContributionObligations(planId, workspaceId, ownerType) {
-    const res = await financeApi.contributionObligations(planId, workspaceId, ownerType);
+  async getContributionObligations(planId, workspaceId, ownerType, participantId, status) {
+    const res = await financeApi.contributionObligations(planId, workspaceId, ownerType, participantId, status);
     return safeData(res).obligations || [];
   },
 
-  async getReport(workspaceId, reportType, mode = "CHAMA", asAtDate) {
+  // `period` is either a single as-at date string (balance sheet, trial balance)
+  // or { from, to } (income statement over a window, e.g. one financial year).
+  // `scope`: "chama" (default, member money only) or "business" (income from
+  // chama-owned businesses and properties, kept apart from member money).
+  async getReport(workspaceId, reportType, mode = "CHAMA", period, scope = "chama") {
     try {
-      const res = await financeApi.reports(workspaceId, { reportType, mode, asAtDate });
+      const range = period && typeof period === "object" ? { from: period.from, to: period.to } : { asAtDate: period };
+      const res = await financeApi.reports(workspaceId, { reportType, mode, scope, ...range });
       return safeData(res);
     } catch (err) {
       console.error("getReport failed:", err);
       return {};
     }
+  },
+
+  // Business & property fund overview: balance, income, expenses, profit and
+  // what each business or property holds. Never includes member money.
+  async getBusinessFunds(workspaceId, period) {
+    const res = await financeApi.businessFunds(workspaceId, period && typeof period === "object" ? { from: period.from, to: period.to } : {});
+    return safeData(res);
+  },
+
+  // ========================================
+  // LEDGER ADJUSTMENTS
+  // ========================================
+
+  async getAdjustments(workspaceId, params = {}) {
+    try {
+      const res = await financeApi.adjustments(workspaceId, params);
+      const data = safeData(res);
+      const items = Array.isArray(data) ? data : data.adjustments || [];
+      return items.map((a) => ({ ...a, amount: safeNumber(a.amount) }));
+    } catch (err) {
+      console.error("getAdjustments failed:", err);
+      return [];
+    }
+  },
+
+  async getAdjustment(workspaceId, adjustmentId) {
+    const res = await financeApi.adjustment(workspaceId, adjustmentId);
+    const data = safeData(res);
+    return { ...data, amount: safeNumber(data.amount) };
+  },
+
+  async requestAdjustment(workspaceId, payload) {
+    const res = await financeApi.requestAdjustment(workspaceId, payload);
+    return safeData(res);
+  },
+
+  async decideAdjustment(workspaceId, adjustmentId, payload) {
+    const res = await financeApi.decideAdjustment(workspaceId, adjustmentId, payload);
+    return safeData(res);
+  },
+
+  async cancelAdjustment(workspaceId, adjustmentId, reason) {
+    const res = await financeApi.cancelAdjustment(workspaceId, adjustmentId, { reason });
+    return safeData(res);
+  },
+
+  // ========================================
+  // BANK RECONCILIATION
+  // ========================================
+
+  async getReconciliationSessions(workspaceId, params = {}) {
+    try {
+      const res = await financeApi.reconciliationSessions(workspaceId, params);
+      const data = safeData(res);
+      return Array.isArray(data) ? data : data.sessions || [];
+    } catch (err) {
+      console.error("getReconciliationSessions failed:", err);
+      return [];
+    }
+  },
+
+  // Returns { session, summary } - summary carries the matched/unmatched/
+  // ignored line counts the backend already computed, so the UI never has
+  // to re-derive it from session.lines itself.
+  async getReconciliationSession(workspaceId, sessionId) {
+    const res = await financeApi.reconciliationSession(workspaceId, sessionId);
+    return {
+      session: safeData(res),
+      summary: res?.data?.summary || null,
+    };
+  },
+
+  async createReconciliationSession(workspaceId, payload) {
+    const res = await financeApi.createReconciliationSession(workspaceId, payload);
+    return safeData(res);
+  },
+
+  async addReconciliationLines(workspaceId, sessionId, lines) {
+    const res = await financeApi.addReconciliationLines(workspaceId, sessionId, lines);
+    return safeData(res);
+  },
+
+  async autoMatchReconciliation(workspaceId, sessionId) {
+    const res = await financeApi.autoMatchReconciliation(workspaceId, sessionId);
+    return safeData(res);
+  },
+
+  async matchReconciliationLine(workspaceId, sessionId, lineId, ledgerEntryId) {
+    const res = await financeApi.matchReconciliationLine(workspaceId, sessionId, lineId, ledgerEntryId);
+    return safeData(res);
+  },
+
+  async unmatchReconciliationLine(workspaceId, sessionId, lineId) {
+    const res = await financeApi.unmatchReconciliationLine(workspaceId, sessionId, lineId);
+    return safeData(res);
+  },
+
+  async ignoreReconciliationLine(workspaceId, sessionId, lineId, reason) {
+    const res = await financeApi.ignoreReconciliationLine(workspaceId, sessionId, lineId, reason);
+    return safeData(res);
+  },
+
+  async raiseAdjustmentForLine(workspaceId, sessionId, lineId, payload) {
+    const res = await financeApi.raiseAdjustmentForLine(workspaceId, sessionId, lineId, payload);
+    return safeData(res);
+  },
+
+  async completeReconciliationSession(workspaceId, sessionId, force = false) {
+    const res = await financeApi.completeReconciliationSession(workspaceId, sessionId, force);
+    return safeData(res);
   },
 
   // Export helpers in case you need them in components

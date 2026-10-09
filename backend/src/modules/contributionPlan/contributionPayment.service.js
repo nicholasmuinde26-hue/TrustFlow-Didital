@@ -123,13 +123,28 @@ class ContributionPaymentService {
       await maybeCreateMgrPayoutForChama(String(obligation.owner_id), String(contributionPayment.participant_id)).catch(() => null);
 
       try {
-        const mgrService = (await import('../mgr/mgr.service.js')).default;
-        await mgrService.syncRoundCollection({
-          chamaId: obligation.owner_id,
-          policyId: obligation.plan_id,
-          amount: Number(contributionPayment.amount),
-          actorUserId: contributionPayment.created_by
-        });
+        // syncRoundCollection matches on MgrRound.policy_id, which references
+        // MgrPolicy - NOT obligation.plan_id, which references
+        // ContributionPlan (a different collection entirely). Passing
+        // obligation.plan_id here meant the MgrRound.findOne() lookup inside
+        // syncRoundCollection could never match anything, so every payment
+        // made through this generic /contributions endpoint (e.g. the STK
+        // push "Mark Paid" flow) posted correctly to the obligation/ledger
+        // but silently left MgrRound.collected_amount stuck at 0 - the
+        // "Collected" stat on the MGR dashboard never moved even though the
+        // member's own row correctly showed Paid/Partial.
+        const MgrPolicy = (await import('../../models/MgrPolicy.js')).default;
+        const activePolicy = await MgrPolicy.findOne({ chama_id: obligation.owner_id, status: 'active' }).select('_id');
+
+        if (activePolicy) {
+          const mgrService = (await import('../mgr/mgr.service.js')).default;
+          await mgrService.syncRoundCollection({
+            chamaId: obligation.owner_id,
+            policyId: activePolicy._id,
+            amount: Number(contributionPayment.amount),
+            actorUserId: contributionPayment.created_by
+          });
+        }
       } catch (err) {
         console.warn("[completeContributionPayment] syncRoundCollection notice:", err.message);
       }
@@ -159,7 +174,7 @@ class ContributionPaymentService {
         participant_id: payment.participant_id 
       },
       { $inc: { balance: toDecimal(payment.amount) } },
-      { upsert: true, new: true, ...opts }
+      { upsert: true, returnDocument: 'after', ...opts }
     );
 
     return { payment: contributionPayment };

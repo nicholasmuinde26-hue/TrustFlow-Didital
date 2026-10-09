@@ -31,12 +31,23 @@ export const NOTIFICATION_CATEGORIES = {
 // ========================================
 
 export const NOTIFICATION_TYPES = {
+  CHAT_MESSAGE_RECEIVED: {
+    type: 'CHAT_MESSAGE_RECEIVED',
+    route: 'chat',
+    category: NOTIFICATION_CATEGORIES.SYSTEM,
+    icon: '💬',
+    title: 'New chat message',
+    priority: 'normal',
+    requiresAction: false,
+    defaultChannels: ['in-app', 'toast']
+  },
   // ========================================
   // FINANCIAL NOTIFICATIONS
   // ========================================
   
   CONTRIBUTION_RECEIVED: {
     type: 'CONTRIBUTION_RECEIVED',
+    route: 'finance/contributions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '💰',
     title: 'Contribution received',
@@ -47,6 +58,7 @@ export const NOTIFICATION_TYPES = {
   
   CONTRIBUTION_MISSED: {
     type: 'CONTRIBUTION_MISSED',
+    route: 'finance/contributions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '⚠️',
     title: 'Contribution missed',
@@ -57,6 +69,7 @@ export const NOTIFICATION_TYPES = {
   
   CONTRIBUTION_OVERDUE: {
     type: 'CONTRIBUTION_OVERDUE',
+    route: 'finance/contributions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '🚨',
     title: 'Contribution overdue',
@@ -64,9 +77,119 @@ export const NOTIFICATION_TYPES = {
     requiresAction: true,
     defaultChannels: ['in-app', 'push', 'sms']
   },
+
+  // Sent by the contribution calendar job when a month opens or its due date nears.
+  CONTRIBUTION_REMINDER: {
+    type: 'CONTRIBUTION_REMINDER',
+    route: 'finance/contributions',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '🔔',
+    title: 'Contribution reminder',
+    priority: 'normal',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  // Sent once a member has paid a month in full.
+  CONTRIBUTION_MONTH_CLOSED: {
+    type: 'CONTRIBUTION_MONTH_CLOSED',
+    route: 'finance/contributions',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '✅',
+    title: 'Contribution month closed',
+    priority: 'low',
+    requiresAction: false,
+    defaultChannels: ['in-app']
+  },
   
+  // ========================================
+  // CHAMA ASSET — MANAGER ACCOUNTABILITY LOOP
+  // ========================================
+
+  ASSET_TRANSACTION_DISCREPANCY_FLAGGED: {
+    type: 'ASSET_TRANSACTION_DISCREPANCY_FLAGGED',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.APPROVAL,
+    icon: '🚩',
+    title: 'Asset entry flagged for review',
+    priority: 'high',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  ASSET_MANAGER_REPORT_URGENT_MAINTENANCE: {
+    type: 'ASSET_MANAGER_REPORT_URGENT_MAINTENANCE',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.ALERT,
+    icon: '🛠️',
+    title: 'Urgent maintenance reported',
+    priority: 'high',
+    requiresAction: false,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  // ========================================
+  // CHAMA ASSET — AUTOMATED NUDGES (leases, land-rates/tax compliance)
+  // ========================================
+
+  LEASE_PERIOD_DUE_SOON: {
+    type: 'LEASE_PERIOD_DUE_SOON',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '🗓️',
+    title: 'Rent/harvest share due soon',
+    priority: 'normal',
+    requiresAction: false,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  LEASE_PERIOD_OVERDUE: {
+    type: 'LEASE_PERIOD_OVERDUE',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.FINANCIAL,
+    icon: '🚨',
+    title: 'Rent/harvest share overdue',
+    priority: 'high',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push', 'sms']
+  },
+
+  LEASE_RENEWAL_DUE_SOON: {
+    type: 'LEASE_RENEWAL_DUE_SOON',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.ALERT,
+    icon: '📄',
+    title: 'Lease nearing expiry',
+    priority: 'normal',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  ASSET_COMPLIANCE_DUE_SOON: {
+    type: 'ASSET_COMPLIANCE_DUE_SOON',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.ALERT,
+    icon: '🏛️',
+    title: 'Land rates/tax due soon',
+    priority: 'normal',
+    requiresAction: false,
+    defaultChannels: ['in-app', 'push']
+  },
+
+  ASSET_COMPLIANCE_OVERDUE: {
+    type: 'ASSET_COMPLIANCE_OVERDUE',
+    route: 'assets',
+    category: NOTIFICATION_CATEGORIES.ALERT,
+    icon: '⚠️',
+    title: 'Land rates/tax overdue',
+    priority: 'urgent',
+    requiresAction: true,
+    defaultChannels: ['in-app', 'push', 'sms']
+  },
+
   FINE_APPLIED: {
     type: 'FINE_APPLIED',
+    route: 'finance/contributions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '📝',
     title: 'Fine applied',
@@ -77,6 +200,7 @@ export const NOTIFICATION_TYPES = {
   
   FINE_WAIVED: {
     type: 'FINE_WAIVED',
+    route: 'finance/contributions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '✅',
     title: 'Fine waived',
@@ -89,6 +213,7 @@ export const NOTIFICATION_TYPES = {
   // window (default 48h) - see cashDeposit.service.js.
   CASH_DEPOSIT_DUE_SOON: {
     type: 'CASH_DEPOSIT_DUE_SOON',
+    route: 'finance/accounts',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '⏳',
     title: 'Cash deposit due soon',
@@ -99,6 +224,7 @@ export const NOTIFICATION_TYPES = {
   
   CASH_DEPOSIT_OVERDUE: {
     type: 'CASH_DEPOSIT_OVERDUE',
+    route: 'finance/accounts',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '🚨',
     title: 'Cash deposit overdue',
@@ -112,6 +238,7 @@ export const NOTIFICATION_TYPES = {
   // missed (see cashDepositEnforcement.job.js).
   CASH_DEPOSIT_OVERDUE_ALERT: {
     type: 'CASH_DEPOSIT_OVERDUE_ALERT',
+    route: 'finance/accounts',
     category: NOTIFICATION_CATEGORIES.ALERT,
     icon: '🚨',
     title: 'Chama cash-in-hand overdue for deposit',
@@ -122,6 +249,7 @@ export const NOTIFICATION_TYPES = {
   
   CASH_DEPOSITED_TO_BANK: {
     type: 'CASH_DEPOSITED_TO_BANK',
+    route: 'finance/accounts',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '🏦',
     title: 'Cash deposited to bank',
@@ -132,6 +260,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_SUBMITTED: {
     type: 'LOAN_SUBMITTED',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '📋',
     title: 'Loan application submitted',
@@ -142,6 +271,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_APPROVED: {
     type: 'LOAN_APPROVED',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '✅',
     title: 'Loan approved',
@@ -152,6 +282,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_REJECTED: {
     type: 'LOAN_REJECTED',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '❌',
     title: 'Loan rejected',
@@ -162,6 +293,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_DISBURSED: {
     type: 'LOAN_DISBURSED',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '💰',
     title: 'Loan disbursed',
@@ -172,6 +304,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_REPAYMENT_RECEIVED: {
     type: 'LOAN_REPAYMENT_RECEIVED',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '💰',
     title: 'Loan repayment received',
@@ -182,6 +315,7 @@ export const NOTIFICATION_TYPES = {
 
   LOAN_POLICY_SENSITIVE_UPDATE: {
     type: 'LOAN_POLICY_SENSITIVE_UPDATE',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '⚠️',
     title: 'Sensitive loan policy change',
@@ -192,6 +326,7 @@ export const NOTIFICATION_TYPES = {
 
   LOAN_POLICY_UPDATED: {
     type: 'LOAN_POLICY_UPDATED',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '📢',
     title: 'Loan policy updated',
@@ -202,6 +337,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_REPAYMENT_OVERDUE: {
     type: 'LOAN_REPAYMENT_OVERDUE',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '🚨',
     title: 'Loan repayment overdue',
@@ -212,6 +348,7 @@ export const NOTIFICATION_TYPES = {
   
   WITHDRAWAL_REQUESTED: {
     type: 'WITHDRAWAL_REQUESTED',
+    route: 'finance/payouts',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '📋',
     title: 'Withdrawal requested',
@@ -222,6 +359,7 @@ export const NOTIFICATION_TYPES = {
   
   WITHDRAWAL_APPROVED: {
     type: 'WITHDRAWAL_APPROVED',
+    route: 'finance/payouts',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '✅',
     title: 'Withdrawal approved',
@@ -232,6 +370,7 @@ export const NOTIFICATION_TYPES = {
   
   WITHDRAWAL_REJECTED: {
     type: 'WITHDRAWAL_REJECTED',
+    route: 'finance/payouts',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '❌',
     title: 'Withdrawal rejected',
@@ -242,6 +381,7 @@ export const NOTIFICATION_TYPES = {
   
   PAYMENT_FAILED: {
     type: 'PAYMENT_FAILED',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '❌',
     title: 'Payment failed',
@@ -252,6 +392,7 @@ export const NOTIFICATION_TYPES = {
   
   PAYMENT_REVERSED: {
     type: 'PAYMENT_REVERSED',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '⚠️',
     title: 'Payment reversed',
@@ -262,6 +403,7 @@ export const NOTIFICATION_TYPES = {
   
   PAYMENT_RECONCILED: {
     type: 'PAYMENT_RECONCILED',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.FINANCIAL,
     icon: '✅',
     title: 'Payment reconciled',
@@ -276,6 +418,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_JOINED: {
     type: 'MEMBER_JOINED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '👤',
     title: 'New member joined',
@@ -286,6 +429,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_INVITED: {
     type: 'MEMBER_INVITED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '📧',
     title: 'Member invited',
@@ -296,6 +440,7 @@ export const NOTIFICATION_TYPES = {
   
   INVITATION_ACCEPTED: {
     type: 'INVITATION_ACCEPTED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '✅',
     title: 'Invitation accepted',
@@ -306,6 +451,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_SUSPENDED: {
     type: 'MEMBER_SUSPENDED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '⚠️',
     title: 'Member suspended',
@@ -316,6 +462,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_REINSTATED: {
     type: 'MEMBER_REINSTATED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '✅',
     title: 'Member reinstated',
@@ -326,6 +473,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_REMOVED: {
     type: 'MEMBER_REMOVED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '🚫',
     title: 'Member removed',
@@ -336,6 +484,7 @@ export const NOTIFICATION_TYPES = {
   
   ROLE_CHANGED: {
     type: 'ROLE_CHANGED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '🔄',
     title: 'Role changed',
@@ -346,6 +495,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_PROFILE_UPDATED: {
     type: 'MEMBER_PROFILE_UPDATED',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.MEMBERSHIP,
     icon: '👤',
     title: 'Profile updated',
@@ -360,6 +510,7 @@ export const NOTIFICATION_TYPES = {
   
   MEETING_SCHEDULED: {
     type: 'MEETING_SCHEDULED',
+    route: 'meetings',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '📅',
     title: 'Meeting scheduled',
@@ -370,6 +521,7 @@ export const NOTIFICATION_TYPES = {
   
   MEETING_REMINDER: {
     type: 'MEETING_REMINDER',
+    route: 'meetings',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '⏰',
     title: 'Meeting reminder',
@@ -380,6 +532,7 @@ export const NOTIFICATION_TYPES = {
   
   MEETING_STARTED: {
     type: 'MEETING_STARTED',
+    route: 'meetings',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '🎯',
     title: 'Meeting started',
@@ -390,6 +543,7 @@ export const NOTIFICATION_TYPES = {
   
   MINUTES_PUBLISHED: {
     type: 'MINUTES_PUBLISHED',
+    route: 'meetings',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '📄',
     title: 'Meeting minutes published',
@@ -400,6 +554,7 @@ export const NOTIFICATION_TYPES = {
   
   RESOLUTION_CREATED: {
     type: 'RESOLUTION_CREATED',
+    route: 'announcements',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '📋',
     title: 'Resolution created',
@@ -410,6 +565,7 @@ export const NOTIFICATION_TYPES = {
   
   RESOLUTION_APPROVED: {
     type: 'RESOLUTION_APPROVED',
+    route: 'announcements',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '✅',
     title: 'Resolution approved',
@@ -420,6 +576,7 @@ export const NOTIFICATION_TYPES = {
   
   RESOLUTION_REJECTED: {
     type: 'RESOLUTION_REJECTED',
+    route: 'announcements',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '❌',
     title: 'Resolution rejected',
@@ -430,6 +587,7 @@ export const NOTIFICATION_TYPES = {
   
   ELECTION_OPENED: {
     type: 'ELECTION_OPENED',
+    route: 'polls',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '🗳️',
     title: 'Election opened',
@@ -440,6 +598,7 @@ export const NOTIFICATION_TYPES = {
   
   ELECTION_COMPLETED: {
     type: 'ELECTION_COMPLETED',
+    route: 'polls',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '✅',
     title: 'Election completed',
@@ -450,6 +609,7 @@ export const NOTIFICATION_TYPES = {
   
   COMMITTEE_APPOINTED: {
     type: 'COMMITTEE_APPOINTED',
+    route: 'announcements',
     category: NOTIFICATION_CATEGORIES.GOVERNANCE,
     icon: '👥',
     title: 'Committee appointed',
@@ -464,6 +624,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_DECEASED_REPORTED: {
     type: 'MEMBER_DECEASED_REPORTED',
+    route: 'burial-cases',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '🪦',
     title: 'Member reported deceased',
@@ -474,6 +635,7 @@ export const NOTIFICATION_TYPES = {
   
   BURIAL_CASE_OPENED: {
     type: 'BURIAL_CASE_OPENED',
+    route: 'burial-cases',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '🪦',
     title: 'Burial case opened',
@@ -484,6 +646,7 @@ export const NOTIFICATION_TYPES = {
   
   BENEFICIARY_CLAIM_SUBMITTED: {
     type: 'BENEFICIARY_CLAIM_SUBMITTED',
+    route: 'beneficiaries',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '📋',
     title: 'Beneficiary claim submitted',
@@ -494,6 +657,7 @@ export const NOTIFICATION_TYPES = {
   
   CLAIM_REQUIRES_VERIFICATION: {
     type: 'CLAIM_REQUIRES_VERIFICATION',
+    route: 'beneficiaries',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '🔍',
     title: 'Claim requires verification',
@@ -504,6 +668,7 @@ export const NOTIFICATION_TYPES = {
   
   CLAIM_APPROVED: {
     type: 'CLAIM_APPROVED',
+    route: 'beneficiaries',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '✅',
     title: 'Claim approved',
@@ -514,6 +679,7 @@ export const NOTIFICATION_TYPES = {
   
   CLAIM_REJECTED: {
     type: 'CLAIM_REJECTED',
+    route: 'beneficiaries',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '❌',
     title: 'Claim rejected',
@@ -524,6 +690,7 @@ export const NOTIFICATION_TYPES = {
   
   BENEFIT_PAYMENT_APPROVED: {
     type: 'BENEFIT_PAYMENT_APPROVED',
+    route: 'finance/payouts',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '✅',
     title: 'Benefit payment approved',
@@ -534,6 +701,7 @@ export const NOTIFICATION_TYPES = {
   
   BENEFIT_PAYMENT_DISBURSED: {
     type: 'BENEFIT_PAYMENT_DISBURSED',
+    route: 'finance/payouts',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '💰',
     title: 'Benefit payment disbursed',
@@ -544,6 +712,7 @@ export const NOTIFICATION_TYPES = {
   
   BURIAL_CONTRIBUTION_REQUIRED: {
     type: 'BURIAL_CONTRIBUTION_REQUIRED',
+    route: 'contributions',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '💰',
     title: 'Burial contribution required',
@@ -554,6 +723,7 @@ export const NOTIFICATION_TYPES = {
   
   EMERGENCY_CONTRIBUTION_OPENED: {
     type: 'EMERGENCY_CONTRIBUTION_OPENED',
+    route: 'contributions',
     category: NOTIFICATION_CATEGORIES.BURIAL,
     icon: '🚨',
     title: 'Emergency contribution opened',
@@ -568,6 +738,7 @@ export const NOTIFICATION_TYPES = {
   
   MPESA_PAYMENT_SUCCESSFUL: {
     type: 'MPESA_PAYMENT_SUCCESSFUL',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '✅',
     title: 'M-Pesa payment successful',
@@ -578,6 +749,7 @@ export const NOTIFICATION_TYPES = {
   
   MPESA_PAYMENT_FAILED: {
     type: 'MPESA_PAYMENT_FAILED',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '❌',
     title: 'M-Pesa payment failed',
@@ -588,6 +760,7 @@ export const NOTIFICATION_TYPES = {
   
   BANK_TRANSACTION_RECEIVED: {
     type: 'BANK_TRANSACTION_RECEIVED',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '🏦',
     title: 'Bank transaction received',
@@ -598,6 +771,7 @@ export const NOTIFICATION_TYPES = {
   
   RECONCILIATION_COMPLETED: {
     type: 'RECONCILIATION_COMPLETED',
+    route: 'finance/transactions',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '✅',
     title: 'Reconciliation completed',
@@ -608,6 +782,7 @@ export const NOTIFICATION_TYPES = {
   
   SECURITY_ALERT: {
     type: 'SECURITY_ALERT',
+    route: 'settings',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '🚨',
     title: 'Security alert',
@@ -618,6 +793,7 @@ export const NOTIFICATION_TYPES = {
   
   NEW_DEVICE_LOGIN: {
     type: 'NEW_DEVICE_LOGIN',
+    route: 'settings',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '🔐',
     title: 'New device login',
@@ -628,6 +804,7 @@ export const NOTIFICATION_TYPES = {
   
   PASSWORD_CHANGED: {
     type: 'PASSWORD_CHANGED',
+    route: 'settings',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '🔑',
     title: 'Password changed',
@@ -638,6 +815,7 @@ export const NOTIFICATION_TYPES = {
   
   ROLE_PERMISSION_CHANGED: {
     type: 'ROLE_PERMISSION_CHANGED',
+    route: 'settings',
     category: NOTIFICATION_CATEGORIES.SYSTEM,
     icon: '🔄',
     title: 'Role/permission changed',
@@ -652,6 +830,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_REQUIRES_APPROVAL: {
     type: 'LOAN_REQUIRES_APPROVAL',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.APPROVAL,
     icon: '⚠️',
     title: 'Loan requires approval',
@@ -662,6 +841,7 @@ export const NOTIFICATION_TYPES = {
   
   LOAN_REQUIRES_DISBURSEMENT: {
     type: 'LOAN_REQUIRES_DISBURSEMENT',
+    route: 'loans',
     category: NOTIFICATION_CATEGORIES.APPROVAL,
     icon: '💰',
     title: 'Loan requires disbursement',
@@ -672,6 +852,7 @@ export const NOTIFICATION_TYPES = {
   
   EXPENSE_REQUIRES_APPROVAL: {
     type: 'EXPENSE_REQUIRES_APPROVAL',
+    route: 'finance',
     category: NOTIFICATION_CATEGORIES.APPROVAL,
     icon: '📋',
     title: 'Expense requires approval',
@@ -682,6 +863,7 @@ export const NOTIFICATION_TYPES = {
   
   WITHDRAWAL_REQUIRES_APPROVAL: {
     type: 'WITHDRAWAL_REQUIRES_APPROVAL',
+    route: 'finance/payouts',
     category: NOTIFICATION_CATEGORIES.APPROVAL,
     icon: '📋',
     title: 'Withdrawal requires approval',
@@ -692,6 +874,7 @@ export const NOTIFICATION_TYPES = {
   
   ROLE_CHANGE_REQUIRES_APPROVAL: {
     type: 'ROLE_CHANGE_REQUIRES_APPROVAL',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.APPROVAL,
     icon: '🔄',
     title: 'Role change requires approval',
@@ -702,6 +885,7 @@ export const NOTIFICATION_TYPES = {
   
   MEMBER_REMOVAL_REQUIRES_APPROVAL: {
     type: 'MEMBER_REMOVAL_REQUIRES_APPROVAL',
+    route: 'members',
     category: NOTIFICATION_CATEGORIES.APPROVAL,
     icon: '🚫',
     title: 'Member removal requires approval',
@@ -754,7 +938,11 @@ export const ROLE_NOTIFICATION_RULES = {
   // Normal Members - receive personal notifications only
   member: {
     canReceive: [
+      'MEETING_STARTED',
+      'RESOLUTION_REJECTED',
       'LOAN_POLICY_UPDATED',
+      'CONTRIBUTION_REMINDER',
+      'CONTRIBUTION_MONTH_CLOSED',
       'CONTRIBUTION_RECEIVED',
       'CONTRIBUTION_MISSED',
       'CONTRIBUTION_OVERDUE',
@@ -791,6 +979,11 @@ export const ROLE_NOTIFICATION_RULES = {
       'MPESA_PAYMENT_FAILED',
       'NEW_DEVICE_LOGIN',
       'PASSWORD_CHANGED',
+      'LEASE_PERIOD_DUE_SOON',
+      'LEASE_PERIOD_OVERDUE',
+      'LEASE_RENEWAL_DUE_SOON',
+      'ASSET_COMPLIANCE_DUE_SOON',
+      'ASSET_COMPLIANCE_OVERDUE',
       'CASH_DEPOSIT_OVERDUE_ALERT'
     ],
     cannotReceive: [
@@ -806,7 +999,17 @@ export const ROLE_NOTIFICATION_RULES = {
   // Treasurer - financial notifications and approvals
   treasurer: {
     canReceive: [
+      'MEMBER_DECEASED_REPORTED',
+      'BENEFICIARY_CLAIM_SUBMITTED',
+      'LOAN_REQUIRES_APPROVAL',
+      'ELECTION_OPENED',
+      'ELECTION_COMPLETED',
+      'MEETING_STARTED',
+      'RESOLUTION_CREATED',
+      'RESOLUTION_REJECTED',
       'LOAN_POLICY_UPDATED',
+      'CONTRIBUTION_REMINDER',
+      'CONTRIBUTION_MONTH_CLOSED',
       'LOAN_POLICY_SENSITIVE_UPDATE',
       'CONTRIBUTION_RECEIVED',
       'CONTRIBUTION_MISSED',
@@ -852,7 +1055,12 @@ export const ROLE_NOTIFICATION_RULES = {
       'CASH_DEPOSIT_DUE_SOON',
       'CASH_DEPOSIT_OVERDUE',
       'CASH_DEPOSIT_OVERDUE_ALERT',
-      'CASH_DEPOSITED_TO_BANK'
+      'CASH_DEPOSITED_TO_BANK',
+      'LEASE_PERIOD_DUE_SOON',
+      'LEASE_PERIOD_OVERDUE',
+      'LEASE_RENEWAL_DUE_SOON',
+      'ASSET_COMPLIANCE_DUE_SOON',
+      'ASSET_COMPLIANCE_OVERDUE'
     ],
     cannotReceive: []
   },
@@ -860,7 +1068,11 @@ export const ROLE_NOTIFICATION_RULES = {
   // Secretary - membership and governance notifications
   secretary: {
     canReceive: [
+      'BURIAL_CONTRIBUTION_REQUIRED',
       'LOAN_POLICY_UPDATED',
+      'CONTRIBUTION_REMINDER',
+      'CONTRIBUTION_MONTH_CLOSED',
+      'CONTRIBUTION_OVERDUE',
       'LOAN_POLICY_SENSITIVE_UPDATE',
       'MEMBER_JOINED',
       'MEMBER_INVITED',
@@ -904,7 +1116,11 @@ export const ROLE_NOTIFICATION_RULES = {
   },
   chairperson: {
     canReceive: [
+      'MEMBER_DECEASED_REPORTED',
+      'BENEFICIARY_CLAIM_SUBMITTED',
       'LOAN_POLICY_UPDATED',
+      'CONTRIBUTION_REMINDER',
+      'CONTRIBUTION_MONTH_CLOSED',
       'LOAN_POLICY_SENSITIVE_UPDATE',
       'LOAN_SUBMITTED',
       'LOAN_REQUIRES_APPROVAL',
@@ -946,7 +1162,12 @@ export const ROLE_NOTIFICATION_RULES = {
       'NEW_DEVICE_LOGIN',
       'CASH_DEPOSIT_OVERDUE',
       'CASH_DEPOSIT_OVERDUE_ALERT',
-      'CASH_DEPOSITED_TO_BANK'
+      'CASH_DEPOSITED_TO_BANK',
+      'LEASE_PERIOD_DUE_SOON',
+      'LEASE_PERIOD_OVERDUE',
+      'LEASE_RENEWAL_DUE_SOON',
+      'ASSET_COMPLIANCE_DUE_SOON',
+      'ASSET_COMPLIANCE_OVERDUE'
     ],
     cannotReceive: [
       'PAYMENT_RECONCILED',
@@ -1160,6 +1381,14 @@ export const ROLE_NOTIFICATION_RULES = {
 // ========================================
 
 export const DOMAIN_EVENTS = {
+  // Approvals (raise the attention popup for the officials who must decide)
+  LOAN_REQUIRES_APPROVAL: 'LOAN_REQUIRES_APPROVAL',
+  LOAN_REQUIRES_DISBURSEMENT: 'LOAN_REQUIRES_DISBURSEMENT',
+  EXPENSE_REQUIRES_APPROVAL: 'EXPENSE_REQUIRES_APPROVAL',
+  WITHDRAWAL_REQUIRES_APPROVAL: 'WITHDRAWAL_REQUIRES_APPROVAL',
+  ROLE_CHANGE_REQUIRES_APPROVAL: 'ROLE_CHANGE_REQUIRES_APPROVAL',
+  MEMBER_REMOVAL_REQUIRES_APPROVAL: 'MEMBER_REMOVAL_REQUIRES_APPROVAL',
+
   // Financial Events
   CONTRIBUTION_RECEIVED: 'CONTRIBUTION_RECEIVED',
   CONTRIBUTION_MISSED: 'CONTRIBUTION_MISSED',

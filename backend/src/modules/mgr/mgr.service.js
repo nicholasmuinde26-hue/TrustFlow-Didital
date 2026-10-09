@@ -1,8 +1,10 @@
 import MgrPolicy from '../../models/MgrPolicy.js';
 import MgrRound from '../../models/MgrRound.js';
 import MgrAuditLog from '../../models/MgrAuditLog.js';
+import MgrReminder from '../../models/MgrReminder.js';
 import ContributionPlan from '../../models/ContributionPlan.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
+import ContributionPayment from '../../models/ContributionPayment.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import Payout from '../../models/Payout.js';
 import approvalService from '../approval/approval.service.js';
@@ -12,10 +14,11 @@ import paymentService from '../../payment/payment.service.js';
 import { PAYMENT_PROVIDER } from '../../payment/payment.constants.js';
 import accountingService from '../finance/accounting/accounting.service.js';
 import { toDecimal } from '../../shared/decimal.js';
+import { creditMemberWallet } from '../finance/memberWallet.service.js';
 import mongoose from 'mongoose';
 
 const OWNER_TYPE = 'Chama';
-const DISBURSEMENT_METHODS = ['cash', 'bank', 'mpesa'];
+const DISBURSEMENT_METHODS = ['cash', 'bank', 'mpesa', 'wallet'];
 
 // Same replica-set guard used by payout.service.js / financeEngine.service.js -
 // a standalone Mongo (local dev) throws on startTransaction().
@@ -24,11 +27,48 @@ const canUseTransactions = () => {
   return topology?.description?.type === 'ReplicaSetWithPrimary' || topology?.description?.type === 'Sharded';
 };
 
+function addFrequency(date, frequency, count = 1) {
+  const result = new Date(date);
+  if (frequency === 'daily') result.setDate(result.getDate() + count);
+  else if (frequency === 'weekly') result.setDate(result.getDate() + 7 * count);
+  else if (frequency === 'biweekly') result.setDate(result.getDate() + 14 * count);
+  else {
+    const day = result.getDate();
+    const monthOffset = (frequency === 'quarterly' ? 3 : 1) * count;
+    result.setDate(1);
+    result.setMonth(result.getMonth() + monthOffset);
+    const finalDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+    result.setDate(Math.min(day, finalDay));
+  }
+  return result;
+}
+
+function memberContributionAmount(policy, memberId) {
+  const rule = policy.contribution_rule || {};
+  if (rule.type === 'custom_member' || rule.type === 'tiered') {
+    const row = (rule.member_amounts || []).find((item) => String(item.member_id?._id || item.member_id) === String(memberId));
+    if (row?.amount != null) return Number(row.amount.toString?.() ?? row.amount);
+  }
+  return Number(rule.uniform_amount?.toString?.() ?? rule.uniform_amount ?? 5000);
+}
+
 class MgrService {
   /**
    * Create a new MGR Policy draft
    */
   async createPolicy({ chamaId, userId, policyData }) {
+    if (!Array.isArray(policyData.participants) || policyData.participants.length < 2) {
+      throw new Error('Select at least two participants to create an MGR rotation.');
+    }
+    const rule = policyData.contribution_rule || {};
+    if (rule.type === 'custom_member') {
+      for (const memberId of policyData.participants) {
+        const amount = (rule.member_amounts || []).find((entry) => String(entry.member_id?._id || entry.member_id) === String(memberId))?.amount;
+        if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) throw new Error('Enter a positive contribution amount for every selected participant.');
+      }
+    } else if (!Number.isFinite(Number(rule.uniform_amount ?? policyData.uniform_amount ?? 5000)) || Number(rule.uniform_amount ?? policyData.uniform_amount ?? 5000) <= 0) {
+      throw new Error('Contribution amount must be greater than zero.');
+    }
     const existingActive = await MgrPolicy.findOne({ chama_id: chamaId, status: 'active' });
     if (existingActive) {
       throw new Error('An active MGR Policy already exists for this Chama. Archive or complete it before creating a new policy.');
@@ -99,6 +139,18 @@ class MgrService {
     const policy = await MgrPolicy.findOne({ _id: policyId, chama_id: chamaId });
     if (!policy) throw new Error('MGR Policy not found');
 
+    // Snapshot the participant list BEFORE it gets overwritten below, so
+    // that once an active policy has already generated its rounds/
+    // obligations, a treasurer adding someone through "Edit Policy" doesn't
+    // just silently update the roster - previously `participants` was
+    // overwritten with no diffing against the old list, so a newly added
+    // member never got a rotation round or an obligation for the round
+    // currently collecting; they'd show up in the participant list but
+    // never actually owe or receive anything.
+    const previousParticipantIds = new Set(
+      (policy.participants || []).map((p) => String(p._id || p))
+    );
+
     const allowed = [
       'name', 'description', 'currency', 'frequency', 'start_date',
       'contribution_deadline_day', 'grace_period_days', 'participants',
@@ -125,6 +177,20 @@ class MgrService {
       }
     }
 
+    // Onboard any newly added participant into an already-active MGR: give
+    // them their own upcoming rotation round, and pull them into the
+    // currently collecting round's obligations so they're expected to
+    // contribute (and counted in) right away rather than only from the
+    // next round the policy happens to regenerate.
+    if (policy.status === 'active' && Array.isArray(policyData.participants)) {
+      const newParticipantIds = policyData.participants.map((p) => String(p._id || p));
+      const addedParticipantIds = newParticipantIds.filter((id) => !previousParticipantIds.has(id));
+
+      if (addedParticipantIds.length > 0) {
+        await this._onboardNewMgrParticipants({ chamaId, policy, addedParticipantIds, userId });
+      }
+    }
+
     await MgrAuditLog.create({
       chama_id: chamaId,
       policy_id: policy._id,
@@ -134,6 +200,94 @@ class MgrService {
     });
 
     return policy;
+  }
+
+  /**
+   * Give each newly-added participant a rotation turn and an obligation in
+   * the round currently collecting, and grow that round's expected total to
+   * match the larger pool. Best-effort per new member so one bad id doesn't
+   * block the whole policy save that already happened above.
+   */
+  async _onboardNewMgrParticipants({ chamaId, policy, addedParticipantIds, userId }) {
+    const rounds = await MgrRound.find({ chama_id: chamaId, policy_id: policy._id }).sort({ round_number: -1 });
+    const latestRound = rounds[0];
+    if (!latestRound) return; // policy has no rounds yet - nothing to attach to
+
+    const contributionPlanId = latestRound.contribution_plan_id;
+    const amountVal = policy.contribution_rule?.uniform_amount;
+    const perMemberAmount = amountVal != null ? Number(amountVal.toString ? amountVal.toString() : amountVal) : 0;
+
+    const currentRound = rounds.find((r) =>
+      ['collecting', 'target_reached', 'eligibility_checking', 'payout_proposed', 'pending_approval', 'approved', 'disbursing', 'on_hold'].includes(r.status)
+    );
+
+    let nextRoundNumber = latestRound.round_number + 1;
+
+    for (const participantId of addedParticipantIds) {
+      try {
+        // 1. Give them a future turn in the rotation.
+        const dueDate = new Date(latestRound.due_date || policy.start_date);
+        if (policy.frequency === 'monthly') dueDate.setMonth(dueDate.getMonth() + 1);
+        else if (policy.frequency === 'weekly') dueDate.setDate(dueDate.getDate() + 7);
+        else if (policy.frequency === 'biweekly') dueDate.setDate(dueDate.getDate() + 14);
+        else if (policy.frequency === 'daily') dueDate.setDate(dueDate.getDate() + 1);
+        else if (policy.frequency === 'quarterly') dueDate.setMonth(dueDate.getMonth() + 3);
+        else dueDate.setMonth(dueDate.getMonth() + 1);
+
+        await MgrRound.create({
+          chama_id: chamaId,
+          policy_id: policy._id,
+          round_number: nextRoundNumber,
+          recipient_id: participantId,
+          due_date: dueDate,
+          expected_amount: perMemberAmount * policy.participants.length,
+          collected_amount: 0,
+          status: 'upcoming',
+          contribution_plan_id: contributionPlanId,
+        });
+        nextRoundNumber += 1;
+
+        // 2. Pull them into whatever round is currently collecting so they
+        // owe a contribution immediately, same as everyone else already in it.
+        if (currentRound && contributionPlanId) {
+          const alreadyHasObligation = await ContributionObligation.exists({
+            mgr_round_id: currentRound._id,
+            participant_id: participantId,
+          });
+
+          if (!alreadyHasObligation) {
+            await ContributionObligation.create({
+              plan_id: contributionPlanId,
+              mgr_round_id: currentRound._id,
+              owner_type: 'Chama',
+              owner_id: chamaId,
+              participant_type: 'ChamaMembership',
+              participant_id: participantId,
+              expected_amount: perMemberAmount,
+              currency: policy.currency,
+              due_date: currentRound.due_date,
+              status: 'pending',
+            });
+
+            currentRound.expected_amount = Number(currentRound.expected_amount) + perMemberAmount;
+          }
+        }
+      } catch (err) {
+        console.error('[mgr] Failed to onboard new MGR participant', String(participantId), err);
+      }
+    }
+
+    if (currentRound) {
+      await currentRound.save();
+    }
+
+    await MgrAuditLog.create({
+      chama_id: chamaId,
+      policy_id: policy._id,
+      actor_id: userId,
+      event_type: 'POLICY_UPDATED',
+      summary: `${addedParticipantIds.length} new member(s) added to MGR - given a rotation slot and included in the current round's contributions`,
+    });
   }
 
   /**
@@ -152,6 +306,27 @@ class MgrService {
     });
 
     const unpaidCount = obligations.length;
+
+    // Record an actual MgrReminder per outstanding obligation so the
+    // dashboard's "Last Reminded" column reflects a real timestamp instead
+    // of always showing "-". (MgrReminder already existed for the legacy
+    // chamaFinance MGR path but was never written to from here.)
+    if (unpaidCount > 0) {
+      const message = `Reminder: your MGR contribution for Round #${round.round_number} is due.`;
+      await MgrReminder.insertMany(
+        obligations.map((o) => ({
+          chama_id: round.chama_id,
+          obligation_id: o._id,
+          participant_id: o.participant_id?._id || o.participant_id,
+          channel: 'sms',
+          created_by: actorUserId,
+          message,
+        })),
+        { ordered: false }
+      ).catch((err) => {
+        console.error('[mgr] Failed to record reminders for round', String(round._id), err);
+      });
+    }
 
     await MgrAuditLog.create({
       chama_id: round.chama_id,
@@ -224,22 +399,11 @@ class MgrService {
 
     for (let i = 0; i < policy.participants.length; i++) {
       const recipientId = policy.participants[i];
-      const dueDate = new Date(startDate);
-      if (policy.frequency === 'monthly') {
-        dueDate.setMonth(startDate.getMonth() + i);
-      } else if (policy.frequency === 'weekly') {
-        dueDate.setDate(startDate.getDate() + i * 7);
-      } else if (policy.frequency === 'biweekly') {
-        dueDate.setDate(startDate.getDate() + i * 14);
-      } else if (policy.frequency === 'daily') {
-        dueDate.setDate(startDate.getDate() + i);
-      } else if (policy.frequency === 'quarterly') {
-        dueDate.setMonth(startDate.getMonth() + i * 3);
-      } else {
-        dueDate.setMonth(startDate.getMonth() + i);
-      }
+      const dueDate = addFrequency(startDate, policy.frequency, i);
+      const roundEnd = addFrequency(dueDate, policy.frequency, 1);
+      roundEnd.setMilliseconds(roundEnd.getMilliseconds() - 1);
 
-      const expectedAmount = Number(amountVal) * policy.participants.length;
+      const expectedAmount = policy.participants.reduce((sum, memberId) => sum + memberContributionAmount(policy, memberId), 0);
 
       const round = await MgrRound.create({
         chama_id: chamaId,
@@ -247,24 +411,27 @@ class MgrService {
         round_number: i + 1,
         recipient_id: recipientId,
         due_date: dueDate,
+        round_start: dueDate,
+        round_end: roundEnd,
         expected_amount: expectedAmount,
         collected_amount: 0,
-        status: i === 0 ? 'collecting' : 'upcoming',
+        status: i === 0 && dueDate <= new Date() ? 'collecting' : 'upcoming',
         contribution_plan_id: plan._id,
       });
 
       rounds.push(round);
 
       // Create obligations for Round 1
-      if (i === 0) {
+      if (i === 0 && dueDate <= new Date()) {
         for (const partId of policy.participants) {
           await ContributionObligation.create({
             plan_id: plan._id,
+            mgr_round_id: round._id,
             owner_type: 'Chama',
             owner_id: chamaId,
             participant_type: 'ChamaMembership',
             participant_id: partId,
-            expected_amount: amountVal,
+            expected_amount: memberContributionAmount(policy, partId),
             currency: policy.currency,
             due_date: dueDate,
             status: 'pending',
@@ -289,25 +456,22 @@ class MgrService {
    * Get complete dashboard overview for active MGR
    */
   async getDashboardOverview(chamaId) {
-    const policy = await MgrPolicy.findOne({ chama_id: chamaId, status: 'active' }).populate({
+    let policy = await MgrPolicy.findOne({ chama_id: chamaId, status: 'active' }).populate({
       path: 'participants',
       populate: { path: 'user_id', select: 'name email phone' },
     });
 
     if (!policy) {
-      const draftPolicy = await MgrPolicy.findOne({ chama_id: chamaId, status: 'draft' }).populate({
+      policy = await MgrPolicy.findOne({ chama_id: chamaId, status: 'draft' }).sort({ createdAt: -1 }).populate({
         path: 'participants',
         populate: { path: 'user_id', select: 'name email phone' },
       });
 
-      return {
-        hasPolicy: !!draftPolicy,
-        policy: draftPolicy || null,
-        rounds: [],
-        currentRound: null,
-        obligations: [],
-        auditLogs: [],
-      };
+      if (!policy) policy = await MgrPolicy.findOne({ chama_id: chamaId, status: 'completed' }).sort({ createdAt: -1 }).populate({
+        path: 'participants', populate: { path: 'user_id', select: 'name email phone' },
+      });
+      if (!policy) return { hasPolicy: false, policy: null, rounds: [], currentRound: null, obligations: [], auditLogs: [] };
+      if (policy.status !== 'completed') return { hasPolicy: true, policy, rounds: [], currentRound: null, obligations: [], auditLogs: [] };
     }
 
     let rounds = await MgrRound.find({ chama_id: chamaId, policy_id: policy._id })
@@ -357,20 +521,22 @@ class MgrService {
         round_number: 1,
         recipient_id: recipientId,
         due_date: dueDate,
-        expected_amount: rawAmount * policy.participants.length,
+        round_start: dueDate,
+        round_end: (() => { const end = addFrequency(dueDate, policy.frequency, 1); end.setMilliseconds(end.getMilliseconds() - 1); return end; })(),
+        expected_amount: policy.participants.reduce((sum, part) => sum + memberContributionAmount(policy, part._id || part), 0),
         collected_amount: 0,
-        status: 'collecting',
+        status: dueDate <= new Date() ? 'collecting' : 'upcoming',
         contribution_plan_id: plan._id,
       });
 
-      await ContributionObligation.insertMany(
+      if (dueDate <= new Date()) await ContributionObligation.insertMany(
         policy.participants.map((part) => ({
           plan_id: plan._id,
           owner_type: 'Chama',
           owner_id: chamaId,
           participant_type: 'ChamaMembership',
           participant_id: part._id || part,
-          expected_amount: rawAmount,
+          expected_amount: memberContributionAmount(policy, part._id || part),
           currency: policy.currency,
           due_date: dueDate,
           status: 'pending',
@@ -396,14 +562,14 @@ class MgrService {
         .sort({ round_number: 1 });
     }
 
-    const currentRound = rounds.find((r) => ['collecting', 'target_reached', 'eligibility_checking', 'payout_proposed', 'pending_approval', 'approved', 'disbursing', 'on_hold'].includes(r.status)) || rounds[0];
+    const currentRound = rounds.find((r) => ['awaiting_confirmation', 'collecting', 'target_reached', 'eligibility_checking', 'payout_proposed', 'pending_approval', 'approved', 'disbursing', 'awaiting_receipt', 'on_hold'].includes(r.status)) || rounds.find((r) => r.status === 'upcoming') || rounds[rounds.length - 1];
 
     let obligations = [];
     if (currentRound && currentRound.contribution_plan_id) {
       obligations = await ContributionObligation.find({
         $or: [
-          { plan_id: currentRound.contribution_plan_id },
-          { contribution_plan_id: currentRound.contribution_plan_id },
+          { mgr_round_id: currentRound._id },
+          { plan_id: currentRound.contribution_plan_id, mgr_round_id: null },
         ],
       })
         .populate({
@@ -425,25 +591,24 @@ class MgrService {
     // lookup (chama.middleware.js) always came back empty, and every MGR
     // payment failed with "Invalid Chama ID" - the round could never
     // actually be paid into.
-    if (obligations.length === 0 && currentRound && currentRound.contribution_plan_id && Array.isArray(policy.participants) && policy.participants.length > 0) {
+    if (obligations.length === 0 && currentRound && ['collecting', 'target_reached'].includes(currentRound.status) && currentRound.contribution_plan_id && Array.isArray(policy.participants) && policy.participants.length > 0) {
       // policy.contribution_rule.uniform_amount is a Decimal128 on the live
       // Mongoose document (not the toJSON-transformed string). Number() on
       // a BSON Decimal128 relies on its toString() via implicit coercion,
       // which works, but go through the explicit .toString() so this can't
       // silently become NaN/0 if the underlying BSON type ever changes.
-      const rawUniformAmount = policy.contribution_rule?.uniform_amount;
-      const expectedPerMember = rawUniformAmount != null ? Number(rawUniformAmount.toString()) : 0;
       const dueDate = currentRound.due_date || new Date();
 
       try {
         await ContributionObligation.insertMany(
           policy.participants.map((part) => ({
             plan_id: currentRound.contribution_plan_id,
+            mgr_round_id: currentRound._id,
             owner_type: 'Chama',
             owner_id: chamaId,
             participant_type: 'ChamaMembership',
             participant_id: part._id || part,
-            expected_amount: expectedPerMember,
+            expected_amount: memberContributionAmount(policy, part._id || part),
             currency: policy.currency,
             due_date: dueDate,
             status: 'pending',
@@ -467,8 +632,8 @@ class MgrService {
 
       obligations = await ContributionObligation.find({
         $or: [
-          { plan_id: currentRound.contribution_plan_id },
-          { contribution_plan_id: currentRound.contribution_plan_id },
+          { mgr_round_id: currentRound._id },
+          { plan_id: currentRound.contribution_plan_id, mgr_round_id: null },
         ],
       })
         .populate({
@@ -477,17 +642,68 @@ class MgrService {
         });
     }
 
+    // Self-heal: syncRoundCollection (called from the payment-completion
+    // paths) is the only thing that increments MgrRound.collected_amount,
+    // and a prior bug meant some payments never reached it - the money was
+    // correctly recorded on the obligation/ledger, but the round's
+    // collected total silently stayed stuck below the real amount. Recompute
+    // it here from the actual completed ContributionPayments for this
+    // round's plan (the source of truth) and persist the correction, so a
+    // round that's already out of sync repairs itself on the next dashboard
+    // load instead of staying stuck forever.
+    if (currentRound && currentRound.contribution_plan_id) {
+      const obligationIds = obligations.map((o) => o._id);
+      const paidAgg = await ContributionPayment.aggregate([
+        {
+          $match: {
+            status: 'completed',
+            obligation_id: { $in: obligationIds },
+          },
+        },
+        { $group: { _id: null, total: { $sum: { $toDouble: '$amount' } } } },
+      ]);
+      const actualCollected = paidAgg[0]?.total || 0;
+      if (Math.round(actualCollected * 100) !== Math.round(Number(currentRound.collected_amount) * 100)) {
+        currentRound.collected_amount = actualCollected;
+        if (actualCollected >= Number(currentRound.expected_amount) && currentRound.status === 'collecting') {
+          currentRound.status = 'target_reached';
+        }
+        await currentRound.save();
+      }
+    }
+
     const auditLogs = await MgrAuditLog.find({ chama_id: chamaId })
       .populate('actor_id', 'name email')
       .sort({ createdAt: -1 })
       .limit(20);
+
+    // Attach each obligation's most recent reminder timestamp (if any), so
+    // the dashboard's "Last Reminded" column reflects real data instead of
+    // always showing "-". Serialize through each obligation's own toJSON()
+    // first (it converts Decimal128 amount fields to plain strings) so the
+    // extra last_reminded_at field survives on a plain object rather than
+    // being dropped as an undeclared schema path on the Mongoose document.
+    let obligationsWithReminders = obligations;
+    if (obligations.length > 0) {
+      const reminderRows = await MgrReminder.aggregate([
+        { $match: { obligation_id: { $in: obligations.map((o) => o._id) } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$obligation_id', last_reminded_at: { $first: '$createdAt' } } },
+      ]);
+      const lastRemindedMap = new Map(reminderRows.map((r) => [String(r._id), r.last_reminded_at]));
+      obligationsWithReminders = obligations.map((o) => {
+        const json = typeof o.toJSON === 'function' ? o.toJSON() : o;
+        json.last_reminded_at = lastRemindedMap.get(String(o._id)) || null;
+        return json;
+      });
+    }
 
     return {
       hasPolicy: true,
       policy,
       rounds,
       currentRound,
-      obligations,
+      obligations: obligationsWithReminders,
       auditLogs,
     };
   }
@@ -498,6 +714,7 @@ class MgrService {
   async proposePayout({ roundId, treasurerUserId, amount, disbursementMethod = 'mpesa', phoneNumber, notes = '' }) {
     const round = await MgrRound.findById(roundId).populate('policy_id');
     if (!round) throw new Error('Round not found');
+    if (!['collecting', 'target_reached'].includes(round.status)) throw new Error('Payout can only be proposed for a round currently collecting contributions.');
 
     const chamaId = round.chama_id;
     const policy = round.policy_id;
@@ -527,7 +744,11 @@ class MgrService {
       throw new Error(`Collection is at ${collectionPct.toFixed(1)}%, but minimum required threshold is ${minPct}%`);
     }
 
-    const payoutAmount = amount || collected;
+    const payoutAmount = Number(amount || collected);
+    if (!Number.isFinite(payoutAmount) || payoutAmount <= 0 || payoutAmount > collected) {
+      throw new Error('Payout amount must be greater than zero and no more than the amount collected.');
+    }
+    if (disbursementMethod === 'mpesa' && !phoneNumber) throw new Error('Recipient phone number is required for M-Pesa payout.');
 
     // Create Approval Request via Approval Service
     const recipientMembership = await ChamaMembership.findById(round.recipient_id).populate('user_id', 'name');
@@ -576,13 +797,14 @@ class MgrService {
   /**
    * Finalize and Disburse Payout after approval
    */
-  async disbursePayout({ roundId, actorUserId }) {
+  async disbursePayout({ roundId, actorUserId, externalReference }) {
     const round = await MgrRound.findById(roundId).populate('approval_request_id').populate('policy_id');
     if (!round) throw new Error('Round not found');
 
     if (!round.approval_request_id || round.approval_request_id.status !== 'approved') {
       throw new Error('Payout cannot be disbursed until all required approvals are completed.');
     }
+    if (!['pending_approval', 'approved'].includes(round.status)) throw new Error('This payout has already been disbursed or is not ready for disbursement.');
 
     round.status = 'approved';
     await round.save();
@@ -591,6 +813,11 @@ class MgrService {
     await round.save();
 
     const disbursementMethod = round.payout_proposal?.disbursement_method || 'mpesa';
+    if (['mpesa', 'bank'].includes(disbursementMethod) && !String(externalReference || '').trim()) {
+      round.status = 'pending_approval';
+      await round.save();
+      throw new Error(`Enter the ${disbursementMethod === 'mpesa' ? 'M-Pesa receipt' : 'bank transfer'} reference to record the disbursement.`);
+    }
 
     if (!DISBURSEMENT_METHODS.includes(disbursementMethod)) {
       throw new Error(
@@ -625,7 +852,7 @@ class MgrService {
             currency,
             status: 'paid',
             disbursement_method: disbursementMethod,
-            external_reference: `MGR-MPESA-${Date.now()}`,
+            external_reference: String(externalReference || (disbursementMethod === 'wallet' ? `WALLET-${round.round_number}` : `CASH-${Date.now()}`)).trim(),
             paid_at: new Date(),
           },
         ],
@@ -648,7 +875,7 @@ class MgrService {
           currency,
           source_type: 'Payout',
           source_id: payout._id,
-          disbursement_method: disbursementMethod,
+          disbursement_method: disbursementMethod === 'wallet' ? 'mpesa' : disbursementMethod,
           description: `MGR payout settled via ${disbursementMethod} for Round #${round.round_number}`,
           created_by: actorUserId,
           posted_by: actorUserId,
@@ -660,9 +887,16 @@ class MgrService {
       payout.financial_transaction_id = posting.transactionId;
       await payout.save(session ? { session } : {});
 
+        if (disbursementMethod === 'wallet') {
+          const recipient = await ChamaMembership.findById(round.recipient_id).select('user_id').session(session || null).lean();
+          await creditMemberWallet({ userId: recipient?.user_id, amount, sourceType: 'Payout', sourceId: payout._id, createdBy: actorUserId, externalReference: `MGR-${round.round_number}`, session });
+        }
+
       if (session) await session.commitTransaction();
     } catch (error) {
       if (session) await session.abortTransaction();
+      round.status = 'approved';
+      await round.save().catch(() => {});
       throw error;
     } finally {
       if (session) await session.endSession();
@@ -694,6 +928,9 @@ class MgrService {
       return { round, payout, nextRound: null };
     }
 
+    round.status = 'awaiting_receipt';
+    await round.save();
+
     // Open next round if available
     const nextRound = await MgrRound.findOne({
       chama_id: round.chama_id,
@@ -701,42 +938,119 @@ class MgrService {
       round_number: round.round_number + 1,
     });
 
-    if (nextRound) {
-      nextRound.status = 'collecting';
-      await nextRound.save();
+    return { round, payout, nextRound };
+  }
 
-      // Create obligations for next round
-      for (const partId of round.policy_id.participants) {
-        await ContributionObligation.create({
-          plan_id: round.contribution_plan_id,
-          owner_type: 'Chama',
-          owner_id: round.chama_id,
-          participant_type: 'ChamaMembership',
-          participant_id: partId,
-          expected_amount: round.policy_id.contribution_rule?.uniform_amount || 5000,
-          currency: round.policy_id.currency,
-          due_date: nextRound.due_date,
-          status: 'pending',
-        });
-      }
-    } else {
-      // All rounds completed!
+  async markPayoutReceived({ roundId, recipientMembershipId, actorUserId }) {
+    const round = await MgrRound.findById(roundId).populate('policy_id');
+    if (!round) throw new Error('Round not found');
+    if (String(round.recipient_id) !== String(recipientMembershipId)) throw new Error('Only the payout recipient can confirm receipt.');
+    if (round.status !== 'awaiting_receipt') throw new Error('This payout is not yet ready for receipt confirmation.');
+
+    round.status = 'received';
+    round.payout_received_at = new Date();
+    round.payout_received_by = recipientMembershipId;
+    await round.save();
+
+    const nextRound = await MgrRound.findOne({
+      chama_id: round.chama_id, policy_id: round.policy_id._id, round_number: round.round_number + 1,
+    });
+    if (!nextRound) {
       const policy = await MgrPolicy.findById(round.policy_id._id);
-      if (policy) {
-        policy.status = 'completed';
-        await policy.save();
-      }
-
+      if (policy) { policy.status = 'completed'; await policy.save(); }
       await MgrAuditLog.create({
-        chama_id: round.chama_id,
-        policy_id: round.policy_id._id,
-        actor_id: actorUserId,
-        event_type: 'CYCLE_COMPLETED',
-        summary: `All ${round.round_number} rounds of MGR Policy v${policy?.version} completed!`,
+        chama_id: round.chama_id, policy_id: round.policy_id._id, round_id: round._id,
+        actor_id: actorUserId, event_type: 'CYCLE_COMPLETED',
+        summary: `All ${round.round_number} rounds completed and the final payout was acknowledged`,
       });
     }
+    await MgrAuditLog.create({
+      chama_id: round.chama_id, policy_id: round.policy_id._id, round_id: round._id,
+      actor_id: actorUserId, event_type: 'PAYOUT_RECEIVED',
+      summary: `Round #${round.round_number} payout receipt confirmed by recipient`,
+      details: { amount: round.payout_amount, payoutId: round.payout_id },
+    });
+    return { round, nextRound };
+  }
 
-    return { round, payout, nextRound };
+  async advanceDueRounds(now = new Date()) {
+    const endedRounds = await MgrRound.find({
+      status: { $nin: ['upcoming', 'paid', 'reconciled', 'completed'] },
+      round_end: { $ne: null, $lte: now },
+      interval_ended_at: null,
+    }).populate('policy_id', 'created_by');
+    for (const round of endedRounds) {
+      const ended = await MgrRound.findOneAndUpdate(
+        { _id: round._id, interval_ended_at: null },
+        { $set: { interval_ended_at: now } },
+        { new: true }
+      );
+      if (!ended) continue;
+      await MgrAuditLog.create({
+        chama_id: round.chama_id, policy_id: round.policy_id, round_id: round._id,
+        actor_id: round.policy_id?.created_by,
+        event_type: 'ROUND_INTERVAL_ENDED',
+        summary: `Round #${round.round_number} interval ended with ${Math.max(0, Number(round.expected_amount) - Number(round.collected_amount))} still outstanding`,
+      });
+    }
+    const dueRounds = await MgrRound.find({ status: 'upcoming', due_date: { $lte: now } }).populate('policy_id');
+    let promoted = 0;
+    for (const round of dueRounds) {
+      if (round.round_number > 1) {
+        const previous = await MgrRound.findOne({ policy_id: round.policy_id?._id || round.policy_id, round_number: round.round_number - 1 }).select('status');
+        if (!previous || !['received', 'reconciled', 'completed'].includes(previous.status)) continue;
+      }
+      const claimed = await MgrRound.findOneAndUpdate(
+        { _id: round._id, status: 'upcoming', due_date: { $lte: now } },
+        { $set: { status: 'awaiting_confirmation' } },
+        { new: true }
+      );
+      if (!claimed) continue;
+      promoted += 1;
+      await MgrAuditLog.create({
+        chama_id: round.chama_id,
+        policy_id: round.policy_id?._id || round.policy_id,
+        round_id: round._id,
+        actor_id: round.policy_id?.created_by,
+        event_type: 'ROUND_READY_FOR_CONFIRMATION',
+        summary: `Round #${round.round_number} interval started; payout recipient confirmation is required`,
+      });
+    }
+    return { ended: endedRounds.length, awaitingConfirmation: promoted };
+  }
+
+  async confirmRoundPosition({ roundId, recipientId, actorUserId }) {
+    const round = await MgrRound.findById(roundId).populate('policy_id');
+    if (!round) throw new Error('Round not found');
+    if (round.status !== 'awaiting_confirmation') throw new Error('This round is not awaiting position confirmation');
+    const policy = round.policy_id;
+    const selectedRecipient = recipientId || round.recipient_id;
+    if (!policy.participants.some((id) => String(id) === String(selectedRecipient))) {
+      throw new Error('The payout recipient must be an active participant in this MGR policy');
+    }
+
+    round.recipient_id = selectedRecipient;
+    round.status = 'collecting';
+    await round.save();
+
+    const amount = policy.contribution_rule?.uniform_amount || 5000;
+    for (const participantId of policy.participants) {
+      const exists = await ContributionObligation.exists({ plan_id: round.contribution_plan_id, participant_id: participantId });
+      if (!exists) await ContributionObligation.create({
+        mgr_round_id: round._id,
+        plan_id: round.contribution_plan_id,
+        owner_type: 'Chama', owner_id: round.chama_id,
+        participant_type: 'ChamaMembership', participant_id: participantId,
+        expected_amount: memberContributionAmount(policy, participantId), currency: policy.currency, due_date: round.due_date, status: 'pending',
+      });
+    }
+    await MgrAuditLog.create({
+      chama_id: round.chama_id, policy_id: policy._id, round_id: round._id, actor_id: actorUserId,
+      event_type: 'ROUND_POSITION_CONFIRMED',
+      summary: `Round #${round.round_number} opened after confirming payout position`,
+      details: { recipientId: selectedRecipient },
+    });
+    return round;
   }
 
   /**
@@ -758,6 +1072,7 @@ class MgrService {
 
     const obligation = await ContributionObligation.findOne({
       plan_id: currentRound.contribution_plan_id,
+      mgr_round_id: currentRound._id,
       participant_id: memberId,
       status: { $in: ['pending', 'partially_paid', 'overdue'] },
     });
@@ -832,15 +1147,26 @@ class MgrService {
    * under the governed workflow, payout always requires an explicit
    * Treasurer proposal (proposePayout) plus multi-role approval sign-off.
    */
-  async syncRoundCollection({ chamaId, policyId, amount, actorUserId }) {
-    const round = await MgrRound.findOne({
+  async syncRoundCollection({ chamaId, policyId, roundId, obligationId, amount, actorUserId }) {
+    if (!roundId && obligationId) {
+      const obligation = await ContributionObligation.findById(obligationId).select('mgr_round_id');
+      roundId = obligation?.mgr_round_id;
+    }
+    const round = await MgrRound.findOne(roundId ? {
+      _id: roundId, chama_id: chamaId, policy_id: policyId,
+    } : {
       chama_id: chamaId,
       policy_id: policyId,
       status: { $in: ['collecting', 'target_reached'] },
     });
     if (!round) return null;
 
-    round.collected_amount = (Number(round.collected_amount) || 0) + Number(amount || 0);
+    const obligationIds = await ContributionObligation.find({ mgr_round_id: round._id }).distinct('_id');
+    const totals = obligationIds.length ? await ContributionPayment.aggregate([
+      { $match: { status: 'completed', obligation_id: { $in: obligationIds } } },
+      { $group: { _id: null, total: { $sum: { $toDouble: '$amount' } } } },
+    ]) : [];
+    round.collected_amount = totals[0]?.total ?? ((Number(round.collected_amount) || 0) + Number(amount || 0));
     if (Number(round.collected_amount) >= Number(round.expected_amount)) {
       round.status = 'target_reached';
     }
@@ -852,7 +1178,7 @@ class MgrService {
         policy_id: policyId,
         round_id: round._id,
         actor_id: actorUserId,
-        event_type: 'CONTRIBUTION_RECORDED',
+        event_type: 'CONTRIBUTION_RECEIVED',
         summary: `Contribution of ${amount} recorded for Round #${round.round_number}`,
       });
     }

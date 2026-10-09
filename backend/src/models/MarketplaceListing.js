@@ -92,6 +92,18 @@ const marketplaceListingSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    brand: {
+      type: String,
+      default: "",
+      trim: true,
+      index: true,
+    },
+    discount_pct: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
     tags: {
       type: [String],
       default: [],

@@ -139,10 +139,10 @@ committeeSchema.index({ chairperson_id: 1, status: 1 });
 // VALIDATION
 // ========================================
 
-committeeSchema.pre('save', function(next) {
+committeeSchema.pre('save', function () {
   // Ensure committee has at least a chairperson
   if (this.status === 'active' && (!this.chairperson_id || this.members.length === 0)) {
-    return next(new Error('Active committee must have a chairperson and at least one member'));
+    throw new Error('Active committee must have a chairperson and at least one member');
   }
 
   // Ensure chairperson is in members list
@@ -151,13 +151,13 @@ committeeSchema.pre('save', function(next) {
       member => String(member.membership_id) === String(this.chairperson_id)
     );
     if (!chairpersonInMembers) {
-      return next(new Error('Chairperson must be a committee member'));
+      throw new Error('Chairperson must be a committee member');
     }
   }
 
   // Validate minimum members requirement
   if (this.status === 'active' && this.members.length < this.settings.minimum_members) {
-    return next(new Error(`Committee must have at least ${this.settings.minimum_members} members`));
+    throw new Error(`Committee must have at least ${this.settings.minimum_members} members`);
   }
 
   // Set dissolved_at if status is dissolved
@@ -165,7 +165,6 @@ committeeSchema.pre('save', function(next) {
     this.dissolved_at = new Date();
   }
 
-  next();
 });
 
 // ========================================

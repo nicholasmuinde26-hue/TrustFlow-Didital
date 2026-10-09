@@ -6,9 +6,11 @@ import ContributionPlan from '../../models/ContributionPlan.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import ChamaLoan from '../../models/ChamaLoan.js';
+import Withdrawal from '../../models/Withdrawal.js';
 
 import AppError from '../../utils/AppError.js';
 import accountingService from '../finance/accounting/accounting.service.js';
+import { creditMemberWallet } from '../finance/memberWallet.service.js';
 
 import { OPEN_LOAN_STATUSES } from '../loans/Loan.constants.js';
 
@@ -40,7 +42,7 @@ import {
 // ============================================================
 
 const OWNER_TYPE = 'Chama';
-const DISBURSEMENT_METHODS = ['cash', 'bank', 'mpesa'];
+const DISBURSEMENT_METHODS = ['cash', 'bank', 'mpesa', 'wallet'];
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
@@ -57,6 +59,11 @@ const canUseTransactions = () => {
 // - every share this member has already been PAID out of
 //   savings previously (across any share-out batch, so a
 //   member can't be paid the same balance twice)
+// - every Withdrawal already APPROVED or PAID against this plan (a
+//   'pending' request doesn't reduce this balance yet — it's checked
+//   separately against the member's OTHER open requests by
+//   withdrawal.service.js, so two simultaneous requests can't each be
+//   validated against the same not-yet-committed balance)
 //
 // ============================================================
 
@@ -90,6 +97,18 @@ export const getMemberSavingsBalance = async (chamaId, contributionPlanId, membe
       },
     },
     { $group: { _id: null, total: { $sum: { $toDecimal: '$items.amount' } } } },
+  ]);
+
+  const alreadyWithdrawn = await Withdrawal.aggregate([
+    {
+      $match: {
+        chama_id: new mongoose.Types.ObjectId(chamaId),
+        contribution_plan_id: new mongoose.Types.ObjectId(contributionPlanId),
+        member_id: new mongoose.Types.ObjectId(membershipId),
+        status: { $in: ['approved', 'paid'] },
+      },
+    },
+    { $group: { _id: null, total: { $sum: { $toDecimal: '$amount' } } } },
   ]);
 
   const totalDeposited = toDecimal(deposits[0]?.total ?? 0);
@@ -397,7 +416,7 @@ export const payShareoutItem = async ({
         currency: item.currency,
         source_type: 'SavingsShareout',
         source_id: shareout._id,
-        disbursement_method,
+        disbursement_method: disbursement_method === 'wallet' ? 'mpesa' : disbursement_method,
         description: `Savings share-out settlement for member ${item.member_id}`,
         created_by: posted_by,
         posted_by,
@@ -411,6 +430,11 @@ export const payShareoutItem = async ({
     item.external_reference = external_reference;
     item.financial_transaction_id = result.transactionId;
     item.paid_at = new Date();
+
+    if (disbursement_method === 'wallet') {
+      const member = await ChamaMembership.findById(item.member_id).select('user_id').session(session).lean();
+      await creditMemberWallet({ userId: member?.user_id, amount: item.amount, sourceType: 'SavingsShareoutItem', sourceId: item._id, createdBy: posted_by, externalReference: `SHAREOUT-${shareout._id}-${item._id}`, session });
+    }
 
     const allSettled = shareout.items.every((i) => i.status !== 'pending');
     if (allSettled) {

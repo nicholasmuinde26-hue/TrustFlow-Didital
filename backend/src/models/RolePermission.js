@@ -103,7 +103,7 @@ rolePermissionSchema.index({ expires_at: 1, status: 1 });
 // VALIDATION
 // ========================================
 
-rolePermissionSchema.pre('save', function(next) {
+rolePermissionSchema.pre('save', function () {
   // Check expiration
   if (this.expires_at && this.expires_at < new Date() && this.status === 'active') {
     this.status = 'expired';
@@ -111,20 +111,12 @@ rolePermissionSchema.pre('save', function(next) {
 
   // If committee_type is specified, ensure role is committee_member or compatible
   if (this.committee_type && this.role !== 'committee_member' && this.role !== 'chairperson') {
-    if (typeof next === 'function') {
-      return next(new Error('Committee-specific permissions can only be assigned to committee members or chairperson'));
-    } else {
-      throw new Error('Committee-specific permissions can only be assigned to committee members or chairperson');
-    }
+    throw new Error('Committee-specific permissions can only be assigned to committee members or chairperson');
   }
 
   // Validate scope override compatibility with permission
   if (this.scope_override === 'none' && this.status === 'active') {
     this.status = 'revoked';
-  }
-
-  if (typeof next === 'function') {
-    next();
   }
 });
 

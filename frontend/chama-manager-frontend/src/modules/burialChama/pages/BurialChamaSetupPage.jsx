@@ -50,10 +50,16 @@ export default function BurialChamaSetupPage() {
   const [selectedPreset, setSelectedPreset] = useState(null);
 
   // Fetch wizard template
-  const { data: template } = useQuery({
+  const {
+    data: template,
+    isLoading: templateLoading,
+    isError: templateError,
+    error: templateErrorObj,
+    refetch: refetchTemplate,
+  } = useQuery({
     queryKey: ['burial-chama-wizard-template'],
     queryFn: async () => {
-      const response = await api.get('/api/v1/burial-chama/wizard/template');
+      const response = await api.get('/burial-chama/wizard/template');
       return response.data.data;
     }
   });
@@ -62,7 +68,7 @@ export default function BurialChamaSetupPage() {
   const { data: presets } = useQuery({
     queryKey: ['burial-chama-presets'],
     queryFn: async () => {
-      const response = await api.get('/api/v1/burial-chama/wizard/presets');
+      const response = await api.get('/burial-chama/wizard/presets');
       return response.data.data;
     }
   });
@@ -71,7 +77,7 @@ export default function BurialChamaSetupPage() {
   const completeWizardMutation = useMutation({
     mutationFn: async (data) => {
       const response = await api.post(
-        `/api/v1/burial-chama/chama/${workspaceId}/wizard/complete`,
+        `/burial-chama/chama/${workspaceId}/wizard/complete`,
         data
       );
       return response.data;
@@ -90,7 +96,7 @@ export default function BurialChamaSetupPage() {
     // Validate current step
     try {
       const response = await api.post(
-        `/api/v1/burial-chama/wizard/validate/${currentStep}`,
+        `/burial-chama/wizard/validate/${currentStep}`,
         wizardData[`step_${currentStep}`] || {}
       );
       
@@ -192,7 +198,18 @@ export default function BurialChamaSetupPage() {
     }
   };
 
-  if (!template) {
+  if (templateError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
+        <p className="text-sm text-gray-600">
+          {templateErrorObj?.response?.data?.message || 'Failed to load the setup wizard. Please try again.'}
+        </p>
+        <Button onClick={() => refetchTemplate()}>Retry</Button>
+      </div>
+    );
+  }
+
+  if (!template || templateLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin" />

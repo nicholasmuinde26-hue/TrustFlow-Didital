@@ -34,7 +34,7 @@ export default function MgrSetupWizard({ chamaId, members = [], initialPolicy = 
     // Contribution Rule
     contributionType: initialPolicy?.contribution_rule?.type || "uniform",
     uniformAmount: initialPolicy?.contribution_rule?.uniform_amount || 5000,
-    memberAmounts: {},
+    memberAmounts: Object.fromEntries((initialPolicy?.contribution_rule?.member_amounts || []).map((entry) => [String(entry.member_id?._id || entry.member_id), Number(entry.amount || 0)])),
 
     // Rotation
     rotationOrder: initialPolicy?.rotation_rule?.order_type || "fixed",
@@ -105,6 +105,7 @@ export default function MgrSetupWizard({ chamaId, members = [], initialPolicy = 
         contribution_rule: {
           type: formData.contributionType,
           uniform_amount: formData.uniformAmount,
+          member_amounts: formData.selectedParticipants.map((member_id) => ({ member_id, amount: Number(formData.memberAmounts[member_id] || formData.uniformAmount || 0) })),
         },
         rotation_rule: {
           order_type: formData.rotationOrder,
@@ -367,7 +368,7 @@ export default function MgrSetupWizard({ chamaId, members = [], initialPolicy = 
               {formData.contributionType === "uniform" && (
                 <div>
                   <label className="block text-slate-700 dark:text-slate-300 mb-1">
-                    Monthly Contribution Amount (KES)
+                    Contribution per {formData.frequency} round (KES)
                   </label>
                   <input
                     type="number"
@@ -379,6 +380,20 @@ export default function MgrSetupWizard({ chamaId, members = [], initialPolicy = 
                     Expected Pool per Round: KES{" "}
                     {(formData.uniformAmount * formData.selectedParticipants.length).toLocaleString()}
                   </p>
+                </div>
+              )}
+              {formData.contributionType === "custom_member" && (
+                <div className="space-y-2">
+                  {formData.selectedParticipants.map((memberId) => {
+                    const member = members.find((item) => String(item._id) === String(memberId));
+                    return (
+                      <label key={memberId} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{member?.user_id?.name || member?.name || "Member"}</span>
+                        <input type="number" min="0.01" value={formData.memberAmounts[memberId] ?? ""} onChange={(e) => setFormData((prev) => ({ ...prev, memberAmounts: { ...prev.memberAmounts, [memberId]: Number(e.target.value) } }))} className="w-36 rounded-xl border border-slate-200 p-2 font-mono dark:border-slate-700 dark:bg-slate-800" aria-label="Contribution amount" />
+                      </label>
+                    );
+                  })}
+                  <p className="font-bold text-amber-600">Expected Pool per Round: KES {formData.selectedParticipants.reduce((sum, id) => sum + Number(formData.memberAmounts[id] || 0), 0).toLocaleString()}</p>
                 </div>
               )}
             </div>

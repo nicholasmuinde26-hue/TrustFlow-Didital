@@ -1,3 +1,5 @@
+import env from '../../config/env.js';
+import { otpMatches } from '../auth/auth.service.js';
 import bcrypt from 'bcryptjs';
 
 import ChamaMembership from '../../models/ChamaMembership.js';
@@ -39,10 +41,11 @@ const BCRYPT_ROUNDS = 10;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
-// Roles allowed to hold a Leadership Desk PIN at all. Mirrors
-// isManager(role, 'chama') on the frontend and
-// requireChamaTreasurerOrChairperson on the backend.
-const LEADERSHIP_ROLES = ['treasurer', 'chairperson'];
+// Roles allowed to hold a Leadership Desk PIN at all: the three top
+// officials. Mirrors canViewLeadershipDesk() on the frontend. The secretary
+// gets a desk too, but a narrower one (minutes, approvals, read-only
+// members) - what each role may DO inside it is still decided per action.
+const LEADERSHIP_ROLES = ['treasurer', 'chairperson', 'secretary'];
 
 // ========================================
 // INTERNAL HELPERS
@@ -51,7 +54,7 @@ const LEADERSHIP_ROLES = ['treasurer', 'chairperson'];
 const assertLeadershipRole = (membership) => {
   if (!LEADERSHIP_ROLES.includes(membership?.role)) {
     throw new AppError(
-      'Only the treasurer or chairperson holds a Leadership Desk PIN',
+      'Only the chairperson, treasurer or secretary holds a Leadership Desk PIN',
       403
     );
   }
@@ -501,16 +504,16 @@ export const confirmPinReset = async ({ membership, chamaId, userId, otpCode, ne
   assertValidPinFormat(newPin);
   assertPinIsNotTrivial(newPin);
 
-  const user = await User.findById(userId).select('+otpCode +otpExpiresAt');
+  const user = await User.findById(userId).select('+otpCodeHash +otpExpiresAt +otpAttempts');
 
   if (!user) {
     throw new AppError('User not found', 404);
   }
 
-  const expected = user.otpCode;
+  const expectedHash = user.otpCodeHash;
   const expiresAt = user.otpExpiresAt;
 
-  if (!expected || !expiresAt) {
+  if (!expectedHash || !expiresAt) {
     throw new AppError('Request a reset code first', 400);
   }
 
@@ -518,7 +521,33 @@ export const confirmPinReset = async ({ membership, chamaId, userId, otpCode, ne
     throw new AppError('That reset code has expired. Request a new one.', 400);
   }
 
-  if (String(otpCode || '').trim() !== String(expected)) {
+  // This path resets a leadership PIN, so it needs the same attempt cap
+  // as ordinary OTP login - otherwise it becomes the soft underbelly:
+  // an uncapped oracle for guessing a code that grants PIN reset.
+  const maxAttempts = env?.otpMaxAttempts || 5;
+  const attemptsSoFar = Number(user.otpAttempts || 0);
+
+  if (attemptsSoFar >= maxAttempts) {
+    user.otpCodeHash = null;
+    user.otpExpiresAt = null;
+    user.otpAttempts = 0;
+    await user.save();
+
+    await audit({
+      actorUserId: userId,
+      chamaId,
+      membershipId: membership._id,
+      action: 'LEADERSHIP_PIN_RESET_FAILED',
+      metadata: { reason: 'too_many_attempts' }
+    });
+
+    throw new AppError('Too many incorrect codes. Request a new one.', 429);
+  }
+
+  if (!otpMatches(otpCode, expectedHash)) {
+    user.otpAttempts = attemptsSoFar + 1;
+    await user.save();
+
     await audit({
       actorUserId: userId,
       chamaId,
@@ -532,8 +561,9 @@ export const confirmPinReset = async ({ membership, chamaId, userId, otpCode, ne
 
   // Burn the OTP whether or not anything downstream succeeds — a code
   // that has been presented once should never be reusable.
-  user.otpCode = null;
+  user.otpCodeHash = null;
   user.otpExpiresAt = null;
+  user.otpAttempts = 0;
   await user.save();
 
   const record = await loadMembershipWithPin(membership._id);

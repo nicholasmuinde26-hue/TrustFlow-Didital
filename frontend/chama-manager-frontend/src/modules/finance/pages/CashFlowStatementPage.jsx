@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import financeService from "../services/finance.service";
 import { Download, TrendingUp } from "lucide-react";
 import Spinner from "@/shared/components/ui/Spinner";
+import ReportWarnings from "../components/ReportWarnings";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -91,6 +92,8 @@ export default function CashFlowStatementPage() {
           </button>
         </div>
       </div>
+
+      <ReportWarnings warnings={reportData?.warnings} />
 
       {/* Top 4 Metrics Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

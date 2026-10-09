@@ -7,6 +7,7 @@ import {
   getBusinessProfile,
   processCheckout,
   trackOrder,
+  getRetailStores,
 } from "./marketplace.controller.js";
 import User from "../../models/User.js";
 import { verifyAccessToken, verifyToken } from "../../utils/jwt.js";
@@ -43,6 +44,9 @@ const optionalAuth = async (req, res, next) => {
 // Categories & Hubs
 router.get("/categories", getCategories);
 router.get("/categories/:slug", getCategoryBySlug);
+
+// Verified Retail Stores Showcase
+router.get("/retail/sellers", getRetailStores);
 
 // Product & Listing Search & Discovery
 router.get("/listings", searchListings);

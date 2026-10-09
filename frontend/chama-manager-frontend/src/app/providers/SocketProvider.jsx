@@ -9,24 +9,32 @@ import React, {
 } from "react";
 import { io as ioClient } from "socket.io-client";
 
+import useAuth from "@/app/hooks/useAuth";
+
 const SocketContext = createContext(null);
 
 /**
- * The backend runs a real Socket.IO server (see
- * modules/realtime/socketServer.js on the backend - `new Server(server, ...)`
- * from the "socket.io" package). Socket.IO is NOT plain WebSocket: it has
- * its own handshake/framing (Engine.IO) on top of it, plus auth, rooms,
- * automatic reconnection with backoff, etc.
+ * Real-time connection (Socket.IO).
  *
- * This provider previously opened a raw browser `WebSocket` directly to
- * the API host. That connection could never actually complete a Socket.IO
- * handshake, and the object it exposed had no `.on()`/`.off()` - so every
- * consumer that expected a socket.io-client instance (see
- * shared/hooks/useStkPushFlow.js) silently detected "no on/off" and fell
- * straight back to HTTP polling. Nothing was actually broken loudly; the
- * app just never got any real-time event, ever, from any STK push,
- * notification, or chat feature that depends on this provider.
+ * WHAT CHANGED (why notifications never popped up):
+ *
+ * 1. The old provider connected once, when the app first mounted -
+ *    before anyone had logged in. The server's auth middleware rejected
+ *    that handshake (no token), and Socket.IO does NOT automatically
+ *    retry a handshake the server rejected. Nothing reconnected after
+ *    login, so the socket stayed dead until a full page refresh.
+ *    Now: connect when the user becomes authenticated, disconnect on
+ *    logout.
+ *
+ * 2. `socket` is now React state (not just a ref), so components that
+ *    subscribe to events re-run their effects when the socket appears.
+ *
+ * 3. If a handshake is rejected (e.g. the access token had just expired
+ *    and the API interceptor is refreshing it), we retry a few times
+ *    with backoff, reading the freshest token each attempt.
  */
+
+const MAX_HANDSHAKE_RETRIES = 6;
 
 function getSocketOrigin() {
   const apiUrl =
@@ -41,11 +49,8 @@ function getSocketOrigin() {
 
   try {
     const url = new URL(apiUrl, window.location.origin);
-    // Socket.IO is mounted on the same HTTP server as the REST API, at its
-    // own default path ("/socket.io"), not under "/api/v1" or whatever
-    // path prefix the REST API uses - so only the origin (protocol + host
-    // + port) is relevant here. socket.io-client handles the ws(s)://
-    // upgrade itself; it wants an http(s):// origin, not ws(s)://.
+    // Socket.IO is mounted at its own path ("/socket.io"), not under the
+    // REST prefix, so only the origin matters here.
     return `${url.protocol}//${url.host}`;
   } catch {
     return undefined;
@@ -53,45 +58,48 @@ function getSocketOrigin() {
 }
 
 function getStoredToken() {
-  return (
-    localStorage.getItem("accessToken") ||
-    localStorage.getItem("access_token") ||
-    null
-  );
+  return localStorage.getItem("accessToken");
 }
 
 export default function SocketProvider({ children }) {
-  const socketRef = useRef(null);
-  const mountedRef = useRef(false);
+  const { isAuthenticated } = useAuth();
 
+  const socketRef = useRef(null);
+  const retryTimerRef = useRef(null);
+  const retryCountRef = useRef(0);
+
+  const [socket, setSocket] = useState(null);
   const [status, setStatus] = useState("disconnected");
 
   const socketOrigin = useMemo(() => getSocketOrigin(), []);
 
   const disconnect = useCallback(() => {
+    clearTimeout(retryTimerRef.current);
+    retryCountRef.current = 0;
+
     if (socketRef.current) {
       socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
       socketRef.current = null;
     }
+
+    setSocket(null);
     setStatus("disconnected");
   }, []);
 
   const connect = useCallback(() => {
-    if (!mountedRef.current) return;
+    // Already have a live or in-flight socket.
+    if (socketRef.current) return;
 
-    if (socketRef.current?.connected) {
-      return;
-    }
+    // No token yet -> nothing to authenticate with.
+    if (!getStoredToken()) return;
 
     setStatus("connecting");
 
     try {
-      const socket = ioClient(socketOrigin, {
-        // Reads the token fresh on every (re)connection attempt, so a
-        // login that happens after this provider first mounts - or a
-        // token refresh - is picked up on the next reconnect without
-        // needing to tear down and recreate the whole provider.
+      const next = ioClient(socketOrigin, {
+        // Read fresh on every (re)connection attempt so a refreshed token
+        // is picked up automatically.
         auth: (callback) => callback({ token: getStoredToken() }),
         transports: ["websocket", "polling"],
         reconnection: true,
@@ -100,29 +108,49 @@ export default function SocketProvider({ children }) {
         withCredentials: true,
       });
 
-      socketRef.current = socket;
+      socketRef.current = next;
 
-      socket.on("connect", () => {
+      next.on("connect", () => {
+        retryCountRef.current = 0;
         setStatus("connected");
       });
 
-      socket.on("disconnect", () => {
-        if (!mountedRef.current) return;
+      next.on("disconnect", () => {
+        if (socketRef.current !== next) return;
         setStatus("disconnected");
       });
 
-      socket.on("connect_error", (error) => {
+      next.on("connect_error", (error) => {
         console.warn("[SocketProvider] Connection error:", error?.message);
+        if (socketRef.current !== next) return;
         setStatus("error");
+
+        // `active` is true while Socket.IO is still auto-reconnecting
+        // (network errors). It is false after a rejected handshake,
+        // which is the case we have to retry ourselves.
+        if (next.active) return;
+        if (retryCountRef.current >= MAX_HANDSHAKE_RETRIES) return;
+
+        const delay = Math.min(30000, 2000 * 2 ** retryCountRef.current);
+        retryCountRef.current += 1;
+
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => {
+          if (socketRef.current === next) next.connect();
+        }, delay);
       });
 
-      socket.onAny((event, payload) => {
+      // Every server event is also re-broadcast on window, so any part of
+      // the app can listen without holding a socket reference.
+      next.onAny((event, payload) => {
         window.dispatchEvent(
           new CustomEvent("chamamanager:socket-message", {
             detail: { event, payload },
           })
         );
       });
+
+      setSocket(next);
     } catch (error) {
       console.error("[SocketProvider] Connection failed:", error);
       setStatus("error");
@@ -130,12 +158,10 @@ export default function SocketProvider({ children }) {
   }, [socketOrigin]);
 
   const send = useCallback((event, payload) => {
-    const socket = socketRef.current;
-    if (!socket || !socket.connected) {
-      return false;
-    }
+    const current = socketRef.current;
+    if (!current || !current.connected) return false;
     try {
-      socket.emit(event, payload);
+      current.emit(event, payload);
       return true;
     } catch (error) {
       console.error("[SocketProvider] Send failed:", error);
@@ -143,25 +169,21 @@ export default function SocketProvider({ children }) {
     }
   }, []);
 
+  // Follow the login state.
   useEffect(() => {
-    mountedRef.current = true;
+    if (isAuthenticated) {
+      connect();
+    } else {
+      disconnect();
+    }
+  }, [isAuthenticated, connect, disconnect]);
 
-    connect();
-
-    return () => {
-      mountedRef.current = false;
-      if (socketRef.current) {
-        socketRef.current.removeAllListeners();
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connect]);
+  // Clean up on unmount.
+  useEffect(() => disconnect, [disconnect]);
 
   const value = useMemo(
     () => ({
-      socket: socketRef.current,
+      socket,
       status,
       connected: status === "connected",
       connecting: status === "connecting",
@@ -170,7 +192,7 @@ export default function SocketProvider({ children }) {
       disconnect,
       send,
     }),
-    [status, socketOrigin, connect, disconnect, send]
+    [socket, status, socketOrigin, connect, disconnect, send]
   );
 
   return (
@@ -184,9 +206,7 @@ export function useSocket() {
   const context = useContext(SocketContext);
 
   if (!context) {
-    throw new Error(
-      "useSocket must be used inside a SocketProvider"
-    );
+    throw new Error("useSocket must be used inside a SocketProvider");
   }
 
   return context;

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { BEHAVIOR_VALUES } from '../constants/contributionBehavior.constants.js';
 
 
 // ========================================
@@ -692,6 +693,136 @@ const contributionPlanSchema =
 
 
       // ========================================
+      // BEHAVIOUR  (what the system needs to know)
+      // ========================================
+      //
+      // `name` is free text chosen by the chama. `behavior` is the small
+      // fixed set the system reasons about. Never infer it from the name.
+      //
+      // ========================================
+
+      // null = created before behaviour existed; readers fall back to
+      // behaviorFromLegacy() until backfillContributionBehavior has run.
+      behavior: {
+        type: String,
+        enum: [...BEHAVIOR_VALUES, null],
+        default: null,
+        index: true
+      },
+
+      // How the amount is read. fixed = exactly `amount` each period;
+      // minimum = at least `amount`, more is welcome (extra carries forward
+      // as advance); member_chooses = `amount` is the suggested floor the
+      // member may exceed. Only fixed vs. not-fixed changes what the UI says;
+      // the engine opens obligations at `amount` in every mode.
+      amount_mode: {
+        type: String,
+        enum: ['fixed', 'minimum', 'member_chooses'],
+        default: 'fixed'
+      },
+
+      // Set only on plans the platform itself relies on (today: 'savings',
+      // the built-in member savings plan). Lets code find that plan without
+      // matching on its display name.
+      system_key: {
+        type: String,
+        enum: ['savings', 'late_penalties', null],
+        default: null
+      },
+
+      // Which built-in template (constants/chamaTemplates.constants.js) this
+      // plan was started from. Informational only: the plan's name, amounts
+      // and rules are the chama's own once created.
+      template_key: { type: String, trim: true, maxlength: 40, default: null },
+
+      // Late penalty for this plan. Reuses the loan penalty pattern
+      // (loans/Loanpenalty.service.js): starts once the obligation is past
+      // due date + schedule.grace_days, then accrues per interval. Changing
+      // the rule only affects penalties from then on; penalties already
+      // raised are never reduced by an edit (use a waiver for that).
+      late_penalty: {
+        enabled: { type: Boolean, default: false },
+        // fixed = KES per interval; percentage_of_due = % of what is still
+        // unpaid on the obligation, per interval.
+        type: { type: String, enum: ['fixed', 'percentage_of_due'], default: 'fixed' },
+        amount: { type: Number, default: 0, min: 0 },
+        // once = charged a single time; weekly / monthly = repeats.
+        interval: { type: String, enum: ['once', 'weekly', 'monthly'], default: 'once' },
+        // Optional ceiling per obligation (KES). 0 = no cap.
+        max_amount: { type: Number, default: 0, min: 0 }
+      },
+
+      // Periods that opened while the plan was paused and are skipped on
+      // resume, so members are not billed for months the plan was on hold.
+      paused_period_keys: { type: [String], default: [] },
+
+      // Dedicated ledger account for this plan's money (see
+      // planLedgerAccount.service.js). Null = legacy shared account.
+      ledger_account_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'FinancialAccount',
+        default: null
+      },
+      // The fund this plan feeds (see models/Fund.js). Null = not part of a
+      // fund. Several plans may share one fund; the fund's ledger account is
+      // the money's home, so a plan that has a fund should post to it.
+      fund_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Fund',
+        default: null,
+        index: true
+      },
+
+      // Presentation only.
+      display: {
+        color: { type: String, trim: true, maxlength: 20, default: null },
+        icon: { type: String, trim: true, maxlength: 30, default: null },
+        sort_order: { type: Number, default: 0 }
+      },
+
+      // Who owes this contribution. 'all' = every active member.
+      applies_to: {
+        mode: { type: String, enum: ['all', 'selected'], default: 'all' },
+        participant_ids: { type: [mongoose.Schema.Types.ObjectId], default: [] }
+      },
+
+      // Per-member amount (e.g. a member holding half a share).
+      member_amount_overrides: {
+        type: [
+          new mongoose.Schema(
+            {
+              participant_id: { type: mongoose.Schema.Types.ObjectId, required: true },
+              amount: { type: mongoose.Schema.Types.Decimal128, required: true, min: 0 },
+              reason: { type: String, trim: true, maxlength: 200, default: '' },
+              effective_from: { type: Date, default: null }
+            },
+            { _id: false }
+          )
+        ],
+        default: []
+      },
+
+      // ========================================
+      // CALENDAR SCHEDULE
+      // ========================================
+      //
+      // NOTE: contributioncalendar.service.js reads and writes these fields.
+      // If your ContributionPlan.js already defines `schedule`, delete this
+      // block and keep yours (add `category` only if it is missing).
+      //
+      // ========================================
+
+      schedule: {
+        aligned_to_calendar: { type: Boolean, default: false, index: true },
+        due_day: { type: Number, default: 5, min: 1, max: 31 },
+        grace_days: { type: Number, default: 0, min: 0, max: 60 },
+        reminder_days_before: { type: Number, default: 3, min: 0, max: 30 },
+        category: { type: String, default: 'other' },
+        timings_reset_at: { type: Date, default: null },
+        timings_reset_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+      },
+
+      // ========================================
       // PLAN STATUS
       // ========================================
       //
@@ -727,7 +858,9 @@ const contributionPlanSchema =
 
           'completed',
 
-          'cancelled'
+          'cancelled',
+
+          'archived'
 
         ],
 
@@ -813,6 +946,16 @@ const contributionPlanSchema =
 
       },
 
+
+      // Why it was paused (shown to leadership) and archive bookkeeping.
+      // Archiving hides a plan and stops all activity but keeps every
+      // obligation, payment and ledger entry. It can be restored.
+      pause_reason: { type: String, trim: true, maxlength: 300, default: '' },
+      archived_at: { type: Date, default: null },
+      archived_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      archive_reason: { type: String, trim: true, maxlength: 300, default: '' },
+      // Status to go back to on restore ('active' or 'paused').
+      archived_from_status: { type: String, enum: ['active', 'paused', 'draft', null], default: null },
 
       // ========================================
       // COMPLETED AT
@@ -1320,6 +1463,29 @@ contributionPlanSchema.index({
 // using Decimal.js in the service layer.
 //
 // ========================================
+
+// ----------------------------------------
+// Behaviour consistency + system-plan uniqueness
+// ----------------------------------------
+contributionPlanSchema.pre('validate', function () {
+  // A merry-go-round type is always the 'rotation' behaviour, and only it is.
+  if (this.contribution_type === 'merry_go_round') {
+    this.behavior = 'rotation';
+  } else if (this.behavior === 'rotation') {
+    throw new Error("Behaviour 'rotation' requires contribution_type 'merry_go_round'");
+  }
+  if (this.system_key === 'savings' && this.behavior !== 'savings') {
+    throw new Error("The built-in savings plan must use behaviour 'savings'");
+  }
+});
+
+// One built-in plan per key per owner (savings today).
+contributionPlanSchema.index(
+  { owner_type: 1, owner_id: 1, system_key: 1 },
+  { unique: true, partialFilterExpression: { system_key: { $type: 'string' } }, name: 'unique_system_plan_per_owner' }
+);
+contributionPlanSchema.index({ owner_type: 1, owner_id: 1, behavior: 1, status: 1 });
+
 
 contributionPlanSchema.set(
 

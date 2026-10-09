@@ -17,6 +17,9 @@ const MPESA_ENVIRONMENT = (process.env.MPESA_ENVIRONMENT || "sandbox").trim().to
 const MPESA_CONSUMER_KEY = process.env.MPESA_CONSUMER_KEY?.trim();
 const MPESA_CONSUMER_SECRET = process.env.MPESA_CONSUMER_SECRET?.trim();
 const MPESA_SHORTCODE = process.env.MPESA_SHORTCODE?.trim() || "174379";
+// B2C payouts are sent from a B2C shortcode, which is usually not the paybill/till used for STK push.
+// In the sandbox this is the 600xxx "Party A" shown under Test Credentials on the B2C simulator.
+const MPESA_B2C_SHORTCODE = process.env.MPESA_B2C_SHORTCODE?.trim() || MPESA_SHORTCODE;
 const MPESA_PASSKEY = process.env.MPESA_PASSKEY?.trim();
 const MPESA_CALLBACK_URL = process.env.MPESA_CALLBACK_URL?.trim();
 const MPESA_B2C_RESULT_URL = process.env.MPESA_B2C_RESULT_URL?.trim();
@@ -26,6 +29,8 @@ const MPESA_TRANSACTION_STATUS_TIMEOUT_URL = process.env.MPESA_TRANSACTION_STATU
 const MPESA_INITIATOR_NAME = process.env.MPESA_INITIATOR_NAME?.trim();
 const MPESA_SECURITY_CREDENTIAL = process.env.MPESA_SECURITY_CREDENTIAL?.trim();
 const MPESA_TIMEOUT = Number(process.env.MPESA_TIMEOUT) || 20000;
+// CustomerPayBillOnline for a Paybill; CustomerBuyGoodsOnline for a Till number.
+const MPESA_TRANSACTION_TYPE = process.env.MPESA_TRANSACTION_TYPE?.trim() || "CustomerPayBillOnline";
 const MPESA_FORCE_MOCK = String(process.env.MPESA_FORCE_MOCK || "").toLowerCase() === "true";
 const MPESA_BASE_URL = MPESA_ENVIRONMENT === "production" ? "https://api.safaricom.co.ke" : "https://sandbox.safaricom.co.ke";
 
@@ -56,11 +61,11 @@ const validateAmount = (amount) => {
   return numericAmount;
 };
 
+// Daraja expects Nairobi time (UTC+3, no daylight saving) whatever timezone the
+// server runs in, so a UTC host and a Windows dev machine behave the same.
 const generateTimestamp = () => {
-  const now = new Date();
-  const tzOffset = now.getTimezoneOffset() * 60000;
-  const localTime = new Date(now - tzOffset); // use Africa/Nairobi time
-  return localTime.toISOString().replace(/[-:T.Z]/g, '').substring(0, 14);
+  const nairobi = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  return nairobi.toISOString().replace(/[-:T.Z]/g, '').substring(0, 14);
 };
 
 const generatePassword = (timestamp) => {
@@ -72,6 +77,51 @@ let cachedAccessToken = null;
 let accessTokenExpiresAt = 0;
 let tokenRequestPromise = null;
 
+const TOKEN_MAX_ATTEMPTS = 3;
+const TOKEN_RETRY_BASE_MS = 1000;
+const TRANSIENT_NETWORK_CODES = new Set(["ECONNABORTED", "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ENOTFOUND", "ECONNREFUSED"]);
+
+// Daraja's OAuth endpoint (the sandbox especially) regularly answers 5xx or drops
+// the connection for a moment. Those are worth retrying; a 400/401 is not.
+const isTransientTokenFailure = (error) => {
+  const status = Number(error?.response?.status);
+  if (Number.isFinite(status) && status > 0) return status >= 500 || status === 429;
+  return TRANSIENT_NETWORK_CODES.has(error?.code) || Boolean(error?.message?.includes("socket hang up"));
+};
+
+const describeProviderBody = (data) => {
+  if (data === undefined || data === null || data === "") return "(empty body)";
+  const text = typeof data === "string" ? data : JSON.stringify(data);
+  return text.replace(/\s+/g, " ").substring(0, 300);
+};
+
+const requestAccessToken = async () => {
+  const credentials = Buffer.from(`${MPESA_CONSUMER_KEY}:${MPESA_CONSUMER_SECRET}`).toString("base64");
+  let lastError;
+  for (let attempt = 1; attempt <= TOKEN_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await axios.get(`${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
+        headers: { Authorization: `Basic ${credentials}` }, timeout: MPESA_TIMEOUT,
+      });
+      return response;
+    } catch (error) {
+      lastError = error;
+      // Log the real cause: the wrapped error alone hides it. Never log the credentials.
+      console.error(`[M-PESA] OAuth token request failed (attempt ${attempt}/${TOKEN_MAX_ATTEMPTS})`, {
+        env: MPESA_ENVIRONMENT, baseUrl: MPESA_BASE_URL,
+        status: error?.response?.status ?? null, code: error?.code ?? null,
+        message: error?.message, body: describeProviderBody(error?.response?.data),
+      });
+      if (attempt < TOKEN_MAX_ATTEMPTS && isTransientTokenFailure(error)) {
+        await new Promise((resolve) => setTimeout(resolve, TOKEN_RETRY_BASE_MS * attempt));
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastError;
+};
+
 const getAccessToken = async () => {
   validateConfiguration();
   const now = Date.now();
@@ -80,10 +130,7 @@ const getAccessToken = async () => {
 
   tokenRequestPromise = (async () => {
     try {
-      const credentials = Buffer.from(`${MPESA_CONSUMER_KEY}:${MPESA_CONSUMER_SECRET}`).toString("base64");
-      const response = await axios.get(`${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
-        headers: { Authorization: `Basic ${credentials}` }, timeout: MPESA_TIMEOUT,
-      });
+      const response = await requestAccessToken();
       const accessToken = response.data?.access_token;
       const expiresIn = Number(response.data?.expires_in) || 3600;
       if (!accessToken) throw new Error("M-Pesa OAuth response did not contain an access token");
@@ -92,7 +139,12 @@ const getAccessToken = async () => {
       return accessToken;
     } catch (error) {
       cachedAccessToken = null; accessTokenExpiresAt = 0;
-      throw createMpesaError(error, "Failed to obtain M-Pesa access token");
+      const mpesaError = createMpesaError(error, "Failed to obtain M-Pesa access token");
+      if (isTransientTokenFailure(error)) {
+        mpesaError.message = "M-Pesa is temporarily unavailable. Please try again in a minute.";
+        mpesaError.statusCode = 503;
+      }
+      throw mpesaError;
     } finally { tokenRequestPromise = null; }
   })();
   return tokenRequestPromise;
@@ -110,8 +162,15 @@ const createMockStkResponse = ({ amount, phoneNumber, accountReference }) => ({
 /**
  * STK PUSH - Customer pays us
  */
-const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayReference, transactionDescription }) => {
+const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayReference, transactionDescription, allowMock = true }) => {
   validateConfiguration();
+  // Callers that move real money (platform billing) pass allowMock: false so a
+  // leftover MPESA_FORCE_MOCK=true can never "pay" them without a real payment.
+  if (MPESA_FORCE_MOCK && allowMock === false) {
+    const mockError = new Error("M-Pesa simulation is switched on (MPESA_FORCE_MOCK=true). Turn it off to take real payments.");
+    mockError.name = "MpesaProviderError"; mockError.statusCode = 503; mockError.provider = "mpesa";
+    throw mockError;
+  }
   const validatedAmount = validateAmount(amount);
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
   if (!accountReference) throw new Error("Account reference is required");
@@ -129,7 +188,7 @@ const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayR
     const password = generatePassword(timestamp);
     const payload = {
       BusinessShortCode: MPESA_SHORTCODE, Password: password, Timestamp: timestamp,
-      TransactionType: "CustomerPayBillOnline", Amount: validatedAmount, PartyA: normalizedPhone,
+      TransactionType: MPESA_TRANSACTION_TYPE, Amount: validatedAmount, PartyA: normalizedPhone,
       PartyB: MPESA_SHORTCODE, PhoneNumber: normalizedPhone, CallBackURL: MPESA_CALLBACK_URL,
       AccountReference: displayRef, TransactionDesc: String(transactionDescription).substring(0, 100),
     };
@@ -219,7 +278,7 @@ const initiateB2cPayment = async ({ amount, phoneNumber, remarks, occasion, comm
       SecurityCredential: MPESA_SECURITY_CREDENTIAL,
       CommandID: commandId,
       Amount: validatedAmount,
-      PartyA: MPESA_SHORTCODE,
+      PartyA: MPESA_B2C_SHORTCODE,
       PartyB: normalizedPhone,
       Remarks: String(remarks || 'Chama Payout').substring(0, 100),
       QueueTimeOutURL: MPESA_B2C_TIMEOUT_URL,
@@ -227,12 +286,23 @@ const initiateB2cPayment = async ({ amount, phoneNumber, remarks, occasion, comm
       Occasion: String(occasion || '').substring(0, 100)
     };
 
+    // Safe diagnostics: never prints the credential itself, only whether it looks right.
+    console.log("[M-Pesa B2C] sending", {
+      baseUrl: MPESA_BASE_URL,
+      partyA: payload.PartyA,
+      partyB: payload.PartyB,
+      initiator: payload.InitiatorName,
+      commandId: payload.CommandID,
+      credentialLength: String(MPESA_SECURITY_CREDENTIAL || "").length, // a real one is 344 characters
+      resultUrl: payload.ResultURL,
+    });
     const response = await axios.post(`${MPESA_BASE_URL}/mpesa/b2c/v1/paymentrequest`, payload, {
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
       timeout: MPESA_TIMEOUT,
     });
 
     const data = response.data || {};
+    console.log("[M-Pesa B2C] Safaricom accepted request:", data);
     if (data.ResponseCode !== '0') {
       throw createMpesaError({ response: { status: 400, data } }, "M-Pesa B2C was rejected");
     }

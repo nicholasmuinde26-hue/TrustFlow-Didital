@@ -9,10 +9,12 @@ import {
   deleteAnnouncement,
 } from "./announcement.controller.js";
 
+import { requireModule } from '../../middleware/module.middleware.js';
 const router = express.Router();
 
 // Apply auth middleware to all announcement endpoints
 router.use(protect);
+router.use("/:workspaceId/announcements", requireModule("announcements"));
 
 // Routes mapped under /api/v1/workspaces
 router.get("/:workspaceId/announcements", listAnnouncements);

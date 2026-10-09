@@ -10,14 +10,15 @@ import {
   canDirectMessage,
 } from "./chat.permissions.js";
 import AppError from "../../utils/AppError.js";
-import {
-  notifyNewChatMessage,
-} from "../notifications/notifications.service.js";
+import { notifyWorkspaceMessage, notifyDirectMessage } from "./chatNotifications.service.js";
+import { sendChatMessageToWorkspace } from "../realtime/socketServer.js";
 
 import Chama from "../../models/Chama.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import User from "../../models/User.js";
 import ChatMessage from "../../models/ChatMessage.js";
+import ChamaMembership from "../../models/ChamaMembership.js";
+import ContributionGroupMember from "../../models/ContributionGroupMember.js";
 
 // ============================================================================
 // HELPERS
@@ -70,7 +71,7 @@ async function getWorkspaceName(workspaceId, workspaceType) {
 export async function sendMessage(req, res, next) {
   try {
     const { workspaceId } = req.params;
-    const { message, workspaceType } = req.body;
+    const { message, workspaceType, attachments = [] } = req.body;
 
     // ------------------------------------------------------------------------
     // Validate workspace type
@@ -113,6 +114,7 @@ export async function sendMessage(req, res, next) {
       workspace_type: workspaceType,
       sender_id: req.user._id,
       message,
+      attachments,
     };
 
     validateMessage(payload);
@@ -123,6 +125,20 @@ export async function sendMessage(req, res, next) {
 
     const created =
       await ChatService.sendMessage(payload);
+
+    sendChatMessageToWorkspace(workspaceId, workspaceType, {
+      id: String(created._id),
+      conversation_type: "workspace",
+      workspace_id: String(workspaceId),
+      workspace_type: workspaceType,
+      sender: {
+        id: String(req.user._id),
+        name: created.sender_id?.name || req.user.name || "A member",
+      },
+      message: String(created.message || "").trim().slice(0, 140),
+      attachments: created.attachments || [],
+      created_at: created.createdAt,
+    });
 
     // ------------------------------------------------------------------------
     // Respond immediately
@@ -142,7 +158,7 @@ export async function sendMessage(req, res, next) {
       workspaceType
     )
       .then((workspaceName) =>
-        notifyNewChatMessage(
+        notifyWorkspaceMessage(
           created,
           workspaceName
         )
@@ -330,6 +346,114 @@ export async function searchMessages(req, res, next) {
 // ============================================================================
 
 /**
+ * List recent direct conversations with active members of this workspace.
+ * GET /api/v1/chat/direct?workspaceId=...&workspaceType=chama
+ */
+export async function getDirectConversations(req, res, next) {
+  try {
+    const { workspaceId, workspaceType } = req.query;
+    if (!workspaceId || !["chama", "contribution-group"].includes(workspaceType)) {
+      throw new AppError("A valid workspaceId and workspaceType are required", 400);
+    }
+
+    const allowed = await canAccessWorkspace(req.user._id, workspaceId, workspaceType);
+    if (!allowed) throw new AppError("You are not an active member of this workspace", 403);
+
+    const memberships = workspaceType === "chama"
+      ? await ChamaMembership.find({ chama_id: workspaceId, status: "active" }).select("user_id").lean()
+      : await ContributionGroupMember.find({ contribution_group_id: workspaceId, status: "active" }).select("user_id").lean();
+    const activeMemberIds = new Set(memberships.map((membership) => String(membership.user_id)));
+    const conversations = await ChatService.getDirectConversations(req.user._id);
+    const visible = conversations.filter((conversation) =>
+      conversation.partnerId &&
+      String(conversation.partnerId) !== String(req.user._id) &&
+      activeMemberIds.has(String(conversation.partnerId))
+    );
+    const partnerIds = visible.map((conversation) => conversation.partnerId);
+    const partners = await User.find({ _id: { $in: partnerIds } }).select("name avatar_url").lean();
+    const partnerById = new Map(partners.map((partner) => [String(partner._id), partner]));
+
+    const data = visible.flatMap((conversation) => {
+      const partner = partnerById.get(String(conversation.partnerId));
+      if (!partner) return [];
+      return [{
+        user: { id: partner._id, name: partner.name || "Member", avatar_url: partner.avatar_url || null },
+        lastMessage: {
+          id: conversation.latest._id,
+          message: conversation.latest.message || "",
+          hasAttachments: Boolean(conversation.latest.attachments?.length),
+          senderId: conversation.latest.sender_id,
+          created_at: conversation.latest.createdAt,
+        },
+        updatedAt: conversation.latest.createdAt,
+      }];
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getUnreadCounts(req, res, next) {
+  try {
+    const { workspaceType } = req.query;
+    const { workspaceId } = req.params;
+    if (!["chama", "contribution-group"].includes(workspaceType)) {
+      throw new AppError("A valid workspaceType is required", 400);
+    }
+    if (!(await canAccessWorkspace(req.user._id, workspaceId, workspaceType))) {
+      throw new AppError("You are not an active member of this workspace", 403);
+    }
+
+    const memberships = workspaceType === "chama"
+      ? await ChamaMembership.find({ chama_id: workspaceId, status: "active" }).select("user_id").lean()
+      : await ContributionGroupMember.find({ contribution_group_id: workspaceId, status: "active" }).select("user_id").lean();
+    const counts = await ChatService.getUnreadConversationCounts(
+      req.user._id,
+      workspaceId,
+      workspaceType,
+      memberships.map((membership) => membership.user_id)
+    );
+    res.json({ success: true, data: counts });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function markMessagesRead(req, res, next) {
+  try {
+    const { workspaceId } = req.params;
+    const { workspaceType, conversationType, recipientUserId } = req.body;
+    if (!["chama", "contribution-group"].includes(workspaceType)) {
+      throw new AppError("A valid workspaceType is required", 400);
+    }
+    if (!(await canAccessWorkspace(req.user._id, workspaceId, workspaceType))) {
+      throw new AppError("You are not an active member of this workspace", 403);
+    }
+
+    if (conversationType === "direct") {
+      if (!recipientUserId || String(recipientUserId) === String(req.user._id) ||
+          !(await canDirectMessage(req.user._id, recipientUserId))) {
+        throw new AppError("The selected member is not available for direct messages", 403);
+      }
+    } else if (conversationType !== "workspace") {
+      throw new AppError("A valid conversationType is required", 400);
+    }
+
+    await ChatService.markConversationRead({
+      userId: req.user._id,
+      workspaceId,
+      workspaceType,
+      recipientUserId: conversationType === "direct" ? recipientUserId : null,
+    });
+    res.json({ success: true, message: "Conversation marked as read" });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * Send a direct message.
  *
  * POST /api/v1/chat/direct/:recipientUserId
@@ -346,7 +470,7 @@ export async function sendDirectMessage(
 ) {
   try {
     const { recipientUserId } = req.params;
-    const { message } = req.body;
+    const { message, attachments = [] } = req.body;
 
     // ------------------------------------------------------------------------
     // Prevent messaging yourself
@@ -402,6 +526,7 @@ export async function sendDirectMessage(
       sender_id: req.user._id,
       recipient_id: recipientUserId,
       message,
+      attachments,
     };
 
     validateDirectMessage(payload);
@@ -424,17 +549,9 @@ export async function sendDirectMessage(
       data: toChatDTO(created),
     });
 
-    // ------------------------------------------------------------------------
-    // IMPORTANT
-    //
-    // notifyNewDirectMessage is currently NOT exported by
-    // notifications.service.js.
-    //
-    // Therefore we intentionally do not call it here.
-    //
-    // Once the notification service exposes that function,
-    // direct-message notifications can be enabled here.
-    // ------------------------------------------------------------------------
+    notifyDirectMessage(created, recipient._id, recipient.name).catch((error) =>
+      console.error("Failed to create direct chat notification:", error.message)
+    );
 
   } catch (error) {
     next(error);

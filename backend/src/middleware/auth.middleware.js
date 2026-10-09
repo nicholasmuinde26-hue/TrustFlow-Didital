@@ -74,6 +74,15 @@ export const protect = async (req, res, next) => {
       });
     }
 
+    // 4b. HONOUR "FORCE LOGOUT" — tokens minted before it are dead
+    if (user.tokensValidAfter && decoded.iat && (decoded.iat + 1) * 1000 <= new Date(user.tokensValidAfter).getTime()) {
+      return res.status(401).json({
+        success: false,
+        code: 'TOKEN_INVALID',
+        message: 'Your session was ended. Please sign in again.',
+      });
+    }
+
     // 5. CHECK USER ACCOUNT STATUS
     if (user.status === 'inactive') {
       return res.status(403).json({

@@ -1,0 +1,1052 @@
+/* ============================================================
+   LANDING PAGE MOTION
+   Plain CSS so it is cheap, and every effect is switched off
+   under prefers-reduced-motion.
+   ============================================================ */
+
+
+/* ---------- scroll reveal ---------- */
+/* Variants (use <Reveal variant="...">):
+   up / down       slide + blur-in
+   left / right    slide in from the side with a slight tilt
+   pop             springy scale-in (pop-in)
+   popup           rises from below with a 3D tilt and spring (pop-up)
+   zoom            settles down from slightly oversized
+   The timing lives on .is-in so the animation plays on entry. */
+
+:root {
+  --lp-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --lp-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.lp-reveal {
+  opacity: 0;
+  filter: blur(10px);
+  will-change: opacity, transform;
+}
+
+.lp-up {
+  transform: translateY(44px);
+}
+
+.lp-down {
+  transform: translateY(-28px);
+}
+
+.lp-left {
+  transform: translateX(-96px) rotate(-1.5deg) scale(0.97);
+}
+
+.lp-right {
+  transform: translateX(96px) rotate(1.5deg) scale(0.97);
+}
+
+.lp-pop {
+  transform: scale(0.78) translateY(20px);
+}
+
+.lp-popup {
+  transform: perspective(1000px) translateY(72px) rotateX(10deg) scale(0.93);
+  transform-origin: 50% 100%;
+}
+
+.lp-zoom {
+  transform: scale(1.14);
+}
+
+.lp-reveal.is-in {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  transition:
+    opacity 0.8s ease,
+    transform 1s var(--lp-ease),
+    filter 0.8s ease;
+}
+
+.lp-pop.is-in,
+.lp-popup.is-in {
+  transition:
+    opacity 0.6s ease,
+    transform 0.9s var(--lp-spring),
+    filter 0.6s ease;
+}
+
+
+/* ---------- table rows / list items that stagger inside a revealed parent ---------- */
+
+.lp-row {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  transition-delay: var(--d, 0ms);
+}
+
+.is-in .lp-row {
+  opacity: 1;
+}
+
+
+/* ---------- hero entrance (runs on load) ---------- */
+
+@keyframes lp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+.lp-rise {
+  animation:
+    lp-rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+
+@keyframes lp-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.82) translateY(8px);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1.03) translateY(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.lp-pop-in {
+  animation:
+    lp-pop-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+
+/* ---------- ambient loops ---------- */
+
+@keyframes lp-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.lp-float {
+  animation:
+    lp-float 5s ease-in-out infinite;
+  animation-delay: var(--d, 0ms);
+}
+
+.lp-float-slow {
+  animation:
+    lp-float 8s ease-in-out infinite;
+}
+
+
+@keyframes lp-shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+
+.lp-shimmer {
+  background-image:
+    linear-gradient(
+      90deg,
+      #6ee0b6,
+      #7dd3fc,
+      #a7f3d0,
+      #6ee0b6
+    );
+
+  background-size: 200% auto;
+
+  animation:
+    lp-shimmer 5s linear infinite;
+}
+
+
+@keyframes lp-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(110, 224, 182, 0.45);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 12px rgba(110, 224, 182, 0);
+  }
+}
+
+.lp-glow {
+  animation:
+    lp-glow 2.2s ease-out infinite;
+}
+
+
+@keyframes lp-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+
+  80%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.lp-ping {
+  animation:
+    lp-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+
+/* ---------- marquee ---------- */
+
+@keyframes lp-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.lp-marquee-track {
+  display: flex;
+  width: max-content;
+
+  animation:
+    lp-marquee 38s linear infinite;
+}
+
+.lp-marquee:hover .lp-marquee-track {
+  animation-play-state: paused;
+}
+
+.lp-marquee {
+  -webkit-mask-image:
+    linear-gradient(
+      90deg,
+      transparent,
+      #000 10%,
+      #000 90%,
+      transparent
+    );
+
+  mask-image:
+    linear-gradient(
+      90deg,
+      transparent,
+      #000 10%,
+      #000 90%,
+      transparent
+    );
+}
+
+
+/* ---------- cursor spotlight on cards ---------- */
+
+.lp-spot {
+  position: relative;
+  overflow: hidden;
+}
+
+.lp-spot::before {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  opacity: 0;
+
+  transition:
+    opacity 0.25s ease;
+
+  background:
+    radial-gradient(
+      320px circle at var(--mx, 50%) var(--my, 50%),
+      var(
+        --spot,
+        rgba(16, 185, 129, 0.12)
+      ),
+      transparent 60%
+    );
+
+  pointer-events: none;
+}
+
+.lp-spot:hover::before {
+  opacity: 1;
+}
+
+
+/* ---------- animated underline for header links ---------- */
+
+.lp-link {
+  position: relative;
+}
+
+.lp-link::after {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  right: 0;
+  bottom: -6px;
+
+  height: 2px;
+
+  border-radius: 2px;
+
+  background: #6ee0b6;
+
+  transform: scaleX(0);
+  transform-origin: left;
+
+  transition:
+    transform 0.25s ease;
+}
+
+.lp-link:hover::after {
+  transform: scaleX(1);
+}
+
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-reveal,
+  .lp-row {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+
+  .lp-rise,
+  .lp-pop-in,
+  .lp-float,
+  .lp-float-slow,
+  .lp-shimmer,
+  .lp-glow,
+  .lp-ping,
+  .lp-marquee-track {
+    animation: none !important;
+  }
+}
+
+
+/* ============================================================
+   HERO SLIDER
+   ============================================================ */
+
+
+/* ---------- backgrounds ---------- */
+/* The entering scene wipes in (clip-path) while fading and drifting;
+   the leaving scene only fades/drifts, and its clip resets AFTER it has
+   faded out (the 0.85s delay), so there is never a gap mid-transition.
+   Direction follows navigation: next wipes in from the right, previous
+   from the left. */
+
+.lp-bg {
+  position: absolute;
+  inset: 0;
+  will-change: clip-path, opacity, transform;
+}
+
+.lp-bg.is-active {
+  opacity: 1;
+  transform: none;
+  clip-path: inset(0 0 0 0);
+  z-index: 2;
+  transition:
+    clip-path 0.8s cubic-bezier(0.77, 0, 0.18, 1),
+    opacity 0.5s ease,
+    transform 0.8s cubic-bezier(0.77, 0, 0.18, 1);
+}
+
+.lp-bg.is-prev,
+.lp-bg.is-next {
+  opacity: 0;
+  z-index: 1;
+  transition:
+    opacity 0.8s ease,
+    transform 0.8s cubic-bezier(0.77, 0, 0.18, 1),
+    clip-path 0s linear 0.8s;
+}
+
+.lp-bg.is-prev {
+  transform: translateX(-6%) scale(1.04);
+  clip-path: inset(0 100% 0 0);
+}
+
+.lp-bg.is-next {
+  transform: translateX(6%) scale(1.04);
+  clip-path: inset(0 0 0 100%);
+}
+
+/* background scenes are completely static: no parallax, no zoom, no looping motion
+   inside the scene or the colour washes. Only the slide-to-slide wipe moves. */
+.lp-parallax {
+  height: 100%;
+  width: 100%;
+  transform: none !important;
+}
+
+.lp-bg,
+.lp-bg * {
+  animation: none !important;
+}
+
+/* vibrance boost on the illustrated scenes */
+.lp-vivid {
+  filter: saturate(1.45) brightness(1.14) contrast(1.05);
+}
+
+
+/* ---------- active scene push-in ---------- */
+
+@keyframes lp-kenburns {
+  from {
+    transform: scale(1.09) translate(1%, 0.5%);
+  }
+
+  to {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+.lp-kenburns {
+  animation:
+    lp-kenburns 4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+
+/* ---------- text layer ---------- */
+
+.lp-slide {
+  transition:
+    opacity 0.4s ease,
+    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 0.4s;
+}
+
+.lp-slide.is-active {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+
+  transition-delay:
+    0.1s,
+    0.1s,
+    0s;
+}
+
+.lp-slide.is-prev {
+  opacity: 0;
+  transform: translateX(-35px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.lp-slide.is-next {
+  opacity: 0;
+  transform: translateX(35px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+
+/* ============================================================
+   AUTOPLAY PROGRESS
+   3 seconds per slide (change here only)
+   ============================================================ */
+
+@keyframes lp-progress {
+  from {
+    width: 0;
+  }
+
+  to {
+    width: 100%;
+  }
+}
+
+.lp-progress {
+  width: 0;
+
+  animation:
+    lp-progress 3s linear forwards;
+}
+
+
+/* ============================================================
+   SCENE DETAILS
+   ============================================================ */
+
+@keyframes lp-dash {
+  to {
+    stroke-dashoffset: -72;
+  }
+}
+
+.lp-dash {
+  animation:
+    lp-dash 2.4s linear infinite;
+}
+
+
+@keyframes lp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.lp-pulse {
+  animation:
+    lp-pulse 3.2s ease-in-out infinite;
+}
+
+
+@keyframes lp-twinkle {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+
+  50% {
+    opacity: 0.2;
+  }
+}
+
+.lp-twinkle {
+  animation:
+    lp-twinkle 3s ease-in-out infinite;
+}
+
+
+/* ============================================================
+   HERO: FIT-TO-SCREEN + EXTRA MOTION
+   ============================================================ */
+
+/* the whole hero is exactly one screen tall (minus the 4rem header) */
+.lp-hero {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 4rem);
+  min-height: calc(100svh - 4rem);
+}
+
+/* headline scales with BOTH width and height so it never pushes the hero past the screen */
+.lp-title {
+  font-size: clamp(2rem, min(1rem + 4.2vw, 0.6rem + 6.2vh), 3.75rem);
+}
+
+/* word-by-word masked reveal */
+.lp-word-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+
+.lp-word {
+  display: inline-block;
+  transform: translateY(110%);
+}
+
+.is-active .lp-word {
+  animation: lp-word 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes lp-word {
+  from {
+    transform: translateY(110%) rotate(4deg);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+/* gradient line wipes in from the left */
+.lp-wipe {
+  clip-path: inset(-10% 100% -10% 0);
+}
+
+.is-active .lp-wipe {
+  animation: lp-wipe 0.7s cubic-bezier(0.65, 0, 0.15, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes lp-wipe {
+  to {
+    clip-path: inset(-10% -2% -10% 0);
+  }
+}
+
+/* product card: 3D entrance, mouse tilt, gentle float */
+.lp-card-in {
+  opacity: 0;
+}
+
+.is-active .lp-card-in {
+  animation: lp-card-in 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes lp-card-in {
+  from {
+    opacity: 0;
+    transform: perspective(900px) translateX(70px) rotateY(-16deg) scale(0.93);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.lp-tilt {
+  transform: perspective(1100px) rotateY(calc(var(--px, 0) * -5deg)) rotateX(calc(var(--py, 0) * 4deg));
+  transition: transform 0.25s ease-out;
+  will-change: transform;
+}
+
+/* short laptop screens: shrink the card so the hero still fits */
+@media (min-width: 1024px) and (max-height: 800px) {
+  .lp-card-fit {
+    transform: scale(0.88);
+    transform-origin: right center;
+  }
+}
+
+/* Keep the product preview visible and compact on phones. */
+@media (max-width: 639px) {
+  .lp-card-fit .rounded-3xl {
+    border-radius: 1.25rem;
+  }
+
+  .lp-card-fit .rounded-2xl {
+    border-radius: 0.875rem;
+  }
+
+  .lp-card-fit .p-5 {
+    padding: 0.875rem;
+  }
+
+  .lp-card-fit .px-5 {
+    padding-inline: 0.875rem;
+  }
+
+  .lp-card-fit .py-4 {
+    padding-block: 0.75rem;
+  }
+
+  .lp-card-fit .gap-3 {
+    gap: 0.5rem;
+  }
+
+  .lp-card-fit .text-lg {
+    font-size: 1rem;
+    line-height: 1.4rem;
+  }
+
+  .lp-card-fit .text-sm {
+    font-size: 0.8125rem;
+    line-height: 1.15rem;
+  }
+
+  .lp-card-fit .text-xs {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+  }
+
+  .lp-card-fit .text-2xl {
+    font-size: 1.25rem;
+    line-height: 1.7rem;
+  }
+}
+
+/* aurora colour washes (per slide accent), only animated on the active slide */
+.lp-aurora {
+  position: absolute;
+  width: 62vmax;
+  height: 62vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, var(--c) 0%, transparent 62%);
+  mix-blend-mode: screen;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.lp-aurora-a {
+  right: -16vmax;
+  top: -26vmax;
+}
+
+.lp-aurora-b {
+  left: 8vmax;
+  bottom: -34vmax;
+  opacity: 0.3;
+}
+
+.lp-bg.is-active .lp-aurora-a {
+  animation: lp-drift 11s ease-in-out infinite alternate;
+}
+
+.lp-bg.is-active .lp-aurora-b {
+  animation: lp-drift 14s ease-in-out -5s infinite alternate;
+}
+
+@keyframes lp-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(-7vmax, 5vmax, 0) scale(1.2);
+  }
+}
+
+/* diagonal light sweep that crosses the hero on every slide change */
+.lp-sweep::before {
+  content: "";
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 30%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.14),
+    rgba(110, 224, 182, 0.22),
+    transparent
+  );
+  transform: translateX(-150%) skewX(-18deg);
+  animation: lp-sweep 0.95s cubic-bezier(0.5, 0, 0.2, 1) both;
+}
+
+@keyframes lp-sweep {
+  to {
+    transform: translateX(480%) skewX(-18deg);
+  }
+}
+
+/* rising glow particles */
+.lp-particle {
+  position: absolute;
+  bottom: -14px;
+  border-radius: 50%;
+  opacity: 0;
+  animation: lp-particle linear infinite;
+}
+
+@keyframes lp-particle {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.6);
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: translate3d(28px, -105vh, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+/* primary button shine on hover */
+.lp-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.lp-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.6) 50%, transparent 70%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+.lp-shine:hover::after {
+  transform: translateX(120%);
+  transition: transform 0.7s ease;
+}
+
+
+/* ============================================================
+   HERO REDUCED MOTION
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-kenburns,
+  .lp-dash,
+  .lp-pulse,
+  .lp-twinkle,
+  .lp-word,
+  .lp-wipe,
+  .lp-card-in,
+  .lp-aurora,
+  .lp-sweep::before,
+  .lp-particle {
+    animation: none !important;
+  }
+
+  .lp-word {
+    transform: none !important;
+  }
+
+  .lp-wipe {
+    clip-path: none !important;
+  }
+
+  .lp-card-in {
+    opacity: 1 !important;
+  }
+
+  .lp-particle,
+  .lp-sweep {
+    display: none;
+  }
+
+  .lp-parallax,
+  .lp-tilt {
+    transform: none !important;
+  }
+
+  .lp-bg,
+  .lp-slide {
+    transition: none !important;
+  }
+
+  .lp-progress {
+    animation: none !important;
+    width: 100%;
+  }
+}
+
+/* ============================================================
+   SECTIONS: MODERN LOOK
+   Shared by every section below the hero.
+   ============================================================ */
+
+/* gradient headline accent for light sections (dark sections use .lp-shimmer) */
+.lp-shimmer-dark {
+  background-image: linear-gradient(90deg, #059669, #0ea5e9, #8b5cf6, #059669);
+  background-size: 200% auto;
+  animation: lp-shimmer 6s linear infinite;
+}
+
+/* soft dotted grid, faded towards the edges */
+.lp-dots,
+.lp-dots-dark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: 24px 24px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 75%);
+  mask-image: radial-gradient(ellipse at center, #000 25%, transparent 75%);
+}
+
+.lp-dots {
+  background-image: radial-gradient(rgba(15, 23, 42, 0.09) 1.2px, transparent 1.2px);
+}
+
+.lp-dots-dark {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1.2px, transparent 1.2px);
+}
+
+/* big blurred colour orbs that slowly drift behind sections */
+.lp-orb {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, var(--c, #34d399), transparent 65%);
+  opacity: var(--o, 0.35);
+  pointer-events: none;
+  animation: lp-drift 14s ease-in-out infinite alternate;
+}
+
+/* gradient border that fades in on hover (set --g on the element) */
+.lp-gborder {
+  position: relative;
+}
+
+.lp-gborder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: var(--g, linear-gradient(135deg, #34d399, #38bdf8));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.lp-gborder:hover::after {
+  opacity: 1;
+}
+
+/* flowing dashed connector */
+.lp-flow {
+  height: 2px;
+  background-image: linear-gradient(90deg, rgba(16, 185, 129, 0.7) 50%, transparent 50%);
+  background-size: 14px 2px;
+  animation: lp-flow 0.9s linear infinite;
+}
+
+@keyframes lp-flow {
+  to {
+    background-position: 14px 0;
+  }
+}
+
+/* second marquee row runs the other way */
+.lp-marquee-rev .lp-marquee-track {
+  animation-direction: reverse;
+  animation-duration: 46s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-shimmer-dark,
+  .lp-orb,
+  .lp-flow {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   FINISH: GRAIN, GLASS, GLOW, CURSOR, SECTION TRANSITIONS
+   ============================================================ */
+
+/* film grain over the whole page (cheap: tiny tiled image, no blend mode) */
+.lp-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 220px 220px;
+  animation: lp-grain 0.9s steps(6) infinite;
+}
+
+@keyframes lp-grain {
+  0% {
+    background-position: 0 0;
+  }
+
+  20% {
+    background-position: -40px 25px;
+  }
+
+  40% {
+    background-position: 30px -50px;
+  }
+
+  60% {
+    background-position: -70px -20px;
+  }
+
+  80% {
+    background-position: 55px 45px;
+  }
+
+  100% {
+    background-position: 0 0;
+  }
+}
+
+/* glass surfaces. Colour/border come from Tailwind classes on the element;
+   these add the frosted blur, sheen and edge light. */
+.lp-glass {
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.22));
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
+}
+
+.lp-glass-dark {
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02));
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 24px 48px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* glow on hover: set --glow on the element (SpotCard does this) */
+.lp-glass-dark:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 0 64px -14px var(--glow, rgba(110, 224, 182, 0.5)),
+    0 24px 48px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* header slides down on load */
+.lp-header-in {
+  animation: lp-header-in 0.8s var(--lp-ease) both;
+}
+
+@keyframes lp-header-in {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ---------- sections overlap like stacked sheets ---------- */
+
+.lp-sheet {
+  position: relative;
+  margin-top: -2.5rem;
+  border-top-left-radius: 2.5rem;
+  border-top-right-radius: 2.5rem;
+  box-shadow: 0 -24px 48px -24px rgba(2, 6, 23, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-grain,
+  .lp-header-in {
+    animation: none !important;
+  }
+}

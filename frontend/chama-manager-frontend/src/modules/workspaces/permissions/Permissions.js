@@ -98,21 +98,28 @@ export function canEditMemberProfile(role, type, isSelf) {
 }
 
 export function canManageAnnouncements(role, type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return ["chairperson", "treasurer", "secretary"].includes(role);
   }
   return isManager(role, type);
 }
 
+// Any active Chama member may submit an announcement for leadership review.
+// Other workspace types retain their existing manager-only posting rule.
+export function canSubmitAnnouncements(role, type) {
+  if (isChamaBacked(type)) return Boolean(role);
+  return isManager(role, type);
+}
+
 export function canPinAnnouncement(role, type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return ["chairperson", "treasurer", "secretary"].includes(role);
   }
   return isManager(role, type);
 }
 
 export function canDeleteAnnouncement(role, type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return ["chairperson", "treasurer", "secretary"].includes(role);
   }
   return isManager(role, type);
@@ -121,11 +128,9 @@ export function canDeleteAnnouncement(role, type) {
 // Announcement approval — mirrors ANNOUNCEMENT_APPROVER_ROLES in
 // backend/src/modules/announcements/announcement.controller.js.
 // For a gated type, only these roles can post an announcement
-// directly; anyone else with manage rights (Treasurer in a Chama,
-// Co-organizer in a Contribution Group — Organizer is the sole
-// primary owner, see the header comment above) has their post held
-// as "pending" until an approver role signs off. Business has no
-// entry, so it always publishes immediately.
+// directly; other active Chama members and co-organizers have their
+// submissions held as "pending" until an approver signs off. Business
+// has no entry, so it always publishes immediately.
 const ANNOUNCEMENT_APPROVER_ROLES = {
   chama: ["chairperson", "secretary"],
   "contribution-group": ["organizer"],
@@ -144,7 +149,7 @@ export function announcementNeedsApproval(role, type) {
 }
 
 export function canManageMeetings(role, type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return ["chairperson", "treasurer", "secretary"].includes(role);
   }
   return isManager(role, type);
@@ -154,7 +159,7 @@ export function canManageMeetings(role, type) {
 const CHAMA_POLL_OFFICIAL_ROLES = ["chairperson", "secretary", "treasurer", "committee_member"];
 
 export function canManagePolls(role, type) {
-  if (type === "chama") {
+  if (isChamaBacked(type)) {
     return CHAMA_POLL_OFFICIAL_ROLES.includes(role);
   }
   return isManager(role, type);
@@ -187,7 +192,19 @@ export function canInviteMembers(role, type) {
 // Burial Chamas are included: they are Chama documents underneath, with
 // the same governance routes, so their officials need the same desk.
 export function canViewLeadershipDesk(role, type) {
+  return isChamaBacked(type) && (isManager(role, "chama") || role === "secretary");
+}
+
+// The treasurer's and chairperson's full desk. The secretary also opens the
+// desk (they are one of the three top officials and sign off approvals) but
+// gets a focused one - minutes, approvals, a read-only member list - with no
+// money, loan-policy or role controls. See LeadershipDeskPage.
+export function hasFullLeadershipDesk(role, type) {
   return isChamaBacked(type) && isManager(role, "chama");
+}
+
+export function isSecretaryDesk(role, type) {
+  return isChamaBacked(type) && role === "secretary";
 }
 
 // DEPRECATED — kept only so any stray import doesn't crash a build.
@@ -252,6 +269,36 @@ export function canDisburseLoan(role, type) {
   return type === "chama" && ["treasurer", "chairperson"].includes(role);
 }
 
+// Chama-only: who can see every member's withdrawal requests (the
+// review queue), not just their own — mirrors the isOfficial check in
+// withdrawal.controller.js#listWithdrawalsController.
+const WITHDRAWAL_VIEW_ALL_ROLES = ["treasurer", "chairperson", "secretary", "auditor"];
+
+export function canViewAllWithdrawals(role, type) {
+  return type === "chama" && WITHDRAWAL_VIEW_ALL_ROLES.includes(role);
+}
+
+// Chama-only: approve/reject a pending withdrawal — mirrors
+// requireChamaTreasurerOrChairperson on the decide route. The backend's
+// approvalService.submitSignoff still enforces the request's own
+// eligible_roles and blocks a member approving their own request.
+export function canDecideWithdrawal(role, type) {
+  return type === "chama" && ["treasurer", "chairperson"].includes(role);
+}
+
+// Chama-only: mark an approved withdrawal as paid — Treasurer only,
+// mirrors requireChamaTreasurer on the /pay route.
+export function canSettleWithdrawal(role, type) {
+  return type === "chama" && role === "treasurer";
+}
+
+// Chama-only: cancel someone else's withdrawal (an officer, not the
+// requester themselves) — mirrors the isOfficer check inside
+// withdrawal.service.js#cancelWithdrawal.
+export function canCancelAnyWithdrawal(role, type) {
+  return type === "chama" && ["treasurer", "chairperson"].includes(role);
+}
+
 // Chama-only: every MGR (Merry-Go-Round) mutation route on the backend —
 // create/activate policy, reorder rotation, record a payment, propose a
 // payout, disburse — is gated by requireChamaTreasurer(), which checks
@@ -306,4 +353,42 @@ export function canApproveSavingsShareout(role, type) {
 // Treasurer-only on the backend (PATCH .../items/:itemId/pay).
 export function canPaySavingsShareoutItem(role, type) {
   return type === "chama" && role === "treasurer";
+}
+
+// Chama-only: signing off on a rotational (MGR) payout — mirrors
+// PAYOUT_OFFICIAL_ROLES in backend/src/modules/payout/payout.service.js
+// and requireChamaLeadershipOfficial on the /payouts/:id/approve route.
+// Same role set as isLoanOfficial above, kept separate since the two
+// approval chains (loans vs payouts) can diverge independently on the
+// backend. The service still enforces exactly who still needs to sign
+// (including conflict-of-interest recusal when the recipient themself
+// holds one of the required seats) — this only decides who sees the
+// action at all.
+const PAYOUT_OFFICIAL_ROLES = ["treasurer", "chairperson", "secretary", "auditor", "committee_member"];
+
+export function isPayoutOfficial(role, type) {
+  return type === "chama" && PAYOUT_OFFICIAL_ROLES.includes(role);
+}
+
+// Chama-only: marking an approved payout as disbursed is Treasurer-only —
+// mirrors requireChamaTreasurer on the /payouts/:id/pay route.
+export function canSettlePayout(role, type) {
+  return type === "chama" && role === "treasurer";
+}
+
+// Chama-only: withdrawing a payout before it's disbursed — mirrors
+// requireChamaTreasurerOrChairperson on the /payouts/:id/cancel route.
+export function canCancelPayout(role, type) {
+  return type === "chama" && ["treasurer", "chairperson"].includes(role);
+}
+
+// Burial-chama only: the setup wizard defines governance rules with real
+// financial weight (contribution amounts, benefit payouts, approval
+// workflow) once activated — mirrors requireChamaTreasurerOrChairperson
+// on the backend's profile/wizard-progress routes. A plain member can
+// view the resulting configuration (see the Leadership Desk's Burial
+// Chama Config tab) but never authors it, and this never applies outside
+// a burial-chama workspace.
+export function canManageBurialChamaSetup(role, type) {
+  return type === "burial-chama" && isManager(role, type);
 }

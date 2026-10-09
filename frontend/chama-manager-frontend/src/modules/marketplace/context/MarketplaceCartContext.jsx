@@ -4,18 +4,26 @@ import toast from "react-hot-toast";
 const MarketplaceCartContext = createContext(null);
 
 const STORAGE_KEY = "marketplace_cart_items";
+export const CART_CATEGORIES = new Set(["retail", "food"]);
+const normalizeCategory = (category) => String(category || "").trim().toLowerCase();
+export const isCartCategory = (category) => CART_CATEGORIES.has(normalizeCategory(category));
 
 export function MarketplaceCartProvider({ children }) {
   const [cartItems, setCartItems] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed)
+        ? parsed.map((item) => ({ ...item, categorySlug: normalizeCategory(item.categorySlug || "retail") }))
+        : [];
     } catch {
       return [];
     }
   });
 
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [openCategory, setOpenCategory] = useState(null);
+  const [fulfillmentByCategory, setFulfillmentByCategory] = useState({});
 
   useEffect(() => {
     try {
@@ -27,12 +35,19 @@ export function MarketplaceCartProvider({ children }) {
 
   const addToCart = (listing, qty = 1) => {
     if (!listing) return;
+    const categorySlug = normalizeCategory(listing.category_slug || "retail");
+    if (!isCartCategory(categorySlug)) {
+      toast.error("This category uses bookings or direct contact instead of a shopping cart");
+      return;
+    }
     const business = listing.business_id || {};
     const businessId = String(business._id || business.id || business);
     const businessName = business.name || "Verified Merchant";
 
     setCartItems((prev) => {
-      const existingIndex = prev.findIndex((i) => i.listingId === listing._id);
+      const existingIndex = prev.findIndex(
+        (i) => i.listingId === listing._id && normalizeCategory(i.categorySlug) === categorySlug
+      );
       if (existingIndex > -1) {
         const item = prev[existingIndex];
         const newQty = item.qty + qty;
@@ -65,12 +80,13 @@ export function MarketplaceCartProvider({ children }) {
           qty,
           businessId,
           businessName,
-          categorySlug: listing.category_slug || "retail",
+          categorySlug,
           stock: listing.stock,
           track_stock: listing.track_stock,
         },
       ];
     });
+    setOpenCategory(categorySlug);
     setIsCartOpen(true);
   };
 
@@ -102,6 +118,11 @@ export function MarketplaceCartProvider({ children }) {
     setCartItems([]);
   };
 
+  const clearCategoryCart = (categorySlug) => {
+    const normalizedCategory = normalizeCategory(categorySlug);
+    setCartItems((prev) => prev.filter((item) => normalizeCategory(item.categorySlug) !== normalizedCategory));
+  };
+
   // Group items by owning business
   const merchantGroups = useMemo(() => {
     const map = {};
@@ -121,23 +142,30 @@ export function MarketplaceCartProvider({ children }) {
     return Object.values(map);
   }, [cartItems]);
 
-  const itemCount = useMemo(() => cartItems.reduce((sum, i) => sum + i.qty, 0), [cartItems]);
-  const subtotal = useMemo(() => cartItems.reduce((sum, i) => sum + i.price * i.qty, 0), [cartItems]);
-
   return (
     <MarketplaceCartContext.Provider
       value={{
         cartItems,
-        merchantGroups,
-        itemCount,
-        subtotal,
         isCartOpen,
-        openCart: () => setIsCartOpen(true),
-        closeCart: () => setIsCartOpen(false),
+        openCategory,
+        fulfillmentByCategory,
+        setCategoryFulfillmentType: (category, type) => {
+          if (isCartCategory(category) && ["delivery", "pickup"].includes(type)) {
+            setFulfillmentByCategory((previous) => ({ ...previous, [normalizeCategory(category)]: type }));
+          }
+        },
+        openCart: (category) => {
+          if (isCartCategory(category)) {
+            setOpenCategory(normalizeCategory(category));
+            setIsCartOpen(true);
+          }
+        },
+        closeCart: () => { setIsCartOpen(false); setOpenCategory(null); },
         addToCart,
         updateQty,
         removeFromCart,
         clearCart,
+        clearCategoryCart,
       }}
     >
       {children}
@@ -145,10 +173,42 @@ export function MarketplaceCartProvider({ children }) {
   );
 }
 
-export function useMarketplaceCart() {
+export function useMarketplaceCart(categorySlug = null) {
   const context = useContext(MarketplaceCartContext);
   if (!context) {
     throw new Error("useMarketplaceCart must be used within a MarketplaceCartProvider");
   }
-  return context;
+  const normalizedCategory = normalizeCategory(categorySlug);
+  const scopedItems = isCartCategory(normalizedCategory)
+    ? context.cartItems.filter((item) => normalizeCategory(item.categorySlug || "retail") === normalizedCategory)
+    : [];
+  const merchantGroups = useMemo(() => {
+    const map = {};
+    for (const item of scopedItems) {
+      const id = item.businessId || "general";
+      if (!map[id]) map[id] = { businessId: id, businessName: item.businessName || "Merchant Store", items: [], subtotal: 0 };
+      map[id].items.push(item);
+      map[id].subtotal += item.price * item.qty;
+    }
+    return Object.values(map);
+  }, [context.cartItems, normalizedCategory]);
+  const itemCount = scopedItems.reduce((sum, item) => sum + item.qty, 0);
+  const subtotal = scopedItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+  return {
+    ...context,
+    cartItems: scopedItems,
+    merchantGroups,
+    itemCount,
+    subtotal,
+    isCartOpen: context.isCartOpen && context.openCategory === normalizedCategory,
+    fulfillmentType: context.fulfillmentByCategory[normalizedCategory] || "delivery",
+    setFulfillmentType: (type) => context.setCategoryFulfillmentType(normalizedCategory, type),
+    openCart: () => context.openCart(normalizedCategory),
+    addToCart: (listing, qty = 1) => context.addToCart({
+      ...listing,
+      category_slug: listing?.category_slug || normalizedCategory,
+    }, qty),
+    clearCart: () => context.clearCategoryCart(normalizedCategory),
+  };
 }

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { Plus, Pencil, Trash2, PackagePlus, X, Globe } from "lucide-react";
+import { Link } from "react-router-dom";
+import toast from "react-hot-toast";
+import { Plus, Pencil, Trash2, PackagePlus, X, Globe, UploadCloud, EyeOff, Clock, AlertCircle, ExternalLink } from "lucide-react";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import { useBusinessInventory } from "../hooks/useBusiness";
 import PageHeader from "../../../shared/components/ui/PageHeader";
@@ -13,6 +15,17 @@ const CATEGORY_COPY = {
   other: { singular: "Product", plural: "Products", tracksStockDefault: true },
 };
 
+// How each marketplace state is shown on an item card.
+const MARKETPLACE_BADGE = {
+  not_published: null,
+  live: { label: "Live on marketplace", cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300", Icon: Globe },
+  pending: { label: "Awaiting review", cls: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300", Icon: Clock },
+  draft: { label: "Awaiting review", cls: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300", Icon: Clock },
+  changes_requested: { label: "Changes requested", cls: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300", Icon: AlertCircle },
+  rejected: { label: "Rejected", cls: "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300", Icon: AlertCircle },
+  hidden: { label: "Hidden from marketplace", cls: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300", Icon: EyeOff },
+};
+
 const EMPTY_FORM = {
   name: "",
   sku: "",
@@ -24,6 +37,7 @@ const EMPTY_FORM = {
   quantity: "",
   track_stock: true,
   visible_online: true,
+  publish_to_marketplace: false,
   icon: "📦",
   image_url: "",
 };
@@ -44,6 +58,10 @@ export default function InventoryPage() {
     deleteInventoryItem,
     restockInventoryItem,
     isRestocking,
+    publishInventoryItem,
+    unpublishInventoryItem,
+    publishAllInventory,
+    isPublishingAll,
   } = useBusinessInventory(workspaceId);
   const inventoryList = Array.isArray(inventory) ? inventory : [];
 
@@ -51,6 +69,9 @@ export default function InventoryPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+
+  const [busyItemId, setBusyItemId] = useState(null);
+  const [enrollNotice, setEnrollNotice] = useState("");
 
   const [restockTarget, setRestockTarget] = useState(null);
   const [restockQty, setRestockQty] = useState("");
@@ -127,9 +148,18 @@ export default function InventoryPage() {
 
     try {
       if (modalMode === "edit" && editingId) {
-        await updateInventoryItem({ itemId: editingId, ...payload });
+        // visibility is controlled by Publish / Unpublish, so an edit never flips it.
+        const { visible_online: _keep, ...editPayload } = payload;
+        await updateInventoryItem({ itemId: editingId, ...editPayload });
       } else {
-        await addInventoryItem(payload);
+        const created = await addInventoryItem({ ...payload, publish_to_marketplace: canPublish && form.publish_to_marketplace });
+        if (created?.publish_error) {
+          // The item itself is saved; only the publish step was refused.
+          if (created.publish_error.code === "NOT_ENROLLED") setEnrollNotice(created.publish_error.message);
+          else toast.error(created.publish_error.message);
+        } else if (form.publish_to_marketplace) {
+          toast.success(`"${payload.name}" added and sent to the marketplace`);
+        }
       }
       closeModal();
     } catch (err) {
@@ -155,6 +185,60 @@ export default function InventoryPage() {
     setRestockQty("");
   };
 
+  // Rentals publish rooms/plots from Rental Listings, so no publish controls here.
+  const canPublish = bizCategory !== "rental" && bizCategory !== "rentals";
+  const unpublishedItems = inventoryList.filter((i) => (i.marketplace?.state || "not_published") === "not_published");
+
+  const reportPublishError = (err) => {
+    const data = err?.response?.data;
+    if (data?.code === "NOT_ENROLLED") {
+      setEnrollNotice(data.message);
+    } else {
+      toast.error(data?.message || err?.message || "Could not update the marketplace");
+    }
+  };
+
+  const handlePublish = async (item) => {
+    const id = item._id || item.id;
+    setBusyItemId(id);
+    setEnrollNotice("");
+    try {
+      await publishInventoryItem(id);
+      toast.success(`"${item.name}" sent to the marketplace`);
+    } catch (err) {
+      reportPublishError(err);
+    } finally {
+      setBusyItemId(null);
+    }
+  };
+
+  const handleUnpublish = async (item) => {
+    const id = item._id || item.id;
+    setBusyItemId(id);
+    try {
+      await unpublishInventoryItem(id);
+      toast.success(`"${item.name}" removed from the marketplace`);
+    } catch (err) {
+      reportPublishError(err);
+    } finally {
+      setBusyItemId(null);
+    }
+  };
+
+  const handlePublishAll = async () => {
+    if (!window.confirm(`Publish ${unpublishedItems.length} ${copy.plural.toLowerCase()} to the marketplace?`)) return;
+    setEnrollNotice("");
+    try {
+      const result = await publishAllInventory(unpublishedItems.map((i) => i._id || i.id));
+      if (result?.published) toast.success(`${result.published} published`);
+      if (result?.skipped?.length) {
+        toast.error(`${result.skipped.length} skipped: ${result.skipped[0].name} — ${result.skipped[0].reason}`);
+      }
+    } catch (err) {
+      reportPublishError(err);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -173,14 +257,37 @@ export default function InventoryPage() {
             : `Add, edit, and price the ${copy.plural.toLowerCase()} your customers see.`
         }
         action={
-          <button
-            onClick={openAdd}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
-          >
-            <Plus size={16} /> Add {copy.singular}
-          </button>
+          <div className="flex items-center gap-2">
+            {canPublish && unpublishedItems.length > 0 && (
+              <button
+                onClick={handlePublishAll}
+                disabled={isPublishingAll}
+                className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-white px-4 py-2 text-xs font-bold text-primary hover:bg-primary/5 disabled:opacity-50 dark:bg-gray-800"
+              >
+                <UploadCloud size={16} /> {isPublishingAll ? "Publishing…" : `Publish all (${unpublishedItems.length})`}
+              </button>
+            )}
+            <button
+              onClick={openAdd}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
+            >
+              <Plus size={16} /> Add {copy.singular}
+            </button>
+          </div>
         }
       />
+
+      {enrollNotice && (
+        <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-semibold">{enrollNotice}</p>
+          <Link
+            to={`/workspace/${workspaceId}/business/marketplace`}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 font-bold text-white hover:bg-amber-700"
+          >
+            Open Marketplace
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {inventoryList.length === 0 ? (
@@ -211,12 +318,23 @@ export default function InventoryPage() {
                       </p>
                     </div>
                   </div>
-                  {item.visible_online && (
-                    <span title="Visible on storefront" className="flex-shrink-0 text-primary">
-                      <Globe size={14} />
-                    </span>
-                  )}
                 </div>
+
+                {canPublish && (() => {
+                  const badge = MARKETPLACE_BADGE[item.marketplace?.state || "not_published"];
+                  if (!badge) return null;
+                  const { Icon } = badge;
+                  return (
+                    <div className="space-y-1">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${badge.cls}`}>
+                        <Icon size={12} /> {badge.label}
+                      </span>
+                      {item.marketplace?.notes && ["rejected", "changes_requested"].includes(item.marketplace.state) && (
+                        <p className="text-[11px] text-gray-500">{item.marketplace.notes}</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="flex items-center justify-between">
                   <div>
@@ -242,6 +360,43 @@ export default function InventoryPage() {
                       <PackagePlus size={13} /> Restock
                     </button>
                   )}
+                  {canPublish && (() => {
+                    const state = item.marketplace?.state || "not_published";
+                    const id = item._id || item.id;
+                    const busy = busyItemId === id;
+                    if (state === "not_published" || state === "hidden" || state === "rejected" || state === "changes_requested") {
+                      return (
+                        <button
+                          onClick={() => handlePublish(item)}
+                          disabled={busy}
+                          className="flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 disabled:opacity-50"
+                        >
+                          <UploadCloud size={13} /> {busy ? "…" : state === "not_published" ? "Publish" : "Republish"}
+                        </button>
+                      );
+                    }
+                    return (
+                      <>
+                        {state === "live" && item.marketplace?.slug && (
+                          <Link
+                            to={`/marketplace/${item.marketplace.category_slug || "retail"}/listings/${item.marketplace.slug}`}
+                            target="_blank"
+                            title="View on marketplace"
+                            className="flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300"
+                          >
+                            <ExternalLink size={13} /> View
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => handleUnpublish(item)}
+                          disabled={busy}
+                          className="flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-200"
+                        >
+                          <EyeOff size={13} /> {busy ? "…" : "Unpublish"}
+                        </button>
+                      </>
+                    );
+                  })()}
                   <button
                     onClick={() => openEdit(item)}
                     className="flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200"
@@ -383,15 +538,23 @@ export default function InventoryPage() {
                 </div>
               )}
 
-              <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={form.visible_online}
-                  onChange={(e) => setForm((f) => ({ ...f, visible_online: e.target.checked }))}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                Show on online storefront
-              </label>
+              {canPublish && modalMode !== "edit" && (
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={form.publish_to_marketplace}
+                    onChange={(e) => setForm((f) => ({ ...f, publish_to_marketplace: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  Publish to the marketplace now (uses the details and stock above)
+                </label>
+              )}
+              {canPublish && modalMode === "edit" && (
+                <p className="rounded-lg bg-primary/5 px-3 py-2 text-[11px] text-gray-500">
+                  If this {copy.singular.toLowerCase()} is on the marketplace, name, description, photo, price and stock changes here update the listing automatically.
+                  The marketplace shows the online price when you set one.
+                </p>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button

@@ -1,25 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Plus,
-  PiggyBank,
   RotateCw,
-  ShieldCheck,
-  CheckCircle2,
-  Clock,
-  XCircle,
-  AlertTriangle,
   TrendingUp,
   TrendingDown,
   Search,
   Award,
   Wallet,
-  Check,
 } from "lucide-react";
 import { useParams, Link } from "react-router-dom";
 import useWorkspace from "@/app/hooks/useWorkspace";
+import useWorkspacePermissions from "../hooks/useworkspacepermissions";
 import MpesaStkModal from "@/modules/finance/components/MpesaStkModal";
 import savingsShareoutService from "@/modules/chama/services/savingsShareout.service";
-import SavingsShareoutPreviewModal from "@/modules/chama/components/SavingsShareoutPreviewModal";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -59,29 +52,33 @@ export default function SavingsPage() {
   const isChairperson = userRole === "chairperson";
   const isOfficial = isTreasurer || isChairperson || userRole === "admin" || userRole === "secretary";
 
-  const [activeTab, setActiveTab] = useState("overview"); // 'overview' | 'shareout'
+  // Same permission the Contributions page already gates "record for
+  // others" on: contributions.record at 'all' scope is treasurer-only
+  // (a chairperson's grant is deliberately 'own'). Reused here so a
+  // member's Deposit button only ever appears on their own row, and
+  // the treasurer sees it on every row to initiate on anyone's behalf.
+  const { canForOthers } = useWorkspacePermissions(chamaId);
+  const canDepositForOthers = canForOthers("contributions.record");
 
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
   const [memberSearch, setMemberSearch] = useState("");
 
+  // The chama-wide pool (total pool, growth chart, top savers, every
+  // member's balance) is collapsed behind this by default - a member
+  // opening Savings should see their own balance and activity first,
+  // not everyone else's. Off by default for everyone; anyone can
+  // uncollapse it, officials included.
+  const [showChamaSavings, setShowChamaSavings] = useState(false);
+
   // Savings Overview State (live, per-member data)
   const [overview, setOverview] = useState(null);
   const [loadingOverview, setLoadingOverview] = useState(true);
 
-  // Share-Out State
-  const [policies, setPolicies] = useState([]);
-  const [shareouts, setShareouts] = useState([]);
-  const [loadingShareouts, setLoadingShareouts] = useState(false);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [selectedShareoutDetails, setSelectedShareoutDetails] = useState(null);
-  const [payingItemId, setPayingItemId] = useState(null);
-  const [notice, setNotice] = useState(null);
-
-  const notify = (msg, type = "success") => {
-    setNotice({ msg, type });
-    setTimeout(() => setNotice(null), 4000);
-  };
+  // Share-out batch count, shown only as a hand-off badge. The batches
+  // themselves, the policy, approval and disbursement all live on the
+  // Savings Share-Out page - this page is the pool, not its release.
+  const [shareoutCount, setShareoutCount] = useState(0);
 
   const loadOverview = useCallback(async () => {
     if (!chamaId) return;
@@ -96,41 +93,23 @@ export default function SavingsPage() {
     }
   }, [chamaId]);
 
-  const loadShareoutData = useCallback(async () => {
+  const loadShareoutCount = useCallback(async () => {
     if (!chamaId) return;
-    setLoadingShareouts(true);
     try {
-      const [policiesRes, shareoutsRes] = await Promise.allSettled([
-        savingsShareoutService.getPolicies(chamaId),
-        savingsShareoutService.getAll(chamaId),
-      ]);
-
-      // Normalize defensively: some workspace types (e.g. burial chama)
-      // can have this endpoint return a wrapped shape ({ data: [...] },
-      // { policies: [...] }, etc.) instead of a bare array. Coerce to an
-      // array either way so the rest of the page never has to guard.
-      const toArray = (val) => {
-        if (Array.isArray(val)) return val;
-        if (Array.isArray(val?.data)) return val.data;
-        if (Array.isArray(val?.policies)) return val.policies;
-        if (Array.isArray(val?.shareouts)) return val.shareouts;
-        if (Array.isArray(val?.items)) return val.items;
-        return [];
-      };
-
-      if (policiesRes.status === "fulfilled") setPolicies(toArray(policiesRes.value));
-      if (shareoutsRes.status === "fulfilled") setShareouts(toArray(shareoutsRes.value));
+      const result = await savingsShareoutService.getAll(chamaId);
+      const list = Array.isArray(result)
+        ? result
+        : result?.data ?? result?.shareouts ?? result?.items ?? [];
+      setShareoutCount(Array.isArray(list) ? list.length : 0);
     } catch {
-      // ignore
-    } finally {
-      setLoadingShareouts(false);
+      setShareoutCount(0);
     }
   }, [chamaId]);
 
   useEffect(() => {
     loadOverview();
-    loadShareoutData();
-  }, [chamaId, loadOverview, loadShareoutData]);
+    loadShareoutCount();
+  }, [chamaId, loadOverview, loadShareoutCount]);
 
   // The overview is a live aggregation of deposits/share-outs - so without
   // this listener a completed STK (savings deposit) never refreshes this
@@ -140,43 +119,6 @@ export default function SavingsPage() {
     window.addEventListener("finance:updated", loadOverview);
     return () => window.removeEventListener("finance:updated", loadOverview);
   }, [loadOverview]);
-
-  const safePolicies = Array.isArray(policies) ? policies : [];
-  const activePolicy = safePolicies.find((p) => p.status === "active") || safePolicies[0] || null;
-
-  // Handle Approving Shareout (Chairperson)
-  const handleApproveShareout = async (shareoutId) => {
-    try {
-      await savingsShareoutService.approve(chamaId, shareoutId);
-      notify("Savings share-out batch approved successfully!");
-      loadShareoutData();
-      loadOverview();
-    } catch (err) {
-      notify(err.response?.data?.message || "Failed to approve share-out", "error");
-    }
-  };
-
-  // Handle Paying an individual member's share (Treasurer)
-  const handlePayItem = async (shareoutId, itemId, method = "mpesa") => {
-    setPayingItemId(itemId);
-    try {
-      await savingsShareoutService.payItem(chamaId, shareoutId, itemId, {
-        disbursementMethod: method,
-        externalReference: `SAVINGS-DISBURSE-${Date.now()}`,
-      });
-      notify("Member savings share marked as paid!");
-      loadShareoutData();
-      loadOverview();
-      if (selectedShareoutDetails && selectedShareoutDetails._id === shareoutId) {
-        const updated = await savingsShareoutService.getOne(chamaId, shareoutId);
-        setSelectedShareoutDetails(updated);
-      }
-    } catch (err) {
-      notify(err.response?.data?.message || "Failed to disburse share-out item", "error");
-    } finally {
-      setPayingItemId(null);
-    }
-  };
 
   // ------------------------------------------------------------
   // Live savings numbers - all derived from the savings-overview
@@ -220,6 +162,15 @@ export default function SavingsPage() {
         pctOfPool: totals.total_savings > 0 ? (m.balance / totals.total_savings) * 100 : 0,
       })),
     [allMembers, totals.total_savings]
+  );
+
+  // My own row, picked out of the same overview already fetched above -
+  // no separate "my savings" endpoint needed since overview.members
+  // already carries every member's figures, keyed by membership_id.
+  const myMembershipId = workspace?.membership?._id ? String(workspace.membership._id) : null;
+  const myRow = useMemo(
+    () => memberSavingsList.find((m) => String(m.id) === myMembershipId) || null,
+    [memberSavingsList, myMembershipId]
   );
 
   const filteredMemberList = useMemo(() => {
@@ -293,87 +244,86 @@ export default function SavingsPage() {
   return (
     <div className="space-y-6 font-sans text-slate-900 dark:text-slate-100 pb-12">
       {/* Toast Notice */}
-      {notice && (
-        <div
-          className={`flex items-center gap-3 rounded-2xl border p-4 shadow-lg animate-fade-in ${
-            notice.type === "error"
-              ? "border-rose-300 bg-rose-600 text-white"
-              : "border-emerald-300 bg-emerald-600 text-white"
-          }`}
-        >
-          {notice.type === "error" ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
-          <p className="text-xs font-bold">{notice.msg}</p>
-        </div>
-      )}
-
       {/* Header Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-            Savings & Share-Outs
+            Savings
           </h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-            Manage member deposits, flexible balances, and governed savings share-outs
+            The savings pool — member deposits, balances and how it has grown
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setIsDepositModalOpen(true)}
-            className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition"
+            className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-emerald-700"
           >
-            <Plus size={16} /> Deposit Savings
+            <Plus size={16} /> Deposit savings
           </button>
-          {/* Configuring the policy itself (its share rule, trigger, and
-              eligible approvers) is a leadership mutation and now lives
-              only in the Leadership Desk's Treasury Oversight tab, behind
-              the leadership PIN — see modules/leadership/tabs/
-              TreasuryOversightTab.jsx. Triggering a share-out from an
-              already-active policy stays here since it's an operational
-              action, not a settings change. */}
-          {isOfficial && activePolicy && (
-            <button
-              onClick={() => setShowPreviewModal(true)}
-              className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition"
-            >
-              <PiggyBank size={16} /> Trigger Share-Out
-            </button>
-          )}
-          {isOfficial && !activePolicy && (
+
+          {/* Releasing the pool is a governed, multi-step process with
+              its own policy, approval and disbursement steps, so it gets
+              its own page rather than a tab here. This is the hand-off,
+              not a second copy of it. */}
+          {isOfficial && (
             <Link
-              to={`/workspace/${chamaId}/leadership?tab=treasury`}
-              className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition"
+              to={`/workspace/${chamaId}/finance/savings-shareout`}
+              className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-indigo-700"
             >
-              <PiggyBank size={16} /> Set Up Share-Out Policy
+              <RotateCw size={16} /> Share-outs
+              {shareoutCount > 0 && (
+                <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-black">
+                  {shareoutCount}
+                </span>
+              )}
             </Link>
           )}
         </div>
       </div>
 
-      {/* Navigation Subtabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveTab("overview")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
-            activeTab === "overview"
-              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shadow-xs"
-              : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <PiggyBank size={15} /> Savings Overview
-        </button>
-        <button
-          onClick={() => setActiveTab("shareout")}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition ${
-            activeTab === "shareout"
-              ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 shadow-xs"
-              : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <RotateCw size={15} /> Share-Out & Distribution ({shareouts.length})
-        </button>
+      {/* ------------------------------------------------------------
+          MY SAVINGS — always visible first, using the same overview
+          already fetched above (overview.members carries every
+          member's row keyed by membership_id, so this is just the
+          viewer's own row, not a second request). The chama-wide pool
+          below stays tucked behind the toggle until asked for.
+          ------------------------------------------------------------ */}
+      <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold text-slate-900 dark:text-white">My Savings</h2>
+          <button
+            type="button"
+            onClick={() => setShowChamaSavings((v) => !v)}
+            className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 transition"
+          >
+            {showChamaSavings ? "Hide chama savings" : "View chama savings"}
+          </button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">MY BALANCE</span>
+            <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{money(myRow?.balance)}</p>
+          </div>
+          <div>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">MY DEPOSITS (30d)</span>
+            <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">
+              +{money(myRow?.recentDeposits)}
+            </p>
+            <span className="mt-1 block text-[11px] font-semibold text-slate-400">
+              {myRow?.depositCount || 0} deposit{myRow?.depositCount === 1 ? "" : "s"} total
+            </span>
+          </div>
+          <div>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">LAST ACTIVITY</span>
+            <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">{timeAgo(myRow?.lastActivity)}</p>
+          </div>
+        </div>
       </div>
 
+      {showChamaSavings && (
+        <>
       {/* Top 4 Metrics Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -427,8 +377,6 @@ export default function SavingsPage() {
         </div>
       )}
 
-      {activeTab === "overview" && (
-        <>
           {/* Savings Growth & Top Savers */}
           <div className="grid gap-6 lg:grid-cols-12">
             <div className="lg:col-span-8 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -655,15 +603,17 @@ export default function SavingsPage() {
                           </td>
                           <td className="px-6 py-4 text-slate-500 font-mono">{timeAgo(row.lastActivity)}</td>
                           <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => {
-                                setSelectedMember(row);
-                                setIsDepositModalOpen(true);
-                              }}
-                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 transition"
-                            >
-                              Deposit
-                            </button>
+                            {(canDepositForOthers || String(row.id) === myMembershipId) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedMember(row);
+                                  setIsDepositModalOpen(true);
+                                }}
+                                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 transition"
+                              >
+                                Deposit
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -682,237 +632,6 @@ export default function SavingsPage() {
             </div>
           </div>
         </>
-      )}
-
-      {activeTab === "shareout" && (
-        <div className="space-y-6">
-          {/* Active Policy Status Card */}
-          <div className="rounded-3xl border border-indigo-200 bg-indigo-50/70 p-6 dark:border-indigo-950 dark:bg-indigo-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
-                <ShieldCheck size={26} />
-              </div>
-              <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
-                  SAVINGS SHARE-OUT POLICY
-                </span>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">
-                  {activePolicy ? activePolicy.name : "No Policy Configured"}
-                </h3>
-                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                  {activePolicy
-                    ? `Mode: ${activePolicy.share_rule?.mode === 'percentage_of_balance' ? `${activePolicy.share_rule?.percentage}% of contributor balance` : `Fixed KES ${activePolicy.share_rule?.fixed_amount}`} · Trigger: ${activePolicy.trigger_rule?.type || 'manual'}`
-                    : "Configure a policy to enable automatic or one-click year-end savings share-outs."}
-                </p>
-              </div>
-            </div>
-
-            {isOfficial && (
-              <div className="flex items-center gap-2">
-                <Link
-                  to={`/workspace/${chamaId}/leadership?tab=treasury`}
-                  className="rounded-2xl border border-indigo-200 bg-white px-4 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-slate-900 dark:text-indigo-300"
-                >
-                  {activePolicy ? "Edit Policy in Leadership Desk" : "Configure Policy in Leadership Desk"}
-                </Link>
-                {activePolicy && (
-                  <button
-                    onClick={() => setShowPreviewModal(true)}
-                    className="flex items-center gap-1.5 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white shadow-md hover:bg-indigo-700 transition"
-                  >
-                    <PiggyBank size={15} /> Trigger Share-Out
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Share-Out Batches Table */}
-          <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white mb-4">Share-Out History & Batches</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-slate-100 bg-slate-50/50 uppercase text-[11px] font-extrabold text-slate-400 dark:border-slate-800 dark:bg-slate-800/40">
-                  <tr>
-                    <th className="px-6 py-4">BATCH / DATE</th>
-                    <th className="px-6 py-4">RECIPIENTS</th>
-                    <th className="px-6 py-4">TOTAL AMOUNT</th>
-                    <th className="px-6 py-4 text-center">STATUS</th>
-                    <th className="px-6 py-4 text-right">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-semibold">
-                  {shareouts.length > 0 ? (
-                    shareouts.map((sh) => (
-                      <tr key={sh._id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition">
-                        <td className="px-6 py-4">
-                          <p className="font-bold text-slate-900 dark:text-white">
-                            {sh.name || `Share-Out #${String(sh._id).slice(-4).toUpperCase()}`}
-                          </p>
-                          <span className="text-[11px] text-slate-400 font-mono">
-                            {sh.createdAt ? new Date(sh.createdAt).toLocaleDateString() : "Recent"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 font-mono font-bold text-slate-700 dark:text-slate-300">
-                          {sh.items?.length || 0} Members
-                        </td>
-                        <td className="px-6 py-4 font-mono font-black text-emerald-600 dark:text-emerald-400">
-                          {money(sh.total_amount || sh.items?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0)}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          {sh.status === "approved" ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                              <CheckCircle2 size={12} /> Approved
-                            </span>
-                          ) : sh.status === "completed" ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-0.5 text-[10px] font-extrabold text-sky-700 dark:bg-sky-950 dark:text-sky-300">
-                              <CheckCircle2 size={12} /> Disbursed
-                            </span>
-                          ) : sh.status === "cancelled" ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-700 dark:bg-rose-950 dark:text-rose-300">
-                              <XCircle size={12} /> Cancelled
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                              <Clock size={12} /> Pending Approval
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {sh.status === "pending_approval" && isChairperson && (
-                              <button
-                                onClick={() => handleApproveShareout(sh._id)}
-                                className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-xs hover:bg-emerald-700"
-                              >
-                                Approve Batch
-                              </button>
-                            )}
-                            <button
-                              onClick={() => setSelectedShareoutDetails(sh)}
-                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
-                            >
-                              View Breakdown
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="5" className="px-6 py-12 text-center text-slate-400 font-medium">
-                        No savings share-out runs recorded yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Shareout Breakdown Details Modal */}
-      {selectedShareoutDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="relative w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-8">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
-              <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-                  SHARE-OUT LINE ITEMS
-                </span>
-                <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                  {selectedShareoutDetails.name || `Shareout #${String(selectedShareoutDetails._id).slice(-4)}`}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedShareoutDetails(null)}
-                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="py-4 max-h-96 overflow-y-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-slate-100 uppercase text-[10px] font-extrabold text-slate-400 sticky top-0 bg-white dark:bg-slate-900">
-                  <tr>
-                    <th className="py-2.5">MEMBER</th>
-                    <th className="py-2.5">SHARE AMOUNT</th>
-                    <th className="py-2.5 text-center">STATUS</th>
-                    {isTreasurer && <th className="py-2.5 text-right">ACTION</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {(selectedShareoutDetails.items || []).map((item) => {
-                    const memberName =
-                      item.member_id?.user_id?.name ||
-                      item.member_id?.name ||
-                      item.member_name ||
-                      "Member";
-                    const isPaid = item.status === "paid";
-
-                    return (
-                      <tr key={item._id || item.member_id} className="hover:bg-slate-50/50">
-                        <td className="py-3 font-bold text-slate-900 dark:text-white">{memberName}</td>
-                        <td className="py-3 font-mono font-black text-emerald-600">{money(item.amount)}</td>
-                        <td className="py-3 text-center">
-                          {isPaid ? (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700">
-                              Paid
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-700">
-                              Pending
-                            </span>
-                          )}
-                        </td>
-                        {isTreasurer && (
-                          <td className="py-3 text-right">
-                            {!isPaid && (
-                              <button
-                                disabled={payingItemId === item._id}
-                                onClick={() =>
-                                  handlePayItem(selectedShareoutDetails._id, item._id, "mpesa")
-                                }
-                                className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
-                              >
-                                {payingItemId === item._id ? "Disbursing..." : "Disburse via M-Pesa"}
-                              </button>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                onClick={() => setSelectedShareoutDetails(null)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Shareout Preview Modal */}
-      {showPreviewModal && activePolicy && (
-        <SavingsShareoutPreviewModal
-          workspaceId={chamaId}
-          policy={activePolicy}
-          onClose={() => setShowPreviewModal(false)}
-          onTriggered={(res) => {
-            setShowPreviewModal(false);
-            notify("Savings share-out generated & queued for official approval!");
-            loadShareoutData();
-          }}
-        />
       )}
 
       <MpesaStkModal

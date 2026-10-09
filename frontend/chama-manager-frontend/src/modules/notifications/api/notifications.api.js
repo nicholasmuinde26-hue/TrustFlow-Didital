@@ -34,6 +34,11 @@ const notificationsApi = {
     return api.patch("/notifications/read-all");
   },
 
+  // Clear the badge for a page the user just opened (exact-page match).
+  markReadByRoute(path) {
+    return api.patch("/notifications/read-by-route", { path });
+  },
+
   markNotificationAsArchived(notificationId) {
     return api.patch(`/notifications/${notificationId}/archive`);
   },

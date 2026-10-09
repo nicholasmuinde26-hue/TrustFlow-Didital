@@ -32,10 +32,11 @@ import { useMarketplaceCart } from "../context/MarketplaceCartContext";
 import marketplaceService from "../services/marketplace.service";
 import Spinner from "@/shared/components/ui/Spinner";
 import toast from "react-hot-toast";
+import { isCartCategory } from "../context/MarketplaceCartContext";
 
 export default function MarketplaceListingDetailPage() {
   const { category = "retail", slug } = useParams();
-  const { addToCart } = useMarketplaceCart();
+  const { addToCart } = useMarketplaceCart(category);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -92,6 +93,8 @@ export default function MarketplaceListingDetailPage() {
 
   const { listing, merchant, relatedListings } = data;
   const isRental = listing.category_slug === "rentals";
+  const isService = listing.category_slug === "services";
+  const serviceAttr = listing.service_attributes || {};
   const isOutOfStock = listing.track_stock && listing.stock <= 0;
 
   const images = listing.images?.length
@@ -133,7 +136,7 @@ export default function MarketplaceListingDetailPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
       <MarketplaceNavbar categorySlug={listing.category_slug || category} />
-      <MarketplaceCartDrawer />
+      <MarketplaceCartDrawer categorySlug={listing.category_slug || category} />
 
       <main className="mx-auto max-w-7xl flex-1 px-4 py-8 sm:px-8 w-full space-y-8">
         {/* Breadcrumb Bar */}
@@ -142,7 +145,7 @@ export default function MarketplaceListingDetailPage() {
             to={`/marketplace/${listing.category_slug || category}`}
             className="font-bold text-teal-700 hover:underline capitalize dark:text-teal-400"
           >
-            {isRental ? "Rentals & Real Estate" : `${listing.category_slug.toUpperCase()} Marketplace`}
+            {isRental ? "Rentals & Real Estate" : isService ? "Services & Professionals" : `${listing.category_slug.toUpperCase()} Marketplace`}
           </Link>
           <ChevronRight size={13} />
           {rentAttr.city && (
@@ -608,13 +611,39 @@ export default function MarketplaceListingDetailPage() {
                     <span className="text-xs font-bold text-emerald-600">
                       In Stock ({listing.stock} units available)
                     </span>
+                  ) : isService ? (
+                    <span className="text-xs font-bold text-emerald-700">Contact the provider to confirm availability</span>
                   ) : (
                     <span className="text-xs font-bold text-emerald-600">Available on Order</span>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-2">
+              {isService && (
+                <section className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-start gap-3">
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-emerald-50 dark:bg-emerald-950">
+                      {merchant?.logo_url ? <img src={merchant.logo_url} alt="" className="h-full w-full object-cover" /> : <Store className="m-3 text-emerald-700" size={24} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800">Verified service professional</p>
+                      <h2 className="mt-1 truncate text-sm font-extrabold text-slate-900 dark:text-white">{merchant?.display_name || merchant?.name || "Local professional"}</h2>
+                      <p className="mt-1 text-xs text-slate-500">{serviceAttr.service_area || merchant?.location || "Nairobi"}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-extrabold text-slate-900 dark:text-white">KES {Number(listing.price || 0).toLocaleString()}</p>
+                      <p className="mt-1 text-[10px] text-slate-500">starting price</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
+                    <div><span className="text-slate-500">Service mode</span><p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{serviceAttr.service_mode === "remote" ? "Remote" : serviceAttr.service_mode === "at_provider" ? "At provider" : "At your location"}</p></div>
+                    <div><span className="text-slate-500">Typical duration</span><p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{serviceAttr.duration_minutes || 60} minutes</p></div>
+                  </div>
+                  {merchant?.badges?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{merchant.badges.map((badge) => <span key={badge} className="rounded-sm bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{badge}</span>)}</div>}
+                </section>
+              )}
+
+              {isCartCategory(listing.category_slug || category) ? <div className="flex items-center gap-3 pt-2">
                 <div className="flex items-center rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-1">
                   <button
                     disabled={qty <= 1}
@@ -643,9 +672,9 @@ export default function MarketplaceListingDetailPage() {
                   <ShoppingCart size={16} />
                   Add to Marketplace Cart
                 </button>
-              </div>
+              </div> : <Link to={`/businesses/${merchant?.slug || ""}`} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">{isService ? "View provider profile" : "Contact this business"}</Link>}
 
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3">
+              {!isService && <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-3">
                 <div className="flex items-start justify-between">
                   <div className="flex gap-3">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
@@ -668,7 +697,7 @@ export default function MarketplaceListingDetailPage() {
                     to={`/businesses/${merchant.slug}`}
                     className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
                   >
-                    View Storefront
+                    View Store
                   </Link>
                 </div>
 
@@ -682,10 +711,10 @@ export default function MarketplaceListingDetailPage() {
                     <span>Fast Local Delivery</span>
                   </div>
                 </div>
-              </div>
+              </div>}
 
               <div className="space-y-2">
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">Product Description</h4>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">{isService ? "About this service" : "Product Description"}</h4>
                 <div className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-line">
                   {listing.description || "No description provided for this listing."}
                 </div>

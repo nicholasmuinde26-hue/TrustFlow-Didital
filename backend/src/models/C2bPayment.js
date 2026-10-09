@@ -70,6 +70,11 @@ const c2bPaymentSchema = new mongoose.Schema(
     matched_chama_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Chama', default: null },
     matched_membership_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaMembership', default: null },
     matched_payment_intent_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentIntent', default: null },
+    // Set instead of matched_membership_id/matched_payment_intent_id when
+    // this payment is a tenant/lessee paying rent on a specific
+    // chama-owned asset rather than a member contributing — see
+    // utils/assetPaymentCode.js and chamaAsset.service.js#recordVerifiedAssetIncomeFromC2b.
+    matched_asset_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaAsset', default: null },
 
     reconciled_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     reconciled_at: { type: Date, default: null },

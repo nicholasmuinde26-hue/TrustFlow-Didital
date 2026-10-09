@@ -3,6 +3,7 @@ import ChamaMembership from '../../models/ChamaMembership.js';
 import Committee from '../../models/Committee.js';
 import permissionService from '../../services/permission.service.js';
 import MemberExitRequest from '../../models/MemberExitRequest.js';
+import AssetTransaction from '../../models/AssetTransaction.js';
 
 class ApprovalService {
   /**
@@ -273,10 +274,34 @@ class ApprovalService {
 
     await request.save();
 
+    // Keep a member-raised asset discrepancy flag in step with its approval
+    // request no matter which surface leadership signs off from (the asset
+    // page's review queue, or the generic approvals endpoint).
+    if (request.resource_type === 'ASSET_DISCREPANCY' && ['approved', 'rejected'].includes(request.status)) {
+      await AssetTransaction.findOneAndUpdate(
+        { _id: request.resource_id, flag_request_id: request._id, flag_status: 'flagged' },
+        { $set: { flag_status: request.status === 'approved' ? 'confirmed' : 'dismissed' } }
+      );
+    }
+
+    // Workspace feature switches: apply (or cancel, if open data appeared while
+    // waiting) once the request reaches a final decision, and audit it.
+    if (request.resource_type === 'WORKSPACE_MODULES' && ['approved', 'rejected'].includes(request.status)) {
+      const { handleModuleChangeDecision } = await import('../workspaces/workspacemodulechange.service.js');
+      await handleModuleChangeDecision(request, { approverMembershipId });
+    }
+
     if (request.resource_type === 'WITHDRAWAL' && request.status === 'approved') {
       await MemberExitRequest.findOneAndUpdate(
         { _id: request.resource_id, approval_request_id: request._id, status: 'pending_approval' },
         { $set: { status: 'approved', approved_at: new Date() } }
+      );
+    }
+
+    if (request.resource_type === 'WITHDRAWAL' && request.status === 'rejected') {
+      await MemberExitRequest.findOneAndUpdate(
+        { _id: request.resource_id, approval_request_id: request._id, status: 'pending_approval' },
+        { $set: { status: 'rejected' } }
       );
     }
 

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { X, ChevronRight, Filter, Check, CheckCheck, Archive, ExternalLink } from "lucide-react";
 import {
   useUnreadNotifications,
@@ -64,6 +65,7 @@ function getPriorityBadge(priority) {
 }
 
 export default function NotificationCenter() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("unread");
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -108,6 +110,17 @@ export default function NotificationCenter() {
 
   const handleArchive = (notificationId) => {
     markArchivedMutation.mutate(notificationId);
+  };
+
+  // Decisions (approve a loan, sign off a withdrawal) happen on the real page.
+  // The buttons here used to record "approved"/"rejected" on the notification
+  // only, which made it look like the loan had been approved when nothing had
+  // actually happened to it. Open the page instead.
+  const handleReview = (notification) => {
+    if (notification.state === 'unread') {
+      markReadMutation.mutate(notification._id);
+    }
+    if (notification.action_url) navigate(notification.action_url);
   };
 
   const handleActionCompleted = (notificationId, actionTaken) => {
@@ -311,32 +324,34 @@ export default function NotificationCenter() {
                       </div>
                     )}
 
-                    {/* Action Buttons */}
-                    {notification.requires_action && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleActionCompleted(notification._id, 'approved')}
-                          className="px-3 py-1.5 text-xs font-bold bg-green-600 text-white rounded-lg hover:bg-green-700"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleActionCompleted(notification._id, 'rejected')}
-                          className="px-3 py-1.5 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700"
-                        >
-                          Reject
-                        </button>
+                    {/* Action Buttons: review on the real page, or mark it done */}
+                    {notification.requires_action && notification.state !== 'acted' && (
+                      <div className="flex flex-wrap items-center gap-2">
                         {notification.action_url && (
-                          <a
-                            href={notification.action_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
+                          <button
+                            onClick={() => handleReview(notification)}
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-violet-600 text-white rounded-lg hover:bg-violet-700"
                           >
-                            View Details <ExternalLink size={12} />
-                          </a>
+                            {notification.action_text || 'Review now'} <ChevronRight size={12} />
+                          </button>
                         )}
+                        <button
+                          onClick={() => handleActionCompleted(notification._id, 'completed')}
+                          className="px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
+                        >
+                          Mark as done
+                        </button>
                       </div>
+                    )}
+
+                    {/* Informational items that point somewhere */}
+                    {!notification.requires_action && notification.action_url && (
+                      <button
+                        onClick={() => handleReview(notification)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
+                      >
+                        Open <ExternalLink size={12} />
+                      </button>
                     )}
                   </div>
                 </div>

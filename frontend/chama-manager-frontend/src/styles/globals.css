@@ -32,9 +32,11 @@ button:not(:disabled),
     outline-offset: 2px;
 }
 
-a {
-    color: inherit;
-    text-decoration: none;
+@layer base {
+    a {
+        color: inherit;
+        text-decoration: none;
+    }
 }
 
 ::selection {
@@ -46,3 +48,8 @@ a {
     background: #1e3a8a;
     color: #eff6ff;
 }
+
+/* Admin console — slim, dark scrollbar for the sidebar nav */
+.admin-scroll { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.12) transparent; }
+.admin-scroll::-webkit-scrollbar { width: 6px; }
+.admin-scroll::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.12); border-radius: 9999px; }

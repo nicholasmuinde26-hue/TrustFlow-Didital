@@ -14,6 +14,7 @@ import {
   getContributionPlanPayments,
   getContributionPlanFinancialSummary,
 } from "./contributionPlan.service.js";
+import { configureSchedule } from "./contributioncalendar.service.js";
 
 // ========================================
 // CONTRIBUTION PLAN CONTROLLER
@@ -153,6 +154,27 @@ export const updatePlan = async (req, res, next) => {
     next(error);
   }
 };
+
+export const configurePlanSchedule = async (req, res, next) => {
+  try {
+    const actorUserId = getAuthenticatedUserId(req);
+    const { plan, outcome } = await configureSchedule({
+      chamaId: req.body.owner_id || req.query.owner_id, // ensure chamaId is passed
+      planId: req.params.planId,
+      actorUserId,
+      body: req.body
+    });
+
+    return res.json({
+      success: true,
+      message: "Contribution plan schedule configured successfully",
+      data: { plan, outcome }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 // ========================================
 // CHANGE PLAN STATUS

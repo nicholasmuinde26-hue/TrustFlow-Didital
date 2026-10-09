@@ -434,7 +434,7 @@ memberCommunicationPreferencesSchema.index({
 // PRE-SAVE HOOKS
 // ======================================================
 
-memberCommunicationPreferencesSchema.pre('save', function(next) {
+memberCommunicationPreferencesSchema.pre('save', function () {
   // Ensure at least one preferred channel is set
   const hasPreferred = 
     this.channels.sms.preferred ||
@@ -453,7 +453,6 @@ memberCommunicationPreferencesSchema.pre('save', function(next) {
     this.channels.sms.phone = this.channels.whatsapp.phone;
   }
 
-  next();
 });
 
 // ======================================================

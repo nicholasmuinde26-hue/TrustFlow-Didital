@@ -155,7 +155,7 @@ export const submitOfficialRating = async ({
         comment: comment ? String(comment).trim().slice(0, 1000) : null,
       },
     },
-    { upsert: true, new: true, runValidators: true }
+    { upsert: true, returnDocument: 'after', runValidators: true }
   );
 
   await createAuditLog({

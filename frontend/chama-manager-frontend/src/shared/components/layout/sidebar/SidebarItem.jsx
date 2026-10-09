@@ -1,9 +1,11 @@
 import { NavLink } from "react-router-dom";
+import { Lock } from "lucide-react";
 
 export default function SidebarItem({
   icon: Icon,
   title,
   to,
+  locked = false,
 }) {
   return (
     <NavLink
@@ -45,6 +47,15 @@ export default function SidebarItem({
       />
 
       <span>{title}</span>
+
+      {locked && (
+        <span
+          className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-400/15 dark:text-amber-300"
+          title="Not in your plan. Upgrade to unlock."
+        >
+          <Lock size={10} aria-hidden="true" /> Upgrade
+        </span>
+      )}
     </NavLink>
   );
 }

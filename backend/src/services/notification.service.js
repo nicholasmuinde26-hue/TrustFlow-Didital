@@ -77,11 +77,19 @@ class NotificationService {
         return null;
       }
 
-      // Determine delivery channels
-      const channels = notificationConfig.defaultChannels || ['in-app'];
+      // The user's global and category preferences govern delivery. A type's
+      // default channel list caps delivery to channels it actually supports.
+      const preferredChannels = await notificationPreferenceService.getEnabledChannels(
+        membership.user_id,
+        notificationConfig.category
+      );
+      const supportedChannels = notificationConfig.defaultChannels || ['in-app'];
+      const channels = preferredChannels.filter((channel) => supportedChannels.includes(channel));
+      if (channels.length === 0) return null;
+      const isPersistent = channels.includes(NOTIFICATION_CHANNELS.IN_APP);
 
       // Create notification
-      const notification = await Notification.create({
+      const notification = new Notification({
         chama_id: chamaId,
         recipient_membership_id: recipientMembershipId,
         recipient_user_id: membership.user_id,
@@ -114,9 +122,10 @@ class NotificationService {
         ip_address: ipAddress,
         user_agent: userAgent
       });
+      if (isPersistent) await notification.save();
 
       // Deliver notifications through channels
-      await this.deliverNotification(notification, channels);
+      await this.deliverNotification(notification, channels, isPersistent);
 
       return notification;
 
@@ -213,7 +222,18 @@ class NotificationService {
       const notifications = [];
       for (const recipient of recipients) {
         const notificationConfig = this.getNotificationConfigForDomainEvent(domainEvent);
-        
+
+        // Most call sites never pass an explicit actionUrl, which left
+        // action_url null on nearly every notification and made it
+        // impossible for the frontend to know which nav item/section tab
+        // an unread notification belongs to. Fall back to the workspace
+        // route each notification type is configured with (see `route` on
+        // NOTIFICATION_TYPES in notification.constants.js) so every
+        // notification still resolves to a real page in the workspace the
+        // event happened in.
+        const actionUrl = eventData.actionUrl
+          || (notificationConfig.route ? `/workspace/${chamaId}/${notificationConfig.route}` : null);
+
         const notification = await this.createNotification({
           chamaId,
           recipientMembershipId: recipient.membershipId,
@@ -224,8 +244,8 @@ class NotificationService {
           metadata: eventData,
           relatedEntityType: eventData.entityType,
           relatedEntityId: eventData.entityId,
-          actionUrl: eventData.actionUrl,
-          actionText: eventData.actionText,
+          actionUrl,
+          actionText: eventData.actionText || (notificationConfig.requiresAction ? 'Review now' : undefined),
           actionMethod: eventData.actionMethod,
           priority: notificationConfig.priority,
           requiresAction: notificationConfig.requiresAction,
@@ -291,7 +311,7 @@ class NotificationService {
         priority: 'low',
         requires_action: false,
         delivery_channels: [{ channel: 'toast', status: 'sent', sent_at: new Date() }],
-        expires_at: new Date(Date.now + duration), // Auto-expire after duration
+        expires_at: new Date(Date.now() + duration), // Auto-expire after duration
         domain_event: 'TOAST_NOTIFICATION',
         event_source: 'client'
       });
@@ -307,7 +327,7 @@ class NotificationService {
   /**
    * Deliver notification through specified channels
    */
-  async deliverNotification(notification, channels) {
+  async deliverNotification(notification, channels, isPersistent = true) {
     try {
       const deliveryPromises = [];
 
@@ -315,14 +335,14 @@ class NotificationService {
         switch (channel) {
           case NOTIFICATION_CHANNELS.IN_APP:
             // In-app is automatically handled by database storage
-            await notification.updateDeliveryStatus('in-app', 'delivered');
+            if (isPersistent) await notification.updateDeliveryStatus('in-app', 'delivered');
             // Send real-time notification via WebSocket
             await sendRealTimeNotification(notification);
             break;
 
           case NOTIFICATION_CHANNELS.TOAST:
             // Toast notifications are handled by client polling
-            await notification.updateDeliveryStatus('toast', 'sent');
+            if (isPersistent) await notification.updateDeliveryStatus('toast', 'sent');
             // Send toast via WebSocket
             sendToastToUser(
               notification.recipient_user_id.toString(),
@@ -330,24 +350,26 @@ class NotificationService {
                 icon: notification.icon,
                 title: notification.title,
                 message: notification.message,
-                duration: 3000
+                duration: 6000,
+                category: notification.category,
+                notification: notification.toObject()
               }
             );
             break;
 
           case NOTIFICATION_CHANNELS.PUSH:
             // Push notifications would be handled by push service
-            await this.sendPushNotification(notification);
+            await this.sendPushNotification(notification, isPersistent);
             break;
 
           case NOTIFICATION_CHANNELS.SMS:
             // SMS notifications would be handled by SMS service
-            await this.sendSMSNotification(notification);
+            await this.sendSMSNotification(notification, isPersistent);
             break;
 
           case NOTIFICATION_CHANNELS.EMAIL:
             // Email notifications would be handled by email service
-            await this.sendEmailNotification(notification);
+            await this.sendEmailNotification(notification, isPersistent);
             break;
 
           default:
@@ -366,66 +388,72 @@ class NotificationService {
   /**
    * Send push notification (placeholder for push service integration)
    */
-  async sendPushNotification(notification) {
+  async sendPushNotification(notification, isPersistent = true) {
     try {
       // Placeholder for push notification service integration
       // This would integrate with Firebase Cloud Messaging, OneSignal, etc.
       
       console.log(`Push notification sent to user ${notification.recipient_user_id}: ${notification.title}`);
       
-      await notification.updateDeliveryStatus('push', 'sent', {
-        externalId: `push_${notification._id}_${Date.now()}`
-      });
+      if (isPersistent) {
+        await notification.updateDeliveryStatus('push', 'sent', {
+          externalId: `push_${notification._id}_${Date.now()}`
+        });
+      }
 
     } catch (error) {
       console.error('Push notification error:', error);
-      await notification.updateDeliveryStatus('push', 'failed', { reason: error.message });
+      if (isPersistent) await notification.updateDeliveryStatus('push', 'failed', { reason: error.message });
     }
   }
 
   /**
    * Send SMS notification (placeholder for SMS service integration)
    */
-  async sendSMSNotification(notification) {
+  async sendSMSNotification(notification, isPersistent = true) {
     try {
       // Placeholder for SMS service integration
       // This would integrate with M-Pesa SMS, Twilio, etc.
       
       // Only send SMS for urgent notifications
       if (notification.priority !== 'urgent' && notification.priority !== 'high') {
-        await notification.updateDeliveryStatus('sms', 'failed', { reason: 'Not urgent enough for SMS' });
+        if (isPersistent) await notification.updateDeliveryStatus('sms', 'failed', { reason: 'Not urgent enough for SMS' });
         return;
       }
 
       console.log(`SMS notification sent to user ${notification.recipient_user_id}: ${notification.title}`);
       
-      await notification.updateDeliveryStatus('sms', 'sent', {
-        externalId: `sms_${notification._id}_${Date.now()}`
-      });
+      if (isPersistent) {
+        await notification.updateDeliveryStatus('sms', 'sent', {
+          externalId: `sms_${notification._id}_${Date.now()}`
+        });
+      }
 
     } catch (error) {
       console.error('SMS notification error:', error);
-      await notification.updateDeliveryStatus('sms', 'failed', { reason: error.message });
+      if (isPersistent) await notification.updateDeliveryStatus('sms', 'failed', { reason: error.message });
     }
   }
 
   /**
    * Send email notification (placeholder for email service integration)
    */
-  async sendEmailNotification(notification) {
+  async sendEmailNotification(notification, isPersistent = true) {
     try {
       // Placeholder for email service integration
       // This would integrate with SendGrid, Mailgun, etc.
       
       console.log(`Email notification sent to user ${notification.recipient_user_id}: ${notification.title}`);
       
-      await notification.updateDeliveryStatus('email', 'sent', {
-        externalId: `email_${notification._id}_${Date.now()}`
-      });
+      if (isPersistent) {
+        await notification.updateDeliveryStatus('email', 'sent', {
+          externalId: `email_${notification._id}_${Date.now()}`
+        });
+      }
 
     } catch (error) {
       console.error('Email notification error:', error);
-      await notification.updateDeliveryStatus('email', 'failed', { reason: error.message });
+      if (isPersistent) await notification.updateDeliveryStatus('email', 'failed', { reason: error.message });
     }
   }
 
@@ -433,6 +461,7 @@ class NotificationService {
    * Check if role can receive notification type
    */
   canRoleReceiveNotification(role, notificationType) {
+    if (notificationType === 'CHAT_MESSAGE_RECEIVED') return true;
     const roleRules = ROLE_NOTIFICATION_RULES[role];
     if (!roleRules) return false;
 
@@ -500,7 +529,15 @@ class NotificationService {
       CONTRIBUTION_RECEIVED: ['treasurer', 'chairperson'],
       CONTRIBUTION_MISSED: ['member'],
       CONTRIBUTION_OVERDUE: ['member', 'treasurer'],
-      LOAN_SUBMITTED: ['chairperson', 'treasurer', 'secretary'],
+      // Officials who must DECIDE get the approval notification (requires
+      // action -> attention popup). The secretary just gets the heads-up.
+      LOAN_SUBMITTED: ['secretary'],
+      LOAN_REQUIRES_APPROVAL: ['chairperson', 'treasurer'],
+      LOAN_REQUIRES_DISBURSEMENT: ['treasurer'],
+      EXPENSE_REQUIRES_APPROVAL: ['chairperson', 'treasurer'],
+      WITHDRAWAL_REQUIRES_APPROVAL: ['chairperson', 'treasurer'],
+      ROLE_CHANGE_REQUIRES_APPROVAL: ['chairperson'],
+      MEMBER_REMOVAL_REQUIRES_APPROVAL: ['chairperson'],
       LOAN_APPROVED: ['treasurer', 'member'],
       LOAN_REJECTED: ['member'],
       LOAN_DISBURSED: ['member'],
@@ -522,13 +559,15 @@ class NotificationService {
       ROLE_CHANGED: ['member', 'chairperson'],
       
       // Governance events
-      MEETING_SCHEDULED: ['member'],
-      MEETING_REMINDER: ['member'],
-      MEETING_STARTED: ['member'],
-      MINUTES_PUBLISHED: ['member'],
-      RESOLUTION_APPROVED: ['member'],
-      ELECTION_OPENED: ['member'],
-      ELECTION_COMPLETED: ['member'],
+      MEETING_SCHEDULED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      MEETING_REMINDER: ['member', 'treasurer', 'secretary', 'chairperson'],
+      MEETING_STARTED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      MINUTES_PUBLISHED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      RESOLUTION_CREATED: ['chairperson', 'secretary', 'treasurer'],
+      RESOLUTION_APPROVED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      RESOLUTION_REJECTED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      ELECTION_OPENED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      ELECTION_COMPLETED: ['member', 'treasurer', 'secretary', 'chairperson'],
       COMMITTEE_APPOINTED: ['committee_member', 'chairperson'],
       
       // Burial events
@@ -538,8 +577,8 @@ class NotificationService {
       CLAIM_APPROVED: ['beneficiary'],
       CLAIM_REJECTED: ['beneficiary'],
       BENEFIT_PAYMENT_DISBURSED: ['beneficiary'],
-      BURIAL_CONTRIBUTION_REQUIRED: ['member'],
-      EMERGENCY_CONTRIBUTION_OPENED: ['member'],
+      BURIAL_CONTRIBUTION_REQUIRED: ['member', 'treasurer', 'secretary', 'chairperson'],
+      EMERGENCY_CONTRIBUTION_OPENED: ['member', 'treasurer', 'secretary', 'chairperson'],
       
       // System events
       SECURITY_ALERT: ['chairperson', 'treasurer'],
@@ -600,7 +639,10 @@ class NotificationService {
       ROLE_PERMISSION_CHANGED: NOTIFICATION_TYPES.ROLE_PERMISSION_CHANGED
     };
 
-    return eventMapping[domainEvent] || NOTIFICATION_TYPES.SECURITY_ALERT;
+    // Fall back to the type of the same name (approval events, RESOLUTION_CREATED, ...)
+    // before the last-resort SECURITY_ALERT, so an unmapped event is never
+    // silently turned into a security alert.
+    return eventMapping[domainEvent] || NOTIFICATION_TYPES[domainEvent] || NOTIFICATION_TYPES.SECURITY_ALERT;
   }
 
   /**
@@ -649,7 +691,14 @@ class NotificationService {
       SECURITY_ALERT: `Security alert: ${eventData.alertMessage}`,
       NEW_DEVICE_LOGIN: `New login detected from ${eventData.deviceInfo}`,
       PASSWORD_CHANGED: `Your password has been changed`,
-      ROLE_PERMISSION_CHANGED: `Role or permission changes have been made`
+      ROLE_PERMISSION_CHANGED: `Role or permission changes have been made`,
+      LOAN_REQUIRES_APPROVAL: `${eventData.memberName || 'A member'}'s loan of KSh ${eventData.amount} is waiting for your approval`,
+      LOAN_REQUIRES_DISBURSEMENT: `An approved loan of KSh ${eventData.amount} is waiting to be disbursed`,
+      EXPENSE_REQUIRES_APPROVAL: `An expense of KSh ${eventData.amount} is waiting for your approval`,
+      WITHDRAWAL_REQUIRES_APPROVAL: `A withdrawal of KSh ${eventData.amount} is waiting for your approval`,
+      ROLE_CHANGE_REQUIRES_APPROVAL: `A role change for ${eventData.memberName || 'a member'} is waiting for your approval`,
+      MEMBER_REMOVAL_REQUIRES_APPROVAL: `Removal of ${eventData.memberName || 'a member'} is waiting for your approval`,
+      RESOLUTION_CREATED: `A new resolution "${eventData.resolutionTitle || ''}" has been created`
     };
 
     return messageTemplates[domainEvent] || `New notification: ${domainEvent}`;
@@ -694,6 +743,13 @@ class NotificationService {
    */
   async getNotificationCounts(recipientMembershipId) {
     return await Notification.getNotificationCounts(recipientMembershipId);
+  }
+
+  /**
+   * Get unread notification counts grouped by category
+   */
+  async getUnreadCountsByCategory(recipientMembershipId) {
+    return await Notification.getUnreadCountsByCategory(recipientMembershipId);
   }
 
   /**

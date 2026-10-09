@@ -347,7 +347,7 @@ reportSchema.index({
 // PRE-SAVE HOOKS
 // ======================================================
 
-reportSchema.pre('save', function(next) {
+reportSchema.pre('save', function () {
   // Generate report ID if not set
   if (!this.report_id) {
     const timestamp = Date.now().toString(36);
@@ -388,7 +388,6 @@ reportSchema.pre('save', function(next) {
     }
   }
 
-  next();
 });
 
 // ======================================================

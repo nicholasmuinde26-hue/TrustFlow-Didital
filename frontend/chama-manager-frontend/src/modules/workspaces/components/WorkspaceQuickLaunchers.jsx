@@ -21,13 +21,12 @@ import { useMessages } from "@/modules/chat/hooks/useChat";
    nothing to collapse back down; leaving the page is the only
    way to "close" it, same as any other page in the app.
 
-   Only shown where the app already offers Chat/Announcements in
-   the sidebar today: Chama and Contribution Group workspaces.
-   Business workspaces don't have a member chat/announcements
-   feed, so no launcher appears there.
+   Shown only in Contribution Group workspaces. Chama members can
+   reach Chat and Announcements through the workspace navigation;
+   their overview stays clear of floating shortcuts.
 ============================================================ */
 
-const APPLICABLE_TYPES = new Set(["chama", "contribution-group"]);
+const APPLICABLE_TYPES = new Set(["contribution-group"]);
 
 export default function WorkspaceQuickLaunchers({ workspaceId, workspaceType }) {
   const applicable = Boolean(workspaceId) && APPLICABLE_TYPES.has(workspaceType);

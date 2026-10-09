@@ -224,7 +224,7 @@ const backfillScope = async (scope, args) => {
   await AuditChainState.findOneAndUpdate(
     scopeFilter,
     { $set: { sequence, lastHash: prevHash } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 
   console.log(`  OK    ${label} - chained ${operations.length} entries, tip ${prevHash?.slice(0, 12)}...`);

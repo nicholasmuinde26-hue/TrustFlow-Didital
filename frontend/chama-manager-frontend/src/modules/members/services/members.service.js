@@ -8,6 +8,16 @@ const membersService = {
     return data.data.members || [];
   },
 
+  async overview(type, workspaceId) {
+    const { data } = await membersApi.overview(type, workspaceId);
+    return data.data;
+  },
+
+  async contributionMatrix(workspaceId, month) {
+    const { data } = await membersApi.contributionMatrix(workspaceId, month);
+    return data.data;
+  },
+
   async add(type, workspaceId, payload) {
     // Accepts either an object ({ phone, name } or { userId }) or a legacy string userId
     const requestPayload = typeof payload === "string" ? { userId: payload } : payload;
@@ -30,6 +40,7 @@ const membersService = {
 
   async remove(type, workspaceId, memberId) {
     const { data } = await membersApi.remove(type, workspaceId, memberId);
+    if (data.data?.exitRequest) return data.data;
     return data.data.member || data.data.membership;
   },
 

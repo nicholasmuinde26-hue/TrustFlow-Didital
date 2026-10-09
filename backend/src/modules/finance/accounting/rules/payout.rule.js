@@ -123,7 +123,8 @@ class PayoutRule {
      */
 
 
-    buildObligation(context){
+    async buildObligation(context){
+        const contributionsRef = await contributionsEntryRef(context);
         return {
             transactionType:
                 "PAYOUT_OBLIGATION",
@@ -144,8 +145,7 @@ class PayoutRule {
 
                 {
 
-                    accountCode:
-                        ACCOUNT_CODES.MEMBER_CONTRIBUTIONS,
+                    ...contributionsRef,
 
 
                     entryType:
@@ -296,7 +296,8 @@ class PayoutRule {
      */
 
 
-    buildCancellation(context){
+    async buildCancellation(context){
+        const contributionsRef = await contributionsEntryRef(context);
         return {
             transactionType:
                 "PAYOUT_CANCELLATION",
@@ -334,12 +335,7 @@ class PayoutRule {
 
 
                 {
-
-
-                    accountCode:
-                        ACCOUNT_CODES.MEMBER_CONTRIBUTIONS,
-
-
+                    ...contributionsRef,
                     entryType:
                         ENTRY_TYPES.CREDIT,
 

@@ -175,12 +175,22 @@ export default function AdminEntityDetailPage() {
           </div>
         </div>
 
-        <Link
-          to={type === "business" ? `/workspace/${id}/business` : `/workspace/${id}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-violet-600 hover:bg-violet-50 dark:border-slate-700 dark:hover:bg-slate-800"
-        >
-          Open Workspace <ExternalLink size={13} />
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {isChama && (
+            <Link
+              to={`/admin/support/chamas/${id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-violet-600 hover:bg-violet-50 dark:border-slate-700 dark:hover:bg-slate-800"
+            >
+              Billing & support
+            </Link>
+          )}
+          <Link
+            to={type === "business" ? `/workspace/${id}/business` : `/workspace/${id}`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-violet-600 hover:bg-violet-50 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            Open Workspace <ExternalLink size={13} />
+          </Link>
+        </div>
       </div>
 
       {/* Finance Snapshot */}

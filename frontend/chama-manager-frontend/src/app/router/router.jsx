@@ -7,6 +7,7 @@ import RequireAdminRoute from "./RequireAdminRoute";
 import AdminLayout from "@/modules/admin/layouts/AdminLayout";
 import AdminDashboardPage from "@/modules/admin/pages/AdminDashboardPage";
 import AdminRequestsPage from "@/modules/admin/pages/AdminRequestsPage";
+import AdminChamaKycPage from "@/modules/admin/pages/AdminChamaKycPage";
 import AdminSubAdminsPage from "@/modules/admin/pages/AdminSubAdminsPage";
 import AdminCreateEntityPage from "@/modules/admin/pages/AdminCreateEntityPage";
 import AdminDirectoryPage from "@/modules/admin/pages/AdminDirectoryPage";
@@ -68,7 +69,8 @@ import WorkspaceOverviewPage from "@/modules/workspaces/pages/WorkspaceOverviewP
 import WorkspaceSettingsPage from "@/modules/workspaces/pages/WorkspaceSettingsPage";
 import WorkspacesPage from "@/modules/workspaces/pages/WorkspacesPage";
 import RequireWorkspaceRole from "@/shared/components/routing/RequireWorkspaceRole";
-import { canViewAdministration, canViewLeadershipDesk } from "@/modules/workspaces/permissions/Permissions";
+import RequireModule from "@/shared/components/routing/RequireModule";
+import { canViewAdministration, canViewLeadershipDesk, canManageBurialChamaSetup } from "@/modules/workspaces/permissions/Permissions";
 import LegacyLeadershipRedirect from "@/modules/leadership/components/LegacyLeadershipRedirect";
 
 // ======================================================
@@ -88,7 +90,6 @@ import BusinessReportsPage from "@/modules/business/pages/ReportsPage";
 import BusinessSettingsPage from "@/modules/business/pages/BusinessSettingsPage";
 import PosPage from "@/modules/business/pages/PosPage";
 import KitchenPage from "@/modules/business/pages/KitchenPage";
-import StorefrontPage from "@/modules/business/pages/StorefrontPage";
 import BusinessMarketplacePage from "@/modules/business/pages/BusinessMarketplacePage";
 
 // ======================================================
@@ -101,13 +102,17 @@ import MarketplaceListingDetailPage from "@/modules/marketplace/pages/Marketplac
 import MarketplacePublicBusinessPage from "@/modules/marketplace/pages/MarketplacePublicBusinessPage";
 import MarketplaceOrderTrackPage from "@/modules/marketplace/pages/MarketplaceOrderTrackPage";
 import MarketplaceAdminConsole from "@/modules/admin/pages/MarketplaceAdminConsole";
+import AdminRevenuePage from "@/modules/admin/pages/AdminRevenuePage";
+import AdminSupportPage from "@/modules/admin/pages/AdminSupportPage";
+import AdminSupportChamaPage from "@/modules/admin/pages/AdminSupportChamaPage";
+import AdminSupportUserPage from "@/modules/admin/pages/AdminSupportUserPage";
+import AdminSupportCasePage from "@/modules/admin/pages/AdminSupportCasePage";
+import BillingPage from "@/modules/billing/pages/BillingPage";
 
 // ======================================================
-// Public Storefront (buyer-facing, no auth)
+// Public cause preview (no auth)
 // ======================================================
 
-import PublicStorefrontPage from "@/modules/storefront/pages/PublicStorefrontPage";
-import TrackOrderPage from "@/modules/storefront/pages/TrackOrderPage";
 import PublicCausePreviewPage from "@/modules/contribution-group/pages/PublicCausePreviewPage";
 
 // ======================================================
@@ -125,12 +130,15 @@ import ChatPage from "@/modules/chat/pages/ChatPage";
 import CollaborationLayout from "@/modules/chat/layouts/CollaborationLayout";
 import MeetingsPage from "@/modules/meetings/pages/MeetingsPage";
 import PollsPage from "@/modules/polls/pages/PollsPage";
+import NotificationCenterPage from "@/modules/notifications/pages/NotificationCenterPage";
+import NotificationPreferencesPage from "@/modules/notifications/pages/NotificationPreferencesPage";
 
 // ======================================================
 // Chama Module
 // ======================================================
 
 import LoansPage from "@/modules/loans/pages/LoansPage";
+import WithdrawalsPage from "@/modules/withdrawal/pages/WithdrawalsPage";
 import ReportsPage from "@/modules/chama/pages/ReportsPage";
 import TrustTimelinePage from "@/modules/audit/pages/TrustTimelinePage";
 import TrustScorePage from "@/modules/trustScore/pages/TrustScorePage";
@@ -138,8 +146,11 @@ import PublicTrustScorePage from "@/modules/trustScore/pages/PublicTrustScorePag
 import DisputesPage from "@/modules/disputes/pages/DisputesPage";
 import OfficialAccountabilityPage from "@/modules/officials/pages/OfficialAccountabilityPage";
 import ChamaFinancePage from "@/modules/chama/pages/FinancePage";
+import ChamaAssetsPage from "@/modules/chamaAssets/pages/ChamaAssetsPage";
+import BusinessFundsPage from "@/modules/chamaAssets/pages/BusinessFundsPage";
 import MerryGoRoundPage from "@/modules/chama/pages/MerryGoRoundPage";
 import ChamaContributionsPage from "@/modules/chama/pages/ChamaContributionsPage";
+import PublicChamaProfilePage from "@/modules/chama/pages/PublicChamaProfilePage";
 // The Command Center and the old link-list Leadership Desk are gone —
 // both are now tabs inside the single merged desk below. Their routes
 // survive as redirects (LegacyLeadershipRedirect) so bookmarks and
@@ -171,17 +182,25 @@ import UpdatesPage from "@/modules/contribution-group/pages/UpdatesPage";
 // Finance Engine
 // ======================================================
 
-import FinanceDashboard from "@/modules/finance/pages/FinanceDashboard";
+import MoneyDashboardPage from "@/modules/finance/pages/MoneyDashboardPage";
+import MyWalletPage from "@/modules/finance/pages/MyWalletPage";
 import RecordContributionPage from "@/modules/finance/pages/RecordContributionPage";
+import FinanceContributionsPage from "@/modules/finance/pages/ContributionsPage";
+import ContributionRegisterPage from "@/modules/finance/pages/ContributionRegisterPage";
 import TransactionsPage from "@/modules/finance/pages/TransactionsPage";
 import LedgerPage from "@/modules/finance/pages/LedgerPage";
 import FinanceAccountsPage from "@/modules/finance/pages/AccountsPage";
 import BankAccountsPage from "@/modules/finance/pages/BankAccountsPage";
+import AdjustmentsPage from "@/modules/finance/pages/AdjustmentsPage";
+import ReconciliationPage from "@/modules/finance/pages/ReconciliationPage";
+import ReconciliationSessionPage from "@/modules/finance/pages/ReconciliationSessionPage";
 import SavingsPage from "@/modules/finance/pages/SavingsPage";
+import SavingsShareoutPage from "@/modules/finance/pages/SavingsShareoutPage";
 import TrialBalancePage from "@/modules/finance/pages/TrialBalancePage";
 import BalanceSheetPage from "@/modules/finance/pages/BalanceSheetPage";
 import IncomeStatementPage from "@/modules/finance/pages/IncomeStatementPage";
 import CashFlowStatementPage from "@/modules/finance/pages/CashFlowStatementPage";
+import ReceiptsPaymentsPage from "@/modules/finance/pages/ReceiptsPaymentsPage";
 import PayoutsPage from "@/modules/finance/pages/PayoutsPage";
 import CreatePayoutPage from "@/modules/finance/pages/CreatePayoutPage";
 import FinanceOperationPage from "@/modules/finance/pages/FinanceOperationPage";
@@ -203,25 +222,12 @@ const router = createBrowserRouter([
   },
 
   // ======================================================
-  // PUBLIC STOREFRONT (buyer-facing, no auth, no app shell)
-  // ======================================================
-
-  {
-    path: "/store/:slug",
-    element: <PublicStorefrontPage />,
-  },
-  {
-    path: "/store/:slug/track",
-    element: <TrackOrderPage />,
-  },
-
-  // ======================================================
   // PUBLIC MARKETPLACE (Category Hubs & Multi-Vendor Discovery)
   // ======================================================
 
   {
     path: "/marketplace",
-    element: <MarketplaceHomePage />,
+    element: <Navigate to="/marketplace/retail" replace />,
   },
   {
     path: "/marketplace/track",
@@ -251,6 +257,7 @@ const router = createBrowserRouter([
     path: "/trust-score/:token",
     element: <PublicTrustScorePage />,
   },
+  { path: "/chama-profile/:chamaId", element: <PublicChamaProfilePage /> },
 
   // Chama join-link landing page. Deliberately public (not wrapped in
   // ProtectedRoute or GuestRoute) — it must render for a visitor who
@@ -354,6 +361,10 @@ const router = createBrowserRouter([
                 element: <AdminRequestsPage />,
               },
               {
+                path: "chama-kyc",
+                element: <AdminChamaKycPage />,
+              },
+              {
                 path: "sub-admins",
                 element: <AdminSubAdminsPage />,
               },
@@ -369,9 +380,37 @@ const router = createBrowserRouter([
                 path: "inquiries",
                 element: <AdminInquiriesPage />,
               },
+              // Support Desk: billing help, payment review, user tools, notes & cases.
+              // The server enforces the Support / Finance permissions.
+              {
+                path: "support",
+                element: <AdminSupportPage />,
+              },
+              {
+                path: "support/chamas/:chamaId",
+                element: <AdminSupportChamaPage />,
+              },
+              {
+                path: "support/users/:userId",
+                element: <AdminSupportUserPage />,
+              },
+              {
+                path: "support/cases/:caseId",
+                element: <AdminSupportCasePage />,
+              },
               {
                 path: "marketplace",
                 element: <MarketplaceAdminConsole />,
+              },
+              {
+                // Platform income is the owner's business: Super Admin only.
+                element: <RequireAdminRoute requireSuperAdmin />,
+                children: [
+                  {
+                    path: "revenue",
+                    element: <AdminRevenuePage />,
+                  },
+                ],
               },
               {
                 path: "directory",
@@ -403,6 +442,30 @@ const router = createBrowserRouter([
           {
             index: true,
             element: <WorkspaceOverviewPage />,
+          },
+          {
+            path: "assets/income",
+            element: (
+              <RequireModule module="assets">
+                <BusinessFundsPage />
+              </RequireModule>
+            ),
+          },
+          {
+            path: "assets/investments",
+            element: (
+              <RequireModule module="assets">
+                <ChamaAssetsPage />
+              </RequireModule>
+            ),
+          },
+          {
+            path: "assets",
+            element: (
+              <RequireModule module="assets">
+                <ChamaAssetsPage />
+              </RequireModule>
+            ),
           },
 
           // ----------------------------------------------
@@ -442,10 +505,6 @@ const router = createBrowserRouter([
             element: <KitchenPage />,
           },
           {
-            path: "business/storefront",
-            element: <Navigate to="../business/marketplace" replace />,
-          },
-          {
             path: "business/marketplace",
             element: <BusinessMarketplacePage />,
           },
@@ -483,7 +542,11 @@ const router = createBrowserRouter([
             children: [
               {
                 path: "contributions",
-                element: <ContributionsPage />,
+                element: (
+                  <RequireModule module="contributions">
+                    <ContributionsPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "schedule",
@@ -513,15 +576,27 @@ const router = createBrowserRouter([
             children: [
               {
                 path: "loans",
-                element: <LoansPage />,
+                element: (
+                  <RequireModule module="loans">
+                    <LoansPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "trust-timeline",
-                element: <TrustTimelinePage />,
+                element: (
+                  <RequireModule module="trust">
+                    <TrustTimelinePage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "trust-score",
-                element: <TrustScorePage />,
+                element: (
+                  <RequireModule module="trust">
+                    <TrustScorePage />
+                  </RequireModule>
+                ),
               },
             ],
           },
@@ -553,7 +628,11 @@ const router = createBrowserRouter([
               },
               {
                 path: "officials",
-                element: <OfficialAccountabilityPage />,
+                element: (
+                  <RequireModule module="officials">
+                    <OfficialAccountabilityPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "leadership",
@@ -565,7 +644,11 @@ const router = createBrowserRouter([
               },
               {
                 path: "disputes",
-                element: <DisputesPage />,
+                element: (
+                  <RequireModule module="disputes">
+                    <DisputesPage />
+                  </RequireModule>
+                ),
               },
             ],
           },
@@ -574,96 +657,190 @@ const router = createBrowserRouter([
             element: <MyChamaRouterPage />,
           },
 
+          // Plan and billing: what the chama pays the platform. Members can
+          // open it (they see the plan and who to ask); only the treasurer
+          // and chairperson get the controls.
+          {
+            path: "billing",
+            element: <BillingPage />,
+          },
+
           // ----------------------------------------------
           // BURIAL CHAMA MODULE
           // ----------------------------------------------
 
           {
             path: "burial-chama-setup",
-            element: <BurialChamaSetupPage />,
+            element: (
+              <RequireModule module="burial_welfare">
+                <RequireWorkspaceRole check={canManageBurialChamaSetup}>
+                <BurialChamaSetupPage />
+              </RequireWorkspaceRole>
+              </RequireModule>
+            ),
           },
           {
             path: "beneficiaries",
-            element: <BeneficiariesPage />,
+            element: (
+              <RequireModule module="burial_welfare">
+                <BeneficiariesPage />
+              </RequireModule>
+            ),
           },
           {
             path: "burial-cases",
-            element: <BurialCasesPage />,
+            element: (
+              <RequireModule module="burial_welfare">
+                <BurialCasesPage />
+              </RequireModule>
+            ),
           },
           {
             path: "member-statement",
-            element: <MemberStatementPage />,
+            element: (
+              <RequireModule module="burial_welfare">
+                <MemberStatementPage />
+              </RequireModule>
+            ),
           },
           {
             path: "equipment-hire",
-            element: <EquipmentHirePage />,
+            element: (
+              <RequireModule module="equipment_hire">
+                <EquipmentHirePage />
+              </RequireModule>
+            ),
           },
           {
             path: "fundraising",
-            element: <FundraisingPage />,
+            element: (
+              <RequireModule module="fundraising">
+                <FundraisingPage />
+              </RequireModule>
+            ),
           },
 
           // ----------------------------------------------
           // FINANCE ENGINE
           // ----------------------------------------------
 
-          // Dashboard / Contributions / Record Contribution / Savings /
-          // MGR / Chama Contributions / Payouts / Savings Share-Out
-          // share one persistent "Quick actions" nav bar, rendered once
-          // by MoneyCollectionsLayout so it stays on screen while
-          // jumping between these pages instead of disappearing per
-          // page.
+          // Money & Contributions. Five top-level tabs (Treasury,
+          // Contributions, Savings, Merry-Go-Round, Payouts); the pages
+          // that used to be separate tabs now sit under their parent as
+          // sub-tabs, rendered once by MoneyCollectionsLayout:
+          //   Contributions -> Record payment, Register, Fundraisers
+          //   Savings       -> Share-out
+          //   Payouts       -> Withdrawals
           {
             element: <MoneyCollectionsLayout />,
             children: [
               {
                 path: "finance",
-                element: <FinanceDashboard />,
+                element: <MoneyDashboardPage />,
               },
               {
                 path: "finance/overview",
-                element: <FinanceDashboard />,
+                element: <MoneyDashboardPage />,
+              },
+              {
+                path: "finance/wallet",
+                element: <MyWalletPage />,
               },
               {
                 path: "finance/record-contribution",
-                element: <RecordContributionPage />,
+                element: (
+                  <RequireModule module="contributions">
+                    <RecordContributionPage />
+                  </RequireModule>
+                ),
               },
               // Backwards-compatible aliases
+              // Contributions is the REGISTER (read): every payment, each
+              // member's standing, and the per-plan breakdown. It used to
+              // mount RecordContributionPage, so this tab and "Record
+              // Contribution" showed the identical payment form and the
+              // contribution book had nowhere to live.
               {
                 path: "finance/contributions",
-                // Keep the legacy sidebar URL on the same route level. Using
-                // "../record-contribution" here resolves to /workspace/:id/
-                // record-contribution and falls through to the landing page.
-                element: <RecordContributionPage />,
+                element: (
+                  <RequireModule module="contributions">
+                    <FinanceContributionsPage />
+                  </RequireModule>
+                ),
               },
+              // The detailed payment register (filters, CSV export) that
+              // used to be the Contributions page itself. Reached from the
+              // Contributions manager's "Payment register" button.
+              {
+                path: "finance/contributions/register",
+                element: (
+                  <RequireModule module="contributions">
+                    <ContributionRegisterPage />
+                  </RequireModule>
+                ),
+              },
+              // "/new" is the write action, so it keeps pointing at the form.
               {
                 path: "finance/contributions/new",
-                element: <RecordContributionPage />,
+                element: (
+                  <RequireModule module="contributions">
+                    <RecordContributionPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "finance/savings",
-                element: <SavingsPage />,
+                element: (
+                  <RequireModule module="savings">
+                    <SavingsPage />
+                  </RequireModule>
+                ),
               },
-              // "Savings Share-Out" is its own sidebar link
-              // (workspaceNavigation.js) but not a separate page — it's the
-              // "shareout" tab of SavingsPage. Route it to the same
-              // component so the URL, the active sidebar highlight, and the
-              // in-page tab all agree with each other.
+              // Savings Share-Out is now a real page of its own rather than
+              // a tab inside SavingsPage. Both links previously mounted the
+              // same component, which is why the two nav items looked like
+              // one duplicated screen. Savings owns the pool (deposits,
+              // balances, growth); Share-Out owns releasing it (policy,
+              // batch approval, disbursement).
               {
                 path: "finance/savings-shareout",
-                element: <SavingsPage />,
+                element: (
+                  <RequireModule module="savings_shareout">
+                    <SavingsShareoutPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "finance/payouts",
-                element: <PayoutsPage />,
+                element: (
+                  <RequireModule module="payouts">
+                    <PayoutsPage />
+                  </RequireModule>
+                ),
+              },
+              {
+                path: "finance/withdrawals",
+                element: (
+                  <RequireModule module="withdrawals">
+                    <WithdrawalsPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "mgr",
-                element: <MerryGoRoundPage />,
+                element: (
+                  <RequireModule module="mgr">
+                    <MerryGoRoundPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "chama-contributions",
-                element: <ChamaContributionsPage />,
+                element: (
+                  <RequireModule module="contributions">
+                    <ChamaContributionsPage />
+                  </RequireModule>
+                ),
               },
             ],
           },
@@ -691,6 +868,14 @@ const router = createBrowserRouter([
                 element: <BankAccountsPage />,
               },
               {
+                path: "finance/adjustments",
+                element: <AdjustmentsPage />,
+              },
+              {
+                path: "finance/reconciliation",
+                element: <ReconciliationPage />,
+              },
+              {
                 path: "finance/trial-balance",
                 element: <TrialBalancePage />,
               },
@@ -706,11 +891,23 @@ const router = createBrowserRouter([
                 path: "finance/cash-flow",
                 element: <CashFlowStatementPage />,
               },
+              {
+                path: "finance/receipts-payments",
+                element: <ReceiptsPaymentsPage />,
+              },
             ],
           },
           {
+            path: "finance/reconciliation/:sessionId",
+            element: <ReconciliationSessionPage />,
+          },
+          {
             path: "finance/payouts/new",
-            element: <CreatePayoutPage />,
+            element: (
+              <RequireModule module="payouts">
+                <CreatePayoutPage />
+              </RequireModule>
+            ),
           },
           {
             path: "finance/deposits/new",
@@ -718,7 +915,11 @@ const router = createBrowserRouter([
           },
           {
             path: "finance/withdrawals/new",
-            element: <FinanceOperationPage operation="withdrawal" />,
+            element: (
+              <RequireModule module="withdrawals">
+                <FinanceOperationPage operation="withdrawal" />
+              </RequireModule>
+            ),
           },
           {
             path: "finance/transfers/new",
@@ -738,21 +939,49 @@ const router = createBrowserRouter([
             children: [
               {
                 path: "chat",
-                element: <ChatPage />,
+                element: (
+                  <RequireModule module="chat">
+                    <ChatPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "announcements",
-                element: <AnnouncementsPage />,
+                element: (
+                  <RequireModule module="announcements">
+                    <AnnouncementsPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "meetings",
-                element: <MeetingsPage />,
+                element: (
+                  <RequireModule module="meetings">
+                    <MeetingsPage />
+                  </RequireModule>
+                ),
               },
               {
                 path: "polls",
-                element: <PollsPage />,
+                element: (
+                  <RequireModule module="polls">
+                    <PollsPage />
+                  </RequireModule>
+                ),
               },
             ],
+          },
+
+          // ----------------------------------------------
+          // NOTIFICATIONS
+          // ----------------------------------------------
+          {
+            path: "notifications",
+            element: <NotificationCenterPage />,
+          },
+          {
+            path: "notifications/preferences",
+            element: <NotificationPreferencesPage />,
           },
 
           // ----------------------------------------------

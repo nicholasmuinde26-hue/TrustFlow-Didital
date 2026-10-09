@@ -19,6 +19,11 @@ export const marketplaceService = {
     return data || { listings: [], pagination: {} };
   },
 
+  async getRetailStores() {
+    const { data } = await api.get("/marketplace/retail/sellers");
+    return data.data || [];
+  },
+
   async getListing(slug, category = null) {
     const url = category
       ? `/marketplace/${category}/listings/${slug}`
@@ -88,6 +93,16 @@ export const marketplaceService = {
   async enrollInHub(businessId, payload) {
     const { data } = await api.post(`/businesses/${businessId}/marketplace/enroll`, payload);
     return data.data || null;
+  },
+
+  async getMerchantProfile(businessId) {
+    const { data } = await api.get(`/businesses/${businessId}/marketplace/profile`);
+    return data.data || {};
+  },
+
+  async updateMerchantProfile(businessId, payload) {
+    const { data } = await api.put(`/businesses/${businessId}/marketplace/profile`, payload);
+    return data.data || {};
   },
 
   async getMerchantListings(businessId, params = {}) {

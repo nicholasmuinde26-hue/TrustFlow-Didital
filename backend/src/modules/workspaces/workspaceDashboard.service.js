@@ -10,6 +10,7 @@ import Business from '../../models/Business.js';
 import { getSummary } from '../business/business.service.js';
 import AppError from '../../utils/AppError.js';
 import mongoose from 'mongoose';
+import { WORKSPACE_TYPES } from './workspace.constants.js';
 
 export async function getWorkspaceDashboard({ workspaceId, userId }) {
   if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
@@ -17,18 +18,23 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
   }
 
   // 1. Check if workspaceId is a Business
-  const business = await Business.findOne({ _id: workspaceId, created_by: userId }).lean();
+  const business = await Business.findById(workspaceId).lean();
   if (business) {
     const summary = await getSummary(workspaceId, { _id: userId });
+    const chamaMembership = business.owner_type === 'chama'
+      ? await ChamaMembership.findOne({ chama_id: business.owner_id, user_id: userId, status: 'active' }).lean()
+      : null;
     return {
       type: 'business',
       workspace: {
         id: String(business._id),
         name: business.name,
         status: 'active',
-        role: 'owner',
+        role: business.owner_type === 'chama' ? (chamaMembership?.role || 'member') : 'owner',
         category: business.category,
         currency: business.currency,
+        ownerType: business.owner_type || 'user',
+        chamaId: business.owner_type === 'chama' ? String(business.owner_id) : null,
       },
       stats: {
         cashIn: summary?.dashboard?.cashIn || "0",
@@ -62,6 +68,16 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
     ? await Chama.findById(workspaceId).lean()
     : await ContributionGroup.findById(workspaceId).lean();
   if (!workspace) throw new AppError('Workspace not found', 404);
+
+  // A burial/welfare Chama is still a Chama document (chama_type: 'burial'),
+  // but the frontend needs a distinct workspace type here so
+  // WorkspaceOverviewPage routes it to BurialChamaOverviewPage instead of
+  // the standard ChamaOverviewPage (which shows Savings Balance / MGR Pool
+  // cards that don't apply to a burial chama).
+  const resolvedType =
+    type === 'chama' && workspace.chama_type === 'burial'
+      ? WORKSPACE_TYPES.BURIAL_CHAMA
+      : type;
 
   const memberFilter = type === 'chama'
     ? { chama_id: workspaceId, status: 'active' }
@@ -123,7 +139,7 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
         : null;
 
   return {
-    type,
+    type: resolvedType,
     workspace: {
       id: String(workspace._id), name: workspace.name, status: workspace.status, role: membership.role || 'member',
       monthlySavings: workspace.monthly_savings ?? null, eventDate: workspace.event_date ?? null,

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { randomBytes } from "node:crypto";
 import Business, { BUSINESS_CATEGORIES } from "../../models/Business.js";
 import BusinessTransaction from "../../models/BusinessTransaction.js";
 import BusinessCustomer from "../../models/BusinessCustomer.js";
@@ -7,21 +8,67 @@ import FinancialAccount from "../../models/FinancialAccount.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import LedgerEntry from "../../models/LedgerEntry.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
-import Product from "../../models/Product.js";
-import ProductReview from "../../models/ProductReview.js";
+import Chama from "../../models/Chama.js";
+import ChamaMembership from "../../models/ChamaMembership.js";
+import ChamaAsset from "../../models/ChamaAsset.js";
 import RentalListing from "../../models/RentalListing.js";
-import Storefront from "../../models/Storefront.js";
-import StorefrontOrder from "../../models/StorefrontOrder.js";
 import BusinessItem from "../../models/BusinessItem.js";
+import MarketplaceListing from "../../models/MarketplaceListing.js";
+import {
+  publishInventoryItem as publishItemToMarketplace,
+  unpublishInventoryItem as unpublishItemFromMarketplace,
+  publishInventoryItems as publishItemsToMarketplace,
+  syncItemToListings,
+  archiveItemListings,
+  attachMarketplaceState,
+  approveUnreviewedInventoryListings,
+} from "../marketplace/inventoryMarketplaceSync.service.js";
 import User from "../../models/User.js";
 import { formatPhone } from "../../utils/phone.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
+import { recordExpense as recordChamaAssetExpense, recordIncome as recordChamaAssetIncome } from "../chamaAssets/chamaAsset.service.js";
 import { sendBusinessReceiptEmail } from "../../services/notifications/email.service.js";
-import slugify from "slugify";
 import { getIO } from "../realtime/socketServer.js";
 
 const getUserId = (user) => user?._id || user?.id;
 
+// Unique, human-readable till receipt number, e.g. POS-20261005-7K2Q9X.
+// Random 4-digit tags collided often enough to make a receipt ambiguous.
+const newPosReceiptNumber = () => {
+  const day = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  return `POS-${day}-${randomBytes(4).toString("hex").slice(0, 6).toUpperCase()}`;
+};
+
+// One receipt shape for both the sale response and later reprints.
+function buildPosReceipt(business, transaction, { cashierName = null } = {}) {
+  const snap = transaction.receipt || {};
+  const items = (snap.items || []).map((l) => ({
+    item_id: l.item_id, name: l.name, qty: l.qty, price: l.price, total: l.total,
+  }));
+  return {
+    receipt_number: transaction.external_reference,
+    transaction_id: String(transaction._id),
+    issued_at: transaction.createdAt,
+    business: {
+      name: business.name,
+      location: business.location || null,
+      currency: business.currency || "KES",
+      tax_id: business.tax_settings?.tax_id || null,
+      mpesa_till: business.mpesa_till || null,
+      mpesa_paybill: business.mpesa_paybill || null,
+    },
+    cashier: cashierName,
+    customer_name: transaction.customer_name || null,
+    customer_phone: transaction.customer_phone || null,
+    payment_channel: transaction.payment_channel,
+    mpesa_prompt_sent: Boolean(snap.mpesa_prompt_sent),
+    mpesa_receipt_number: transaction.mpesa_receipt_number || null,
+    items,
+    subtotal: snap.subtotal ?? Number(transaction.amount?.toString() || 0),
+    discount: snap.discount || 0,
+    total: Number(transaction.amount?.toString() || 0),
+  };
+}
 // Business POS STK pushes don't go through the shared PaymentIntent/event-bus
 // system (see reconcileStkCallback / checkStkStatus below), so they need
 // their own tiny bridge to push the result to the seller's browser the
@@ -48,9 +95,79 @@ function emitBusinessTransactionStatus(transaction) {
 }
 
 
-async function getOwnedBusiness(businessId, user) {
-  let business = await Business.findOne({ _id: businessId });
-  if (business) return business;
+const sameId = (a, b) => Boolean(a && b) && String(a) === String(b);
+
+const accessError = (message, statusCode = 403) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+/**
+ * Resolves the caller's access to a business and enforces it.
+ *
+ *  - personal business (owner_type "user"): only the owning user. Legacy rows
+ *    created by the old admin-approval flow have no owner_id, so we fall back
+ *    to created_by for those.
+ *  - chama business (owner_type "chama"): the chama owns it, never the officer
+ *    who requested it. Chairperson and treasurer manage it, as does the
+ *    member assigned as the asset's manager. Other active members who can see
+ *    the asset get read-only access.
+ *
+ * Pass { write: true } for anything that changes data. The resolved access is
+ * attached to the returned business as `business.access` (not persisted).
+ */
+export async function getOwnedBusiness(businessId, user, { write = false } = {}) {
+  if (!mongoose.isValidObjectId(businessId)) {
+    throw accessError("Workspace not found or access denied", 404);
+  }
+  const userId = getUserId(user);
+  const business = await Business.findOne({ _id: businessId });
+
+  if (business) {
+    if (business.owner_type === "chama") {
+      const membership = await ChamaMembership.findOne({
+        chama_id: business.owner_id,
+        user_id: userId,
+        status: "active",
+      }).select("role");
+
+      const asset = business.chama_asset_id
+        ? await ChamaAsset.findOne({ _id: business.chama_asset_id, chama_id: business.owner_id, status: "active" })
+            .select("_id management")
+        : null;
+
+      const isLeader = ["chairperson", "treasurer"].includes(membership?.role);
+      const isAssignedManager = Boolean(
+        asset && asset.management?.manager_type === "member" && sameId(asset.management?.manager_id, userId)
+      );
+
+      if (!membership || (!asset && !isLeader)) {
+        throw accessError("Active Chama membership and asset approval are required to access this business");
+      }
+
+      const canManage = isLeader || isAssignedManager;
+      if (write && !canManage) {
+        throw accessError("Only the chairperson, treasurer or the assigned business manager can make changes to this business");
+      }
+
+      business.access = {
+        ownerType: "chama",
+        role: isLeader ? membership.role : isAssignedManager ? "manager" : "member",
+        canManage,
+      };
+      return business;
+    }
+
+    // Personal business
+    const ownerRef = business.owner_id || business.created_by;
+    if (!sameId(ownerRef, userId)) {
+      // Same 404 as a missing business, so IDs can't be probed.
+      throw accessError("Workspace not found or access denied", 404);
+    }
+    business.access = { ownerType: "user", role: "owner", canManage: true };
+    return business;
+  }
 
   const group = await ContributionGroup.findById(businessId);
   if (group) {
@@ -63,9 +180,7 @@ async function getOwnedBusiness(businessId, user) {
     };
   }
 
-  const error = new Error("Workspace not found or access denied");
-  error.statusCode = 404;
-  throw error;
+  throw accessError("Workspace not found or access denied", 404);
 }
 
 function assertAmount(amount) {
@@ -81,13 +196,14 @@ function assertAmount(amount) {
  * FINANCIAL ACCOUNTS & DOUBLE-ENTRY LEDGER POSTING FOR BUSINESS & GROUPS
  * ============================================================
  */
-async function ensureBusinessAccounts(businessId, createdBy, ownerType = "Business") {
+export async function ensureBusinessAccounts(businessId, createdBy, ownerType = "Business") {
   const accountsDef = [
     { name: "Cash Wallet", account_code: "CASH", system_key: "cash", account_type: "asset", normal_balance: "debit", account_category: "cash" },
     { name: "Bank Account", account_code: "BANK", system_key: "bank", account_type: "asset", normal_balance: "debit", account_category: "bank" },
     { name: "M-Pesa Till & Paybill", account_code: "MPESA_TILL", system_key: "till", account_type: "asset", normal_balance: "debit", account_category: "mpesa" },
     { name: ownerType === "ContributionGroup" ? "Member Contributions" : "Sales Revenue", account_code: ownerType === "ContributionGroup" ? "MEMBER_CONTRIBUTIONS" : "SALES_REVENUE", system_key: ownerType === "ContributionGroup" ? "member_contributions" : "sales_revenue", account_type: "income", normal_balance: "credit", account_category: "income" },
     { name: "Operating Expenses", account_code: "OPERATING_EXPENSES", system_key: "operating_expenses", account_type: "expense", normal_balance: "debit", account_category: "expense" },
+    ...(ownerType === "Business" ? [{ name: "Chama Capital", account_code: "CHAMA_CAPITAL", system_key: "chama_capital", account_type: "equity", normal_balance: "credit", account_category: "equity" }] : []),
   ];
 
   const map = {};
@@ -286,6 +402,23 @@ async function onTransactionCompleted(transaction, business) {
       await supplier.save();
     }
   }
+
+  if (!isGroup && business.owner_type === "chama" && business.chama_asset_id) {
+    const assetPosting = {
+      amount,
+      collectionMethod: ["till", "paybill", "mpesa"].includes(transaction.payment_channel)
+        ? "mpesa"
+        : transaction.payment_channel,
+      description: transaction.description || `${isSale ? "Business income" : "Business expense"} - ${business.name}`,
+      recordedBy: transaction.created_by,
+      sourceBusinessTransactionId: transaction._id,
+    };
+    if (isSale) {
+      await recordChamaAssetIncome(business.owner_id, business.chama_asset_id, assetPosting);
+    } else {
+      await recordChamaAssetExpense(business.owner_id, business.chama_asset_id, assetPosting);
+    }
+  }
 }
 
 export async function createBusiness(data, user) {
@@ -345,6 +478,8 @@ export async function createBusiness(data, user) {
 
   const business = await Business.create({
     name: data.name,
+    owner_type: "user",
+    owner_id: ownerId,
     category,
     category_label: data.category_label || data.categoryLabel || "",
     currency: data.currency || "KES",
@@ -361,12 +496,6 @@ export async function createBusiness(data, user) {
   });
 
   await ensureBusinessAccounts(business._id, ownerId);
-
-  // Rental businesses manage rooms/plots, not a product catalogue — set up
-  // their storefront right away so the landlord can start posting listings.
-  if (category === "rental") {
-    await getOrCreateStorefront(business._id, { _id: ownerId });
-  }
 
   return business;
 }
@@ -385,8 +514,18 @@ export async function getSummary(businessId, user) {
 
   const total = (direction) => String(totals.find((item) => item._id === direction)?.total || 0);
 
+  // `access` is set on the document at runtime and is not a schema path, so it
+  // would be dropped on serialisation - copy it into a plain profile object
+  // together with the owning chama's name for the "Chama-owned" badge.
+  const profile = typeof business.toObject === "function" ? business.toObject() : { ...business };
+  profile.access = business.access || null;
+  if (profile.owner_type === "chama") {
+    const chama = await Chama.findById(profile.owner_id).select("name").lean();
+    profile.chamaName = chama?.name || null;
+  }
+
   return {
-    profile: business,
+    profile,
     dashboard: {
       cashIn: total("cash_in"),
       cashOut: total("cash_out"),
@@ -402,18 +541,74 @@ export async function getSummary(businessId, user) {
   };
 }
 
+export async function getSettings(businessId, user) {
+  return getOwnedBusiness(businessId, user);
+}
+
+export async function updateSettings(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  if (data.name !== undefined) {
+    const name = String(data.name).trim();
+    if (!name) {
+      const error = new Error("Business name is required");
+      error.statusCode = 400;
+      throw error;
+    }
+    business.name = name;
+  }
+  if (data.currency !== undefined) {
+    const currency = String(data.currency).trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      const error = new Error("Currency must be a valid three-letter code");
+      error.statusCode = 400;
+      throw error;
+    }
+    business.currency = currency;
+  }
+  if (data.location !== undefined) business.location = String(data.location).trim() || null;
+  if (data.fiscal_year_start !== undefined) business.fiscal_year_start = String(data.fiscal_year_start).trim();
+  if (data.tax_settings !== undefined) {
+    const rate = Number(data.tax_settings?.vat_rate ?? business.tax_settings.vat_rate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      const error = new Error("Tax rate must be between 0 and 100");
+      error.statusCode = 400;
+      throw error;
+    }
+    business.tax_settings = {
+      ...business.tax_settings,
+      vat_registered: Boolean(data.tax_settings?.vat_registered),
+      vat_rate: rate,
+      tax_id: data.tax_settings?.tax_id === undefined ? business.tax_settings.tax_id : String(data.tax_settings.tax_id).trim() || null,
+    };
+  }
+  if (data.mpesa_till !== undefined) business.mpesa_till = String(data.mpesa_till).trim() || null;
+  if (data.mpesa_paybill !== undefined) business.mpesa_paybill = String(data.mpesa_paybill).trim() || null;
+  await business.save();
+  return business;
+}
+
 export async function listTransactions(businessId, user, type) {
   const business = await getOwnedBusiness(businessId, user);
   const query = { business_id: business._id, type };
   if (type === "sale") {
     query.status = "completed";
   }
-  return BusinessTransaction.find(query).sort({ createdAt: -1 });
+  return BusinessTransaction.find(query).populate("rental_listing_id", "title listing_type").sort({ createdAt: -1 });
 }
 
 export async function createTransaction(businessId, user, type, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   assertAmount(data.amount);
+  let rentalListingId = data.rentalListingId || data.rental_listing_id || null;
+  if (rentalListingId) {
+    const rentalListing = await RentalListing.findOne({ _id: rentalListingId, business_id: business._id, archived: false }).select("_id");
+    if (!rentalListing) {
+      const error = new Error("Rental unit was not found in this business");
+      error.statusCode = 404;
+      throw error;
+    }
+    rentalListingId = rentalListing._id;
+  }
   const isSale = type === "sale";
   if (data.sendStk && (!isSale || data.paymentChannel !== "mpesa")) {
     const error = new Error("STK Push can only collect an M-Pesa sale");
@@ -423,6 +618,7 @@ export async function createTransaction(businessId, user, type, data) {
 
   const transaction = await BusinessTransaction.create({
     business_id: business._id,
+    rental_listing_id: rentalListingId,
     type,
     direction: isSale ? "cash_in" : "cash_out",
     amount: data.amount,
@@ -473,11 +669,12 @@ export async function initiateStkPush(businessId, user, data) {
     paymentChannel: "mpesa",
     sendStk: true,
     description,
+    rentalListingId: data.rentalListingId || data.rental_listing_id,
   });
 }
 
 export async function initiateCustomerPayout(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   assertAmount(data.amount);
   if (!data.phoneNumber) {
     const error = new Error("Customer phone number is required");
@@ -564,7 +761,7 @@ export async function reconcileB2cResult(result) {
 }
 
 export async function checkStkStatus(businessId, transactionId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const transaction = await BusinessTransaction.findOne({
     _id: transactionId,
     business_id: business._id,
@@ -653,7 +850,7 @@ export async function checkStkStatus(businessId, transactionId, user) {
 }
 
 /**
- * Kitchen prep status — separate from payment `status`. Marking an order
+ * Kitchen prep status â€” separate from payment `status`. Marking an order
  * "ready" never touches payment fields (no fake M-Pesa receipt, no forced
  * completion of an unpaid STK push); it only flips whether the food is done.
  */
@@ -664,11 +861,11 @@ export async function setKitchenStatus(businessId, transactionId, user, kitchenS
     throw error;
   }
 
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const transaction = await BusinessTransaction.findOneAndUpdate(
     { _id: transactionId, business_id: business._id, type: "sale" },
     { kitchen_status: kitchenStatus },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!transaction) {
@@ -681,7 +878,7 @@ export async function setKitchenStatus(businessId, transactionId, user, kitchenS
 }
 
 export async function forceCompleteTransaction(businessId, transactionId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const transaction = await BusinessTransaction.findOne({
     _id: transactionId,
     business_id: business._id,
@@ -715,7 +912,7 @@ export async function listCustomers(businessId, user) {
 }
 
 export async function createCustomer(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   if (!data.name?.trim()) {
     const error = new Error("Customer name is required");
     error.statusCode = 400;
@@ -741,7 +938,7 @@ export async function listSuppliers(businessId, user) {
 }
 
 export async function createSupplier(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   if (!data.name?.trim()) {
     const error = new Error("Supplier name is required");
     error.statusCode = 400;
@@ -759,7 +956,7 @@ export async function createSupplier(businessId, user, data) {
 
 /**
  * ============================================================
- * FINANCIAL ACCOUNTS (Cash / Bank / M-Pesa) — POS & Reports read from these
+ * FINANCIAL ACCOUNTS (Cash / Bank / M-Pesa) â€” POS & Reports read from these
  * ============================================================
  */
 export async function getBusinessAccounts(businessId, user) {
@@ -775,12 +972,12 @@ export async function getBusinessAccounts(businessId, user) {
  * ============================================================
  */
 const DEFAULT_INVENTORY_SEED = [
-  { name: "Dish Soap 750ml", sku: "SKU-1042", category: "Household", description: "Lemon scent, cuts grease fast.", price: 260, online_price: 260, quantity: 42, visible_online: true, icon: "🧴" },
-  { name: "Instant Coffee 200g", sku: "SKU-2210", category: "Beverages", description: "Rich roast, resealable tin.", price: 890, online_price: 890, quantity: 6, visible_online: true, icon: "☕" },
-  { name: "Wireless Earbuds", sku: "SKU-5581", category: "Electronics", description: "Bluetooth 5.0, 20hr battery.", price: 3200, online_price: 3200, quantity: 0, visible_online: true, icon: "🎧" },
-  { name: "Boiled Sweets 1kg", sku: "SKU-0087", category: "Snacks", description: "Assorted fruit flavours.", price: 340, online_price: 340, quantity: 118, visible_online: true, icon: "🍬" },
-  { name: "Tissue Pack (6)", sku: "SKU-3305", category: "Household", description: "Soft 2-ply, 200 sheets each.", price: 450, online_price: 450, quantity: 27, visible_online: true, icon: "🧻" },
-  { name: "Extension Cable 3m", sku: "SKU-7712", category: "Electronics", description: "3-socket, surge protected.", price: 780, online_price: 780, quantity: 4, visible_online: true, icon: "🔌" },
+  { name: "Dish Soap 750ml", sku: "SKU-1042", category: "Household", description: "Lemon scent, cuts grease fast.", price: 260, online_price: 260, quantity: 42, visible_online: true, icon: "ðŸ§´" },
+  { name: "Instant Coffee 200g", sku: "SKU-2210", category: "Beverages", description: "Rich roast, resealable tin.", price: 890, online_price: 890, quantity: 6, visible_online: true, icon: "â˜•" },
+  { name: "Wireless Earbuds", sku: "SKU-5581", category: "Electronics", description: "Bluetooth 5.0, 20hr battery.", price: 3200, online_price: 3200, quantity: 0, visible_online: true, icon: "ðŸŽ§" },
+  { name: "Boiled Sweets 1kg", sku: "SKU-0087", category: "Snacks", description: "Assorted fruit flavours.", price: 340, online_price: 340, quantity: 118, visible_online: true, icon: "ðŸ¬" },
+  { name: "Tissue Pack (6)", sku: "SKU-3305", category: "Household", description: "Soft 2-ply, 200 sheets each.", price: 450, online_price: 450, quantity: 27, visible_online: true, icon: "ðŸ§»" },
+  { name: "Extension Cable 3m", sku: "SKU-7712", category: "Electronics", description: "3-socket, surge protected.", price: 780, online_price: 780, quantity: 4, visible_online: true, icon: "ðŸ”Œ" },
 ];
 
 export async function listInventoryItems(businessId, user) {
@@ -788,25 +985,26 @@ export async function listInventoryItems(businessId, user) {
   let items = await BusinessItem.find({ business_id: business._id, status: "active" }).sort({ createdAt: -1 });
 
   // Lazy-seed initial inventory items if empty (rentals don't use a product
-  // catalogue at all — they manage rooms/plots via RentalListing instead)
-  if (items.length === 0 && business.category !== "rental") {
+  // catalogue at all â€” they manage rooms/plots via RentalListing instead)
+  if (items.length === 0 && ["retail", "other"].includes(business.category)) {
     const seeded = DEFAULT_INVENTORY_SEED.map((item) => ({
       ...item,
       business_id: business._id,
     }));
     items = await BusinessItem.insertMany(seeded);
   }
-  return items;
+  await approveUnreviewedInventoryListings(business).catch(() => {});
+  return attachMarketplaceState(items);
 }
 
 export async function createInventoryItem(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   if (!data.name?.trim()) {
     const error = new Error("Item name is required");
     error.statusCode = 400;
     throw error;
   }
-  return BusinessItem.create({
+  const created = await BusinessItem.create({
     business_id: business._id,
     name: data.name.trim(),
     sku: data.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -818,13 +1016,27 @@ export async function createInventoryItem(businessId, user, data) {
     quantity: Number(data.quantity || 0),
     track_stock: data.track_stock !== undefined ? Boolean(data.track_stock) : true,
     visible_online: data.visible_online !== undefined ? Boolean(data.visible_online) : true,
-    icon: data.icon || "📦",
+    icon: data.icon || "ðŸ“¦",
     image_url: data.image_url || "",
   });
+
+  // "Add and publish" in one step. The item is already saved, so if
+  // publishing is refused (e.g. not enrolled yet) it simply stays unpublished
+  // and the reason is returned instead of losing what the seller typed.
+  if (data.publish_to_marketplace === true) {
+    try {
+      await publishItemToMarketplace(business, created);
+    } catch (error) {
+      const [withState] = await attachMarketplaceState([created]);
+      return { ...withState, publish_error: { message: error.message, code: error.code || null } };
+    }
+  }
+  const [withState] = await attachMarketplaceState([created]);
+  return withState;
 }
 
 export async function updateInventoryItem(businessId, itemId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
   if (!item) {
     const error = new Error("Item not found");
@@ -847,18 +1059,57 @@ export async function updateInventoryItem(businessId, itemId, user, data) {
   if (data.status !== undefined) item.status = data.status;
 
   await item.save();
-  return item;
+  // Name, description, price, photo, stock and visibility all follow the item.
+  await syncItemToListings(item);
+  const [withState] = await attachMarketplaceState([item]);
+  return withState;
 }
 
 export async function deleteInventoryItem(businessId, itemId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  await archiveItemListings(business._id, itemId);
   await BusinessItem.deleteOne({ _id: itemId, business_id: business._id });
   return { success: true };
 }
 
-/** Restock — add (or set) stock quantity without touching any other field */
+/** Publish one inventory item to the marketplace (creates or refreshes its listing). */
+export async function publishInventoryItemToMarketplace(businessId, itemId, user) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
+  if (!item) {
+    const error = new Error("Item not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  await publishItemToMarketplace(business, item);
+  const [withState] = await attachMarketplaceState([item]);
+  return withState;
+}
+
+export async function unpublishInventoryItemFromMarketplace(businessId, itemId, user) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
+  if (!item) {
+    const error = new Error("Item not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  await unpublishItemFromMarketplace(business, item);
+  const [withState] = await attachMarketplaceState([item]);
+  return withState;
+}
+
+/** Publish several (or all active) inventory items at once. */
+export async function publishInventoryBulkToMarketplace(businessId, user, itemIds = []) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const ids = Array.isArray(itemIds) ? itemIds.filter((id) => mongoose.isValidObjectId(id)) : [];
+  const { published, skipped } = await publishItemsToMarketplace(business, ids);
+  return { published, skipped };
+}
+
+/** Restock â€” add (or set) stock quantity without touching any other field */
 export async function restockInventoryItem(businessId, itemId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
   if (!item) {
     const error = new Error("Item not found");
@@ -882,18 +1133,19 @@ export async function restockInventoryItem(businessId, itemId, user, data) {
 
   if (data.cost_price !== undefined) item.cost_price = Number(data.cost_price);
   await item.save();
+  await syncItemToListings(item);
   return item;
 }
 
 /**
  * ============================================================
- * POINT OF SALE (POS) — in-person checkout that writes to the
+ * POINT OF SALE (POS) â€” in-person checkout that writes to the
  * SAME BusinessItem stock + BusinessTransaction ledger as the
- * online storefront ("one inventory, two faces").
+ * marketplace listings ("one inventory, two faces").
  * ============================================================
  */
 export async function createPosSale(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
 
   if (!Array.isArray(data.items) || data.items.length === 0) {
     const error = new Error("Sale must contain at least one item");
@@ -937,15 +1189,17 @@ export async function createPosSale(businessId, user, data) {
   const totalAmount = Math.max(0, subtotal - discount);
   assertAmount(totalAmount);
 
-  const receiptTag = `POS-${Math.floor(1000 + Math.random() * 9000)}`;
+  const receiptTag = newPosReceiptNumber();
   const itemSummary = lineItems.map((l) => `${l.qty}x ${l.item.name}`).join(", ");
 
-  // Deduct live stock now — same moment the sale is recorded, so the
+  // Deduct live stock now â€” same moment the sale is recorded, so the
   // POS grid and Inventory & Stock page never disagree on what's left.
   for (const l of lineItems) {
     if (l.item.track_stock === false) continue;
     l.item.quantity = Math.max(0, l.item.quantity - l.qty);
     await l.item.save();
+    // Keep the online listing's stock in step with what the till just sold.
+    await syncItemToListings(l.item);
   }
 
   const transaction = await BusinessTransaction.create({
@@ -956,16 +1210,21 @@ export async function createPosSale(businessId, user, data) {
     currency: business.currency,
     payment_channel: paymentChannel,
     status: "completed",
-    description: data.description || `POS Sale — ${itemSummary}`,
+    description: data.description || `POS Sale â€” ${itemSummary}`,
     customer_name: data.customer_name || null,
     customer_phone: data.customer_phone || null,
     external_reference: receiptTag,
+    receipt: {
+      items: lineItems.map((l) => ({ item_id: l.item._id, name: l.item.name, qty: l.qty, price: l.unitPrice, total: l.lineTotal })),
+      subtotal,
+      discount,
+    },
     created_by: getUserId(user),
   });
 
   await onTransactionCompleted(transaction, business);
 
-  // Optional courtesy STK push when the buyer wants to pay by M-Pesa —
+  // Optional courtesy STK push when the buyer wants to pay by M-Pesa â€”
   // the sale is already recorded, this just requests the actual payment.
   let stk = null;
   if (paymentChannel === "mpesa" && data.customer_phone) {
@@ -981,9 +1240,15 @@ export async function createPosSale(businessId, user, data) {
     }
   }
 
+  if (stk) {
+    transaction.receipt.mpesa_prompt_sent = true;
+    await transaction.save();
+  }
+
   return {
     transaction,
     receipt_number: receiptTag,
+    receipt: buildPosReceipt(business, transaction, { cashierName: user?.name || null }),
     items: lineItems.map((l) => ({
       item_id: l.item._id,
       name: l.item.name,
@@ -999,336 +1264,33 @@ export async function createPosSale(businessId, user, data) {
 }
 
 /**
- * ============================================================
- * STOREFRONT CONFIGURATION & PUBLIC E-COMMERCE ENDPOINTS
- * ============================================================
+ * Reprint: rebuild the receipt for a POS sale from its stored snapshot.
+ * Read access is enough (anyone who can view the business can reprint).
  */
-
-export async function getOrCreateStorefront(businessId, user) {
+export async function getPosReceipt(businessId, transactionId, user) {
   const business = await getOwnedBusiness(businessId, user);
-  let storefront = await Storefront.findOne({ business_id: business._id });
-  if (!storefront) {
-    const baseSlug = slugify(business.name) || `store-${String(business._id).slice(-6)}`;
-    storefront = await Storefront.create({
-      business_id: business._id,
-      slug: baseSlug,
-      name: business.name || "Jane's Wholesale Mart",
-    });
-  }
-  return storefront;
-}
-
-export async function updateStorefront(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
-  let storefront = await Storefront.findOne({ business_id: business._id });
-  if (!storefront) {
-    storefront = new Storefront({ business_id: business._id });
-  }
-
-  if (data.slug?.trim()) {
-    const newSlug = slugify(data.slug);
-    const existing = await Storefront.findOne({ slug: newSlug, business_id: { $ne: business._id } });
-    if (existing) {
-      const error = new Error("Storefront URL slug is already taken by another business");
-      error.statusCode = 400;
-      throw error;
-    }
-    storefront.slug = newSlug;
-  }
-
-  if (data.name !== undefined) storefront.name = data.name.trim();
-  if (data.location_text !== undefined) storefront.location_text = data.location_text.trim();
-  if (data.headline !== undefined) storefront.headline = data.headline.trim();
-  if (data.subtitle !== undefined) storefront.subtitle = data.subtitle.trim();
-  if (data.status !== undefined) storefront.status = data.status;
-  if (data.theme !== undefined) storefront.theme = { ...storefront.theme, ...data.theme };
-  if (data.badges !== undefined && Array.isArray(data.badges)) storefront.badges = data.badges;
-
-  await storefront.save();
-  return storefront;
-}
-
-/** PUBLIC storefront view by slug (No authentication required) */
-export async function getPublicStorefrontBySlug(slug) {
-  const cleanSlug = slugify(slug);
-  const storefront = await Storefront.findOne({ slug: cleanSlug });
-  if (!storefront || storefront.status === "paused") {
-    const error = new Error("Storefront not found or currently offline");
+  if (!mongoose.isValidObjectId(transactionId)) {
+    const error = new Error("Receipt not found");
     error.statusCode = 404;
     throw error;
   }
-
-  const business = await Business.findById(storefront.business_id);
-  if (!business) {
-    const error = new Error("Business not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  // Rental businesses show vacant rooms/plots, not a product catalogue
-  if (business.category === "rental") {
-    const listings = await RentalListing.find({
-      business_id: business._id,
-      archived: false,
-      visible_online: true,
-    }).sort({ createdAt: -1 });
-
-    return {
-      storefront,
-      business: {
-        _id: business._id,
-        name: business.name,
-        category: business.category,
-        currency: business.currency,
-      },
-      listings: listings.map((listing) => ({
-        _id: listing._id,
-        id: listing._id,
-        listing_type: listing.listing_type,
-        title: listing.title,
-        description: listing.description,
-        location_text: listing.location_text,
-        bedrooms: listing.bedrooms,
-        bathrooms: listing.bathrooms,
-        size_text: listing.size_text,
-        rent_amount: listing.rent_amount,
-        rent_period: listing.rent_period,
-        deposit_amount: listing.deposit_amount,
-        amenities: listing.amenities,
-        images: listing.images,
-        status: listing.status,
-      })),
-      products: [],
-    };
-  }
-
-  // Regular businesses show product catalogue
-  const products = await Product.find({
-    business_id: business._id,
-    status: "active",
-    visibility: "public"
-  })
-  .sort({ is_featured: -1, sales_count: -1, created_at: -1 })
-  .limit(50);
-
-  return {
-    storefront,
-    business: {
-      _id: business._id,
-      name: business.name,
-      category: business.category,
-      currency: business.currency,
-    },
-    products: products.map((product) => ({
-      _id: product._id,
-      id: product._id,
-      title: product.title,
-      short_description: product.short_description,
-      description: product.description,
-      category: product.category,
-      subcategory: product.subcategory,
-      base_price: product.base_price,
-      compare_price: product.compare_price,
-      currency: product.currency,
-      stock: product.stock,
-      thumbnail: product.thumbnail,
-      images: product.images,
-      rating: product.rating,
-      review_count: product.review_count,
-      is_featured: product.is_featured,
-      slug: product.slug,
-      has_variants: product.has_variants,
-      variants: product.variants,
-      tags: product.tags
-    })),
-    listings: [],
-  };
-}
-
-/** PUBLIC Order Placement (No account required, deducts live stock, registers customer) */
-export async function createStorefrontOrder(slug, data) {
-  const cleanSlug = slugify(slug);
-  const storefront = await Storefront.findOne({ slug: cleanSlug });
-  if (!storefront || storefront.status === "paused") {
-    const error = new Error("Storefront not found or unavailable");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const business = await Business.findById(storefront.business_id);
-  if (!business) {
-    const error = new Error("Business not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (business.category === "rental") {
-    const error = new Error("This is a rental listing — send an inquiry instead of placing an order");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (!data.customer_name?.trim() || !data.customer_phone?.trim()) {
-    const error = new Error("Customer name and phone number are required to place an order");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  if (!Array.isArray(data.items) || data.items.length === 0) {
-    const error = new Error("Order must contain at least one item");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  // Validate stock and compute totals
-  const orderItems = [];
-  let calculatedSubtotal = 0;
-
-  for (const requestedItem of data.items) {
-    const item = await BusinessItem.findOne({
-      _id: requestedItem.item_id || requestedItem.id,
-      business_id: business._id,
-    });
-
-    if (!item) {
-      const error = new Error(`Item not found in business inventory`);
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const qty = Math.max(1, Number(requestedItem.qty || 1));
-    if (item.track_stock !== false && item.quantity < qty) {
-      const error = new Error(`Sorry, "${item.name}" only has ${item.quantity} units remaining in stock.`);
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const price = item.online_price !== null && item.online_price !== undefined ? item.online_price : item.price;
-    const lineTotal = price * qty;
-    calculatedSubtotal += lineTotal;
-
-    orderItems.push({
-      item_id: item._id,
-      name: item.name,
-      qty,
-      price,
-      total: lineTotal,
-      dbItem: item,
-    });
-  }
-
-  // Generate short order code e.g. ORD-9823
-  const orderCode = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
-  const deliveryFee = data.fulfillment_type === "delivery" ? Number(data.delivery_fee || 0) : 0;
-  const totalAmount = calculatedSubtotal + deliveryFee;
-
-  // Create Order
-  const order = await StorefrontOrder.create({
-    business_id: business._id,
-    storefront_id: storefront._id,
-    order_code: orderCode,
-    channel: "online",
-    customer_name: data.customer_name.trim(),
-    customer_phone: data.customer_phone.trim(),
-    customer_email: data.customer_email || "",
-    delivery_address: data.delivery_address || "Store Pickup",
-    fulfillment_type: data.fulfillment_type || "delivery",
-    fulfillment_status: "pending",
-    items: orderItems.map((i) => ({
-      item_id: i.item_id,
-      name: i.name,
-      qty: i.qty,
-      price: i.price,
-      total: i.total,
-    })),
-    subtotal: calculatedSubtotal,
-    delivery_fee: deliveryFee,
-    total_amount: totalAmount,
-    payment_method: data.payment_method || "mpesa",
-    payment_status: data.payment_method === "cash_on_delivery" ? "pending" : "pending",
+  const transaction = await BusinessTransaction.findOne({
+    _id: transactionId, business_id: business._id, type: "sale",
   });
-
-  // Deduct live stock levels! (skip for services/menu items that don't track stock)
-  for (const oItem of orderItems) {
-    if (oItem.dbItem.track_stock === false) continue;
-    oItem.dbItem.quantity = Math.max(0, oItem.dbItem.quantity - oItem.qty);
-    await oItem.dbItem.save();
-  }
-
-  // Create internal BusinessTransaction sale record & post to double-entry ledger!
-  const transaction = await BusinessTransaction.create({
-    business_id: business._id,
-    type: "sale",
-    direction: "cash_in",
-    amount: totalAmount,
-    currency: business.currency,
-    payment_channel: data.payment_method === "cash_on_delivery" ? "cash" : "mpesa",
-    status: "completed",
-    description: `Online Order #${orderCode} - ${data.customer_name}`,
-    customer_name: data.customer_name,
-    customer_phone: data.customer_phone,
-    external_reference: orderCode,
-    created_by: business.created_by,
-  });
-
-  await onTransactionCompleted(transaction, business);
-
-  // If M-Pesa STK Push requested, initiate STK
-  let stk = null;
-  if (data.payment_method === "mpesa" && data.customer_phone) {
-    try {
-      stk = await mpesaService.initiateStkPush({
-        amount: totalAmount,
-        phoneNumber: data.customer_phone,
-        accountReference: orderCode,
-        transactionDescription: `Order ${orderCode} at ${business.name}`,
-      });
-      order.checkout_request_id = stk.checkoutRequestId;
-      await order.save();
-    } catch (e) {
-      console.warn("[Storefront M-Pesa STK Error]", e.message);
-    }
-  }
-
-  return { order, order_code: orderCode, stk };
-}
-
-/** PUBLIC Order Tracking (by order code & phone number) */
-export async function trackStorefrontOrder(orderCode, phone) {
-  if (!orderCode?.trim()) {
-    const error = new Error("Order code is required");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const query = { order_code: orderCode.trim().toUpperCase() };
-  if (phone?.trim()) {
-    const cleanPhone = phone.trim();
-    query.customer_phone = { $regex: cleanPhone.slice(-8), $options: "i" };
-  }
-
-  const order = await StorefrontOrder.findOne(query);
-  if (!order) {
-    const error = new Error("Order not found. Please verify your order code and phone number.");
+  if (!transaction || !transaction.receipt?.items?.length) {
+    const error = new Error("Receipt not found for this sale");
     error.statusCode = 404;
     throw error;
   }
-
-  const storefront = await Storefront.findById(order.storefront_id).select("name location_text headline");
-  return { order, storefront };
-}
-
-/** Staff: List Storefront Orders for Fulfillment */
-export async function listStorefrontOrders(businessId, user) {
-  const business = await getOwnedBusiness(businessId, user);
-  return StorefrontOrder.find({ business_id: business._id }).sort({ createdAt: -1 });
+  const cashier = await User.findById(transaction.created_by).select("name").lean();
+  return buildPosReceipt(business, transaction, { cashierName: cashier?.name || null });
 }
 
 /**
  * ============================================================
  * RENTAL LISTINGS (rooms & plots for rental-category businesses)
- * "One listing catalogue, two faces" — same pattern as inventory:
- * the owner manages it here, the public storefront reads from it.
+ * "One listing catalogue, two faces" â€” same pattern as inventory:
+ * the owner manages it here, the marketplace reads from it.
  * ============================================================
  */
 export async function listRentalListings(businessId, user) {
@@ -1337,7 +1299,7 @@ export async function listRentalListings(businessId, user) {
 }
 
 export async function createRentalListing(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   if (!data.title?.trim()) {
     const error = new Error("Listing title is required");
     error.statusCode = 400;
@@ -1369,7 +1331,7 @@ export async function createRentalListing(businessId, user, data) {
 }
 
 export async function updateRentalListing(businessId, listingId, user, data) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const listing = await RentalListing.findOne({ _id: listingId, business_id: business._id });
   if (!listing) {
     const error = new Error("Listing not found");
@@ -1393,17 +1355,34 @@ export async function updateRentalListing(businessId, listingId, user, data) {
   if (data.visible_online !== undefined) listing.visible_online = Boolean(data.visible_online);
 
   await listing.save();
+  const marketplaceFields = {
+    title: listing.title,
+    description: listing.description,
+    price: listing.rent_amount,
+    "rental_attributes.bedrooms": listing.bedrooms,
+    "rental_attributes.bathrooms": listing.bathrooms,
+    "rental_attributes.deposit_amount": listing.deposit_amount,
+    "rental_attributes.rent_period": listing.rent_period,
+    "rental_attributes.location_text": listing.location_text,
+    "rental_attributes.is_occupied": listing.status === "occupied",
+    stock: listing.status === "occupied" ? 0 : 1,
+  };
+  marketplaceFields.visibility = listing.visible_online && listing.status === "vacant" ? "public" : "unlisted";
+  await MarketplaceListing.updateMany(
+    { business_id: business._id, source_type: "RentalListing", source_id: listing._id, visibility: { $ne: "archived" } },
+    { $set: marketplaceFields }
+  );
   return listing;
 }
 
-/** Quick vacant/occupied toggle — the rental equivalent of "restock" */
+/** Quick vacant/occupied toggle â€” the rental equivalent of "restock" */
 export async function updateRentalListingStatus(businessId, listingId, user, status) {
   if (!["vacant", "occupied"].includes(status)) {
     const error = new Error("Status must be 'vacant' or 'occupied'");
     error.statusCode = 400;
     throw error;
   }
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const listing = await RentalListing.findOne({ _id: listingId, business_id: business._id });
   if (!listing) {
     const error = new Error("Listing not found");
@@ -1412,16 +1391,37 @@ export async function updateRentalListingStatus(businessId, listingId, user, sta
   }
   listing.status = status;
   await listing.save();
+  await MarketplaceListing.updateMany(
+    { business_id: business._id, source_type: "RentalListing", source_id: listing._id, visibility: { $ne: "archived" } },
+    { $set: {
+      "rental_attributes.is_occupied": status === "occupied",
+      stock: status === "occupied" ? 0 : 1,
+      visibility: listing.visible_online && status === "vacant" ? "public" : "unlisted",
+    } }
+  );
   return listing;
 }
 
 export async function deleteRentalListing(businessId, listingId, user) {
-  const business = await getOwnedBusiness(businessId, user);
-  await RentalListing.deleteOne({ _id: listingId, business_id: business._id });
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const listing = await RentalListing.findOneAndUpdate(
+    { _id: listingId, business_id: business._id, archived: false },
+    { $set: { archived: true, visible_online: false } },
+    { returnDocument: 'after' }
+  );
+  if (!listing) {
+    const error = new Error("Rental listing not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  await MarketplaceListing.updateMany(
+    { business_id: business._id, source_type: "RentalListing", source_id: listing._id },
+    { $set: { visibility: "archived" } }
+  );
   return { success: true };
 }
 
-/** Staff: leads generated from the public storefront */
+/** Staff: rental enquiry leads for this business */
 export async function listRentalInquiries(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
   return RentalInquiry.find({ business_id: business._id })
@@ -1430,7 +1430,7 @@ export async function listRentalInquiries(businessId, user) {
 }
 
 export async function updateRentalInquiryStatus(businessId, inquiryId, user, status) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { write: true });
   const inquiry = await RentalInquiry.findOne({ _id: inquiryId, business_id: business._id });
   if (!inquiry) {
     const error = new Error("Inquiry not found");
@@ -1442,57 +1442,4 @@ export async function updateRentalInquiryStatus(businessId, inquiryId, user, sta
     await inquiry.save();
   }
   return inquiry;
-}
-
-/** PUBLIC: buyer submits an inquiry on a specific listing — no account required */
-export async function createRentalInquiry(slug, listingId, data) {
-  const cleanSlug = slugify(slug);
-  const storefront = await Storefront.findOne({ slug: cleanSlug });
-  if (!storefront || storefront.status === "paused") {
-    const error = new Error("Storefront not found or unavailable");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const listing = await RentalListing.findOne({ _id: listingId, business_id: storefront.business_id });
-  if (!listing) {
-    const error = new Error("Listing not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (!data.name?.trim() || !data.phone?.trim()) {
-    const error = new Error("Name and phone number are required");
-    error.statusCode = 400;
-    throw error;
-  }
-
-  return RentalInquiry.create({
-    business_id: storefront.business_id,
-    listing_id: listing._id,
-    name: data.name.trim(),
-    phone: data.phone.trim(),
-    message: data.message || "",
-  });
-}
-
-/** Staff: Update Order Fulfillment Status */
-export async function updateOrderFulfillmentStatus(businessId, orderId, user, status) {
-  const business = await getOwnedBusiness(businessId, user);
-  const order = await StorefrontOrder.findOne({ _id: orderId, business_id: business._id });
-  if (!order) {
-    const error = new Error("Order not found");
-    error.statusCode = 404;
-    throw error;
-  }
-
-  if (["pending", "processing", "fulfilled", "cancelled"].includes(status)) {
-    order.fulfillment_status = status;
-    if (status === "fulfilled") {
-      order.payment_status = "paid";
-    }
-    await order.save();
-  }
-
-  return order;
 }

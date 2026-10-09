@@ -15,6 +15,8 @@ export function useAnnouncements(workspaceId) {
     queryKey: announcementsKey(workspaceId),
     queryFn: () => announcementsService.list(workspaceId),
     enabled: Boolean(workspaceId),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 }
 

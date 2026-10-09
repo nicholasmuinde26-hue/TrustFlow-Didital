@@ -16,6 +16,8 @@ import {
 import AppError from '../../utils/AppError.js';
 import { PROFILE_UPDATE_FIELDS } from '../../utils/Userprofile.js';
 import { filterResponseData } from '../../middleware/privacyWall.middleware.js';
+import { listExitQueue, listMyExits, decideMemberExit, cancelMemberExit, notifyExitRequested, notifyExitDecision, getMembersOverview } from './memberGovernance.service.js';
+import ChamaMembership from '../../models/ChamaMembership.js';
 
 
 // ========================================
@@ -392,6 +394,9 @@ export const updateMemberStatusController = async (
 
 export const assessMemberExitController = async (req, res, next) => {
   try {
+    if (String(req.membership?._id) !== String(req.params.memberId) && !['chairperson', 'treasurer', 'secretary'].includes(req.membership?.role)) {
+      throw new AppError('You may only view your own exit assessment.', 403);
+    }
     const result = await assessMemberExit({ chamaId: req.params.chamaId, memberId: req.params.memberId });
     return res.status(200).json({ success: true, data: result });
   } catch (error) { next(error); }
@@ -405,6 +410,14 @@ export const initiateMemberExitController = async (req, res, next) => {
       actorUserId: req.user._id,
       reason: req.body?.reason || '',
     });
+    if (result?.exitRequest) {
+      try {
+        const target = await ChamaMembership.findById(req.params.memberId).populate('user_id', 'name').lean();
+        await notifyExitRequested({ exit: result.exitRequest, memberName: target.user_id?.name || 'A member', initiatorMembershipId: req.membership?._id });
+      } catch (notificationError) {
+        console.error('[member-exit] request notification failed:', notificationError.message);
+      }
+    }
     return res.status(202).json({ success: true, message: 'Member exit process initiated. Financial clearance and approvals are required before any savings are disbursed.', data: result });
   } catch (error) { next(error); }
 };
@@ -418,7 +431,43 @@ export const completeMemberExitController = async (req, res, next) => {
       disbursement_method: req.body?.disbursement_method,
       external_reference: req.body?.external_reference || null,
     });
+    await notifyExitDecision({ exit: result, decision: 'disbursed' });
     return res.status(200).json({ success: true, message: 'Member savings refund disbursed and membership closed.', data: result });
+  } catch (error) { next(error); }
+};
+
+export const listMemberExitQueueController = async (req, res, next) => {
+  try {
+    const result = await listExitQueue({ chamaId: req.params.chamaId, actorUserId: req.user._id, scope: req.query.scope || 'open' });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) { next(error); }
+};
+
+export const listMyMemberExitsController = async (req, res, next) => {
+  try {
+    const result = await listMyExits({ chamaId: req.params.chamaId, actorUserId: req.user._id });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) { next(error); }
+};
+
+export const decideMemberExitController = async (req, res, next) => {
+  try {
+    const result = await decideMemberExit({ chamaId: req.params.chamaId, exitRequestId: req.params.exitRequestId, actorUserId: req.user._id, decision: req.body?.decision, comment: req.body?.comment || '' });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) { next(error); }
+};
+
+export const cancelMemberExitController = async (req, res, next) => {
+  try {
+    const result = await cancelMemberExit({ chamaId: req.params.chamaId, exitRequestId: req.params.exitRequestId, actorUserId: req.user._id });
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) { next(error); }
+};
+
+export const getMembersOverviewController = async (req, res, next) => {
+  try {
+    const result = await getMembersOverview({ chamaId: req.params.chamaId, actorUserId: req.user._id });
+    return res.status(200).json({ success: true, data: result });
   } catch (error) { next(error); }
 };
 

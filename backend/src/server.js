@@ -13,11 +13,17 @@ import { startPollAutoCloseJob } from "./jobs/pollAutoClose.job.js";
 import { startSavingsShareoutSchedulerJob } from "./jobs/savingsShareoutScheduler.job.js";
 import { startUssdSessionCleanupJob } from "./jobs/ussdSessionCleanup.job.js";
 import { startCashDepositEnforcementJob } from "./jobs/cashDepositEnforcement.job.js";
+import { startAssetManagerReportSchedulerJob } from "./jobs/Assetmanagerreportscheduler.job.js";
+import { startAssetNudgesJob } from "./jobs/assetNudges.job.js";
+import { startContributionCalendarJob } from "./jobs/contributionCalendar.job.js";
+import { startMgrRoundLifecycleJob } from "./jobs/mgrRoundLifecycle.job.js";
+import { ensureDefaultPlans } from "./modules/billing/billingEntitlement.service.js";
 
 // NEW: Payment Provider Bootstrap
 import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
 import { bootstrapSuperAdmin } from "./config/bootstrapAdmin.js";
 import { runBackfillChairpersonWalletView } from "./scripts/backfillChairpersonWalletView.js";
+import { runBackfillContributionBehavior } from "./scripts/backfillContributionBehavior.js";
 
 // ============================================================================
 // CREATE HTTP SERVER
@@ -64,6 +70,36 @@ async function startServer() {
         }
 
         // ============================================================
+        // CONTRIBUTION BEHAVIOR BACKFILL
+        // ============================================================
+        // Stores an explicit `behavior` on plans created before it existed
+        // (the old name-guessing runs once, here, then never again) and tags
+        // each chama's built-in Savings plan. Idempotent: plans that already
+        // have a behavior are skipped. Per-plan ledger accounts are NOT
+        // created on boot - that stays the opt-in --create-ledgers CLI flag.
+        try {
+            const behaviorResult = await runBackfillContributionBehavior({ silent: true });
+            console.log(
+                ` Contribution Behavior Backfill: updated ${behaviorResult.updated} of ` +
+                `${behaviorResult.found} plan(s) without a behavior ` +
+                `(savings tagged ${behaviorResult.savingsTagged})`
+            );
+        } catch (error) {
+            console.error(" Contribution Behavior Backfill failed (non-fatal):", error.message);
+        }
+
+        // ============================================================
+        // BILLING PLANS
+        // ============================================================
+        // Seeds Free / Standard / Pro once. Never overwrites an edited price.
+        try {
+            await ensureDefaultPlans();
+            console.log(` Billing Plans: ready (enforcement ${process.env.BILLING_ENFORCEMENT === "on" ? "ON" : "off"})`);
+        } catch (error) {
+            console.error(" Billing Plans seed failed (non-fatal):", error.message);
+        }
+
+        // ============================================================
         // REGISTER PAYMENT PROVIDERS
         // ============================================================
         const paymentRegistry = initializePaymentProviders();
@@ -90,6 +126,16 @@ async function startServer() {
 
         startCashDepositEnforcementJob();
         console.log(` Cash Deposit Enforcement Job: Started [5m interval]`);
+
+        startAssetManagerReportSchedulerJob();
+        console.log(` Asset Manager Report Scheduler Job: Started [6h interval]`);
+
+        startAssetNudgesJob();
+        console.log(` Asset Nudges Job: Started [1h interval]`);
+
+        startContributionCalendarJob();
+        startMgrRoundLifecycleJob();
+        console.log(` Contribution Calendar Rollover Job: Started [1h interval]`);
 
         // ============================================================
         // START HTTP SERVER

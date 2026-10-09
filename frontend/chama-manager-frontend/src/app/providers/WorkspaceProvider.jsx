@@ -12,6 +12,7 @@ import useAuth from "../hooks/useAuth";
 import chamaService from "@/modules/chama/services/chama.service";
 import contributionGroupService from "@/modules/contribution-group/services/contributionGroup.service";
 import { businessService } from "@/modules/business/services/business.service";
+import { useSocket } from "./SocketProvider";
 
 // How often to silently re-pull the workspace list while the tab is open,
 // so things like a workspace's member count / avatar preview on the Home
@@ -24,6 +25,7 @@ export default function WorkspaceProvider({
   children,
 }) {
   const { isAuthenticated } = useAuth();
+  const { socket } = useSocket();
 
   const [workspaces, setWorkspaces] = useState([]);
 
@@ -78,6 +80,15 @@ export default function WorkspaceProvider({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!socket || !isAuthenticated) return undefined;
+    const refreshFeatureSetup = () => loadWorkspaces({ silent: true });
+    socket.on("chama:workspace_modules_changed", refreshFeatureSetup);
+    return () => socket.off("chama:workspace_modules_changed", refreshFeatureSetup);
+    // loadWorkspaces is intentionally omitted: this listener follows socket/auth lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, isAuthenticated]);
 
   //-----------------------------------------------------
   //
@@ -139,7 +150,7 @@ export default function WorkspaceProvider({
   //-----------------------------------------------------
 
   async function createChama(payload) {
-    const chama = await chamaService.create(payload);
+    const { chama, presetSummary } = await chamaService.create(payload);
     const items = await workspaceService.getWorkspaces();
     setWorkspaces(items);
 
@@ -147,7 +158,7 @@ export default function WorkspaceProvider({
       (w) => String(w.id ?? w._id) === String(chama._id)
     );
 
-    return created || chama;
+    return { workspace: created || chama, presetSummary };
   }
 
   async function createContributionGroup(payload) {

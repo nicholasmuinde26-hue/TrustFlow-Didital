@@ -27,16 +27,35 @@ import {
  */
 export async function getUserWorkspaces(userId) {
 
-    const [chamas, contributionGroups, businesses] = await Promise.all([
+    const [chamas, contributionGroups, chamaMemberships] = await Promise.all([
         loadChamaWorkspaces(userId),
         loadContributionGroupWorkspaces(userId),
-        Business.find({ created_by: userId })
+        ChamaMembership.find({ user_id: userId, status: WORKSPACE_STATUS.ACTIVE }).select("chama_id role")
     ]);
+    const membershipByChama = new Map(chamaMemberships.map((membership) => [String(membership.chama_id), membership]));
+    const chamaIds = chamaMemberships.map((membership) => membership.chama_id);
+    // A personal business belongs to its owner alone. A chama-owned business
+    // is reached only through chama membership - NOT through created_by, which
+    // for those is just the officer who filed the request and must not keep
+    // access after leaving the chama.
+    const businesses = await Business.find({
+        $or: [
+            { owner_type: { $ne: "chama" }, owner_id: userId },
+            { owner_type: { $ne: "chama" }, owner_id: null, created_by: userId },
+            { owner_type: "chama", owner_id: { $in: chamaIds }, chama_asset_id: { $ne: null } }
+        ]
+    });
+    const ownerChamas = await Chama.find({ _id: { $in: [...new Set(businesses.filter((b) => b.owner_type === "chama").map((b) => String(b.owner_id)))] } }).select("name").lean();
+    const chamaNameById = new Map(ownerChamas.map((c) => [String(c._id), c.name]));
 
     return [
         ...chamas,
         ...contributionGroups,
-        ...businesses.map(mapBusinessWorkspace)
+        ...businesses.map((business) => mapBusinessWorkspace(
+            business,
+            membershipByChama.get(String(business.owner_id)),
+            chamaNameById.get(String(business.owner_id)) || null
+        ))
     ].sort(sortWorkspaces);
 
 }

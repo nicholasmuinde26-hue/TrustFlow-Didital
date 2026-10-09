@@ -9,7 +9,6 @@ import {
   RotateCcw,
   Sparkles,
   ShoppingBag,
-  ExternalLink,
 } from "lucide-react";
 import MarketplaceNavbar from "../components/MarketplaceNavbar";
 import MarketplaceCartDrawer from "../components/MarketplaceCartDrawer";
@@ -52,16 +51,16 @@ export default function MarketplacePublicBusinessPage() {
   if (!data?.business) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
-        <MarketplaceNavbar />
+        <MarketplaceNavbar categorySlug="retail" />
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
           <Store size={48} className="text-slate-300 dark:text-slate-700 mb-3" />
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Merchant Not Found</h2>
-          <p className="text-xs text-slate-500 mt-1">This business storefront does not exist or has been paused.</p>
+          <p className="text-xs text-slate-500 mt-1">This store does not exist or has been paused.</p>
           <Link
-            to="/marketplace"
+            to="/marketplace/retail"
             className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700"
           >
-            Explore Marketplace
+            Explore Retail Marketplace
           </Link>
         </div>
       </div>
@@ -69,6 +68,13 @@ export default function MarketplacePublicBusinessPage() {
   }
 
   const { business, hubs, listings } = data;
+  const dedicatedCategoryHub = business.category_slug || hubs?.[0] || "retail";
+
+  const brandColor = business.primary_color || "#064e3b";
+  const heroBackground =
+    business.hero_style === "solid"
+      ? brandColor
+      : `linear-gradient(135deg, ${brandColor} 0%, #0f172a 130%)`;
 
   const filteredListings =
     selectedHub === "all"
@@ -77,29 +83,40 @@ export default function MarketplacePublicBusinessPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
-      <MarketplaceNavbar />
+      <MarketplaceNavbar categorySlug={dedicatedCategoryHub} />
       <MarketplaceCartDrawer />
 
       {/* Branded Merchant Hero Banner */}
-      <section className="relative bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 py-12 px-4 sm:px-8 text-white">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-          <div className="flex items-center gap-5">
-            {/* Logo */}
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-emerald-600 text-white font-black text-2xl shadow-xl border-2 border-white/20">
-              {business.logo_url ? (
-                <img src={business.logo_url} alt={business.name} className="h-full w-full rounded-3xl object-cover" />
-              ) : (
-                business.name?.slice(0, 2)?.toUpperCase() || "ST"
-              )}
-            </div>
+      <section className="relative py-10 px-4 sm:px-8 text-white" style={{ background: heroBackground }}>
+        <div className="mx-auto max-w-7xl">
+          {/* Breadcrumb / Back Link to Dedicated Category Marketplace */}
+          <div className="mb-4">
+            <Link
+              to={`/marketplace/${dedicatedCategoryHub}`}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-emerald-400 transition"
+            >
+              ← Back to {dedicatedCategoryHub.toUpperCase()} Marketplace
+            </Link>
+          </div>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{business.display_name || business.name}</h1>
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400 border border-emerald-500/30">
-                  <ShieldCheck size={12} /> Verified Merchant
-                </span>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div className="flex items-center gap-5">
+              {/* Logo */}
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-white/15 text-white font-black text-2xl shadow-xl border-2 border-white/30">
+                {business.logo_url ? (
+                  <img src={business.logo_url} alt={business.name} className="h-full w-full rounded-3xl object-cover" />
+                ) : (
+                  (business.display_name || business.name)?.slice(0, 2)?.toUpperCase() || "ST"
+                )}
               </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{business.display_name || business.name}</h1>
+                  <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400 border border-emerald-500/30">
+                    <ShieldCheck size={12} /> Verified Merchant
+                  </span>
+                </div>
               {business.tagline && (
                 <p className="mt-1 text-xs text-slate-300 italic">{business.tagline}</p>
               )}
@@ -116,16 +133,9 @@ export default function MarketplacePublicBusinessPage() {
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Link
-              to={`/store/${business.slug}`}
-              className="flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-bold text-white hover:bg-white/20 transition backdrop-blur-xs"
-            >
-              <ExternalLink size={13} /> Branded Store View
-            </Link>
-          </div>
         </div>
-      </section>
+      </div>
+    </section>
 
       {/* Main Catalog Area */}
       <main className="mx-auto max-w-7xl flex-1 px-4 py-8 sm:px-8 w-full space-y-8">

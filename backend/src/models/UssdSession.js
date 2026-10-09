@@ -269,7 +269,7 @@ ussdSessionSchema.index({
 // PRE-SAVE HOOKS
 // ======================================================
 
-ussdSessionSchema.pre('save', function(next) {
+ussdSessionSchema.pre('save', function () {
   // Update last activity time on any change
   this.last_activity_at = new Date();
 
@@ -286,7 +286,6 @@ ussdSessionSchema.pre('save', function(next) {
     }
   }
 
-  next();
 });
 
 // ======================================================

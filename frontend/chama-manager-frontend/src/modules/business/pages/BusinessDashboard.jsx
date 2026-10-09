@@ -13,6 +13,7 @@ import { RentalOccupancySnapshot } from "../components/RentalOccupancySnapshot";
 import { RetailInventorySnapshot } from "../components/RetailInventorySnapshot";
 import { RestaurantKitchenSnapshot } from "../components/RestaurantKitchenSnapshot";
 import { ServiceJobsSnapshot } from "../components/ServiceJobsSnapshot";
+import { ChamaBusinessDashboard } from "../components/ChamaBusinessDashboard";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import BusinessMpesaModal from "../components/BusinessMpesaModal";
 
@@ -90,6 +91,9 @@ export default function BusinessDashboard() {
   const category = profile?.category || "other";
   const config = getCategoryConfig(category);
   const Snapshot = config.Snapshot;
+  // Chama-owned businesses get the chama + category-aware dashboard (served by
+  // /chama-dashboard) instead of the single client-side snapshot.
+  const isChamaOwned = profile?.owner_type === "chama";
 
   const handleQuickAction = (action) => {
     const actionKey = String(action).toLowerCase();
@@ -182,7 +186,11 @@ export default function BusinessDashboard() {
 
       <BusinessStatCards stats={stats} />
 
-      {Snapshot && <Snapshot workspaceId={workspaceId} currency={profile?.currency || "KES"} />}
+      {isChamaOwned ? (
+        <ChamaBusinessDashboard workspaceId={workspaceId} currency={profile?.currency || "KES"} />
+      ) : (
+        Snapshot && <Snapshot workspaceId={workspaceId} currency={profile?.currency || "KES"} />
+      )}
 
       <QuickActions
         category={profile?.category}
@@ -190,10 +198,14 @@ export default function BusinessDashboard() {
         onOpenMpesa={() => setIsMpesaModalOpen(true)}
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <SalesChart data={chartData} />
+      {isChamaOwned ? (
         <CashAccountsCard accounts={accounts} />
-      </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <SalesChart data={chartData} />
+          <CashAccountsCard accounts={accounts} />
+        </div>
+      )}
 
       <RecentSales sales={recentSales} title={config.recentListTitle} />
 

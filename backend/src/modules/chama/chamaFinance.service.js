@@ -63,12 +63,40 @@ const periodsSinceStart = (plan, now = new Date()) => {
 };
 const activeMembers = (chamaId) => ChamaMembership.find({ chama_id: chamaId, status: "active" }).sort({ payout_position: 1, joined_at: 1 });
 
+// ---------------------------------------------------------
+// THE "SAVINGS" CONTRIBUTION_TYPE, EXPLAINED
+// ---------------------------------------------------------
+// Every other reader of a chama's savings data — savingsOverview.service.js
+// (the Savings page), member.service.js's own-savings summary, and
+// savingsSharePolicy.service.js's assertFreeWillPlan guard (which blocks
+// attaching a share-out policy to anything that isn't free_will) — all
+// agree that "Savings" means contribution_type: 'free_will'. This used to
+// create the plan as contribution_type: 'fixed' instead, so a member's
+// deposit landed on a plan none of those readers ever look for: the
+// payment completed and the obligation got marked paid, but the Savings
+// page's query (contribution_type: 'free_will') never found the plan and
+// showed nothing. Aligned here to 'free_will' so it's the same plan every
+// other module already expects.
+// ---------------------------------------------------------
 export const getOrCreateSavingsPlan = async ({ chama, userId }) => {
-  let plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chama._id, contribution_type: "fixed", name: "Savings" });
+  // The built-in plan is identified by system_key, not its display name, so a
+  // chama can rename it ("Hisa") without a second "Savings" plan appearing.
+  // Plans created before system_key existed are found by the old name match
+  // once, then tagged.
+  let plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chama._id, system_key: "savings" });
+  if (!plan) {
+    plan = await ContributionPlan.findOne({ owner_type: "Chama", owner_id: chama._id, contribution_type: "free_will", name: "Savings" });
+    if (plan) {
+      plan.system_key = "savings";
+      plan.behavior = "savings";
+      await plan.save();
+    }
+  }
   if (!plan) {
     plan = await ContributionPlan.create({
       owner_type: "Chama", owner_id: chama._id, participant_type: "ChamaMembership", created_by: userId,
-      name: "Savings", description: "Member savings deposits", contribution_type: "fixed", frequency: "monthly",
+      name: "Savings", description: "Member savings deposits", contribution_type: "free_will", frequency: "monthly",
+      behavior: "savings", system_key: "savings",
       amount: chama.monthly_savings, start_date: new Date(), is_permanent: true, status: "active", activated_at: new Date(),
     });
   }

@@ -1,7 +1,13 @@
 import React from "react";
-import { Building2, Sparkles, RefreshCw } from "lucide-react";
+import { Building2, Sparkles, RefreshCw, Users, Eye } from "lucide-react";
+
+const ROLE_LABELS = { chairperson: "Chairperson", treasurer: "Treasurer", manager: "Business manager", member: "Member" };
 
 export function BusinessHeader({ profile, onRefresh, refreshing }) {
+  const isChamaOwned = profile?.owner_type === "chama";
+  const canManage = profile?.access?.canManage !== false;
+  const role = profile?.access?.role;
+
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
       <div className="flex items-center gap-3.5">
@@ -16,7 +22,25 @@ export function BusinessHeader({ profile, onRefresh, refreshing }) {
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
               <Sparkles size={11} /> Active
             </span>
+            {isChamaOwned ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-bold text-sky-800 dark:bg-sky-950/80 dark:text-sky-300"
+                title="This business belongs to the chama, not to any one member"
+              >
+                <Users size={11} /> Chama-owned{profile?.chamaName ? ` · ${profile.chamaName}` : ""}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Personal
+              </span>
+            )}
           </div>
+          {isChamaOwned && role && (
+            <p className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              {canManage ? null : <Eye size={11} />}
+              Your role: {ROLE_LABELS[role] || role}{canManage ? "" : " · view only"}
+            </p>
+          )}
           <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
             {profile?.category} • Currency: {profile?.currency || "KES"} • Till: #{profile?.mPesaTill}
           </p>

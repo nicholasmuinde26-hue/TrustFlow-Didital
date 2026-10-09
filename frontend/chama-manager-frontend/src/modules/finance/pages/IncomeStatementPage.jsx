@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import financeService from "../services/finance.service";
 import { Download, TrendingUp, Calendar } from "lucide-react";
 import Spinner from "@/shared/components/ui/Spinner";
+import ReportWarnings from "../components/ReportWarnings";
+import { periodRange } from "../utils.reportPeriods";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
@@ -17,7 +19,7 @@ export default function IncomeStatementPage() {
     const fetchReport = async () => {
       setLoading(true);
       try {
-        const data = await financeService.getReport(workspaceId, "INCOME_STATEMENT", "CHAMA", new Date().toISOString().slice(0, 10));
+        const data = await financeService.getReport(workspaceId, "INCOME_STATEMENT", "CHAMA", periodRange(period));
         if (mounted) setReportData(data);
       } catch (err) {
         console.error("Failed to fetch Income Statement report:", err);
@@ -35,8 +37,9 @@ export default function IncomeStatementPage() {
   const contributions = Number(reportData?.contributions || 0);
   const fines = Number(reportData?.fines || reportData?.interestIncome || 0);
   const otherIncome = Number(reportData?.otherIncome || 0);
+  const fees = Number(reportData?.fees || 0);
 
-  const totalIncome = Number(reportData?.totalIncome ?? (contributions + fines + otherIncome));
+  const totalIncome = Number(reportData?.totalIncome ?? (contributions + fines + fees + otherIncome));
 
   const mgrPayouts = Number(reportData?.mgrPayouts || reportData?.cogs || 0);
   const adminExpenses = Number(reportData?.adminCosts || reportData?.totalOpex || 0);
@@ -47,10 +50,10 @@ export default function IncomeStatementPage() {
   const handleExportCsv = () => {
     let csvRows = "Category,Amount (KES)\n";
     csvRows += `Member Contributions,${contributions}\n`;
-    csvRows += `Loan Interest Income,${interestIncome}\n`;
-    csvRows += `MGR Contributions,${mgrContributions}\n`;
+    csvRows += `Fines & Penalties,${fines}\n`;
     csvRows += `Other Income,${otherIncome}\n`;
     csvRows += `TOTAL INCOME,${totalIncome}\n`;
+    csvRows += `MGR Payouts / COGS,${mgrPayouts}\n`;
     csvRows += `Administrative Expenses,${adminExpenses}\n`;
     csvRows += `TOTAL EXPENSES,${totalExpenses}\n`;
     csvRows += `NET SURPLUS / PROFIT,${netSurplus}\n`;
@@ -88,6 +91,7 @@ export default function IncomeStatementPage() {
             <option value="This Month">This Month</option>
             <option value="Last Month">Last Month</option>
             <option value="This Year">This Year</option>
+            <option value="Last Year">Last Year</option>
           </select>
 
           <button onClick={handleExportCsv} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 transition">
@@ -95,6 +99,8 @@ export default function IncomeStatementPage() {
           </button>
         </div>
       </div>
+
+      <ReportWarnings warnings={reportData?.warnings} />
 
       {/* Net Surplus Highlight Box & Bar Chart */}
       <div className="grid gap-6 lg:grid-cols-12">
@@ -141,6 +147,7 @@ export default function IncomeStatementPage() {
           <div className="mt-4 space-y-3 text-xs font-semibold">
             <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Member Contributions</span><span className="font-bold text-slate-900 dark:text-white font-mono">{money(contributions)}</span></div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Fines & Penalties</span><span className="font-bold text-slate-900 dark:text-white font-mono">{money(fines)}</span></div>
+            {fees !== 0 && <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Fees</span><span className="font-bold text-slate-900 dark:text-white font-mono">{money(fees)}</span></div>}
             <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Other Income</span><span className="font-bold text-slate-900 dark:text-white font-mono">{money(otherIncome)}</span></div>
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between font-black text-sm text-slate-900 dark:text-white">
               <span>Total Income</span><span className="font-mono text-emerald-600">{money(totalIncome)}</span>

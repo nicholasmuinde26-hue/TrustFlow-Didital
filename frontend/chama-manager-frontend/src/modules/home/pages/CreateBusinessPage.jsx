@@ -132,6 +132,14 @@ export default function CreateBusinessPage() {
             </div>
           </div>
 
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-900">
+            <p className="font-bold">This registers a personal business that you own.</p>
+            <p className="mt-0.5 text-blue-800">
+              To open a business owned by your chama, the chairperson or treasurer requests it from the chama&apos;s
+              Leadership Desk (Business workspaces). Platform Administration approves it and the chama becomes the owner.
+            </p>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Step 1: Select Business Type */}
             <div>

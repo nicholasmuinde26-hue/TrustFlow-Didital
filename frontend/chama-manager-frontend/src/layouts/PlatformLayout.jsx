@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 
 import Logo from "@/shared/components/layout/Logo";
 import ThemeToggle from "@/shared/components/layout/ThemeToggle/ThemeToggle";
@@ -6,6 +6,7 @@ import NotificationButton from "@/shared/components/layout/NotificationButton/No
 import UserMenu from "@/shared/components/layout/UserMenu/UserMenu";
 import WorkspaceSwitcher from "@/shared/components/layout/WorkspaceSwitcher/WorkspaceSwitcher";
 import MobileBottomNav from "@/shared/components/layout/MobileBottomNav/MobileBottomNav";
+import BrandMark from "@/shared/components/layout/BrandMark";
 
 // The shell for the "User Platform" layer — /home (onboarding, only
 // ever seen by a user with zero workspaces), /workspaces (the hub, for
@@ -24,18 +25,19 @@ export default function PlatformLayout({ children }) {
     <div className="min-h-screen bg-[#f5f8f6] dark:bg-obsidian">
       <header
         className="
-        sticky top-0 z-30 flex h-20 items-center justify-between gap-4
-        border-b border-slate-200 bg-white/80 px-6 backdrop-blur-xl
+        sticky top-0 z-30 flex h-16 items-center justify-between gap-2
+        border-b border-slate-200 bg-white/80 px-3 backdrop-blur-xl
         dark:border-obsidian-border dark:bg-obsidian/80
-        lg:px-10
+        sm:h-20 sm:gap-4 sm:px-6 lg:px-10
         "
       >
-        <div className="flex items-center gap-4 min-w-0">
-          <Logo />
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <div className="hidden sm:block"><Logo /></div>
+          <Link to="/home" className="shrink-0 sm:hidden" aria-label="ChamaManager home"><BrandMark size={34} /></Link>
           <WorkspaceSwitcher />
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-4">
           <ThemeToggle />
           <NotificationButton />
           <UserMenu />
@@ -50,7 +52,7 @@ export default function PlatformLayout({ children }) {
         spacing); a page that wants a narrower reading column, like the
         create-* forms, still applies its own max-w/mx-auto internally.
       */}
-      <main className="w-full px-6 py-10 pb-24 lg:px-8 lg:pb-10">
+      <main className="platform-page-container w-full min-w-0 overflow-x-hidden px-3 py-5 pb-28 sm:px-6 sm:py-8 sm:pb-24 lg:px-8 lg:pb-10">
         {children ?? <Outlet />}
       </main>
 

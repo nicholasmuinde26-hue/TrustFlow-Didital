@@ -10,13 +10,45 @@ import env from './env.js';
  */
 export async function bootstrapSuperAdmin() {
   try {
-    const adminEmail = (env.superAdminEmail || 'nicholasmuinde26@gmail.com').trim().toLowerCase();
-    if (!adminEmail) return;
+    // No hardcoded fallback email. This function grants super_admin to
+    // whatever address it's given, so a personal address baked into
+    // source meant every deployment built from this codebase shipped
+    // with the same backdoor owner.
+    const adminEmail = (env.superAdminEmail || '').trim().toLowerCase();
 
-    let user = await User.findOne({ email: adminEmail });
+    if (!adminEmail) {
+      console.log('[BOOTSTRAP] SUPER_ADMIN_EMAIL not set — skipping super admin bootstrap.');
+      return;
+    }
 
     const defaultPhone = process.env.SUPER_ADMIN_PHONE || '254700000000';
-    const defaultPassword = process.env.SUPER_ADMIN_PASSWORD || 'Admin@123456';
+    const defaultPassword = process.env.SUPER_ADMIN_PASSWORD;
+
+    // This used to auto-create a super_admin with the password
+    // 'Admin@123456' on every boot, in every environment. Anyone who
+    // knew the email (it was in this file) or the default phone owned
+    // the platform. Production now requires an explicitly chosen
+    // password and refuses to invent one.
+    if (!defaultPassword) {
+      if (env.isProduction) {
+        console.error(
+          '[BOOTSTRAP] SUPER_ADMIN_PASSWORD is not set — refusing to create or ' +
+            'sync a super admin account with a default password. Set it and restart.'
+        );
+        return;
+      }
+      console.warn('[BOOTSTRAP] SUPER_ADMIN_PASSWORD not set — skipping bootstrap in non-production.');
+      return;
+    }
+
+    // A short password on the single most privileged account in the
+    // system is not worth failing quietly over.
+    if (defaultPassword.length < 12) {
+      console.error('[BOOTSTRAP] SUPER_ADMIN_PASSWORD must be at least 12 characters. Skipping.');
+      return;
+    }
+
+    let user = await User.findOne({ email: adminEmail });
 
     if (!user) {
       // Check if phone exists
@@ -42,8 +74,10 @@ export async function bootstrapSuperAdmin() {
         modified = true;
       }
       // Ensure password is set to defaultPassword if user has no password or on localhost dev
-      const isDev = process.env.NODE_ENV === 'development' || env?.nodeEnv === 'development';
-      if (isDev) {
+      // Only ever resets an existing account's password outside
+      // production. Silently overwriting a live super admin's password
+      // on every deploy would undo any rotation they performed.
+      if (!env.isProduction) {
         user.password = await bcrypt.hash(defaultPassword, 10);
         modified = true;
       }
@@ -86,7 +120,7 @@ export async function bootstrapSuperAdmin() {
           settings: true,
         },
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     console.log(`

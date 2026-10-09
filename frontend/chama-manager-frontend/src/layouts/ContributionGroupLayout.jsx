@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
   CalendarClock,
@@ -63,10 +63,18 @@ function useMoreNav(base) {
   ];
 }
 
+const MOBILE_PRIMARY_LABELS = {
+  Home: "Home",
+  Contributions: "Contribute",
+  Meetings: "Meetings",
+};
+
 export default function ContributionGroupLayout({ workspace, workspaceId }) {
   const base = `/workspace/${workspaceId}`;
+  const { pathname } = useLocation();
   const primary = usePrimaryNav(base);
   const more = useMoreNav(base);
+  const moreIsCurrent = more.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
   const [moreOpen, setMoreOpen] = useState(false);
 
   return (
@@ -111,7 +119,7 @@ export default function ContributionGroupLayout({ workspace, workspaceId }) {
           <button
             type="button"
             onClick={() => setMoreOpen(true)}
-            className="flex shrink-0 items-center gap-2 rounded-full border border-obsidian-border/40 px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 dark:text-mist-muted dark:hover:bg-obsidian-card"
+          className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition hover:bg-slate-100 dark:hover:bg-obsidian-card ${moreIsCurrent ? "border-transparent bg-mint-deep text-mint" : "border-obsidian-border/40 text-slate-500 dark:text-mist-muted"}`}
           >
             <MoreHorizontal size={16} aria-hidden="true" />
             More
@@ -128,7 +136,7 @@ export default function ContributionGroupLayout({ workspace, workspaceId }) {
         </div>
       </header>
 
-      <main className="flex-1 p-4 pb-24 lg:p-8 lg:pb-8">
+      <main className="workspace-page-container min-w-0 flex-1 overflow-x-hidden p-3 pb-20 sm:p-4 sm:pb-24 lg:p-8 lg:pb-8">
         <Outlet />
       </main>
 
@@ -143,19 +151,19 @@ export default function ContributionGroupLayout({ workspace, workspaceId }) {
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-medium transition ${
+              `flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-0.5 py-1.5 text-[10px] font-medium transition ${
                 isActive ? "text-mint" : "text-mist-muted"
               }`
             }
           >
             <Icon size={20} aria-hidden="true" />
-            {title}
+            <span className="max-w-full truncate">{MOBILE_PRIMARY_LABELS[title] || title}</span>
           </NavLink>
         ))}
         <button
           type="button"
           onClick={() => setMoreOpen(true)}
-          className="flex flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-medium text-mist-muted"
+          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-0.5 py-1.5 text-[10px] font-medium ${moreIsCurrent ? "text-mint" : "text-mist-muted"}`}
         >
           <MoreHorizontal size={20} aria-hidden="true" />
           More

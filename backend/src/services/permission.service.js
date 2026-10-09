@@ -28,6 +28,17 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'minutes.edit', scope: 'all' },
     { key: 'minutes.publish', scope: 'all' },
     { key: 'contributions.view', scope: 'all' },
+    // The chairperson is also a member of the chama and must be able to pay
+    // their OWN contribution / MGR obligation via M-Pesa STK, exactly like a
+    // plain member - but never anyone else's. Deliberately 'own', not 'all':
+    // that keeps the chairperson out of the treasurer-only cash/bank
+    // recording path (contributionPayment.controller.js#createPayment 403s
+    // any non-'all' scope that isn't MPESA) and keeps the ownership check in
+    // contributionPayment.routes.js (obligation.participant_id must equal the
+    // chairperson's own membership id) in force. Existing chamas pick this up
+    // without a re-seed: hasPermission() falls back to these defaults when
+    // the key was never configured for the role.
+    { key: 'contributions.record', scope: 'own' },
     { key: 'loans.view', scope: 'all' },
     { key: 'loans.apply', scope: 'own' },
     { key: 'loans.review', scope: 'all' },
@@ -104,6 +115,13 @@ const DEFAULT_ROLE_PERMISSIONS = {
     // ever runs.
     { key: 'loans.review', scope: 'all' },
     { key: 'loans.approve', scope: 'all' },
+    { key: 'finance.summary.view', scope: 'all' },
+    // Read-only chama-wide finance visibility — the Overview page's
+    // "Chama view" needs both the summary AND the transaction list / GL
+    // balance check to render without partial 403s. Same read-only
+    // profile as chairperson: view, never create/reconcile.
+    { key: 'finance.transactions.view', scope: 'all' },
+    { key: 'finance.accounts.view', scope: 'all' },
     { key: 'welfare.view', scope: 'all' },
     { key: 'reports.view', scope: 'all' },
     { key: 'roles.view', scope: 'all' }
@@ -140,7 +158,14 @@ const DEFAULT_ROLE_PERMISSIONS = {
     { key: 'loans.review', scope: 'all' },
     { key: 'loans.approve', scope: 'all' },
     { key: 'welfare.view', scope: 'all' },
-    { key: 'reports.view', scope: 'all' }
+    { key: 'reports.view', scope: 'all' },
+    // Without this, GET /finance/summary/me 403s for a Committee Member —
+    // "Your total contributions" on the Overview page silently falls back
+    // to 0 instead of showing their real figure (finance.routes.js gates
+    // /summary/me behind this same key). 'limited' matches the plain
+    // Member row below: it unlocks their OWN position, not the chama-wide
+    // summary (that still needs 'all', which Committee Member doesn't get).
+    { key: 'finance.summary.view', scope: 'limited' }
   ],
 
   member: [
@@ -177,6 +202,9 @@ const DEFAULT_ROLE_PERMISSIONS = {
     // Patrons don't take out loans, but the "My Chama" member dashboard
     // (GET /loans/me/summary) is shared by every Chama role — without
     // this, a patron sees the "My Chama" nav item but the page 403s.
+    // Without this, GET /finance/summary/me 403s for a Patron the same
+    // way it did for Committee Member — see the comment on that role.
+    { key: 'finance.summary.view', scope: 'limited' },
     { key: 'loans.view', scope: 'own' }
   ]
 };
@@ -316,6 +344,61 @@ class PermissionService {
       console.error('Permission check error:', error);
       return { granted: false, reason: 'Permission check failed' };
     }
+  }
+
+  /**
+   * ============================================================
+   * EFFECTIVE PERMISSIONS FOR ONE MEMBERSHIP
+   * ============================================================
+   *
+   * Returns { permissionKey: scope } for every permission this
+   * membership actually holds, merging the chama's configured
+   * RolePermission rows over the baked-in DEFAULT_ROLE_PERMISSIONS
+   * exactly the way hasPermission() does for a single key.
+   *
+   * This exists so the frontend can gate a button on the SAME
+   * decision the API will make, instead of hardcoding its own list
+   * of role names and drifting out of sync. Deliberately does not
+   * write a permission-check audit row: this is the UI asking
+   * "what may I do", not an actual attempt to do it.
+   */
+  async getEffectivePermissions(membershipId) {
+    const membership = await ChamaMembership.findById(membershipId);
+
+    if (!membership || membership.status !== 'active') {
+      return { role: null, status: membership?.status || null, permissions: {} };
+    }
+
+    const permissions = {};
+
+    // 1. Baked-in defaults for the role.
+    (DEFAULT_ROLE_PERMISSIONS[membership.role] || []).forEach((perm) => {
+      permissions[perm.key] = perm.scope || 'all';
+    });
+
+    // 2. Whatever this chama has explicitly configured wins over the
+    //    defaults - including a deliberate revocation, which shows up
+    //    as an inactive row and must REMOVE the default grant rather
+    //    than silently fall back to it.
+    const configured = await RolePermission.find({
+      chama_id: membership.chama_id,
+      role: membership.role,
+    });
+
+    configured.forEach((row) => {
+      if (row.status === 'active') {
+        permissions[row.permission_key] = row.scope_override || 'all';
+      } else {
+        delete permissions[row.permission_key];
+      }
+    });
+
+    return {
+      role: membership.role,
+      status: membership.status,
+      membership_id: String(membership._id),
+      permissions,
+    };
   }
 
   /**

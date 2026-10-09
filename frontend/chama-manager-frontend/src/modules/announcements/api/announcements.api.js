@@ -14,7 +14,7 @@ const announcementsApi = {
 
   setPinned(workspaceId, announcementId, pinned) {
     return api.patch(
-      `/workspaces/${workspaceId}/announcements/${announcementId}`,
+      `/workspaces/${workspaceId}/announcements/${announcementId}/pin`,
       { pinned }
     );
   },

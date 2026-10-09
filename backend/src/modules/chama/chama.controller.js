@@ -11,6 +11,7 @@ import {
 } from './chama.service.js';
 import PaymentIntent from '../../models/PaymentIntent.js';
 import { getMgrOverview, initiateSavingsDeposit, markMgrObligationPaid, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
+import { registerAssetAtCreation } from '../chamaAssets/chamaAsset.service.js';
 
 export const getPublicChamasController = async (req, res, next) => {
   try {
@@ -99,6 +100,7 @@ export const createChamaController = async (
       monthlySavings,
       visibility,
       chamaType,
+      preset,
       chairpersonInput,
       chairpersonName,
       chairpersonPhone,
@@ -114,6 +116,13 @@ export const createChamaController = async (
       committeeInputs,
       patronUserId,
       patronInput,
+      workspaceModules,
+      // Optional: "Does this chama already own a business or property?"
+      // step in the creation wizard. Skippable — most chamas don't have
+      // one yet, and the dashboard simply omits the Assets & Income panel
+      // when none exists (see chamaAsset.routes.js for how one gets added
+      // later, via a treasurer/chairperson-approved request instead).
+      initialAsset,
     } = req.body;
 
 
@@ -121,12 +130,13 @@ export const createChamaController = async (
     // 3. Create Chama
     // ----------------------------------------
 
-    const chama =
+    const { chama, presetSummary } =
       await createChama({
         name,
         monthlySavings,
         visibility,
         chamaType,
+        preset,
         userId,
         chairpersonInput,
         chairpersonName,
@@ -143,8 +153,24 @@ export const createChamaController = async (
         committeeInputs,
         patronUserId,
         patronInput,
+        workspaceModules,
       });
 
+
+    // ----------------------------------------
+    // 3b. Optional: register a business/property the
+    //     chama already owns, entered right in the
+    //     creation wizard. Founding members creating
+    //     the chama around it counts as their approval,
+    //     so this goes straight to 'active' — no separate
+    //     sign-off step (contrast with registerAssetAtCreation's
+    //     sibling, requestAsset(), used for one acquired later).
+    // ----------------------------------------
+
+    let registeredAsset = null;
+    if (initialAsset && initialAsset.asset_type && initialAsset.name) {
+      registeredAsset = await registerAssetAtCreation(chama._id, userId, initialAsset);
+    }
 
 
     // ----------------------------------------
@@ -159,7 +185,9 @@ export const createChamaController = async (
         'Chama created successfully',
 
       data: {
-        chama
+        chama,
+        presetSummary,
+        asset: registeredAsset
       }
 
     });
@@ -216,7 +244,14 @@ export const getChamaMembersController = async (
 
     const memberships =
       await getChamaMembers(
-        chamaId
+        chamaId,
+        {
+          // Contact details belong on the restricted leadership surface.
+          // The public member directory needs names and avatars only.
+          includeContact: ['chairperson', 'treasurer', 'secretary'].includes(
+            String(req.membership?.role || '').toLowerCase()
+          ),
+        }
       );
 
 

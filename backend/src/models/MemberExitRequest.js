@@ -11,7 +11,7 @@ const memberExitRequestSchema = new mongoose.Schema({
   approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest', default: null },
   obligation_transaction_id: { type: mongoose.Schema.Types.ObjectId, ref: 'FinancialTransaction', default: null },
   settlement_transaction_id: { type: mongoose.Schema.Types.ObjectId, ref: 'FinancialTransaction', default: null },
-  disbursement_method: { type: String, enum: ['cash','bank','mpesa'], default: null },
+  disbursement_method: { type: String, enum: ['cash','bank','mpesa','wallet'], default: null },
   external_reference: { type: String, trim: true, default: null },
   approved_at: { type: Date, default: null },
   disbursed_at: { type: Date, default: null },

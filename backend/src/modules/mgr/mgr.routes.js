@@ -13,8 +13,12 @@ import {
   recordPaymentController,
   reorderRotationController,
   sendRemindersController,
+  confirmRoundPositionController,
+  markPayoutReceivedController,
 } from './mgr.controller.js';
 
+import { requireModule } from '../../middleware/module.middleware.js';
+import { requireViewAllContributions } from '../../middleware/contributionsAccess.middleware.js';
 const router = express.Router();
 
 router.use(protect);
@@ -24,13 +28,13 @@ router.use(protect);
 // ────────────────────────────────────────────────────────────
 
 // Full MGR command-center dashboard
-router.get('/overview/:chamaId', requireChamaMember, getDashboardOverviewController);
+router.get('/overview/:chamaId', requireChamaMember, requireModule('mgr'), getDashboardOverviewController);
 
 // Fetch all active Chama members for the wizard participant picker
-router.get('/members/:chamaId', requireChamaMember, getChamaMgrMembersController);
+router.get('/members/:chamaId', requireChamaMember, requireModule('mgr'), getChamaMgrMembersController);
 
 // Chama-scoped contributions: plans + per-member obligation overview
-router.get('/contributions/:chamaId', requireChamaMember, getChamaContributionsController);
+router.get('/contributions/:chamaId', requireChamaMember, requireModule('mgr'), requireViewAllContributions, getChamaContributionsController);
 
 // ────────────────────────────────────────────────────────────
 // TREASURER-ONLY ROUTES
@@ -39,7 +43,7 @@ router.get('/contributions/:chamaId', requireChamaMember, getChamaContributionsC
 // Create a new MGR Policy draft
 router.post(
   '/policy/:chamaId',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   createPolicyController
 );
@@ -47,7 +51,7 @@ router.post(
 // Edit an MGR Policy
 router.patch(
   '/policy/:chamaId/:policyId',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   updatePolicyController
 );
@@ -55,7 +59,7 @@ router.patch(
 // Send payment reminders for current round
 router.post(
   '/rounds/:roundId/send-reminders',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   sendRemindersController
 );
@@ -63,7 +67,7 @@ router.post(
 // Activate a draft policy → generates all MgrRound objects
 router.post(
   '/policy/:chamaId/:policyId/activate',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   activatePolicyController
 );
@@ -71,7 +75,7 @@ router.post(
 // Reorder payout rotation positions (authorized change, audit-logged)
 router.patch(
   '/policy/:chamaId/:policyId/reorder',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   reorderRotationController
 );
@@ -79,7 +83,7 @@ router.patch(
 // Propose a payout for the current round
 router.post(
   '/rounds/:roundId/propose-payout',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   proposePayoutController
 );
@@ -87,15 +91,28 @@ router.post(
 // Disburse a payout that has been fully approved
 router.post(
   '/rounds/:roundId/disburse',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   disbursePayoutController
+);
+
+router.post(
+  '/rounds/:roundId/confirm-position',
+  requireChamaMember, requireModule('mgr'),
+  requireChamaTreasurer,
+  confirmRoundPositionController
+);
+
+router.post(
+  '/rounds/:roundId/received',
+  requireChamaMember, requireModule('mgr'),
+  markPayoutReceivedController
 );
 
 // Record a manual contribution payment for a member
 router.post(
   '/payment/:chamaId',
-  requireChamaMember,
+  requireChamaMember, requireModule('mgr'),
   requireChamaTreasurer,
   recordPaymentController
 );

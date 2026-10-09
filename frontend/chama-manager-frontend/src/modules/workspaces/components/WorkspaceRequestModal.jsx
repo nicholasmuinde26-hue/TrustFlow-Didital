@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import workspaceRequestService from "@/app/services/workspaceRequest.service";
 import useAuth from "@/app/hooks/useAuth";
+import WorkspaceSetupPicker from "./WorkspaceSetupPicker";
 
 const ENTITY_TYPES = [
   {
@@ -134,6 +135,9 @@ export default function WorkspaceRequestModal({
   ]);
 
   const [extraNotes, setExtraNotes] = useState("");
+  // Proposed feature set for a chama. The reviewing admin sees it pre-filled
+  // and can adjust it before approving.
+  const [workspaceConfig, setWorkspaceConfig] = useState({ preset: "standard", modules: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [submittedData, setSubmittedData] = useState(null);
@@ -163,6 +167,12 @@ export default function WorkspaceRequestModal({
 
     if (!name.trim()) {
       setError("Please enter the name of your Chama or Organization.");
+      return;
+    }
+
+    if (entityType === "chama" && !description.trim()) {
+      setError("Please describe the Chama and what it plans to do.");
+      setCurrentStep(1);
       return;
     }
 
@@ -201,6 +211,7 @@ export default function WorkspaceRequestModal({
           (cm) => cm.fullName.trim() || cm.phone.trim()
         ),
         extraNotes: extraNotes.trim(),
+        ...(entityType === "chama" && workspaceConfig.modules.length > 0 && { workspaceConfig }),
       };
 
       const res = await workspaceRequestService.submitRequest(payload);
@@ -394,6 +405,24 @@ export default function WorkspaceRequestModal({
                   </div>
 
                   {entityType === "chama" && (
+                    <div>
+                      <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">Chama type</label>
+                      <select
+                        value={category}
+                        onChange={(event) => {
+                          setCategory(event.target.value);
+                          setWorkspaceConfig({ preset: "", modules: [] });
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-medium outline-none focus:border-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="standard">Standard Chama</option>
+                        <option value="burial">Burial &amp; welfare Chama</option>
+                      </select>
+                      <p className="mt-1 text-[11px] text-slate-500">The administrator confirms the type and final feature set during review.</p>
+                    </div>
+                  )}
+
+                  {entityType === "chama" && (
                     <>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
@@ -501,6 +530,25 @@ export default function WorkspaceRequestModal({
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
+
+                  {entityType === "chama" && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1" htmlFor="workspace-request-description">
+                        Describe your Chama and the features you need <span className="text-rose-600">*</span>
+                      </label>
+                      <textarea
+                        id="workspace-request-description"
+                        rows={3}
+                        maxLength={2000}
+                        required
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                        placeholder="Explain the group’s purpose, how members contribute, and which tools would help you manage it."
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                      <p className="mt-1 text-right text-[10px] text-slate-400">{description.length} / 2000</p>
+                    </div>
+                  )}
 
                   <div className="flex justify-end pt-2">
                     {entityType === "chama" ? (
@@ -763,6 +811,23 @@ export default function WorkspaceRequestModal({
                         </div>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="space-y-2 rounded-2xl border border-slate-200 p-3.5 dark:border-slate-800">
+                    <h4 className="text-xs font-black uppercase text-slate-900 dark:text-white">
+                      Workspace Setup
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Pick the features your Chama needs. The reviewer can adjust this before approving.
+                    </p>
+                    <WorkspaceSetupPicker
+                      value={workspaceConfig}
+                      onChange={(nextConfig) => {
+                        setWorkspaceConfig(nextConfig);
+                        setCategory(nextConfig.modules.includes("burial_welfare") ? "burial" : "standard");
+                      }}
+                      defaultPreset={category === "burial" ? "burial" : "standard"}
+                    />
                   </div>
 
                   <div className="flex justify-between pt-2">

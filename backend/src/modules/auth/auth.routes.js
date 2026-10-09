@@ -1,3 +1,8 @@
+import {
+  otpSendLimiter,
+  otpVerifyLimiter,
+  authLimiter,
+} from '../../middleware/rateLimit.middleware.js';
 import express from 'express';
 
 import {
@@ -25,7 +30,11 @@ const router = express.Router();
  *          available for a given phone number, for the channel picker UI
  * @access  Public
  */
-router.get('/otp-channels', getOtpChannelsController);
+// Enumerable: tells a caller whether an account exists and which
+
+// channels it has, so it gets the same budget as a send.
+
+router.get('/otp-channels', otpSendLimiter, getOtpChannelsController);
 
 /**
  * @route   POST /api/auth/send-otp
@@ -34,35 +43,45 @@ router.get('/otp-channels', getOtpChannelsController);
  *          channel: 'sms' | 'email' | 'whatsapp' (defaults to 'sms')
  * @access  Public
  */
-router.post('/send-otp', sendOtpController);
+// Rate limited: each send costs a real SMS and spams the recipient's
+
+// phone, so this is abusable against third parties, not just against us.
+
+router.post('/send-otp', otpSendLimiter, sendOtpController);
 
 /**
  * @route   POST /api/auth/verify-otp
  * @desc    Verify 6-digit OTP code & issue short-lived Access + Refresh Tokens
  * @access  Public (Final step for register, login, & standalone OTP)
  */
-router.post('/verify-otp', verifyOtpController);
+// The brute-force surface. Counts failures only, so a legitimate typo
+
+// doesn't burn a user's budget. Complements the per-code attempt cap in
+
+// auth.service.js.
+
+router.post('/verify-otp', otpVerifyLimiter, verifyOtpController);
 
 /**
  * @route   POST /api/auth/refresh
  * @desc    Exchange a valid Refresh Token for a new short-lived Access Token
  * @access  Public
  */
-router.post('/refresh', refreshTokenController);
+router.post('/refresh', authLimiter, refreshTokenController);
 
 /**
  * @route   POST /api/auth/register
  * @desc    Validate registration details & send security OTP code (Step 1 of 2)
  * @access  Public
  */
-router.post('/register', registerController);
+router.post('/register', authLimiter, registerController);
 
 /**
  * @route   POST /api/auth/login
  * @desc    Verify phone & password, then send security OTP code (Step 1 of 2)
  * @access  Public
  */
-router.post('/login', loginController);
+router.post('/login', authLimiter, loginController);
 
 // ========================================
 // PROTECTED ROUTES

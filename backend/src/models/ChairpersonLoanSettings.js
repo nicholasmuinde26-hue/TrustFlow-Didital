@@ -438,25 +438,24 @@ chairpersonLoanSettingsSchema.index({ 'settings_history.changed_at': -1 });
 // VALIDATION
 // ========================================
 
-chairpersonLoanSettingsSchema.pre('save', function(next) {
+chairpersonLoanSettingsSchema.pre('save', function () {
   // Validate that absolute limit is set if multiplier is not used
   if (!this.max_loan_settings.use_multiplier && !this.max_loan_settings.absolute_limit) {
-    return next(new Error('Either multiplier or absolute limit must be set'));
+    throw new Error('Either multiplier or absolute limit must be set');
   }
 
   // Validate that auto-approval limit is reasonable
   if (this.approval_workflow.auto_approval_enabled && 
       this.approval_workflow.auto_approval_limit <= 0) {
-    return next(new Error('Auto-approval limit must be greater than 0'));
+    throw new Error('Auto-approval limit must be greater than 0');
   }
 
   // Validate that required committee types are available
   if (this.approval_workflow.workflow_type === 'committee_vote' && 
       this.approval_workflow.required_committee_types.length === 0) {
-    return next(new Error('Committee types must be specified for committee vote workflow'));
+    throw new Error('Committee types must be specified for committee vote workflow');
   }
 
-  next();
 });
 
 // ========================================

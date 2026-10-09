@@ -8,6 +8,91 @@ import AppError from '../../utils/AppError.js';
 import { generateUniqueJoinCode } from '../../utils/joinCode.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
 import permissionService from '../../services/permission.service.js';
+import mgrService from '../mgr/mgr.service.js';
+import { getOrCreatePolicy as getOrCreateLoanPolicy } from '../loans/Loanpolicy.service.js';
+import {
+  WORKSPACE_PRESETS,
+  LEGACY_PRESET_BY_CHAMA_TYPE,
+  buildWorkspaceConfig,
+  validateModuleSelection,
+} from '../../constants/workspaceModules.constants.js';
+
+// ========================================
+// CHAMA CREATION PRESETS
+// ========================================
+//
+// A preset is a shortcut, not a new chama type — it just pre-wires the
+// composable policy layers (MgrPolicy, ChamaLoanPolicy) that already
+// exist independently of `chama_type`, right after creation, instead
+// of leaving the chairperson to discover and configure each one
+// separately. Nothing here is exclusive: a 'mixed' chama genuinely
+// runs a rotating pot AND internal lending on the exact same ledger.
+//
+// MGR policies are always created as 'draft' (matching mgrService's
+// own default) — never auto-activated, since activation generates
+// real rounds and expects a settled participant list. The chairperson
+// activates it from the MGR setup screen once membership is final.
+// ========================================
+
+const CHAMA_PRESETS = ['merry_go_round', 'table_banking', 'investment', 'burial', 'mixed', 'custom'];
+
+async function provisionPreset({ preset, chama, userId }) {
+  const resolvedPreset = CHAMA_PRESETS.includes(preset) ? preset : 'custom';
+  const summary = { preset: resolvedPreset, provisioned: [], nextSteps: [] };
+
+  const addMgrPolicy = async () => {
+    try {
+      const policy = await mgrService.createPolicy({
+        chamaId: chama._id,
+        userId,
+        policyData: {
+          name: `${chama.name} Merry-Go-Round`,
+          frequency: 'monthly',
+          uniform_amount: chama.monthly_savings,
+        },
+      });
+      summary.provisioned.push({ type: 'mgr_policy', id: policy._id, status: policy.status });
+      summary.nextSteps.push('Activate the Merry-Go-Round policy once your member list is final.');
+    } catch (err) {
+      console.error('Preset provisioning: MGR policy failed', err.message);
+    }
+  };
+
+  const addLoanPolicy = async () => {
+    try {
+      const policy = await getOrCreateLoanPolicy(chama._id);
+      summary.provisioned.push({ type: 'loan_policy', id: policy._id });
+    } catch (err) {
+      console.error('Preset provisioning: loan policy failed', err.message);
+    }
+  };
+
+  switch (resolvedPreset) {
+    case 'merry_go_round':
+      await addMgrPolicy();
+      break;
+    case 'table_banking':
+      await addLoanPolicy();
+      break;
+    case 'investment':
+      await addLoanPolicy();
+      summary.nextSteps.push('Set up a free-will contribution plan to enable dividend share-outs.');
+      break;
+    case 'burial':
+      // chama_type: 'burial' already drives the dedicated setup wizard —
+      // nothing extra to provision here.
+      summary.nextSteps.push('Complete the burial chama setup wizard to configure tiers and eligibility.');
+      break;
+    case 'mixed':
+      await addMgrPolicy();
+      await addLoanPolicy();
+      break;
+    default:
+      break;
+  }
+
+  return summary;
+}
 
 
 // ========================================
@@ -39,6 +124,7 @@ export const createChama = async ({
   monthlySavings,
   visibility,
   chamaType,
+  preset,
   userId,
   chairpersonInput,
   chairpersonName,
@@ -55,6 +141,7 @@ export const createChama = async ({
   committeeInputs = [],
   patronUserId,
   patronInput,
+  workspaceModules,
 }) => {
 
 
@@ -248,7 +335,37 @@ export const createChama = async ({
 
   const joinCode = await generateUniqueJoinCode();
   const chamaVisibility = ['public', 'private'].includes(visibility) ? visibility : 'private';
-  const resolvedChamaType = ['standard', 'burial'].includes(chamaType) ? chamaType : 'standard';
+  // A 'burial' preset implies chama_type 'burial' even if the caller
+  // didn't separately pass chamaType — the preset IS the type here.
+  const effectiveChamaType = chamaType || (preset === 'burial' ? 'burial' : undefined);
+  const resolvedChamaType = ['standard', 'burial'].includes(effectiveChamaType) ? effectiveChamaType : 'standard';
+
+  // Which feature modules the workspace contains. An explicit selection
+  // ({ preset, modules: [...] }) wins; without one the chama gets the legacy
+  // set for its type, i.e. exactly what it had before workspaces were
+  // configurable. Only the 'burial' shell is chosen by module: it needs
+  // burial_welfare switched on.
+  let workspaceConfig;
+  let shellChamaType = resolvedChamaType;
+  if (workspaceModules && Array.isArray(workspaceModules.modules) && workspaceModules.modules.length > 0) {
+    const selection = validateModuleSelection(workspaceModules.modules);
+    if (!selection.ok) {
+      throw new AppError(`Workspace modules are not valid: ${selection.errors.join('; ')}`, 400);
+    }
+    workspaceConfig = buildWorkspaceConfig({
+      preset: workspaceModules.preset,
+      enabled: selection.enabled,
+      configuredBy: userId,
+    });
+    shellChamaType = selection.enabled.includes('burial_welfare') ? 'burial' : 'standard';
+  } else {
+    const legacyPreset = LEGACY_PRESET_BY_CHAMA_TYPE[resolvedChamaType] || 'standard';
+    workspaceConfig = buildWorkspaceConfig({
+      preset: legacyPreset,
+      enabled: WORKSPACE_PRESETS[legacyPreset].modules,
+      configuredBy: userId,
+    });
+  }
 
   const chama = await Chama.create({
     name: chamaName,
@@ -256,7 +373,8 @@ export const createChama = async ({
     created_by: chairUser._id,
     status: 'active',
     visibility: chamaVisibility,
-    chama_type: resolvedChamaType,
+    chama_type: shellChamaType,
+    workspace_config: workspaceConfig,
     join_code: joinCode
   });
 
@@ -349,12 +467,26 @@ export const createChama = async ({
   }
 
   // ----------------------------------------
+  // 9. Provision preset policies (composable, additive — see
+  //    provisionPreset above). A failure here never blocks chama
+  //    creation, same pattern as default-permission initialization
+  //    above.
+  // ----------------------------------------
+
+  let presetSummary = { preset: 'custom', provisioned: [], nextSteps: [] };
+  try {
+    presetSummary = await provisionPreset({ preset, chama, userId: user._id });
+  } catch (presetError) {
+    console.error('Preset provisioning failed:', presetError.message);
+  }
+
+  // ----------------------------------------
   // 10. Return populated Chama
   // ----------------------------------------
 
   const populatedChama = await Chama.findById(chama._id).populate('created_by', 'name phone status');
 
-  return populatedChama;
+  return { chama: populatedChama, presetSummary };
 };
 
 export const verifyTreasurerUser = async (query, actorUserId) => {
@@ -542,7 +674,8 @@ export const getChamaById = async (
 // ========================================
 
 export const getChamaMembers = async (
-  chamaId
+  chamaId,
+  { includeContact = false } = {}
 ) => {
 
   // ----------------------------------------
@@ -596,7 +729,9 @@ export const getChamaMembers = async (
     })
       .populate(
         'user_id',
-        'name phone status createdAt'
+        includeContact
+          ? 'name phone email avatar_url status createdAt'
+          : 'name avatar_url status createdAt'
       )
       .sort({
         payout_position:

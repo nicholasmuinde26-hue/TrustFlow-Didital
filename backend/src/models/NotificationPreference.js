@@ -190,7 +190,7 @@ const notificationPreferenceSchema = new mongoose.Schema({
 // VALIDATION
 // ========================================
 
-notificationPreferenceSchema.pre('save', function(next) {
+notificationPreferenceSchema.pre('save', function () {
   // Ensure at least one channel is enabled
   const hasEnabledChannel = 
     this.default_channels.in_app ||
@@ -209,11 +209,10 @@ notificationPreferenceSchema.pre('save', function(next) {
     const endTime = this.quiet_hours.end_time;
     
     if (!startTime || !endTime) {
-      return next(new Error('Both start_time and end_time are required when quiet_hours is enabled'));
+      throw new Error('Both start_time and end_time are required when quiet_hours is enabled');
     }
   }
 
-  next();
 });
 
 // ========================================

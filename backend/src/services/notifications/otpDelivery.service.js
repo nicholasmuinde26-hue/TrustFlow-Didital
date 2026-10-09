@@ -3,6 +3,7 @@ import AppError from '../../utils/AppError.js';
 import { OTP_CHANNELS, OTP_CHANNEL_VALUES, OTP_CHANNEL_LABELS } from '../../constants/otp.constants.js';
 import { sendOtpEmail, isEmailChannelConfigured } from './email.service.js';
 import { sendOtpWhatsapp, isWhatsappChannelConfigured } from './whatsapp.service.js';
+import { sendOtpSms, isSmsChannelConfigured } from './sms.service.js';
 
 const isDev = () =>
   process.env.NODE_ENV === 'development' || env?.nodeEnv === 'development';
@@ -90,49 +91,86 @@ export const resolveOtpChannel = (requestedChannel, user) => {
 // ========================================
 
 export const deliverOtp = async ({ channel, user, otpCode, expiryMinutes }) => {
+  // ========================================
+  // DEV: ALWAYS ECHO TO CONSOLE, UP FRONT
+  // ========================================
+  //
+  // Previously this only logged to console as a *fallback* — when the
+  // provider wasn't configured, or when a real send attempt failed.
+  // That's fragile for local testing with fake numbers/emails: SMS.com
+  // credentials might be configured, so it would try a real send, and
+  // whether you got a console code depended on the provider rejecting
+  // the fake destination in exactly the right way.
+  //
+  // Now, in development, the code is unconditionally printed to the
+  // console before anything else happens, so it's always there
+  // regardless of channel or provider state. Real delivery is still
+  // attempted below when a provider is configured (useful if you want
+  // to test against a real phone/email too), but it's now best-effort
+  // in dev — its success or failure never blocks you from getting the
+  // code. Production behavior is untouched: no console echo, real
+  // delivery is required, and failures still throw.
+  //
+  // ========================================
+  const dev = isDev();
+
+  if (dev) {
+    const destination = channel === OTP_CHANNELS.EMAIL ? user.email : user.phone;
+    logOtpToConsole({ label: channel.toUpperCase(), destination, otpCode });
+  }
+
   switch (channel) {
     case OTP_CHANNELS.EMAIL: {
+      if (!isEmailChannelConfigured()) {
+        if (dev) return { channel, delivered: false, dev: true };
+        throw new AppError('Email delivery is not configured. Choose SMS or WhatsApp instead.', 500);
+      }
       try {
-        if (!isEmailChannelConfigured() && isDev()) {
-          logOtpToConsole({ label: 'EMAIL', destination: user.email, otpCode });
-          return { channel, delivered: false, dev: true };
-        }
         await sendOtpEmail({ to: user.email, otpCode, expiryMinutes });
         return { channel, delivered: true };
       } catch (err) {
-        console.warn(`[OTP Delivery] Email sending failed: ${err.message}. Falling back to console in development.`);
-        if (isDev()) {
-          logOtpToConsole({ label: 'EMAIL-DEV-FALLBACK', destination: user.email, otpCode });
-          return { channel, delivered: false, dev: true };
-        }
+        console.warn(`[OTP Delivery] Email sending failed: ${err.message}${dev ? ' (code already echoed to console above)' : ''}`);
+        if (dev) return { channel, delivered: false, dev: true };
         throw err;
       }
     }
 
     case OTP_CHANNELS.WHATSAPP: {
+      if (!isWhatsappChannelConfigured()) {
+        if (dev) return { channel, delivered: false, dev: true };
+        throw new AppError('WhatsApp delivery is not configured. Choose SMS or email instead.', 500);
+      }
       try {
-        if (!isWhatsappChannelConfigured() && isDev()) {
-          logOtpToConsole({ label: 'WHATSAPP', destination: user.phone, otpCode });
-          return { channel, delivered: false, dev: true };
-        }
         await sendOtpWhatsapp({ to: user.phone, otpCode, expiryMinutes });
         return { channel, delivered: true };
       } catch (err) {
-        console.warn(`[OTP Delivery] WhatsApp sending failed: ${err.message}. Falling back to console in development.`);
-        if (isDev()) {
-          logOtpToConsole({ label: 'WHATSAPP-DEV-FALLBACK', destination: user.phone, otpCode });
-          return { channel, delivered: false, dev: true };
-        }
+        console.warn(`[OTP Delivery] WhatsApp sending failed: ${err.message}${dev ? ' (code already echoed to console above)' : ''}`);
+        if (dev) return { channel, delivered: false, dev: true };
         throw err;
       }
     }
 
     case OTP_CHANNELS.SMS:
     default: {
-      // Integration point for Twilio or Africa's Talking SMS API.
-      // Until an SMS provider is wired up, this always logs to console.
-      logOtpToConsole({ label: 'SMS', destination: user.phone, otpCode });
-      return { channel: OTP_CHANNELS.SMS, delivered: false, dev: true };
+      if (!isSmsChannelConfigured()) {
+        if (dev) return { channel: OTP_CHANNELS.SMS, delivered: false, dev: true };
+        // Fail loudly in production rather than pretending to send.
+        // A user waiting for a code that will never arrive is worse
+        // than an error that tells them to try another channel.
+        throw new AppError(
+          'SMS delivery is not configured. Choose email or WhatsApp instead.',
+          500
+        );
+      }
+
+      try {
+        await sendOtpSms({ to: user.phone, otpCode, expiryMinutes });
+        return { channel: OTP_CHANNELS.SMS, delivered: true };
+      } catch (err) {
+        console.warn(`[OTP Delivery] SMS sending failed: ${err.message}${dev ? ' (code already echoed to console above)' : ''}`);
+        if (dev) return { channel: OTP_CHANNELS.SMS, delivered: false, dev: true };
+        throw err;
+      }
     }
   }
 };

@@ -1,6 +1,5 @@
 import express from "express";
 import { protect } from "../../middleware/auth.middleware.js";
-import { requireAdmin } from "../../middleware/admin.middleware.js";
 import {
   createBusiness,
   createExpense,
@@ -11,6 +10,9 @@ import {
   forceCompleteTransaction,
   setKitchenStatus,
   getSummary,
+  getChamaDashboard,
+  getSettings,
+  updateSettings,
   listExpenses,
   listSales,
   listCustomers,
@@ -23,11 +25,11 @@ import {
   editInventoryItem,
   removeInventoryItem,
   restockInventoryItem,
+  publishInventoryItem,
+  unpublishInventoryItem,
+  publishInventoryBulk,
   posSale,
-  getStorefront,
-  putStorefront,
-  getStorefrontOrders,
-  patchStorefrontOrderStatus,
+  getPosReceipt,
   listRentalListings,
   addRentalListing,
   editRentalListing,
@@ -39,8 +41,14 @@ import {
 
 const router = express.Router();
 
-router.post("/", protect, requireAdmin, createBusiness);
+// Any signed-in user can register a personal business. Chama-owned businesses
+// are never created here: they go through a workspace request that platform
+// admins approve (see workspaceRequest.controller.js / approveWorkspaceRequest).
+router.post("/", protect, createBusiness);
 router.get("/:businessId/summary", protect, getSummary);
+router.get("/:businessId/chama-dashboard", protect, getChamaDashboard);
+router.get("/:businessId/settings", protect, getSettings);
+router.put("/:businessId/settings", protect, updateSettings);
 router.get("/:businessId/sales", protect, listSales);
 router.post("/:businessId/sales", protect, createSale);
 router.get("/:businessId/expenses", protect, listExpenses);
@@ -61,15 +69,19 @@ router.post("/:businessId/suppliers", protect, createSupplier);
 
 router.get("/:businessId/accounts", protect, getBusinessAccounts);
 
-// Inventory & Stock — same catalog the POS grid and storefront both read from
+// Inventory & Stock — same catalog the POS grid and marketplace both read from
 router.get("/:businessId/inventory", protect, listInventory);
 router.post("/:businessId/inventory", protect, addInventoryItem);
 router.put("/:businessId/inventory/:itemId", protect, editInventoryItem);
 router.delete("/:businessId/inventory/:itemId", protect, removeInventoryItem);
 router.post("/:businessId/inventory/:itemId/restock", protect, restockInventoryItem);
+router.post("/:businessId/inventory/publish-bulk", protect, publishInventoryBulk);
+router.post("/:businessId/inventory/:itemId/publish", protect, publishInventoryItem);
+router.post("/:businessId/inventory/:itemId/unpublish", protect, unpublishInventoryItem);
 
 // Point of Sale — checkout that deducts live stock on completion
 router.post("/:businessId/pos/sale", protect, posSale);
+router.get("/:businessId/pos/receipts/:transactionId", protect, getPosReceipt);
 
 // Rental listings (rooms & plots) — for category: "rental" businesses
 router.get("/:businessId/rental-listings", protect, listRentalListings);
@@ -78,14 +90,8 @@ router.put("/:businessId/rental-listings/:listingId", protect, editRentalListing
 router.patch("/:businessId/rental-listings/:listingId/status", protect, setRentalListingStatus);
 router.delete("/:businessId/rental-listings/:listingId", protect, removeRentalListing);
 
-// Leads generated from the public storefront's "Inquire" form
+// Rental enquiries (leads) for this business
 router.get("/:businessId/rental-inquiries", protect, listRentalInquiries);
 router.patch("/:businessId/rental-inquiries/:inquiryId/status", protect, setRentalInquiryStatus);
-
-// Storefront configuration & order fulfillment (owner/staff side)
-router.get("/:businessId/storefront", protect, getStorefront);
-router.put("/:businessId/storefront", protect, putStorefront);
-router.get("/:businessId/storefront-orders", protect, getStorefrontOrders);
-router.patch("/:businessId/storefront-orders/:orderId/status", protect, patchStorefrontOrderStatus);
 
 export default router;

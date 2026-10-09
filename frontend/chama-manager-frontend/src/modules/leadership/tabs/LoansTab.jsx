@@ -23,10 +23,12 @@ import {
 
 import {
   EmptyState,
+  InputField,
   MetricCard,
   Notice,
   RoleLocked,
   SectionCard,
+  Segmented,
   money,
 } from "../components/DeskUI";
 
@@ -672,30 +674,29 @@ export default function LoansTab({ workspaceId, role, type, reload }) {
             </div>
 
             <form onSubmit={handleManualSubmit} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 dark:text-slate-300">Disbursement method *</label>
-                <select
-                  value={manualMethod}
-                  onChange={(event) => setManualMethod(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="cash">Cash settlement</option>
-                  <option value="bank">Bank transfer (EFT / RTGS)</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="mpesa">Manual M-Pesa offline</option>
-                </select>
-              </div>
+              <Segmented
+                label="Disbursement method"
+                value={manualMethod}
+                onChange={setManualMethod}
+                options={[
+                  { value: "cash", label: "Cash" },
+                  { value: "bank", label: "Bank transfer" },
+                  { value: "cheque", label: "Cheque" },
+                  { value: "mpesa", label: "M-Pesa (manual)" },
+                  { value: "wallet", label: "Member wallet" },
+                ]}
+                hint={
+                  { cash: "Cash settlement.", bank: "EFT / RTGS transfer.", cheque: "Paid by cheque.", mpesa: "Sent to the borrower outside the app.", wallet: "Credit the borrower's personal wallet." }[manualMethod]
+                }
+              />
 
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 dark:text-slate-300">Transaction reference / receipt</label>
-                <input
-                  type="text"
-                  placeholder="e.g. CHQ-89021, TXN-998822"
-                  value={manualReference}
-                  onChange={(event) => setManualReference(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-xs font-medium text-slate-900 outline-none focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
+              <InputField
+                label="Transaction reference / receipt"
+                placeholder="e.g. CHQ-89021, TXN-998822"
+                value={manualReference}
+                onChange={setManualReference}
+                hint="Optional, but it makes the books easy to reconcile."
+              />
 
               <div className="flex justify-end gap-2.5 pt-2">
                 <button

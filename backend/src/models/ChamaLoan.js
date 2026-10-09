@@ -158,7 +158,7 @@ const chamaLoanSchema = new mongoose.Schema(
     repayment_period_months: { type: Number, required: true, min: 1 },
     repayment_frequency: { type: String, enum: ['weekly', 'monthly'], default: 'monthly' },
 
-    disbursement_method: { type: String, enum: ['mpesa', 'bank', 'cash'], default: 'mpesa' },
+    disbursement_method: { type: String, enum: ['mpesa', 'bank', 'cash', 'wallet'], default: 'mpesa' },
     phone_number: { type: String, default: null },
     disbursement_account: { type: String, default: null },
 

@@ -547,7 +547,9 @@ export default function LoansPage() {
   const totalRepaid = loans.reduce((s, l) => s + Math.max(0, Number(l.amount || 0) - getOutstanding(l)), 0);
   const repaymentRatePercent = totalBorrowed > 0 ? clamp((totalRepaid / totalBorrowed) * 100) : null;
 
-  // Active loan display items — live, no placeholder borrowers.
+  // Active loan display items — live, no placeholder borrowers. The ring
+  // percentage/tone come straight off loanProgress(), the same function
+  // that will drive a loan's ring anywhere else it's shown.
   const displayActiveLoans = activeLoansList.map((l) => {
     const borrower = l.borrower_name || l.borrower_membership_id?.user_id?.name || "You";
     const amt = Number(l.amount || 0);
@@ -562,6 +564,7 @@ export default function LoansPage() {
       repaid: repaidAmt,
       percentage: pct,
       status: readableStatus(l.status),
+      progress: loanProgress(l),
     };
   });
 
@@ -598,10 +601,13 @@ export default function LoansPage() {
             </Link>
           )}
 
+          {/* The "Policy" tab below covers this on mobile — this quick
+              link is a shortcut, not new information, so it only earns
+              its space once there's room for it alongside the tabs. */}
           <button
             type="button"
             onClick={() => setActiveTab("policy")}
-            className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist dark:hover:bg-obsidian-raised transition"
+            className="hidden items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist dark:hover:bg-obsidian-raised transition sm:flex"
           >
             <SlidersHorizontal size={15} />
             Loan policy
@@ -657,31 +663,28 @@ export default function LoansPage() {
       {/* Main Tab Content */}
       {activeTab === "overview" && (
         <>
-          {/* 3 Top Summary Cards matching Image 2 */}
-          <div className="grid gap-5 sm:grid-cols-3">
-            {/* Card 1: Active Loan Book */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+          {/* Loan products — browsable cards sourced from this Chama's policy */}
+          {products.length > 0 && (
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                  MY OUTSTANDING BALANCE
-                </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-mint-deep dark:text-mint">
-                  <Wallet size={16} />
-                </div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-mist">Loan products</h2>
+                <span className="text-[11px] font-medium text-slate-400">Pick one to start an application</span>
               </div>
-              <p className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
-                {money(activeLoanOutstanding)}
-              </p>
-              <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-mint">
-                <TrendingUp size={14} />
-                <span>{activeLoansCount} active loan{activeLoansCount === 1 ? "" : "s"}</span>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {products.map((p) => (
+                  <ProductCard key={p.key} product={p} selected={loanType === p.key} onSelect={openApply} />
+                ))}
               </div>
-              <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-medium text-slate-400 dark:border-obsidian-border dark:text-mist-muted">
-                {loans.length} loan{loans.length === 1 ? "" : "s"} on record with this Chama
-              </p>
             </div>
+          )}
 
-            {/* Card 2: Awaiting Decision */}
+          {/* Bento stats: limit card anchors the grid, three real-field tiles fill it out.
+              2-up on mobile (not a single stacked column) so this reads as a compact
+              at-a-glance strip instead of four full-width cards to scroll past. */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+            <LimitCard limit={summary?.loan_limit} used={activeLoanOutstanding} />
+
+            {/* Awaiting Decision */}
             <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -702,15 +705,15 @@ export default function LoansPage() {
               </p>
             </div>
 
-            {/* Card 3: Repayment Rate */}
+            {/* Repayment Rate — the ring, not just a linear bar */}
             <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
                   MY REPAYMENT PROGRESS
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-mint-deep dark:text-mint">
-                  <CheckCircle2 size={16} />
-                </div>
+                {repaymentRatePercent !== null && (
+                  <ProgressRing percent={repaymentRatePercent} tone="emerald" size={40} strokeWidth={4} />
+                )}
               </div>
               <p className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
                 {repaymentRatePercent === null ? "—" : `${Math.round(repaymentRatePercent)}%`}
@@ -720,6 +723,28 @@ export default function LoansPage() {
               </div>
               <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-medium text-slate-400 dark:border-obsidian-border dark:text-mist-muted">
                 Across every loan you've taken with this Chama
+              </p>
+            </div>
+
+            {/* Loan book size — real field, rounds out the bento */}
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                  ON RECORD
+                </span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-mint-deep dark:text-mint">
+                  <TrendingUp size={16} />
+                </div>
+              </div>
+              <p className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
+                {loans.length} loan{loans.length === 1 ? "" : "s"}
+              </p>
+              <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-mint">
+                <Wallet size={14} />
+                <span>{activeLoansCount} currently active</span>
+              </div>
+              <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-medium text-slate-400 dark:border-obsidian-border dark:text-mist-muted">
+                Every loan you've taken with this Chama
               </p>
             </div>
           </div>
@@ -774,8 +799,10 @@ export default function LoansPage() {
                 </div>
               </div>
 
-              {/* Card: Active Loans matching Image 2 */}
-              <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+              {/* Card: Active Loans matching Image 2 — the "My active loans" tab
+                  above already shows this in full, so on mobile it's skipped
+                  here rather than repeated; desktop keeps it as a preview. */}
+              <div className="hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card lg:block">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-obsidian-border">
                   <div>
                     <h2 className="text-base font-bold text-slate-900 dark:text-mist">
@@ -798,70 +825,54 @@ export default function LoansPage() {
                   {displayActiveLoans.length === 0 && (
                     <p className="py-6 text-center text-xs text-slate-400">You have no active loans right now.</p>
                   )}
-                  {displayActiveLoans.map((loan) => {
-                    const initials = loan.name
-                      .split(" ")
-                      .map((p) => p[0])
-                      .slice(0, 2)
-                      .join("")
-                      .toUpperCase();
-                    return (
-                      <div key={loan.id} className="py-4 first:pt-1 last:pb-0 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-xs font-black text-slate-700 dark:bg-obsidian-raised dark:text-mist">
-                              {initials}
-                            </div>
-                            <div>
-                              <p className="text-xs font-bold text-slate-900 dark:text-mist">
-                                {loan.name} · {money(loan.amount)}
-                              </p>
-                              <p className="text-[11px] text-slate-400">
-                                {loan.purpose}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs font-mono font-bold text-slate-900 dark:text-mist">
-                              {money(loan.repaid)} / {money(loan.amount)}
-                            </span>
-                            <p className="text-[10px] font-bold text-emerald-600 dark:text-mint">
-                              {loan.percentage}% repaid
+                  {displayActiveLoans.map((loan) => (
+                    <div key={loan.id} className="py-4 first:pt-1 last:pb-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <ProgressRing percent={loan.progress.percent} tone={loan.progress.tone} size={48} strokeWidth={4} />
+                          <div>
+                            <p className="text-xs font-bold text-slate-900 dark:text-mist">
+                              {loan.name} · {money(loan.amount)}
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              {loan.purpose}
                             </p>
                           </div>
                         </div>
-
-                        {/* Repayment Progress Bar */}
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-obsidian-raised">
-                          <div
-                            className="h-full rounded-full bg-emerald-500 dark:bg-mint transition-all"
-                            style={{ width: `${loan.percentage}%` }}
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-500 dark:text-mist-muted">
-                            {loan.status}
+                        <div className="text-right">
+                          <span className="text-xs font-mono font-bold text-slate-900 dark:text-mist">
+                            {money(loan.repaid)} / {money(loan.amount)}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => openRepay(loan.id)}
-                            className="font-bold text-emerald-600 hover:underline dark:text-mint"
-                          >
-                            Record repayment
-                          </button>
+                          <p className="text-[10px] font-bold text-emerald-600 dark:text-mint">
+                            {loan.progress.label}
+                          </p>
                         </div>
                       </div>
-                    );
-                  })}
+
+                      <div className="mt-2 flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-500 dark:text-mist-muted">
+                          {loan.status}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openRepay(loan.id)}
+                          className="font-bold text-emerald-600 hover:underline dark:text-mint"
+                        >
+                          Record repayment
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
             {/* Right Column: 5 Cols */}
             <div className="space-y-6 lg:col-span-5">
-              {/* Card: Loan policy at a glance matching Image 2 */}
-              <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+              {/* Card: Loan policy at a glance matching Image 2 — same reasoning
+                  as Active loans above: the "Policy" tab is the full version of
+                  this, so mobile isn't shown the same numbers twice. */}
+              <div className="hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card lg:block">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-obsidian-border">
                   <h2 className="text-base font-bold text-slate-900 dark:text-mist">
                     Loan policy at a glance
@@ -974,11 +985,14 @@ export default function LoansPage() {
               <p className="py-6 text-center text-xs text-slate-400">You have no active loans right now.</p>
             )}
             {displayActiveLoans.map((loan) => (
-              <div key={loan.id} className="py-4 first:pt-0 last:pb-0 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-900 dark:text-mist">{loan.name}</p>
-                  <p className="text-xs text-slate-500">{loan.purpose} · {money(loan.amount)}</p>
-                  <p className="text-[11px] font-semibold text-emerald-600 dark:text-mint">{loan.status}</p>
+              <div key={loan.id} className="py-4 first:pt-0 last:pb-0 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <ProgressRing percent={loan.progress.percent} tone={loan.progress.tone} size={52} strokeWidth={5} />
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-mist">{loan.name}</p>
+                    <p className="text-xs text-slate-500">{loan.purpose} · {money(loan.amount)}</p>
+                    <p className="text-[11px] font-semibold text-emerald-600 dark:text-mint">{loan.progress.label}</p>
+                  </div>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-mono font-bold text-slate-900 dark:text-mist">{money(loan.repaid)} repaid</p>
@@ -1051,6 +1065,8 @@ export default function LoansPage() {
               </>
             )}
           </div>
+
+          <FaqAccordion faqs={faqs} openFaq={openFaq} setOpenFaq={setOpenFaq} />
         </div>
       )}
 
@@ -1381,6 +1397,142 @@ function ReviewRow({ label, value }) {
     <div className="flex items-center justify-between px-4 py-2.5">
       <span className="text-slate-500">{label}</span>
       <span className="font-bold text-slate-900 dark:text-mist">{value}</span>
+    </div>
+  );
+}
+
+// ========================================
+// LOAN LIMIT CARD — the bento's anchor tile
+// ========================================
+//
+// Reads straight off summary.loan_limit (the member's real limit from
+// the API) against what's currently outstanding, so "how much room do I
+// have left" is never estimated on this page.
+//
+function LimitCard({ limit, used }) {
+  const hasLimit = Number(limit) > 0;
+  const available = Math.max(0, Number(limit || 0) - Number(used || 0));
+  const usedPercent = hasLimit ? clamp((Number(used || 0) / Number(limit)) * 100) : 0;
+
+  return (
+    <div className="lg:col-span-2 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+          YOUR BORROWING LIMIT
+        </span>
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-mint-deep dark:text-mint">
+          <PiggyBank size={16} />
+        </div>
+      </div>
+
+      {!hasLimit ? (
+        <p className="mt-3 text-sm font-semibold text-slate-400">Limit isn't available yet — it's set from your savings balance.</p>
+      ) : (
+        <>
+          <p className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
+            {money(limit)}
+          </p>
+          <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-obsidian-raised">
+            <div
+              className={`h-full rounded-full transition-all ${usedPercent >= 90 ? "bg-rose-500" : "bg-emerald-500 dark:bg-mint"}`}
+              style={{ width: `${usedPercent}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] font-semibold">
+            <span className="text-slate-500 dark:text-mist-muted">{money(used)} in use</span>
+            <span className="text-emerald-600 dark:text-mint">{money(available)} available</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// PRODUCT CARD — one browsable card per entry in buildProducts()
+// ========================================
+function ProductCard({ product, selected, onSelect }) {
+  const Icon = product.icon;
+  return (
+    <div
+      className={`flex flex-col rounded-3xl border p-5 transition ${
+        product.available
+          ? selected
+            ? "border-emerald-500 bg-emerald-50/60 dark:border-mint dark:bg-mint-deep/20"
+            : "border-slate-200/80 bg-white hover:border-emerald-300 dark:border-obsidian-border dark:bg-obsidian-card dark:hover:border-mint/50"
+          : "border-slate-100 bg-slate-50/60 dark:border-obsidian-border dark:bg-obsidian-raised/20 opacity-60"
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-mint-deep dark:text-mint">
+          <Icon size={18} />
+        </div>
+        {!product.available && (
+          <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-obsidian-raised dark:text-mist-muted">
+            <Lock size={10} /> Unavailable
+          </span>
+        )}
+      </div>
+
+      <h3 className="mt-3 text-sm font-black text-slate-900 dark:text-mist">{product.name}</h3>
+      <p className="text-xs font-bold text-emerald-600 dark:text-mint">{product.tagline}</p>
+      <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500 dark:text-mist-muted">{product.blurb}</p>
+
+      <ul className="mt-3 space-y-1.5">
+        {product.terms.map((term) => (
+          <li key={term} className="flex items-start gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-mist-muted">
+            <Check size={12} className="mt-0.5 shrink-0 text-emerald-500 dark:text-mint" />
+            {term}
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 flex-1" />
+
+      {product.available ? (
+        <button
+          type="button"
+          onClick={() => onSelect(product.key)}
+          className="mt-2 rounded-2xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-mint dark:text-obsidian-rail dark:hover:bg-mint-hover transition"
+        >
+          Apply for this
+        </button>
+      ) : (
+        <p className="mt-2 text-[11px] font-semibold text-slate-400">{product.disabledReason}</p>
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// FAQ — accordion built from buildFaqs(), gated by the same openFaq
+// state the page already tracks
+// ========================================
+function FaqAccordion({ faqs, openFaq, setOpenFaq }) {
+  if (!faqs.length) return null;
+  return (
+    <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
+      <h2 className="text-base font-bold text-slate-900 dark:text-mist">Frequently asked questions</h2>
+      <div className="mt-3 divide-y divide-slate-100 dark:divide-obsidian-border">
+        {faqs.map((faq, i) => {
+          const isOpen = openFaq === i;
+          return (
+            <div key={faq.q} className="py-1">
+              <button
+                type="button"
+                onClick={() => setOpenFaq(isOpen ? null : i)}
+                className="flex w-full items-center justify-between gap-3 py-3 text-left text-xs font-bold text-slate-800 dark:text-mist"
+              >
+                <span>{faq.q}</span>
+                <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              </button>
+              {isOpen && (
+                <p className="pb-4 text-xs font-medium leading-relaxed text-slate-500 dark:text-mist-muted">{faq.a}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

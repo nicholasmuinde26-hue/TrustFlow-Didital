@@ -82,9 +82,9 @@ export default function MemberRow({
           </p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-mist-muted mt-0.5">
             <span>{user.phone || user.email || "No contact on file"}</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-mono font-bold text-[11px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-              🛡️ {member.trustScore || Math.floor(Math.random() * 8 + 92)}% On-Time
-            </span>
+            {member.trustScore != null && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-mono font-bold text-[11px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              🛡️ {member.trustScore}% Trust
+            </span>}
             {member.totalContributed !== undefined && (
               <span className="font-mono font-bold text-slate-700 dark:text-mist-muted">
                 • KES {Number(member.totalContributed || 0).toLocaleString()}

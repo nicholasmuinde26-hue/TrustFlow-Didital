@@ -1,30 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
-  ShieldAlert,
   Send,
   MessageSquare,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
   ChevronRight,
   X,
   Plus,
-  Radio,
-  HelpCircle,
   LifeBuoy,
   ShieldCheck,
   Zap,
 } from "lucide-react";
 import inquiryService from "@/app/services/inquiry.service";
-import useAuth from "@/app/hooks/useAuth";
 
-export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
-  const { user } = useAuth();
+export default function AdminInquiryBottomPanel({ workspace, workspaceId, hideLauncher = false, openSignal = 0 }) {
+  const lastOpenSignal = useRef(openSignal);
+  const panelRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("new"); // "new" | "history"
 
   const [inquiries, setInquiries] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [selectedInquiry, setSelectedInquiry] = useState(null);
 
   // New Inquiry Form State
@@ -35,6 +28,31 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (openSignal !== lastOpenSignal.current) {
+      lastOpenSignal.current = openSignal;
+      if (openSignal > 0) setIsOpen(true);
+    }
+  }, [openSignal]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const closeOnOutsidePointer = (event) => {
+      if (!panelRef.current?.contains(event.target)) setIsOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isOpen]);
 
   // Reply state
   const [replyText, setReplyText] = useState("");
@@ -132,22 +150,23 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
     // full width, stacked separately from the promo card above/below
     // it so the two never compete for space. `relative` is the anchor
     // the expanded drawer pops up from.
-    <div className="relative w-full">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-label={isOpen ? "Close Admin Panel & Support" : "Open Admin Panel & Support"}
-        className={`group flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left shadow-sm transition select-none ${
-          isOpen
-            ? "border-violet-300 bg-violet-50 shadow-violet-100 dark:border-violet-800 dark:bg-violet-950/40"
-            : "border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/60 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
-        }`}
-      >
-        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-md shadow-violet-500/25">
-          <LifeBuoy size={17} />
-          {/* Online indicator */}
-          <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-white dark:ring-slate-900" />
-        </span>
+    <div className={hideLauncher ? "contents" : "relative w-full"}>
+      {!hideLauncher && (
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-label={isOpen ? "Close Admin Panel & Support" : "Open Admin Panel & Support"}
+          className={`group flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left shadow-sm transition select-none ${
+            isOpen
+              ? "border-emerald-300 bg-emerald-50 shadow-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40"
+              : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/60 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+          }`}
+        >
+          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-white shadow-sm">
+            <LifeBuoy size={17} />
+            {/* Online indicator */}
+            <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-white dark:ring-slate-900" />
+          </span>
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-bold text-slate-700 dark:text-slate-200">
@@ -165,20 +184,24 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
         ) : (
           <ChevronRight size={14} className="shrink-0 text-slate-300 dark:text-slate-600" />
         )}
-      </button>
+        </button>
+      )}
 
       {/* Expanded Drawer Panel — pops up from this row rather than the
           page edge, and overlays the main content since it's wider
           than the sidebar itself. */}
       {isOpen && (
         <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="false"
           aria-label="Platform Admin Inquiries Panel"
-          className="absolute bottom-full left-0 z-50 mb-3 flex h-[560px] max-h-[75vh] w-[min(92vw,440px)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 dark:border-slate-800 dark:bg-slate-900"
+          className={`${hideLauncher ? "fixed bottom-5 left-[84px]" : "absolute bottom-full left-0 mb-3"} z-[70] flex h-[560px] max-h-[75vh] w-[min(92vw,440px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-950/15 dark:border-slate-700 dark:bg-slate-900`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between bg-gradient-to-r from-[#17114a] via-[#312e81] to-[#0f3d5e] px-5 py-4 text-white shrink-0">
+          <div className="flex shrink-0 items-center justify-between bg-slate-900 px-5 py-4 text-white">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-violet-600/60 border border-violet-400/40 text-violet-200">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/15 text-emerald-300">
                 <LifeBuoy size={15} />
               </div>
               <div>
@@ -203,7 +226,7 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 border-t border-white/10 bg-slate-950/15 px-5 py-2 text-[10px] text-indigo-100">
+          <div className="flex items-center gap-2 border-t border-white/10 bg-slate-900 px-5 py-2 text-[10px] text-slate-300">
             <ShieldCheck size={12} className="text-emerald-300" /> Every request is logged to your workspace history
             <span className="ml-auto flex items-center gap-1 whitespace-nowrap text-cyan-200"><Zap size={11} /> Priority routing</span>
           </div>
@@ -217,9 +240,9 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                   setActiveTab("new");
                   setSelectedInquiry(null);
                 }}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                   activeTab === "new"
-                    ? "bg-violet-600 text-white shadow-sm"
+                    ? "bg-emerald-700 text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:bg-slate-800"
                 }`}
               >
@@ -230,9 +253,9 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
               <button
                 type="button"
                 onClick={() => setActiveTab("history")}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                   activeTab === "history"
-                    ? "bg-violet-600 text-white shadow-sm"
+                    ? "bg-emerald-700 text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:bg-slate-800"
                 }`}
               >
@@ -253,18 +276,18 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
           {/* Tab 1: Submit New Inquiry */}
           {activeTab === "new" && (
             <form onSubmit={handleSubmitInquiry} className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs">
-              <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-slate-900">
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
                 <p className="font-black text-slate-900 dark:text-white">How can we help?</p>
                 <p className="mt-1 text-[11px] leading-4 text-slate-500">Tell us what happened. The right Platform Admin receives your request based on its category and priority.</p>
               </div>
               {notice && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                   {notice}
                 </div>
               )}
 
               {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/60 dark:text-red-300">
+                <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/60 dark:text-red-300">
                   {error}
                 </div>
               )}
@@ -279,7 +302,7 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                   placeholder="e.g. Discrepancy in monthly shareout ledger, or account question"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
@@ -291,7 +314,7 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="general_inquiry">General Inquiry</option>
                     <option value="discrepancy_report">Discrepancy Report</option>
@@ -309,7 +332,7 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                   <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium outline-none focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -329,14 +352,14 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                   placeholder="Provide all relevant details so the platform administration can assist your Chama/workspace..."
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs font-medium outline-none focus:border-emerald-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-violet-600 py-2.5 font-bold text-white shadow-md shadow-violet-600/20 hover:bg-violet-700 disabled:opacity-50 transition"
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-700 py-2.5 font-bold text-white transition hover:bg-emerald-800 disabled:opacity-50"
               >
                 <Send size={13} />
                 {submitting ? "Creating support request..." : "Create support request"}
@@ -352,7 +375,7 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                 <div className="flex flex-1 flex-col overflow-hidden">
                   <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/40">
                     <div>
-                      <span className="text-[10px] font-mono font-bold text-violet-600 dark:text-violet-400">
+                      <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
                         {selectedInquiry.inquiryNumber}
                       </span>
                       <h4 className="text-xs font-black text-slate-900 dark:text-white line-clamp-1">
@@ -386,9 +409,9 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                   {/* Message Stream */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
                     {/* Initial Inquiry */}
-                    <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-3 dark:border-violet-900/40 dark:bg-violet-950/20">
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
                       <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
-                        <span className="font-bold text-violet-700 dark:text-violet-300">
+                        <span className="font-bold text-emerald-800 dark:text-emerald-300">
                           {selectedInquiry.senderName} ({selectedInquiry.senderRole})
                         </span>
                         <span>{new Date(selectedInquiry.createdAt).toLocaleString()}</span>
@@ -402,16 +425,16 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                     {selectedInquiry.responses?.map((r, i) => (
                       <div
                         key={i}
-                        className={`rounded-xl p-3 text-xs ${
+                        className={`rounded-lg p-3 text-xs ${
                           r.isAdmin
-                            ? "border border-indigo-200 bg-indigo-50/80 text-indigo-950 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-200 ml-4"
+                            ? "border border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200 ml-4"
                             : "border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/50 mr-4"
                         }`}
                       >
                         <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
                           <span className="font-bold flex items-center gap-1">
                             {r.isAdmin && (
-                              <span className="rounded bg-indigo-600 px-1 py-0.2 text-[8px] font-black uppercase text-white">
+                              <span className="rounded bg-emerald-700 px-1 py-0.2 text-[8px] font-black uppercase text-white">
                                 Admin
                               </span>
                             )}
@@ -431,12 +454,12 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                       placeholder="Type a follow-up reply to admin..."
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs outline-none focus:border-violet-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs outline-none focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                     <button
                       type="submit"
                       disabled={replyLoading || !replyText.trim()}
-                      className="rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50"
+                      className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
                     >
                       Reply
                     </button>
@@ -454,10 +477,10 @@ export default function AdminInquiryBottomPanel({ workspace, workspaceId }) {
                       <div
                         key={inq._id}
                         onClick={() => setSelectedInquiry(inq)}
-                        className="cursor-pointer rounded-xl border border-slate-200 bg-slate-50/50 p-3 transition hover:border-violet-300 hover:bg-violet-50/20 dark:border-slate-800 dark:bg-slate-800/40"
+                        className="cursor-pointer rounded-lg border border-slate-200 bg-slate-50/50 p-3 transition hover:border-emerald-300 hover:bg-emerald-50/70 dark:border-slate-800 dark:bg-slate-800/40"
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-mono font-bold text-violet-600 dark:text-violet-400">
+                          <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
                             {inq.inquiryNumber}
                           </span>
                           <span

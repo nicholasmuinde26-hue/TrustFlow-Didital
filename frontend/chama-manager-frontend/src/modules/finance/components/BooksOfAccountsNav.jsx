@@ -10,6 +10,8 @@ import {
   TrendingUp,
   LineChart,
   FileBarChart2,
+  ClipboardCheck,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // The "books of accounts" every chama keeps, in the classic accounting
@@ -27,9 +29,12 @@ function booksOfAccounts(base) {
     { label: "General Ledger", icon: BookOpen, to: `${base}/finance/ledger` },
     { label: "Chama Wallet", icon: Landmark, to: `${base}/finance/accounts` },
     { label: "Bank Accounts", icon: Building2, to: `${base}/finance/bank-accounts` },
+    { label: "Adjustments", icon: SlidersHorizontal, to: `${base}/finance/adjustments` },
+    { label: "Reconciliation", icon: ClipboardCheck, to: `${base}/finance/reconciliation` },
     { label: "Trial Balance", icon: Scale, to: `${base}/finance/trial-balance` },
     { label: "Balance Sheet", icon: BarChart3, to: `${base}/finance/balance-sheet` },
     { label: "Income Statement", icon: TrendingUp, to: `${base}/finance/income-statement` },
+    { label: "Receipts & Payments", icon: Receipt, to: `${base}/finance/receipts-payments` },
     { label: "Cash Flow", icon: LineChart, to: `${base}/finance/cash-flow` },
     { label: "Reports", icon: FileBarChart2, to: `${base}/reports` },
   ];

@@ -1,5 +1,5 @@
 import React from "react";
-import { ShoppingBag, Receipt, UserPlus, PackagePlus, Home, UtensilsCrossed, Calendar, ClipboardList } from "lucide-react";
+import { ShoppingBag, Receipt, UserPlus, PackagePlus, Home, UtensilsCrossed, Calendar, ClipboardList, Store } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 export function QuickActions({ onAction, category }) {
@@ -16,7 +16,7 @@ export function QuickActions({ onAction, category }) {
   if (isRental) {
     actions = [
       { label: "Add Room / Unit", icon: Home, onClick: () => navigate(`${base}/business/rental-listings`) },
-      { label: "Collect Rent (STK)", icon: ShoppingBag, onClick: () => onAction("mpesa") },
+      { label: "Collect Rent", icon: ShoppingBag, onClick: () => navigate(`${base}/business/rental-listings`) },
       { label: "Record Expense", icon: Receipt, onClick: () => navigate(`${base}/business/expenses`) },
       { label: "Tenant Inquiries", icon: ClipboardList, onClick: () => navigate(`${base}/business/rental-inquiries`) },
     ];
@@ -43,6 +43,11 @@ export function QuickActions({ onAction, category }) {
       { label: "Restock Inventory", icon: PackagePlus, onClick: () => navigate(`${base}/business/inventory`) },
     ];
   }
+
+  actions.push(
+    { label: "My Marketplace Store", icon: Store, onClick: () => navigate(`${base}/business/marketplace`) },
+    { label: "Marketplace Orders", icon: ClipboardList, onClick: () => navigate(`${base}/business/marketplace?section=orders`) }
+  );
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">

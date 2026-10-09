@@ -7,6 +7,7 @@ import {
   getNotificationCounts,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  markNotificationsReadByRoute,
   markNotificationAsArchived,
   markActionCompleted,
   getNotificationById,
@@ -90,10 +91,10 @@ router.post('/toast', protect, sendToastNotification);
 router.post('/confirmation/:templateType/validate', protect, validateConfirmationDialog);
 
 /**
- * GET /api/v1/notifications/:notificationId
- * Get notification by ID
+ * PATCH /api/v1/notifications/read-by-route
+ * Clear the badge for a page the user just opened
  */
-router.get('/:notificationId', protect, getNotificationById);
+router.patch('/read-by-route', protect, markNotificationsReadByRoute);
 
 /**
  * PATCH /api/v1/notifications/:notificationId/read
@@ -188,6 +189,18 @@ router.post('/preferences/push/enable', protect, enablePushNotifications);
  * Disable push notifications
  */
 router.post('/preferences/push/disable', protect, disablePushNotifications);
+
+/**
+ * GET /api/v1/notifications/:notificationId
+ * Get notification by ID
+ *
+ * Deliberately registered after every literal GET route above (especially
+ * /preferences) — a dynamic single-segment route matches ANY single
+ * segment, so if it came first "GET /preferences" would be parsed as
+ * notificationId = "preferences", fail Notification.findOne's ObjectId
+ * cast, and 500 instead of reaching getNotificationPreferences.
+ */
+router.get('/:notificationId', protect, getNotificationById);
 
 // ========================================
 // ADMIN ENDPOINTS

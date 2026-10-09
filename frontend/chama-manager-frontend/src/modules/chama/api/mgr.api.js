@@ -73,8 +73,16 @@ const mgrApi = {
    * Backend validates ApprovalRequest.status === 'approved' before acting.
    * @enforced requireChamaTreasurer on the backend
    */
-  disbursePayout(roundId) {
-    return api.post(`/mgr/rounds/${roundId}/disburse`);
+  disbursePayout(roundId, externalReference) {
+    return api.post(`/mgr/rounds/${roundId}/disburse`, { externalReference });
+  },
+
+  confirmRoundPosition(roundId, recipientId) {
+    return api.post(`/mgr/rounds/${roundId}/confirm-position`, { recipientId });
+  },
+
+  markPayoutReceived(roundId) {
+    return api.post(`/mgr/rounds/${roundId}/received`);
   },
 
   /**

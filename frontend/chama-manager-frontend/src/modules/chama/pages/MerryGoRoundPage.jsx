@@ -26,6 +26,7 @@ import {
 import useWorkspace from "@/app/hooks/useWorkspace";
 import mgrApi from "../api/mgr.api";
 import MgrSetupWizard from "../components/MgrSetupWizard";
+import MgrTracker from "../components/MgrTracker";
 import useStkPushFlow from "@/shared/hooks/useStkPushFlow";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
@@ -42,6 +43,8 @@ const STATUS_BADGE = {
   paid: { label: "Paid", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
   reconciled: { label: "Reconciled", color: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" },
   completed: { label: "Completed", color: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" },
+  awaiting_receipt: { label: "Awaiting Recipient", color: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
+  received: { label: "Payout Received", color: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" },
   on_hold: { label: "On Hold", color: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" },
 };
 
@@ -168,9 +171,11 @@ function PayoutProposalModal({ round, onClose, onSubmit }) {
   const collected = Number(round?.collected_amount || 0);
   const [amount, setAmount] = useState(collected);
   const [disbursementMethod, setDisbursementMethod] = useState("mpesa");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState(round?.recipient_id?.user_id?.phone || "");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const payoutRecipient = round?.recipient_id?.user_id?.name || round?.recipient_id?.name || "Selected round recipient";
+  const payoutPhone = round?.recipient_id?.user_id?.phone || "";
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -203,6 +208,10 @@ function PayoutProposalModal({ round, onClose, onSubmit }) {
               <span>Collected</span>
               <span className="font-mono text-emerald-600">{money(collected)}</span>
             </div>
+            <div className="flex justify-between gap-3 border-t border-slate-200 pt-2 font-bold text-slate-600 dark:border-slate-700 dark:text-slate-300">
+              <span>Payout recipient</span>
+              <span className="text-right text-slate-900 dark:text-white">{payoutRecipient}{payoutPhone ? ` · ${payoutPhone}` : ""}</span>
+            </div>
           </div>
 
           <div>
@@ -218,7 +227,7 @@ function PayoutProposalModal({ round, onClose, onSubmit }) {
           <div>
             <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Disbursement Method</label>
             <div className="flex gap-3">
-              {["mpesa", "bank", "cash"].map((m) => (
+              {["mpesa", "wallet", "bank", "cash"].map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -624,8 +633,8 @@ export default function MerryGoRoundPage() {
     setTimeout(() => setNotice(null), 4000);
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       // Fetch overview and members in parallel
@@ -654,12 +663,18 @@ export default function MerryGoRoundPage() {
         }
       }
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, [chamaId]);
 
   useEffect(() => {
     if (chamaId) load();
+  }, [chamaId, load]);
+
+  useEffect(() => {
+    if (!chamaId) return undefined;
+    const timer = setInterval(() => load({ quiet: true }), 60_000);
+    return () => clearInterval(timer);
   }, [chamaId, load]);
 
 
@@ -690,14 +705,49 @@ export default function MerryGoRoundPage() {
   };
 
   const handleDisbursePayout = async (roundId) => {
-    if (!window.confirm("Confirm disbursement? This action will transfer funds.")) return;
+    const round = rounds.find((item) => item._id === roundId);
+    const method = round?.payout_proposal?.disbursement_method;
+    const externalReference = ["mpesa", "bank"].includes(method)
+      ? window.prompt(`Enter the ${method === "mpesa" ? "M-Pesa receipt" : "bank transfer"} reference after sending the approved payout:`)?.trim()
+      : window.prompt("Enter a cash receipt reference if available (optional):")?.trim() || "";
+    if (["mpesa", "bank"].includes(method) && !externalReference) return;
+    if (!window.confirm("Confirm that the approved payout has been disbursed and record its reference?")) return;
     setActionLoading(true);
     try {
-      await mgrApi.disbursePayout(roundId);
-      notify("Payout disbursed and round reconciled. Next round is now open.");
+      await mgrApi.disbursePayout(roundId, externalReference);
+      notify("Payout disbursed and reconciled. The recipient can now confirm it was received.");
       load();
     } catch (err) {
       notify(err.response?.data?.message || "Failed to disburse payout", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleMarkPayoutReceived = async (roundId) => {
+    if (!window.confirm("Confirm that you have received the MGR payout for this round?")) return;
+    setActionLoading(true);
+    try {
+      await mgrApi.markPayoutReceived(roundId);
+      notify("Payout receipt confirmed. This confirmation is recorded in the MGR audit log.");
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || "Failed to confirm payout receipt", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmRound = async (round) => {
+    const recipient = resolveMemberDetails(round.recipient_id).name;
+    if (!window.confirm(`Confirm Round #${round.round_number} payout position for ${recipient}? This opens the contribution period.`)) return;
+    setActionLoading(true);
+    try {
+      await mgrApi.confirmRoundPosition(round._id, round.recipient_id?._id || round.recipient_id);
+      notify(`Round #${round.round_number} opened for contributions.`);
+      await load();
+    } catch (err) {
+      notify(err.response?.data?.message || "Failed to confirm payout position", "error");
     } finally {
       setActionLoading(false);
     }
@@ -908,8 +958,8 @@ export default function MerryGoRoundPage() {
             <Calendar className="text-emerald-600 dark:text-emerald-400" size={22} />
             <h2 className="text-xl font-black tracking-wide text-slate-900 dark:text-white uppercase">
               {activeRound?.due_date
-                ? new Date(activeRound.due_date).toLocaleDateString("en-US", { month: "short", year: "numeric" }).replace(" ", "-") + " " + new Date(activeRound.due_date).getFullYear()
-                : "JULY-2026 2026"}
+                ? `${new Date(activeRound.due_date).toLocaleDateString("en-US", { month: "long", year: "numeric" })} · Round #${activeRound.round_number}`
+                : "No Active Round"}
             </h2>
           </div>
 
@@ -942,7 +992,7 @@ export default function MerryGoRoundPage() {
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             </button>
 
-            {isTreasurer && policy && (
+            {isTreasurer && policy && ["active", "draft"].includes(policy.status) && (
               <button
                 onClick={() => {
                   setSelectedPolicyForEdit(policy);
@@ -952,6 +1002,9 @@ export default function MerryGoRoundPage() {
               >
                 <Settings size={14} /> Edit Policy
               </button>
+            )}
+            {isTreasurer && policy?.status === "completed" && (
+              <button onClick={() => { setSelectedPolicyForEdit(null); setShowWizard(true); }} className="flex items-center gap-1.5 rounded-2xl bg-amber-500 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-600"><Plus size={14} /> Start next rotation</button>
             )}
 
             {isTreasurer && activeRound && ["collecting", "target_reached"].includes(activeRound.status) && (
@@ -967,11 +1020,11 @@ export default function MerryGoRoundPage() {
 
         {/* 4 Stat Cards Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {/* 1. Monthly Contribution */}
+          {/* 1. Contribution per interval */}
           <div className="rounded-2xl border border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-800/40 p-4">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block">Monthly Contribution</span>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block">{policy?.frequency || "Round"} Contribution</span>
             <p className="mt-2 text-2xl font-black font-mono text-slate-900 dark:text-white">
-              {money(policy?.contribution_rule?.uniform_amount || 5000)}
+              {money(policy?.contribution_rule?.uniform_amount)}
             </p>
           </div>
 
@@ -982,7 +1035,7 @@ export default function MerryGoRoundPage() {
               #{activeRound?.round_number || 1} {recipientName}
             </p>
             <span className="text-[10px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400 block mt-0.5">
-              {activeRound?.status === 'paid' ? 'Paid' : 'Collecting'}
+              <RoundStatusBadge status={activeRound?.status || "upcoming"} />
             </span>
           </div>
 
@@ -1002,7 +1055,43 @@ export default function MerryGoRoundPage() {
             </p>
           </div>
         </div>
+        {activeRound && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <p>Round interval: {new Date(activeRound.round_start || activeRound.due_date).toLocaleDateString("en-KE")} – {new Date(activeRound.round_end || activeRound.due_date).toLocaleDateString("en-KE")}</p>
+              <p className="mt-1">Outstanding for this round: <strong className="font-mono">{money(Math.max(0, expectedPool - collected))}</strong> · Recipient: <strong>{recipientName}</strong></p>
+              {activeRound.interval_ended_at && !["paid", "reconciled", "received", "completed"].includes(activeRound.status) && <p className="mt-1 font-extrabold text-amber-700 dark:text-amber-300">This interval has ended. Outstanding contributions: {money(Math.max(0, expectedPool - collected))}.</p>}
+            </div>
+            {isTreasurer && activeRound.status === "awaiting_confirmation" && (
+              <button onClick={() => handleConfirmRound(activeRound)} disabled={actionLoading} className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">Confirm payout position & open round</button>
+            )}
+            {isTreasurer && activeRound.status === "pending_approval" && activeRound.approval_request_id?.status === "approved" && (
+              <button onClick={() => handleDisbursePayout(activeRound._id)} disabled={actionLoading} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">Disburse approved payout</button>
+            )}
+            {activeRound.status === "awaiting_receipt" && String(activeRound.recipient_id?._id || activeRound.recipient_id) === myMembershipId && (
+              <button onClick={() => handleMarkPayoutReceived(activeRound._id)} disabled={actionLoading} className="rounded-xl bg-teal-600 px-4 py-2 text-xs font-extrabold text-white disabled:opacity-50">Mark round payout received</button>
+            )}
+            {activeRound.status === "awaiting_receipt" && String(activeRound.recipient_id?._id || activeRound.recipient_id) !== myMembershipId && (
+              <span className="rounded-xl bg-amber-100 px-4 py-2 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">Waiting for {recipientName} to confirm receipt</span>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* ── ROTATION TRACKER ─────────────────────────── */}
+      <MgrTracker
+        rounds={rounds}
+        activeRound={activeRound}
+        policy={policy}
+        obligations={obligations}
+        resolveMemberDetails={resolveMemberDetails}
+        myMembershipId={myMembershipId}
+        onSelectRound={setSelectedRoundId}
+        onPay={(ob) => {
+          setSelectedObligationForPay(ob);
+          setShowStkModal(true);
+        }}
+      />
 
       {/* ── MEMBERS CONTAINER CARD (Light Theme) ─────────────────── */}
       <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
@@ -1029,6 +1118,7 @@ export default function MerryGoRoundPage() {
                 <th className="text-left py-3 text-slate-400 font-extrabold uppercase text-[10px]">Name</th>
                 <th className="text-left py-3 text-slate-400 font-extrabold uppercase text-[10px]">Phone</th>
                 <th className="text-center py-3 text-slate-400 font-extrabold uppercase text-[10px]">Status</th>
+                <th className="text-right py-3 text-slate-400 font-extrabold uppercase text-[10px]">Balance</th>
                 <th className="text-center py-3 text-slate-400 font-extrabold uppercase text-[10px]">Last Reminded</th>
                 <th className="text-center py-3 text-slate-400 font-extrabold uppercase text-[10px]">Actions</th>
               </tr>
@@ -1036,7 +1126,7 @@ export default function MerryGoRoundPage() {
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
               {obligations.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-slate-400 font-semibold text-xs">
+                  <td colSpan={7} className="py-6 text-center text-slate-400 font-semibold text-xs">
                     No members found for this round.
                   </td>
                 </tr>
@@ -1085,8 +1175,16 @@ export default function MerryGoRoundPage() {
                         </span>
                       )}
                     </td>
+                    <td className="py-3.5 text-right font-mono font-extrabold text-slate-700 dark:text-slate-200">{money(balance)}</td>
                     <td className="py-3.5 text-center text-slate-400 font-mono text-[11px]">
-                      -
+                      {ob.last_reminded_at
+                        ? new Date(ob.last_reminded_at).toLocaleDateString("en-KE", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "-"}
                     </td>
                     <td className="py-3.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -1098,7 +1196,7 @@ export default function MerryGoRoundPage() {
                             }}
                             className="rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 py-1 text-[10px] font-extrabold text-white transition shadow-xs"
                           >
-                            Mark Paid
+                            {isTreasurer ? "Mark Paid" : "Pay"}
                           </button>
                         )}
                         {isTreasurer && ob.status !== "paid" && (

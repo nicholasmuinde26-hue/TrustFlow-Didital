@@ -14,6 +14,8 @@
  */
 
 import SavingsSharePolicy from '../models/SavingsSharePolicy.js';
+import Chama from '../models/Chama.js';
+import { isModuleEnabled } from '../constants/workspaceModules.constants.js';
 import { createShareout } from '../modules/savingsShareout/savingsShareout.service.js';
 
 const SWEEP_INTERVAL_MS = Number(process.env.SAVINGS_SHAREOUT_SCHEDULER_INTERVAL_MS) || 6 * 60 * 60 * 1000; // every 6h
@@ -87,6 +89,11 @@ export const sweepDueSavingsSharePolicies = async () => {
       const dueAt = dueDateFor(schedule);
 
       if (dueAt > now) continue;
+
+      const chama = await Chama.findById(policy.chama_id).select('chama_type workspace_config').lean();
+      if (!chama || !isModuleEnabled(chama, 'savings_shareout')) {
+        continue;
+      }
 
       try {
         const shareout = await createShareout({

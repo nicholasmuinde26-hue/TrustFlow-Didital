@@ -1,20 +1,54 @@
+import crypto from 'crypto';
+
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const nodeEnv = process.env.NODE_ENV || 'development';
+// ========================================
+// ENVIRONMENT — PRODUCTION BY DEFAULT
+// ========================================
+//
+// This used to default to 'development', which meant an unset NODE_ENV
+// on a live server silently unlocked every development affordance at
+// once: hardcoded JWT secrets, '123456' accepted as a universal OTP,
+// and the real OTP echoed back in the send-otp response. Forgetting to
+// set one variable was enough to leave the deployment wide open.
+//
+// The safe default is the strict one. Development now has to be opted
+// into explicitly (NODE_ENV=development), which is easy to do locally
+// and impossible to do by accident in production.
+const nodeEnv = process.env.NODE_ENV || 'production';
+const isProduction = nodeEnv === 'production';
 
 const jwtAccessSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
 
-if ((!jwtAccessSecret || !jwtRefreshSecret) && nodeEnv !== 'development') {
-  throw new Error(
-    'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET environment variables are required outside development'
+// Fail fast and loudly at boot rather than issuing tokens signed with a
+// secret that is published in this repository. A process that won't
+// start is a visible problem; a process signing tokens with
+// 'dev-access-secret-change-in-prod' is an invisible one.
+if (!jwtAccessSecret || !jwtRefreshSecret) {
+  if (nodeEnv !== 'development') {
+    throw new Error(
+      'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET are required. ' +
+        'Set them in the environment, or set NODE_ENV=development for local work.'
+    );
+  }
+  console.warn(
+    '[env] No JWT secrets set — using throwaway development secrets. ' +
+      'Tokens issued now are not secure and will not survive a restart.'
   );
 }
 
+// Regenerated per process in development, so even the fallback isn't a
+// fixed value an attacker could look up in source control.
+const devOnlySecret = (label) =>
+  `dev-${label}-${crypto.randomBytes(32).toString('hex')}`;
+
 const env = {
   nodeEnv,
+  isProduction,
+  isDevelopment: nodeEnv === 'development',
 
   // ========================================
   // DEMO OTP AUTOFILL — off by default, everywhere.
@@ -30,29 +64,83 @@ const env = {
   // pages can fill it in for you instead of you typing it. Turn this
   // off (unset the var, or set it to anything other than 'true') the
   // moment the live demo is over.
-  demoOtpAutofill: process.env.DEMO_OTP_AUTOFILL === 'true',
+  // Hard-gated on non-production as well as the flag: echoing a live
+  // OTP back over the wire defeats the second factor entirely, so a
+  // stray env var on a production host must not be able to enable it.
+  demoOtpAutofill: process.env.DEMO_OTP_AUTOFILL === 'true' && !isProduction,
 
   port: Number(process.env.PORT) || 5000,
 
   mongoUri: process.env.MONGO_URI,
 
   // Super Admin identifier
-  superAdminEmail: process.env.SUPER_ADMIN_EMAIL || 'nicholasmuinde26@gmail.com',
+  // No hardcoded fallback. This address is auto-promoted to
+  // super_admin on OTP verification (see auth.service.js), so baking a
+  // personal address into source meant anyone who could register it —
+  // or who read this file — got the keys to every deployment built
+  // from this codebase. Unset means no auto-promotion happens at all.
+  superAdminEmail: process.env.SUPER_ADMIN_EMAIL || null,
 
   // Short-lived Access Token (15 minutes default)
-  jwtAccessSecret: jwtAccessSecret || 'dev-access-secret-change-in-prod',
+  jwtAccessSecret: jwtAccessSecret || devOnlySecret('access'),
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
 
   // Long-lived Refresh Token (7 days default)
-  jwtRefreshSecret: jwtRefreshSecret || 'dev-refresh-secret-change-in-prod',
+  jwtRefreshSecret: jwtRefreshSecret || devOnlySecret('refresh'),
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
 
   // OTP Configuration
   otpExpiresInMinutes: Number(process.env.OTP_EXPIRES_IN_MINUTES) || 10,
   otpLength: Number(process.env.OTP_LENGTH) || 6,
 
+  // How many wrong codes a single pending OTP tolerates before it is
+  // burned and a fresh one must be requested. Without a cap, a 6-digit
+  // code is a 1,000,000-guess space that an attacker can exhaust in
+  // minutes against an endpoint with no rate limit.
+  otpMaxAttempts: Number(process.env.OTP_MAX_ATTEMPTS) || 5,
+
   // Default channel used when the client doesn't specify one ('sms' | 'email' | 'whatsapp')
   otpDefaultChannel: process.env.OTP_DEFAULT_CHANNEL || 'sms',
+
+  // ========================================
+  // CORS
+  // ========================================
+  // Comma-separated list of exact origins permitted to call the API
+  // with credentials. Replaces `origin: true`, which reflected whatever
+  // Origin the caller sent and, combined with credentials: true, let
+  // any website on the internet make authenticated cross-origin calls
+  // on behalf of a logged-in user.
+  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
+  // ========================================
+  // M-PESA
+  // ========================================
+  mpesa: {
+    shortCode: process.env.MPESA_SHORTCODE,
+    // High-entropy secret embedded in the C2B callback URLs registered
+    // with Safaricom. Generate with: openssl rand -hex 32
+    c2bWebhookSecret: process.env.M_PESA_C2B_WEBHOOK_SECRET,
+  },
+
+  // ========================================
+  // AFRICA'S TALKING (SMS)
+  // ========================================
+  africasTalking: {
+    apiKey: process.env.AT_API_KEY,
+    username: process.env.AT_USERNAME,
+    // Registered alphanumeric sender ID or short code. Optional - AT
+    // falls back to a shared shortcode when unset.
+    senderId: process.env.AT_SENDER_ID || null,
+    // Sandbox uses a different host and the username 'sandbox'.
+    baseUrl:
+      process.env.AT_BASE_URL ||
+      (process.env.AT_USERNAME === 'sandbox'
+        ? 'https://api.sandbox.africastalking.com/version1'
+        : 'https://api.africastalking.com/version1'),
+  },
 
   // ========================================
   // SMTP (EMAIL OTP DELIVERY)

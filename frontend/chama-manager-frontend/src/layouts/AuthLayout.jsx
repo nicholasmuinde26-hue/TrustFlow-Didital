@@ -1,9 +1,10 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Landmark, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
+import { LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
 
 import ThemeToggle from "@/shared/components/layout/ThemeToggle/ThemeToggle";
+import BrandMark from "@/shared/components/layout/BrandMark";
 import authBackgroundVideo from "@/assets/auth-background.mp4";
 
 const flowNodes = [
@@ -54,11 +55,11 @@ export default function AuthLayout({ children }) {
         <aside className="auth-split__visual">
           <TechBackdrop />
           <div className="auth-split__brand">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-white shadow-lg backdrop-blur-xl"><Landmark size={21} /></div>
-            <div><p className="text-lg font-black tracking-tight text-white">VeriCircle</p><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-100">Financial OS</p></div>
+            <BrandMark size={44} className="shrink-0" />
+            <div><p className="text-lg font-black tracking-tight text-white">VeriCircle</p><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mist">Financial OS</p></div>
           </div>
           <div className="auth-split__message">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-slate-950/20 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-50 backdrop-blur-md"><Sparkles size={13} className="text-cyan-300" />Built for collective progress</div>
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-mint/20 bg-obsidian/40 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-mist backdrop-blur-md"><Sparkles size={13} className="text-mint" />Built for collective progress</div>
             <h1>Move forward.<br /><span>Together.</span></h1>
             <p>Modern financial infrastructure for communities, contribution groups, and growing businesses.</p>
           </div>
@@ -66,11 +67,11 @@ export default function AuthLayout({ children }) {
         </aside>
         <main className="auth-split__form-area">
           <header className="auth-split__form-header">
-            <div className="flex items-center gap-2 lg:hidden"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white"><Landmark size={17} /></div><span className="font-black tracking-tight">VeriCircle</span></div>
+            <div className="flex items-center gap-2 lg:hidden"><BrandMark size={36} className="shrink-0" /><span className="font-black tracking-tight">VeriCircle</span></div>
             <div className="ml-auto rounded-full border border-slate-200 bg-white p-1 shadow-sm"><ThemeToggle /></div>
           </header>
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} className="auth-split__form-wrap">
-            <div className="mb-8 text-center"><div className="mx-auto mb-4 hidden h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-lg shadow-cyan-500/25 lg:flex"><Landmark size={22} /></div><p className="text-sm font-semibold text-slate-500">Welcome to VeriCircle</p><p className="mt-1 text-xs text-slate-400">Your trusted workspace for progress</p></div>
+            <div className="mb-8 text-center"><div className="mx-auto mb-4 hidden lg:block"><BrandMark size={48} /></div><p className="text-sm font-semibold text-slate-500">Welcome to VeriCircle</p><p className="mt-1 text-xs text-slate-400">Your trusted workspace for progress</p></div>
             <div className="auth-split__content"><div className="relative w-full">{children ?? <Outlet />}</div><div className="mt-6 flex items-center justify-center gap-2 text-[11px] font-medium text-slate-400"><LockKeyhole size={12} className="text-emerald-600" />Secure workspace authentication<ShieldCheck size={12} className="text-emerald-600" /></div></div>
           </motion.div>
         </main>

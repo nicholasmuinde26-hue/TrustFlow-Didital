@@ -35,7 +35,18 @@ export default function TrialBalancePage() {
   const totalDebit = Number(reportData?.totalDebit || reportData?.total_debit || items.reduce((a, b) => a + Number(b.debit || 0), 0));
   const totalCredit = Number(reportData?.totalCredit || reportData?.total_credit || items.reduce((a, b) => a + Number(b.credit || 0), 0));
   const difference = Math.abs(totalDebit - totalCredit);
-  const isBalanced = difference < 0.01;
+
+  // The backend now does two checks: (1) do this report's own debit/credit
+  // totals match (a real double-entry violation), and (2) does this
+  // report's total match an independent sum of the raw general ledger (a
+  // sign the two reports are reading different underlying data). Fall back
+  // to the local debit/credit check for older API responses that don't
+  // send these fields yet.
+  const isBalanced =
+    typeof reportData?.balanced === "boolean" ? reportData.balanced : difference < 0.01;
+  const isFullyBalanced =
+    typeof reportData?.fullyBalanced === "boolean" ? reportData.fullyBalanced : isBalanced;
+  const warningMessage = reportData?.warning;
 
   const handleExportCsv = () => {
     let csvRows = "Account Code,Account Name,Debit (KES),Credit (KES)\n";
@@ -99,18 +110,30 @@ export default function TrialBalancePage() {
         <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Ledger Status</span>
           <div className="mt-2 flex items-center gap-2">
-            {isBalanced ? (
+            {isFullyBalanced ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-4 py-1.5 text-xs font-black text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                 <CheckCircle2 size={16} /> Balanced
               </span>
-            ) : (
+            ) : !isBalanced ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-4 py-1.5 text-xs font-black text-rose-800 dark:bg-rose-950 dark:text-rose-300">
                 <AlertTriangle size={16} /> Imbalanced ({money(difference)})
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-4 py-1.5 text-xs font-black text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                <AlertTriangle size={16} /> Out of sync with Ledger
               </span>
             )}
           </div>
         </div>
       </div>
+
+      {/* Unbalanced / data-mismatch warning banner */}
+      {!isFullyBalanced && warningMessage && (
+        <div className="flex items-start gap-3 rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+          <span>{warningMessage}</span>
+        </div>
+      )}
 
       {/* Trial Balance Detailed Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">

@@ -25,6 +25,9 @@ import MarketplaceNavbar from "../components/MarketplaceNavbar";
 import MarketplaceCartDrawer from "../components/MarketplaceCartDrawer";
 import MarketplaceListingCard from "../components/MarketplaceListingCard";
 import RentalMapSplitView from "../components/RentalMapSplitView";
+import RetailMarketplaceView from "../components/RetailMarketplaceView";
+import RestaurantMarketplaceView from "../components/RestaurantMarketplaceView";
+import ServiceMarketplaceView from "../components/ServiceMarketplaceView";
 import marketplaceService from "../services/marketplace.service";
 import Spinner from "@/shared/components/ui/Spinner";
 
@@ -42,6 +45,8 @@ export default function MarketplaceCategoryPage() {
   // Search & Filter State
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [selectedSubcat, setSelectedSubcat] = useState(searchParams.get("subcategory") || "All");
+  const [selectedBrand, setSelectedBrand] = useState(searchParams.get("brand") || "All");
+  const [minRating, setMinRating] = useState(searchParams.get("rating") || "");
   const [propertyType, setPropertyType] = useState(searchParams.get("propertyType") || "All");
   const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") || "");
   const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") || "");
@@ -55,8 +60,16 @@ export default function MarketplaceCategoryPage() {
 
   // View Mode: 'grid' | 'split_map' | 'full_map'
   const isRental = categorySlug === "rentals";
+  const isRetail = categorySlug === "retail";
+  const isFood = categorySlug === "food";
+  const isServices = categorySlug === "services";
   const [viewMode, setViewMode] = useState(isRental ? "grid" : "grid");
   const [selectedListingId, setSelectedListingId] = useState(null);
+
+  useEffect(() => {
+    setSelectedSubcat(searchParams.get("subcategory") || "All");
+    setPage(Number(searchParams.get("page") || 1));
+  }, [categorySlug]);
 
   // Load category details
   useEffect(() => {
@@ -80,6 +93,8 @@ export default function MarketplaceCategoryPage() {
           category: categorySlug,
           search: search.trim() || undefined,
           subcategory: selectedSubcat !== "All" ? selectedSubcat : undefined,
+          brand: selectedBrand !== "All" ? selectedBrand : undefined,
+          rating: minRating || undefined,
           propertyType: propertyType !== "All" ? propertyType : undefined,
           minPrice: minPrice || undefined,
           maxPrice: maxPrice || undefined,
@@ -90,7 +105,7 @@ export default function MarketplaceCategoryPage() {
           furnished: furnished || undefined,
           sortBy,
           page,
-          limit: 18,
+          limit: isRetail ? 30 : isFood ? 36 : isServices ? 30 : 18,
         };
 
         const result = await marketplaceService.searchListings(params);
@@ -107,6 +122,8 @@ export default function MarketplaceCategoryPage() {
     categorySlug,
     search,
     selectedSubcat,
+    selectedBrand,
+    minRating,
     propertyType,
     minPrice,
     maxPrice,
@@ -117,11 +134,16 @@ export default function MarketplaceCategoryPage() {
     furnished,
     sortBy,
     page,
+    isRetail,
+    isFood,
+    isServices,
   ]);
 
   const clearFilters = () => {
     setSearch("");
     setSelectedSubcat("All");
+    setSelectedBrand("All");
+    setMinRating("");
     setPropertyType("All");
     setMinPrice("");
     setMaxPrice("");
@@ -139,10 +161,83 @@ export default function MarketplaceCategoryPage() {
     setPage(1);
   };
 
+  if (isRetail) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
+        <MarketplaceNavbar onSearch={(q) => setSearch(q)} categorySlug={categorySlug} />
+        <MarketplaceCartDrawer categorySlug={categorySlug} />
+        <RetailMarketplaceView
+          listings={listings}
+          pagination={pagination}
+          loading={loading}
+          search={search}
+          setSearch={setSearch}
+          selectedSubcat={selectedSubcat}
+          setSelectedSubcat={setSelectedSubcat}
+          selectedBrand={selectedBrand}
+          setSelectedBrand={setSelectedBrand}
+          minPrice={minPrice}
+          setMinPrice={setMinPrice}
+          maxPrice={maxPrice}
+          setMaxPrice={setMaxPrice}
+          minRating={minRating}
+          setMinRating={setMinRating}
+          inStock={inStock}
+          setInStock={setInStock}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          page={page}
+          setPage={setPage}
+          clearFilters={clearFilters}
+          categoryData={categoryData}
+        />
+      </div>
+    );
+  }
+
+  if (isFood) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <MarketplaceNavbar onSearch={(q) => setSearch(q)} categorySlug={categorySlug} />
+        <MarketplaceCartDrawer categorySlug={categorySlug} />
+        <RestaurantMarketplaceView
+          listings={listings}
+          pagination={pagination}
+          loading={loading}
+          search={search}
+          setSearch={setSearch}
+          selectedSubcat={selectedSubcat}
+          setSelectedSubcat={setSelectedSubcat}
+          page={page}
+          setPage={setPage}
+        />
+      </div>
+    );
+  }
+
+  if (isServices) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col">
+        <MarketplaceNavbar onSearch={(q) => setSearch(q)} categorySlug={categorySlug} />
+        <ServiceMarketplaceView
+          listings={listings}
+          pagination={pagination}
+          loading={loading}
+          search={search}
+          setSearch={setSearch}
+          selectedSubcat={selectedSubcat}
+          setSelectedSubcat={setSelectedSubcat}
+          page={page}
+          setPage={setPage}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
       <MarketplaceNavbar onSearch={(q) => setSearch(q)} categorySlug={categorySlug} />
-      <MarketplaceCartDrawer />
+      <MarketplaceCartDrawer categorySlug={categorySlug} />
 
       {/* ========================================================================= */}
       {/* RENTALS & PROPERTY SPECIFIC HEADER (Matching Image 1) */}
@@ -687,7 +782,7 @@ export default function MarketplaceCategoryPage() {
                           key={item._id}
                           className={selectedListingId === item._id ? "ring-2 ring-teal-500 rounded-3xl" : ""}
                         >
-                          <MarketplaceListingCard listing={item} />
+                          <MarketplaceListingCard listing={item} categorySlug={categorySlug} />
                         </div>
                       ))}
                     </div>
@@ -698,7 +793,7 @@ export default function MarketplaceCategoryPage() {
                 <>
                   <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {listings.map((item) => (
-                      <MarketplaceListingCard key={item._id} listing={item} />
+                      <MarketplaceListingCard key={item._id} listing={item} categorySlug={categorySlug} />
                     ))}
                   </div>
 

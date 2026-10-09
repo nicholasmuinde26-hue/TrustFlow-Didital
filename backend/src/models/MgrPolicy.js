@@ -172,7 +172,7 @@ const mgrPolicySchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['draft', 'active', 'archived', 'superseded'],
+      enum: ['draft', 'active', 'completed', 'archived', 'superseded'],
       default: 'draft',
       index: true,
     },

@@ -1,6 +1,7 @@
 import express from "express";
 import { protect } from "../../middleware/auth.middleware.js";
 import { requireChamaMember } from "../../middleware/chama.middleware.js";
+import { optionalAuth } from "../../middleware/optionalAuth.middleware.js";
 import {
   requireLeadershipSession,
   requireLeadershipStepUp,
@@ -24,6 +25,12 @@ const router = express.Router({ mergeParams: true });
 // means it only ever runs once a route defined in *this* file actually
 // matches; anything else falls through immediately, untouched.
 const guard = [protect, requireChamaMember];
+router.get("/public-profile", controller.getPublicProfile);
+// A person's own card, visible per the visibility THEY chose. Anonymous
+// visitors are allowed (optionalAuth) but only ever see "public" cards of
+// a published public Chama.
+router.get("/public-profile/people/:membershipId", optionalAuth, controller.getPersonProfile);
+router.get("/public-profile/people/:membershipId/image", optionalAuth, controller.getPersonImage);
 
 // Governance mutations that used to live in the Command Center now live
 // in the Leadership Desk, behind the PIN — so they demand an unlocked
@@ -38,6 +45,19 @@ router.put("/profile", ...guard, requireLeadershipStepUp(STEP_UP_ACTIONS.UPDATE_
 router.put("/officials/:membershipId", ...guard, requireLeadershipStepUp(STEP_UP_ACTIONS.CHANGE_MEMBER_ROLE), controller.setOfficial);
 router.post("/goals", ...leaderGuard, controller.addGoal);
 router.post("/kyc", ...guard, controller.submitKyc);
+// Reviewers load one person's ID document + selfie on demand. The review
+// queue itself never carries images.
+router.get("/kyc/:membershipId/documents", ...leaderGuard, controller.getKycDocuments);
+// Every member and official keeps their own public card up to date.
+router.get("/my-public-profile", ...guard, controller.getMyPublicProfile);
+router.put("/my-public-profile", ...guard, controller.saveMyPublicProfile);
+// The Chama's own public details (text + logo + cover). No payment PIN:
+// that is for repointing money, not for changing a tagline.
+router.get("/public-settings", ...leaderGuard, controller.getChamaPublicSettings);
+router.put("/public-profile", ...leaderGuard, controller.saveChamaPublicProfile);
+// Chama (organisation) KYC, reviewed by the platform's admins.
+router.get("/org-kyc", ...leaderGuard, controller.getOrgKyc);
+router.post("/org-kyc", ...leaderGuard, controller.submitOrgKyc);
 router.put("/kyc/:membershipId", ...leaderGuard, controller.verifyKyc);
 router.post("/invitations", ...leaderGuard, controller.makeInvite);
 // Loans moved to modules/loans/loan.routes.js (mounted at /api/v1/chamas/:chamaId/loans)
@@ -45,4 +65,10 @@ router.post("/meeting-records", ...guard, controller.createMeetingRecord);
 router.post("/meeting-records/:meetingId/check-in", ...guard, controller.checkInMeeting);
 router.post("/meeting-records/:meetingId/votes", ...guard, controller.castVote);
 router.put("/meeting-records/:meetingId", ...guard, controller.saveMeetingRecord);
+
+// Workspace Module Configuration & Governance Changes
+router.get("/modules/settings", ...guard, controller.getModuleSettings);
+router.post("/modules/request-change", ...leaderGuard, controller.requestModuleChange);
+router.post("/modules/requests/:requestId/cancel", ...leaderGuard, controller.cancelModuleChange);
+
 export default router;

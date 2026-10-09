@@ -1,15 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Building2, Landmark, Loader2, Pencil, PiggyBank, Plus, Shield, ShieldCheck, Star, Target, Trash2 } from "lucide-react";
+import { BookOpen, Building2, Landmark, Loader2, Pencil, PiggyBank, Plus, Shield, ShieldCheck, Star, Target, Trash2, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import chamaApi from "@/modules/chama/api/chama.api";
-import { canViewFullBooks, canManageSavingsShareout } from "@/modules/workspaces/permissions/Permissions";
+import KycDocumentsModal from "@/modules/chama/components/KycDocumentsModal";
+import {
+  canViewFullBooks,
+  canManageSavingsShareout,
+  canViewAllWithdrawals,
+  canDecideWithdrawal,
+  canSettleWithdrawal,
+  canCancelAnyWithdrawal,
+} from "@/modules/workspaces/permissions/Permissions";
 import useBankAccounts from "@/modules/finance/hooks/useBankAccounts";
 import BankAccountModal from "@/modules/finance/components/BankAccountModal";
 import financeService from "@/modules/finance/services/finance.service";
 import savingsShareoutService from "@/modules/chama/services/savingsShareout.service";
 import SavingsSharePolicyWizard from "@/modules/chama/components/Savingssharepolicywizard";
 import { useMembers } from "@/modules/members/hooks/useMembers";
+import withdrawalService from "@/modules/withdrawal/services/withdrawal.service";
+import WithdrawalList from "@/modules/withdrawal/components/WithdrawalList";
+import WithdrawalDetailsPanel from "@/modules/withdrawal/components/WithdrawalDetailsPanel";
 
 import {
   EmptyState,
@@ -46,9 +57,15 @@ export default function TreasuryOversightTab({
   const [goalTarget, setGoalTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const [verifyingId, setVerifyingId] = useState(null);
+  const [kycDocs, setKycDocs] = useState(null);
   const [feedback, setFeedback] = useState(null);
 
   const goals = data?.goals || [];
+  const savedAcrossGoals = goals.reduce((sum, goal) => sum + Number(goal.saved_amount || 0), 0);
+  const targetAcrossGoals = goals.reduce((sum, goal) => sum + Number(goal.target_amount || 0), 0);
+  const goalProgress = targetAcrossGoals > 0
+    ? Math.min(100, Math.round((savedAcrossGoals / targetAcrossGoals) * 100))
+    : 0;
   const pendingKyc = (data?.pendingKyc || data?.kycQueue || []).filter(Boolean);
   const mayViewBooks = canViewFullBooks(role, type);
 
@@ -136,6 +153,98 @@ export default function TreasuryOversightTab({
     });
   };
 
+  // ---------------- Withdrawal requests (chairperson approves, treasurer disburses) ----------------
+  // The request -> approve -> reserve -> settle lifecycle itself lives in
+  // withdrawal.service.js on the backend; this reuses that module's own
+  // list/details components rather than re-implementing them, so the desk
+  // stays on the one API surface the standalone Withdrawals page already
+  // trusts. Settling (the treasurer actually disbursing) asks for the PIN
+  // again — that prompt comes from requireLeadershipStepUp on the /pay
+  // route and is handled generically by the api.js interceptor, not by
+  // anything here.
+  const mayViewWithdrawals = canViewAllWithdrawals(role, type);
+  const mayDecideWithdrawal = canDecideWithdrawal(role, type);
+  const maySettleWithdrawal = canSettleWithdrawal(role, type);
+  const mayCancelWithdrawal = canCancelAnyWithdrawal(role, type);
+
+  const [withdrawalQueue, setWithdrawalQueue] = useState([]);
+  const [loadingWithdrawals, setLoadingWithdrawals] = useState(true);
+  const [selectedWithdrawal, setSelectedWithdrawal] = useState(null);
+  const [withdrawalBusy, setWithdrawalBusy] = useState(false);
+
+  const loadWithdrawalQueue = useCallback(async () => {
+    if (!workspaceId || !mayViewWithdrawals) {
+      setLoadingWithdrawals(false);
+      return;
+    }
+    setLoadingWithdrawals(true);
+    try {
+      const all = await withdrawalService.list(workspaceId);
+      // Awaiting a chairperson decision, or approved and awaiting the
+      // treasurer's disbursement — settled/rejected/cancelled requests
+      // stay on the full Withdrawals page, not this at-a-glance queue.
+      setWithdrawalQueue(all.filter((w) => ["pending", "approved"].includes(w.status)));
+    } catch (error) {
+      report(error, "Could not load withdrawal requests.");
+    } finally {
+      setLoadingWithdrawals(false);
+    }
+  }, [workspaceId, mayViewWithdrawals]);
+
+  useEffect(() => {
+    loadWithdrawalQueue();
+  }, [loadWithdrawalQueue]);
+
+  const refreshSelectedWithdrawal = async (id) => {
+    try {
+      setSelectedWithdrawal(await withdrawalService.get(workspaceId, id));
+    } catch {
+      setSelectedWithdrawal(null);
+    }
+  };
+
+  const decideWithdrawalRequest = async (decision, comment) => {
+    setWithdrawalBusy(true);
+    try {
+      await withdrawalService.decide(workspaceId, selectedWithdrawal._id, decision, comment);
+      setFeedback({ tone: "success", text: `Withdrawal ${decision}.` });
+      await refreshSelectedWithdrawal(selectedWithdrawal._id);
+      loadWithdrawalQueue();
+    } catch (error) {
+      report(error, "Could not record that decision.");
+    } finally {
+      setWithdrawalBusy(false);
+    }
+  };
+
+  const settleWithdrawalRequest = async (method, ref) => {
+    setWithdrawalBusy(true);
+    try {
+      await withdrawalService.settle(workspaceId, selectedWithdrawal._id, method, ref);
+      setFeedback({ tone: "success", text: "Withdrawal disbursed and marked as paid." });
+      await refreshSelectedWithdrawal(selectedWithdrawal._id);
+      loadWithdrawalQueue();
+    } catch (error) {
+      report(error, "Could not settle that withdrawal.");
+    } finally {
+      setWithdrawalBusy(false);
+    }
+  };
+
+  const cancelWithdrawalRequest = async (reason) => {
+    setWithdrawalBusy(true);
+    try {
+      await withdrawalService.cancel(workspaceId, selectedWithdrawal._id, reason);
+      setFeedback({ tone: "success", text: "Withdrawal cancelled." });
+      await refreshSelectedWithdrawal(selectedWithdrawal._id);
+      loadWithdrawalQueue();
+    } catch (error) {
+      report(error, "Could not cancel that withdrawal.");
+    } finally {
+      setWithdrawalBusy(false);
+    }
+  };
+
   const addGoal = async (event) => {
     event.preventDefault();
     if (!goalName.trim() || !goalTarget || busy) return;
@@ -164,10 +273,12 @@ export default function TreasuryOversightTab({
     setFeedback(null);
 
     try {
-      await chamaApi.verifyKyc(workspaceId, membershipId, status);
+      const reason = status === "rejected" ? window.prompt("Why is this KYC submission being rejected? The member will see this reason:") : undefined;
+      if (status === "rejected" && !reason?.trim()) return;
+      await chamaApi.verifyKyc(workspaceId, membershipId, status, reason?.trim());
       setFeedback({
         tone: "success",
-        text: `KYC ${status === "approved" ? "approved" : "rejected"}.`,
+        text: `KYC ${status === "verified" ? "verified" : "rejected"}.`,
       });
       reload?.();
     } catch (error) {
@@ -178,14 +289,15 @@ export default function TreasuryOversightTab({
   };
 
   return (
-    <div className="space-y-6">
-      {feedback && <Notice tone={feedback.tone}>{feedback.text}</Notice>}
+    <div className="grid items-start gap-5 lg:grid-cols-12">
+      {feedback && <div className="lg:col-span-12"><Notice tone={feedback.tone}>{feedback.text}</Notice></div>}
 
       {/* ---------------- Goals ---------------- */}
       <SectionCard
         icon={Target}
         title="Group investment goals"
         description="What the Chama is saving toward, and how far along it is."
+        className="lg:col-span-7"
       >
         <form onSubmit={addGoal} className="grid gap-3 sm:grid-cols-[1fr_200px_auto] sm:items-end">
           <InputField
@@ -212,6 +324,26 @@ export default function TreasuryOversightTab({
           </button>
         </form>
 
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 dark:border-emerald-950 dark:from-emerald-950/30 dark:to-obsidian-card">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700/70 dark:text-emerald-300/70">Saved toward goals</p>
+            <p className="mt-2 text-lg font-black tracking-tight text-slate-900 dark:text-white">{money(savedAcrossGoals)}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/30">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Combined targets</p>
+            <p className="mt-2 text-lg font-black tracking-tight text-slate-900 dark:text-white">{money(targetAcrossGoals)}</p>
+          </div>
+          <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4 dark:border-amber-950 dark:from-amber-950/25 dark:to-obsidian-card">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700/70 dark:text-amber-300/70">Overall progress</p>
+            <div className="mt-2 flex items-center gap-2">
+              <p className="text-lg font-black tracking-tight text-slate-900 dark:text-white">{goalProgress}%</p>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-amber-100 dark:bg-slate-700" role="progressbar" aria-label="Overall goal progress" aria-valuenow={goalProgress} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${goalProgress}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {goals.length === 0 ? (
           <EmptyState
             icon={Target}
@@ -228,10 +360,11 @@ export default function TreasuryOversightTab({
               return (
                 <li
                   key={goal._id}
-                  className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-800/40"
+                  className="group/goal relative space-y-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50/70 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg dark:border-slate-800 dark:from-obsidian-card dark:to-slate-800/40 dark:hover:border-emerald-900"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-black text-slate-900 dark:text-white">
+                    <p className="flex items-center gap-1.5 text-sm font-black text-slate-900 dark:text-white">
+                      <Target size={14} className="text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                       {goal.name}
                     </p>
                     <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-black text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -265,11 +398,63 @@ export default function TreasuryOversightTab({
         )}
       </SectionCard>
 
+      {/* ---------------- Withdrawal requests ---------------- */}
+      {mayViewWithdrawals && (
+        <SectionCard
+          icon={Wallet}
+          title="Withdrawal requests"
+          description="Chairperson approves, treasurer disburses. Settled, rejected and cancelled requests live on the full Withdrawals page."
+          className="lg:col-span-5"
+        >
+          {loadingWithdrawals ? (
+            <div className="flex h-24 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <WithdrawalList
+                withdrawals={withdrawalQueue}
+                onSelect={setSelectedWithdrawal}
+                title="Awaiting action"
+                subtitle="Pending sign-off, or approved and awaiting disbursement."
+                showMember
+                emptyLabel="No withdrawal requests need attention right now."
+              />
+
+              {selectedWithdrawal ? (
+                <WithdrawalDetailsPanel
+                  withdrawal={selectedWithdrawal}
+                  onClose={() => setSelectedWithdrawal(null)}
+                  canDecide={mayDecideWithdrawal}
+                  canSettle={maySettleWithdrawal}
+                  canCancel={mayCancelWithdrawal}
+                  onDecide={decideWithdrawalRequest}
+                  onSettle={settleWithdrawalRequest}
+                  onCancel={cancelWithdrawalRequest}
+                  busy={withdrawalBusy}
+                />
+              ) : (
+                <div className="hidden lg:flex items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/60 p-10 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-800/20">
+                  <p className="text-sm font-semibold">Select a request to approve or disburse.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!maySettleWithdrawal && (
+            <p className="text-[11px] text-slate-400">
+              Approving a request is open to the chairperson and treasurer; disbursing it is treasurer-only and asks for your PIN again.
+            </p>
+          )}
+        </SectionCard>
+      )}
+
       {/* ---------------- Bank accounts ---------------- */}
       <SectionCard
         icon={Landmark}
         title="Bank accounts"
         description="Real-world bank accounts this chama deposits cash into. Members see these read-only; registering or changing one happens here."
+        className="lg:col-span-6"
         action={
           isBankTreasurer && (
             <button
@@ -302,7 +487,7 @@ export default function TreasuryOversightTab({
             {bankAccounts.map((acc) => (
               <li
                 key={acc._id}
-                className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-800/40"
+                className="group/account space-y-3 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50/70 p-4 transition duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg dark:border-slate-800 dark:from-obsidian-card dark:to-slate-800/40 dark:hover:border-sky-900"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
@@ -375,6 +560,7 @@ export default function TreasuryOversightTab({
         icon={PiggyBank}
         title="Savings share-out policy"
         description="How and when accumulated savings get distributed back to contributors. Members see the active policy read-only on the Savings page."
+        className="lg:col-span-6"
         action={
           mayManageShareout && (
             <button
@@ -394,9 +580,12 @@ export default function TreasuryOversightTab({
           </div>
         ) : activeShareoutPolicy ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-950 dark:bg-indigo-950/30">
-            <p className="text-sm font-black text-slate-900 dark:text-white">
-              {activeShareoutPolicy.name}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-black text-slate-900 dark:text-white">
+                {activeShareoutPolicy.name}
+              </p>
+              <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-indigo-700 shadow-sm dark:bg-indigo-900/50 dark:text-indigo-300">Active</span>
+            </div>
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
               Mode:{" "}
               {activeShareoutPolicy.share_rule?.mode === "percentage_of_balance"
@@ -441,9 +630,12 @@ export default function TreasuryOversightTab({
       <SectionCard
         icon={Shield}
         title="Member KYC review"
-        description="Verify the ID documents members have submitted."
+        description="The chairperson and treasurer verify member and official identity submissions. Nobody can review their own."
+        className="lg:col-span-7"
       >
-        {pendingKyc.length === 0 ? (
+        {!(["chairperson", "treasurer"].includes(role)) ? (
+          <RoleLocked>Only the chairperson or treasurer can review identity documents.</RoleLocked>
+        ) : pendingKyc.length === 0 ? (
           <EmptyState
             icon={Shield}
             title="No KYC submissions waiting"
@@ -458,26 +650,33 @@ export default function TreasuryOversightTab({
               >
                 <div>
                   <p className="text-sm font-black text-slate-900 dark:text-white">
-                    {entry.user_id?.name || entry.membership_id || "Member"}
+                    {entry.membership_id?.user_id?.name || "Member"}
+                    {entry.membership_id?.role && entry.membership_id.role !== "member" && (
+                      <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{String(entry.membership_id.role).replace(/_/g, " ")}</span>
+                    )}
                   </p>
                   <p className="font-mono text-[11px] text-slate-500">
-                    ID {entry.id_number || "—"} · {entry.status || "pending"}
+                    National ID {entry.id_number ? `${String(entry.id_number).slice(0, 2)}••••${String(entry.id_number).slice(-2)}` : "—"} · Submitted {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : "recently"}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <button type="button" onClick={() => setKycDocs({ id: entry.membership_id?._id || entry.membership_id || entry._id, name: entry.membership_id?.user_id?.name || "Member" })} className="font-semibold text-emerald-700 underline">View ID document and selfie</button>
+                    {Object.entries(entry.additional_details || {}).map(([key, value]) => <span key={key} className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">{key.replaceAll("_", " ")}: {String(value)}</span>)}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={verifyingId === entry._id}
-                    onClick={() => decideKyc(entry.membership_id || entry._id, "rejected")}
+                    disabled={verifyingId === (entry.membership_id?._id || entry._id)}
+                    onClick={() => decideKyc(entry.membership_id?._id || entry.membership_id || entry._id, "rejected")}
                     className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
                     Reject
                   </button>
                   <button
                     type="button"
-                    disabled={verifyingId === entry._id}
-                    onClick={() => decideKyc(entry.membership_id || entry._id, "approved")}
+                    disabled={verifyingId === (entry.membership_id?._id || entry._id)}
+                    onClick={() => decideKyc(entry.membership_id?._id || entry.membership_id || entry._id, "verified")}
                     className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-black text-white shadow-md transition hover:bg-emerald-500 disabled:opacity-50"
                   >
                     Approve
@@ -489,11 +688,14 @@ export default function TreasuryOversightTab({
         )}
       </SectionCard>
 
+      {kycDocs && <KycDocumentsModal workspaceId={workspaceId} membershipId={kycDocs.id} name={kycDocs.name} onClose={() => setKycDocs(null)} />}
+
       {/* ---------------- Books ---------------- */}
       <SectionCard
         icon={Landmark}
         title="The books"
         description="Ledger, trial balance and account balances — the raw double-entry records."
+        className="lg:col-span-5"
       >
         {mayViewBooks ? (
           <div className="flex flex-wrap gap-2.5">
@@ -506,7 +708,7 @@ export default function TreasuryOversightTab({
               <Link
                 key={path}
                 to={`/workspace/${workspaceId}/${path}`}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-emerald-900 dark:hover:bg-slate-700"
               >
                 <BookOpen size={14} /> {label}
               </Link>

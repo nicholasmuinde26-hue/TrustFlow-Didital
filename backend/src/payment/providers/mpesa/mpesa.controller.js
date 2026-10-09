@@ -8,7 +8,10 @@ import PaymentIntent from '../../../models/PaymentIntent.js';
 import AppError from '../../../utils/AppError.js';
 
 import { reconcileB2cResult, reconcileStkCallback } from '../../../modules/business/business.service.js';
+import { settleBillingStkCallback } from '../../../modules/billing/billingPayment.service.js';
+import { reconcileProfitDistributionB2c } from '../../../modules/chamaAssets/chamaAsset.service.js';
 import { confirmMpesaDisbursement } from '../../../modules/loans/Loandisbursement.service.js';
+import { reconcileMemberWalletDeposit, reconcileMemberWalletWithdrawal } from '../../../modules/finance/memberWallet.service.js';
 import { maybeCreateMgrPayoutForChama } from '../../../modules/chama/chamaFinance.service.js'; 
 import MpesaAttempt from '../../../models/MpesaAttempt.js';
 import paymentService from '../../../payment/payment.service.js';
@@ -65,7 +68,7 @@ export const initiateStkPush = async (req, res, next) => {
           groupMembership = await ContributionGroupMember.findOneAndUpdate(
             { contribution_group_id: targetWorkspaceId, user_id: userId },
             { contribution_group_id: targetWorkspaceId, user_id: userId, role: 'organizer', status: 'active' },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
           ).lean();
         }
       }
@@ -180,6 +183,13 @@ export const handleMpesaCallback = async (req, res) => {
         }
       ).catch(() => {});
 
+      await reconcileMemberWalletDeposit({
+        checkoutRequestId: stk.CheckoutRequestID,
+        success,
+        receipt,
+        reason: stk.ResultDesc,
+      }).catch((error) => console.error("Member wallet deposit reconciliation error:", error.message));
+
       // 2b. Business POS sales don't go through PaymentIntent at all (see
       // business.service.js) - paymentService.handleCallback() above is a
       // no-op for them. This is the only place their STK callback ever
@@ -194,6 +204,22 @@ export const handleMpesaCallback = async (req, res) => {
         reason: stk.ResultDesc,
       }).catch((error) => {
         console.error("Business STK callback reconciliation error:", error.message);
+      });
+    }
+
+    // 2c. Platform subscription payments (the treasurer paying the chama's
+    // plan to the platform shortcode) are matched by CheckoutRequestID too. A
+    // safe no-op for every payment that is not a billing invoice.
+    if (stk?.CheckoutRequestID) {
+      const amount = stk.CallbackMetadata?.Item?.find(i => i.Name === 'Amount')?.Value ?? null;
+      const receipt = stk.CallbackMetadata?.Item?.find(i => i.Name === 'MpesaReceiptNumber')?.Value || null;
+      await settleBillingStkCallback({
+        checkoutRequestId: stk.CheckoutRequestID,
+        success: Number(stk.ResultCode) === 0,
+        cancelled: Number(stk.ResultCode) === 1032,
+        amount,
+        receipt,
+        reason: stk.ResultDesc,
       });
     }
 
@@ -218,6 +244,7 @@ export const handleB2cResult = async (req, res) => {
     const conversationId = result?.Result?.ConversationID;
     const success = Number(result?.Result?.ResultCode) === 0;
     const failureReason = result?.Result?.ResultDesc;
+    console.log("[M-Pesa B2C] result received:", { conversationId, resultCode: result?.Result?.ResultCode, resultDesc: failureReason });
 
     // A single B2C ResultURL is shared by business/MGR payouts and loan
     // disbursements — Safaricom has no way to tell us which domain a given
@@ -227,7 +254,11 @@ export const handleB2cResult = async (req, res) => {
     // loan stayed stuck in "disbursement_pending" (Processing...) forever,
     // even though Safaricom had already settled the payout.
     const handledAsBusinessPayout = await reconcileB2cResult(result);
-    if (!handledAsBusinessPayout && conversationId) {
+    const handledAsProfitDistribution = !handledAsBusinessPayout && await reconcileProfitDistributionB2c(result);
+    const handledAsMemberWallet = !handledAsBusinessPayout && !handledAsProfitDistribution && conversationId
+      ? await reconcileMemberWalletWithdrawal({ conversationId, success, receipt: result?.Result?.TransactionID, reason: failureReason })
+      : null;
+    if (!handledAsBusinessPayout && !handledAsProfitDistribution && !handledAsMemberWallet && conversationId) {
       await confirmMpesaDisbursement({ conversationId, success, failureReason }).catch((error) => {
         console.error("M-Pesa B2C loan disbursement reconciliation error:", error);
       });

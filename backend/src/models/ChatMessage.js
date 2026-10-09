@@ -109,6 +109,13 @@ const ChatMessageSchema = new mongoose.Schema(
     edited_at: Date,
 
     deleted_at: Date,
+
+    // Users who have opened this message's conversation. Used to calculate
+    // per-conversation unread badges without exposing another member's reads.
+    read_by: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
   },
   {
     timestamps: true,

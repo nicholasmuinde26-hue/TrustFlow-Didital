@@ -9,6 +9,10 @@ export const businessApi = {
   getSummary: (workspaceId) =>
     api.get(`/businesses/${workspaceId}/summary`),
 
+  // Chama oversight + category-aware insights (chama-owned businesses only)
+  getChamaDashboard: (workspaceId) =>
+    api.get(`/businesses/${workspaceId}/chama-dashboard`),
+
   // Sales
   getSales: (workspaceId, params) =>
     api.get(`/businesses/${workspaceId}/sales`, { params }),
@@ -47,6 +51,15 @@ export const businessApi = {
   restockInventoryItem: (workspaceId, itemId, payload) =>
     api.post(`/businesses/${workspaceId}/inventory/${itemId}/restock`, payload),
 
+  publishInventoryItem: (workspaceId, itemId) =>
+    api.post(`/businesses/${workspaceId}/inventory/${itemId}/publish`),
+
+  unpublishInventoryItem: (workspaceId, itemId) =>
+    api.post(`/businesses/${workspaceId}/inventory/${itemId}/unpublish`),
+
+  publishInventoryBulk: (workspaceId, itemIds = []) =>
+    api.post(`/businesses/${workspaceId}/inventory/publish-bulk`, { item_ids: itemIds }),
+
   // Rental Listings (rooms & plots)
   getRentalListings: (workspaceId) =>
     api.get(`/businesses/${workspaceId}/rental-listings`),
@@ -63,7 +76,7 @@ export const businessApi = {
   deleteRentalListing: (workspaceId, listingId) =>
     api.delete(`/businesses/${workspaceId}/rental-listings/${listingId}`),
 
-  // Rental Inquiries (leads from the public storefront)
+  // Rental Inquiries (leads for this business)
   getRentalInquiries: (workspaceId) =>
     api.get(`/businesses/${workspaceId}/rental-inquiries`),
 
@@ -74,18 +87,9 @@ export const businessApi = {
   createPosSale: (workspaceId, payload) =>
     api.post(`/businesses/${workspaceId}/pos/sale`, payload),
 
-  // Storefront (admin/owner side)
-  getStorefront: (workspaceId) =>
-    api.get(`/businesses/${workspaceId}/storefront`),
-
-  updateStorefront: (workspaceId, payload) =>
-    api.put(`/businesses/${workspaceId}/storefront`, payload),
-
-  getStorefrontOrders: (workspaceId) =>
-    api.get(`/businesses/${workspaceId}/storefront-orders`),
-
-  updateStorefrontOrderStatus: (workspaceId, orderId, status) =>
-    api.patch(`/businesses/${workspaceId}/storefront-orders/${orderId}/status`, { status }),
+  // Rebuild the receipt for an earlier POS sale (reprint).
+  getPosReceipt: (workspaceId, transactionId) =>
+    api.get(`/businesses/${workspaceId}/pos/receipts/${transactionId}`),
 
   // Customers
   getCustomers: (workspaceId, params) =>

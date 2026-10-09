@@ -106,12 +106,18 @@ export default function AccountSettingsPage() {
       return;
     }
 
+    const trimmedIdNumber = form.id_number?.trim() || "";
+    if (trimmedIdNumber && !/^[A-Za-z0-9]{4,15}$/.test(trimmedIdNumber)) {
+      setSaveError("ID number should be 4–15 letters/digits, no spaces or symbols.");
+      return;
+    }
+
     try {
       await updateProfile.mutateAsync({
         name: form.name.trim(),
         phone: form.phone?.trim() || null,
         email: form.email?.trim() || null,
-        id_number: form.id_number?.trim() || null,
+        id_number: trimmedIdNumber || null,
         avatar_url: form.avatar_url || null,
       });
 
@@ -302,7 +308,7 @@ export default function AccountSettingsPage() {
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                ID Number
+                National ID / Passport number
               </label>
               <div className="relative">
                 <IdCard
@@ -313,10 +319,14 @@ export default function AccountSettingsPage() {
                   type="text"
                   value={form.id_number}
                   onChange={handleChange("id_number")}
-                  placeholder="National ID"
+                  placeholder="e.g. 12345678"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2.5 pl-10 pr-3.5 text-xs font-medium text-slate-900 outline-none transition focus:border-primary focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Used as your identity reference when you submit KYC inside a
+                Chama — leadership there verifies it against this number.
+              </p>
             </div>
           </div>
 

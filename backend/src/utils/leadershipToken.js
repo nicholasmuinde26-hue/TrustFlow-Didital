@@ -56,7 +56,12 @@ export const STEP_UP_ACTIONS = Object.freeze({
   UPDATE_LOAN_POLICY: 'update_loan_policy',
   DISBURSE_FUNDS: 'disburse_funds',
   CHANGE_MEMBER_ROLE: 'change_member_role',
-  UPDATE_PAYMENT_DETAILS: 'update_payment_details'
+  UPDATE_PAYMENT_DETAILS: 'update_payment_details',
+  REGISTER_CHAMA_ASSET: 'register_chama_asset',
+  // Rewriting who owns what % of a chama asset is as sensitive as
+  // registering it in the first place — it changes what each member
+  // is entitled to on disposal or profit distribution.
+  SET_ASSET_OWNERSHIP: 'set_asset_ownership'
 });
 
 const isKnownStepUpAction = (action) =>

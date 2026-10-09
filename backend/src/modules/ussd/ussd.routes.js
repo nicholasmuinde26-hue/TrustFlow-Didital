@@ -2,6 +2,7 @@ import express from 'express';
 import { handleUssdRequest, cleanupUssdSessions } from './ussd.controller.js';
 import { protect } from '../../middleware/auth.middleware.js';
 import { requireAdmin } from '../../middleware/admin.middleware.js';
+import { verifyUssdWebhook } from './ussd.middleware.js';
 
 const router = express.Router();
 
@@ -9,9 +10,11 @@ const router = express.Router();
 // AFRICA'S TALKING WEBHOOK — PUBLIC, NO AUTH
 // ============================================================
 // Configure this exact path as the callback URL for the *XXX# service
-// code in the Africa's Talking dashboard.
+// code in the Africa's Talking dashboard. If USSD_WEBHOOK_TOKEN is set,
+// append ?token=<secret> to that URL (see ussd.middleware.js).
 router.post(
   '/callback',
+  verifyUssdWebhook,
   express.urlencoded({ extended: true }),
   handleUssdRequest
 );

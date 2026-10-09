@@ -84,7 +84,7 @@ export default function UserMenu() {
       <button
         onClick={() => setOpen((prev) =>!prev)}
         className="
-        flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2
+        flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-1.5 py-1.5 sm:gap-3 sm:px-3 sm:py-2
         transition-all hover:bg-slate-50
         dark:border-obsidian-border dark:bg-obsidian-raised dark:hover:bg-slate-700
         "
@@ -92,7 +92,7 @@ export default function UserMenu() {
         {/* AVATAR: Photo or Initials */}
         <div
           className="
-          flex h-10 w-10 items-center justify-center overflow-hidden rounded-full
+          flex h-8 w-8 items-center justify-center overflow-hidden rounded-full sm:h-10 sm:w-10
           bg-primary font-semibold text-white
           "
         >
@@ -114,8 +114,8 @@ export default function UserMenu() {
         </div>
 
         <ChevronDown
-          size={18}
-          className={`text-slate-500 transition-transform ${open? "rotate-180" : ""}`}
+          size={16}
+          className={`hidden text-slate-500 transition-transform sm:block ${open? "rotate-180" : ""}`}
         />
       </button>
 

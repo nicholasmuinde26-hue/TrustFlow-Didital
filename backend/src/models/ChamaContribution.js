@@ -172,7 +172,7 @@ const chamaContributionSchema = new mongoose.Schema(
     },
 
     disbursement: {
-      method: { type: String, enum: ['cash', 'bank', 'mpesa', null], default: null },
+      method: { type: String, enum: ['cash', 'bank', 'mpesa', 'wallet', null], default: null },
       phone_number: { type: String, default: null },
       notes: { type: String, trim: true, maxlength: 500, default: null },
       requested_by: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaMembership', default: null },

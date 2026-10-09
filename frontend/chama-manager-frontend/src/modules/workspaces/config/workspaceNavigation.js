@@ -30,7 +30,6 @@ import {
   BadgeDollarSign,
   Store,
   ShoppingBag,
-  Globe,
   Home,
   ClipboardList,
 
@@ -50,20 +49,28 @@ import {
   Vote,
 } from "lucide-react";
 
-import { canViewAdministration, canViewFullBooks, canViewLeadershipDesk } from "../permissions/Permissions";
+import { canViewAdministration, canViewLeadershipDesk } from "../permissions/Permissions";
+import { buildChamaNavigation } from "./chamaNavigation";
 
-// Nav items inside "Books & Reports" that expose the chama's raw
-// double-entry books rather than a member-facing statement - gated by
-// canViewFullBooks() in filterByRole() below. Transactions is
-// deliberately NOT here: the backend now scopes it down to "your own"
-// transactions for a plain member instead of blocking it outright (see
-// finance.controller.js#getFinanceTransactions), so it stays visible to
-// everyone. Balance Sheet / Income Statement / Cash Flow / Reports also
-// stay visible to everyone - they're the member-facing statements
-// ReportsPage.jsx already marks as not management-only.
-const CHAMA_BOOKS_OFFICIAL_ONLY_TITLES = ["General Ledger", "Chama Wallet", "Trial Balance", "Bank Accounts"];
+// The Leadership Desk lives only as the pinned "Desk" button in the sidebar
+// rail (and the Ctrl+K palette) - not in any nav section, so it does not
+// show in the section tab bar or the "All tools" drawer. Role-gated here
+// exactly as it used to be inside filterByRole(); returns null when the
+// current member may not open it.
+export function getLeadershipDeskItem(workspaceId, type, role) {
+  if (!workspaceId || !canViewLeadershipDesk(role, type)) return null;
+  return {
+    title: "Leadership Desk",
+    icon: Users2,
+    to: `/workspace/${workspaceId}/leadership`,
+  };
+}
 
-export function getWorkspaceNavigation(workspaceId, type, role, category) {
+// `enabledModules` is workspace.modules from the backend (chamas only). Items
+// whose route belongs to a switched-off module are dropped, and sections left
+// empty disappear - so a chama without loans has no Loans link anywhere.
+// null/undefined means "no module information": nothing is hidden.
+export function getWorkspaceNavigation(workspaceId, type, role, category, workspaceSettings = null, enabledModules = null) {
   const base = `/workspace/${workspaceId}`;
   const normalizedType = type?.toLowerCase().replace(/[-_]/g, "");
   // Category flags
@@ -83,7 +90,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Tenant Inquiries", icon: ClipboardList, to: `${base}/business/rental-inquiries` },
       { title: "Rent Collections", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Maintenance & Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
-      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
+      { title: "Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   } else if (isRestaurant) {
     operationsItems.push(
@@ -92,15 +99,16 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Orders & Sales", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Kitchen & Food Prep", icon: ClipboardList, to: `${base}/business/kitchen` },
       { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
-      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
+      { title: "Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   } else if (isService) {
     operationsItems.push(
       { title: "Services", icon: Package, to: `${base}/business/inventory` },
+      { title: "Point of Sale (POS)", icon: ShoppingBag, to: `${base}/business/pos` },
       { title: "Appointments & Jobs", icon: ClipboardList, to: `${base}/business/sales` },
       { title: "Invoices & Billing", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
-      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
+      { title: "Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   } else {
     // Retail & Other
@@ -109,7 +117,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
       { title: "Sales & Invoicing", icon: ShoppingCart, to: `${base}/business/sales` },
       { title: "Inventory & Stock", icon: Package, to: `${base}/business/inventory` },
       { title: "Expenses", icon: BadgeDollarSign, to: `${base}/business/expenses` },
-      { title: "Merchant Marketplace", icon: Store, to: `${base}/business/marketplace` }
+      { title: "Marketplace", icon: Store, to: `${base}/business/marketplace` }
     );
   }
 
@@ -118,6 +126,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
   // =====================================================
   const businessNavigation = [
     {
+      sectionKey: "overview",
       items: [
         {
           title: "Overview",
@@ -128,11 +137,13 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
+      sectionKey: "operations",
       title: "Business Operations",
       items: operationsItems,
     },
 
     {
+      sectionKey: "people",
       title: "People & Partners",
       items: [
         {
@@ -159,6 +170,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
+      sectionKey: "finance",
       title: "Treasury & Finance",
       items: [
         {
@@ -185,6 +197,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
+      sectionKey: "statements",
       title: "Financial Statements",
       items: [
         {
@@ -211,6 +224,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
+      sectionKey: "reports",
       title: "Reports & Analytics",
       items: [
         {
@@ -222,6 +236,7 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
     },
 
     {
+      sectionKey: "settings",
       title: "Administration",
       items: [
         {
@@ -300,184 +315,6 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
   ];
 
   // =====================================================
-  // 3. CHAMA WORKSPACE NAVIGATION
-  // =====================================================
-  const chamaNavigation = [
-    {
-      items: [
-        {
-          title: "Overview",
-          icon: LayoutDashboard,
-          to: base,
-        },
-        {
-          title: "Members",
-          icon: Users,
-          to: `${base}/members`,
-        },
-        {
-          title: "My Chama",
-          icon: Wallet,
-          to: `${base}/my-chama`,
-        },
-      ],
-    },
-
-   
-    {
-      title: "Chama Operations",
-      items: [
-        // The Command Center used to sit right here next to the
-        // Leadership Desk — two links, same permission check, doing
-        // overlapping things. It's now a set of tabs inside the desk,
-        // so there is exactly one way in.
-        {
-          title: "Leadership Desk",
-          icon: Users2,
-          to: `${base}/leadership`,
-        },
-        {
-          title: "Loans",
-          icon: HandCoins,
-          to: `${base}/loans`,
-        },
-        {
-          title: "Meeting Records",
-          icon: CalendarClock,
-          to: `${base}/meetings`,
-        },
-        {
-          title: "Polls",
-          icon: Vote,
-          to: `${base}/polls`,
-        },
-        {
-          title: "Announcements",
-          icon: Megaphone,
-          to: `${base}/announcements`,
-        },
-        {
-          title: "Messages",
-          icon: MessageSquare,
-          to: `${base}/chat`,
-        },
-      ],
-    },
-
-    {
-      title: "Money & Contributions",
-      items: [
-        {
-          title: "Dashboard",
-          icon: Wallet,
-          to: `${base}/finance`,
-        },
-        {
-          // Was pointing at `${base}/contributions`, which is actually
-          // the Contribution-Group module's route reused by path
-          // coincidence — wrong page for a Chama workspace. The real
-          // Chama contributions view lives under /finance.
-          title: "Contributions",
-          icon: Coins,
-          to: `${base}/finance/contributions`,
-        },
-        {
-          title: "Record Contribution",
-          icon: PlusCircle,
-          to: `${base}/finance/record-contribution`,
-        },
-        {
-          title: "Savings",
-          icon: PiggyBank,
-          to: `${base}/finance/savings`,
-        },
-         {
-          title: "Merry-Go-Round (MGR)",
-          icon: ArrowLeftRight,
-          to: `${base}/mgr`,
-        },
-        {
-          title: "Chama Contributions",
-          icon: HeartHandshake,
-          to: `${base}/chama-contributions`,
-        },
-        {
-          title: "Payouts",
-          icon: ArrowLeftRight,
-          to: `${base}/finance/payouts`,
-        },
-        {
-          title: "Savings Share-Out",
-          icon: PiggyBank,
-          to: `${base}/finance/savings-shareout`,
-        },
-      ],
-    },
-
-    {
-      title: "Books",
-      items: [
-        {
-          title: "Transactions",
-          icon: Receipt,
-          to: `${base}/finance/transactions`,
-        },
-        {
-          title: "Balance Sheet",
-          icon: BarChart3,
-          to: `${base}/finance/balance-sheet`,
-        },
-        {
-          title: "Income Statement",
-          icon: TrendingUp,
-          to: `${base}/finance/income-statement`,
-        },
-        {
-          title: "Cash Flow",
-          icon: LineChart,
-          to: `${base}/finance/cash-flow`,
-        },
-        {
-          title: "Reports",
-          icon: FileBarChart2,
-          to: `${base}/reports`,
-        },
-        {
-          title: "Trust Timeline",
-          icon: ShieldCheck,
-          to: `${base}/trust-timeline`,
-        },
-        {
-          title: "Trust Score",
-          icon: ShieldQuestion,
-          to: `${base}/trust-score`,
-        },
-        {
-          title: "Disputes",
-          icon: Gavel,
-          to: `${base}/disputes`,
-        },
-        {
-          title: "Official Accountability",
-          icon: Star,
-          to: `${base}/officials`,
-        },
-      ],
-    },
-
-    {
-      title: "Administration",
-      items: [
-        {
-          title: "Settings",
-          icon: Settings,
-          to: `${base}/settings`,
-        },
-      ],
-    },
-  ];
-
-  // =====================================================
   // ROLE-BASED FILTERING
   //
   // The Leadership Desk is a management-only area — plain members
@@ -491,24 +328,13 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
   // and showing both would rebuild the collision this merge removed.
   // =====================================================
   function filterByRole(sections) {
-    const chamaBacked = type === "chama" || type === "burial-chama";
-
     return sections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
-          if (item.title === "Leadership Desk") {
-            return canViewLeadershipDesk(role, type);
-          }
+          if (item.title === "Record Contribution") return true;
           if (section.title === "Administration") {
-            if (chamaBacked) return false;
             return canViewAdministration(role, type);
-          }
-          if (
-            section.title === "Books & Reports" &&
-            CHAMA_BOOKS_OFFICIAL_ONLY_TITLES.includes(item.title)
-          ) {
-            return canViewFullBooks(role, type);
           }
           return true;
         }),
@@ -517,216 +343,42 @@ export function getWorkspaceNavigation(workspaceId, type, role, category) {
   }
 
   // =====================================================
-  // 4. BURIAL CHAMA NAVIGATION
-  //
-  // Deliberately NOT a copy of the standard chama nav. A burial /
-  // welfare chama's core job is bereavement cover, not rotating
-  // savings — so MGR and "Savings Share-Out" (which imply the fund
-  // gets fully divided out among members, table-banking style) are
-  // dropped. In their place: an "Income & Fundraising" section for
-  // the things burial groups actually do to grow the welfare fund
-  // in a Kenyan context — hiring out tents/chairs/cooking gear for
-  // funerals and events, lending surplus at interest, and running
-  // harambees for cases that exceed the standard payout.
-  // =====================================================
-  const burialChamaNavigation = [
-    {
-      items: [
-        {
-          title: "Overview",
-          icon: LayoutDashboard,
-          to: base,
-        },
-        {
-          title: "Members",
-          icon: Users,
-          to: `${base}/members`,
-        },
-        {
-          title: "My Chama",
-          icon: Wallet,
-          to: `${base}/my-chama`,
-        },
-      ],
-    },
-
-    {
-      title: "Burial Chama",
-      items: [
-        {
-          title: "Setup Wizard",
-          icon: ShieldCheck,
-          to: `${base}/burial-chama-setup`,
-        },
-        {
-          title: "Beneficiaries",
-          icon: UserPlus,
-          to: `${base}/beneficiaries`,
-        },
-        {
-          title: "Burial Cases",
-          icon: HeartPulse,
-          to: `${base}/burial-cases`,
-        },
-        {
-          title: "Member Statement",
-          icon: FileText,
-          to: `${base}/member-statement`,
-        },
-      ],
-    },
-
-    {
-      title: "Welfare & Contributions",
-      items: [
-        {
-          title: "Contributions",
-          icon: Coins,
-          to: `${base}/contributions`,
-        },
-        {
-          title: "Record Contribution",
-          icon: PlusCircle,
-          to: `${base}/finance/record-contribution`,
-        },
-        {
-          title: "Welfare Fund",
-          icon: PiggyBank,
-          to: `${base}/finance/savings`,
-        },
-        {
-          title: "Benevolent Payouts",
-          icon: ArrowLeftRight,
-          to: `${base}/finance/payouts`,
-        },
-      ],
-    },
-
-    {
-      title: "Income & Fundraising",
-      items: [
-        {
-          title: "Emergency Loans",
-          icon: HandCoins,
-          to: `${base}/loans`,
-        },
-        {
-          title: "Equipment & Tent Hire",
-          icon: Tent,
-          to: `${base}/equipment-hire`,
-        },
-        {
-          title: "Harambee & Fundraising",
-          icon: Megaphone,
-          to: `${base}/fundraising`,
-        },
-      ],
-    },
-
-    {
-      title: "Meetings & Notices",
-      items: [
-        {
-          title: "Meeting Records",
-          icon: Video,
-          to: `${base}/meetings`,
-        },
-        {
-          title: "Polls",
-          icon: Vote,
-          to: `${base}/polls`,
-        },
-        {
-          title: "Announcements",
-          icon: MessageSquare,
-          to: `${base}/announcements`,
-        },
-      ],
-    },
-
-    {
-      title: "Books & Reports",
-      items: [
-        {
-          title: "Transactions",
-          icon: Receipt,
-          to: `${base}/finance/transactions`,
-        },
-        {
-          title: "General Ledger",
-          icon: BookOpen,
-          to: `${base}/finance/ledger`,
-        },
-        {
-          title: "Chama Wallet",
-          icon: Landmark,
-          to: `${base}/finance/accounts`,
-        },
-        {
-          title: "Bank Accounts",
-          icon: Building2,
-          to: `${base}/finance/bank-accounts`,
-        },
-        {
-          title: "Trial Balance",
-          icon: Scale,
-          to: `${base}/finance/trial-balance`,
-        },
-        {
-          title: "Balance Sheet",
-          icon: BarChart3,
-          to: `${base}/finance/balance-sheet`,
-        },
-        {
-          title: "Income Statement",
-          icon: TrendingUp,
-          to: `${base}/finance/income-statement`,
-        },
-        {
-          title: "Cash Flow",
-          icon: LineChart,
-          to: `${base}/finance/cash-flow`,
-        },
-        {
-          title: "Reports",
-          icon: FileBarChart2,
-          to: `${base}/reports`,
-        },
-      ],
-    },
-
-    // Titled "Chama Operations", not "Administration": the filter below
-    // drops the Administration section outright for Chama-backed
-    // workspaces (their settings are a tab in the desk), and this item
-    // would be swept away with it.
-    {
-      title: "Chama Operations",
-      items: [
-        {
-          title: "Leadership Desk",
-          icon: Users2,
-          to: `${base}/leadership`,
-        },
-      ],
-    },
-  ];
-
-  // =====================================================
   // WORKSPACE ROUTER MATCHING
   // =====================================================
   switch (normalizedType) {
-    case "business":
-      return businessNavigation;
+    case "business": {
+      const configuredSections = workspaceSettings?.enabled_sections;
+      const visibleSections = Array.isArray(configuredSections)
+        ? businessNavigation.filter((section) => configuredSections.includes(section.sectionKey))
+        : businessNavigation;
+      return filterByRole(visibleSections);
+    }
 
     case "contribution":
     case "contributiongroup":
       return filterByRole(contributionNavigation);
 
     case "burialchama":
-      return filterByRole(burialChamaNavigation);
+      return buildChamaNavigation({ workspaceId, type, role, shell: "burial", enabledModules });
 
     case "chama":
     default:
-      return filterByRole(chamaNavigation);
+      return buildChamaNavigation({ workspaceId, type, role, shell: "chama", enabledModules });
   }
+}
+
+// Resolve the single navigation section that owns a route. Longest-path wins,
+// so /finance/transactions belongs to Books instead of the broader /finance
+// dashboard route. Use this for active navigation and breadcrumbs alike.
+export function findWorkspaceNavigationMatch(sections = [], pathname = "") {
+  const currentPath = String(pathname).replace(/\/$/, "") || "/";
+  let best = null;
+  sections.forEach((section) => {
+    (section.items || []).forEach((item) => {
+      const to = String(item.to || "").replace(/\/$/, "");
+      if (!to || !(currentPath === to || currentPath.startsWith(`${to}/`))) return;
+      if (!best || to.length > best.item.to.length) best = { section, item };
+    });
+  });
+  return best;
 }

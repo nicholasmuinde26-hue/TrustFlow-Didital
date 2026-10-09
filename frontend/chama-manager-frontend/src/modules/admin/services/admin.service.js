@@ -87,6 +87,28 @@ const adminService = {
     return data;
   },
 
+  // Feature changes (turn chama modules on/off) requested from the Leadership Desk
+  async getModuleChangeRequests(status = 'pending') {
+    const { data } = await api.get('/admin/workspace-module-requests', { params: { status } });
+    return data.data || [];
+  },
+
+  async decideModuleChange(requestId, decision, note = '') {
+    const path = decision === 'approved' ? 'approve' : 'reject';
+    const { data } = await api.post(`/admin/workspace-module-requests/${requestId}/${path}`, { note });
+    return data.data;
+  },
+
+  async getFeatureManagedChamas() {
+    const { data } = await api.get('/admin/workspace-modules/chamas');
+    return data.data || [];
+  },
+
+  async configureChamaFeatures(chamaId, { modules, preset, note = '' }) {
+    const { data } = await api.put(`/admin/workspace-modules/chamas/${chamaId}`, { modules, preset, note });
+    return data.data;
+  },
+
   // Entity directory drill-down (chama / business / contribution_group detail)
   async getEntityDetail(type, id) {
     const { data } = await api.get(`/admin/entities/${type}/${id}`);
@@ -104,6 +126,20 @@ const adminService = {
   async searchPeople(params = {}) {
     const { data } = await api.get('/admin/people', { params });
     return data.data || { people: [], total: 0 };
+  },
+
+  // Chama (organisation) KYC queue
+  async listChamaKyc(status = 'pending') {
+    const { data } = await api.get('/admin/chama-kyc', { params: { status } });
+    return data.data || [];
+  },
+  async getChamaKyc(chamaId) {
+    const { data } = await api.get(`/admin/chama-kyc/${chamaId}`);
+    return data.data;
+  },
+  async reviewChamaKyc(chamaId, status, reason) {
+    const { data } = await api.post(`/admin/chama-kyc/${chamaId}/review`, { status, reason });
+    return data.data;
   },
 };
 

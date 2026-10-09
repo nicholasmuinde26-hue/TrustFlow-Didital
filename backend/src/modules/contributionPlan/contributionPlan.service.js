@@ -25,6 +25,8 @@
 
 
 import mongoose from "mongoose";
+import { isBehavior } from "../../constants/contributionBehavior.constants.js";
+import { ensurePlanLedgerAccount } from "./planLedgerAccount.service.js";
 
 
 import ContributionPlan
@@ -217,6 +219,8 @@ export const createContributionPlan = async({
 
     merry_go_round = false,
 
+    behavior = null,
+    display = undefined,
     session = null
 
 
@@ -225,6 +229,9 @@ export const createContributionPlan = async({
 
 
     validateOwnerType(owner_type);
+    if(behavior !== null && !isBehavior(behavior)){
+        throw new AppError("Unknown contribution behaviour", 400);
+    }
 
 
 
@@ -323,6 +330,8 @@ export const createContributionPlan = async({
 
 
 
+                    ...(behavior ? { behavior } : {}),
+                    ...(display ? { display } : {}),
                     status:
 
                         PLAN_STATUS.DRAFT
@@ -823,6 +832,11 @@ export const activateContributionPlan = async({
         session
 
     });
+    // Own ledger account (no-op unless PLAN_LEDGER_ACCOUNTS=true). Created
+    // outside the session on purpose - see planLedgerAccount.service.js.
+    await ensurePlanLedgerAccount(plan).catch((err) =>
+        console.warn("[contributionPlan] ledger account not created:", err.message)
+    );
 
 
 
@@ -1394,14 +1408,13 @@ export const getContributionPlanPayments = async({
 
 
 
+    // ContributionPayment links to the plan/participant via `plan_id` and
+    // `participant_id` (see models/ContributionPayment.js). The old `plan` /
+    // `member` field names below never existed on that schema, so this query
+    // silently matched nothing and every caller read an empty list as
+    // "no payments recorded yet".
     const query = {
-
-
-        plan:
-
-            plan_id
-
-
+        plan_id,
     };
 
 
@@ -1409,29 +1422,21 @@ export const getContributionPlanPayments = async({
 
 
 
-    if(status){
+    // ContributionPayment.status is a lowercase enum ('pending' |
+    // 'processing' | 'completed' | 'failed' | ...), so normalise whatever
+    // casing the caller sends and accept a comma-separated list the same
+    // way getContributionPlanObligations already does.
+    if (status) {
+        const values = String(status)
+            .split(',')
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean);
 
-
-        query.status =
-
-            status;
-
-
+        query.status = values.length > 1 ? { $in: values } : values[0];
     }
 
-
-
-
-
-
-    if(participant_id){
-
-
-        query.member =
-
-            participant_id;
-
-
+    if (participant_id) {
+        query.participant_id = participant_id;
     }
 
 
@@ -1441,38 +1446,17 @@ export const getContributionPlanPayments = async({
 
 
     return ContributionPayment.find(query)
-
-
-
         .populate({
-
-
-            path:
-
-                "member",
-
-
-
-            select:
-
-                "user role status"
-
-
-
+            path: 'participant_id',
+            model: participant_type || 'ChamaMembership',
+            select: 'user_id role status',
+            populate: { path: 'user_id', select: 'name phone avatar_url' },
         })
-
-
-
-        .sort({
-
-            createdAt:
-
-                -1
-
+        .populate({
+            path: 'obligation_id',
+            select: 'period_start period_end due_date expected_amount paid_amount status',
         })
-
-
-
+        .sort({ paid_at: -1, createdAt: -1 })
         .session(session);
 
 
@@ -1542,16 +1526,10 @@ export const getContributionPlanFinancialSummary = async({
 
 
 
-    const obligations =
-
-        await ContributionObligation.find({
-
-            plan:
-
-                plan_id
-
-        })
-
+    // ContributionObligation stores the plan link as `plan_id`, not
+    // `plan` - the old field name matched nothing, so expectedAmount was
+    // always 0 and every plan reported 0% collected.
+    const obligations = await ContributionObligation.find({ plan_id })
         .session(session);
 
 
@@ -1560,23 +1538,13 @@ export const getContributionPlanFinancialSummary = async({
 
 
 
-    const payments =
-
-        await ContributionPayment.find({
-
-            plan:
-
-                plan_id,
-
-
-            status:
-
-                "COMPLETED"
-
-
-        })
-
-        .session(session);
+    // Same two bugs on the payment side: the field is `plan_id`, and the
+    // status enum is lowercase ('completed'), so the uppercase literal
+    // never matched a single row and paidAmount was always 0.
+    const payments = await ContributionPayment.find({
+        plan_id,
+        status: 'completed',
+    }).session(session);
 
 
 

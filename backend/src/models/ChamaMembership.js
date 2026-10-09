@@ -242,8 +242,34 @@ const chamaMembershipSchema = new mongoose.Schema(
     leadership_pin_version: {
       type: Number,
       default: 0
-    }
+    },
 
+    // ======================================
+    // PUBLIC PROFILE (PER CHAMA)
+    // ======================================
+    //
+    // What this person chooses to show when someone taps their profile.
+    // Every member and every official can edit this at any time. It is
+    // deliberately separate from KYC: nothing from ChamaMemberKyc
+    // (ID number, ID document, selfie, next of kin) ever flows into it.
+    //
+    // visibility:
+    //   "public"  - anyone, including signed-out visitors, but only while
+    //               the Chama itself is public and published.
+    //   "members" - signed-in members of this Chama only (default).
+    //   "hidden"  - only the person themself.
+    //
+    // ======================================
+
+    public_profile: {
+      visibility: { type: String, enum: ['public', 'members', 'hidden'], default: 'members' },
+      headline: { type: String, default: '', maxlength: 120 },
+      bio: { type: String, default: '', maxlength: 800 },
+      image_url: { type: String, default: null, select: false },
+      location: { type: String, default: '', maxlength: 120 },
+      contact_email: { type: String, default: '', maxlength: 254 },
+      updated_at: { type: Date, default: null }
+    }
   },
   {
     timestamps: true

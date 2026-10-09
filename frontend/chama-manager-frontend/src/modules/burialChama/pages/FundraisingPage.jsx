@@ -73,7 +73,7 @@ export default function FundraisingPage() {
   const { data: cases } = useQuery({
     queryKey: ['burial-cases', workspaceId],
     queryFn: async () => {
-      const response = await api.get(`/api/v1/burial-chama/chama/${workspaceId}/cases`);
+      const response = await api.get(`/burial-chama/chama/${workspaceId}/cases`);
       return response.data.data;
     },
     enabled: !!workspaceId,

@@ -122,6 +122,7 @@ class SavingsShareoutRule {
       cash: ACCOUNT_CODES.CASH,
       bank: ACCOUNT_CODES.BANK,
       mpesa: ACCOUNT_CODES.MPESA_CLEARING,
+      wallet: ACCOUNT_CODES.MPESA_CLEARING,
     };
 
     const account = accounts[method];

@@ -1,4 +1,4 @@
-import domainEventEmitter from '../../services/domainEvent.emitter.js';
+import domainEventEmitter from '../../../services/domainEvent.emitter.js';
 import { evaluateConditions } from './conditionEvaluator.service.js';
 import { ACTION_TYPES } from '../constants/policyEngine.constants.js';
 
