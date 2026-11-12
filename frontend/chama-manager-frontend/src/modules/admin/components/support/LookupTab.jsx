@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 
 import Spinner from "@/shared/components/ui/Spinner";
 import adminSupportService from "../../services/adminSupport.service";
-import { BillingStatePill, btn, Card, EmptyState, errText, fmtDate, inputCls, Pill } from "./SupportUi";
+import { BillingStatePill, btn, Card, EmptyState, errText, fmtDate, inputCls, Pill } from "./supportUi";
 
 export default function LookupTab() {
   const [query, setQuery] = useState("");
