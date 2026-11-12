@@ -33,7 +33,11 @@ const notificationPreferenceSchema = new mongoose.Schema({
     },
     sms: {
       type: Boolean,
-      default: false
+      default: true
+    },
+    whatsapp: {
+      type: Boolean,
+      default: true
     },
     email: {
       type: Boolean,
@@ -47,7 +51,8 @@ const notificationPreferenceSchema = new mongoose.Schema({
       in_app: { type: Boolean, default: true },
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: false },
-      sms: { type: Boolean, default: false },
+      sms: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: false }
     },
     membership: {
@@ -55,34 +60,39 @@ const notificationPreferenceSchema = new mongoose.Schema({
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: false },
       sms: { type: Boolean, default: false },
+      whatsapp: { type: Boolean, default: false },
       email: { type: Boolean, default: false }
     },
     governance: {
       in_app: { type: Boolean, default: true },
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: false },
-      sms: { type: Boolean, default: false },
+      sms: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: false }
     },
     burial: {
       in_app: { type: Boolean, default: true },
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: false },
-      sms: { type: Boolean, default: false },
+      sms: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: false }
     },
     system: {
       in_app: { type: Boolean, default: true },
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: false },
-      sms: { type: Boolean, default: false },
+      sms: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: false }
     },
     approval: {
       in_app: { type: Boolean, default: true },
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: true },
-      sms: { type: Boolean, default: false },
+      sms: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: false }
     },
     alert: {
@@ -90,6 +100,7 @@ const notificationPreferenceSchema = new mongoose.Schema({
       toast: { type: Boolean, default: true },
       push: { type: Boolean, default: true },
       sms: { type: Boolean, default: true },
+      whatsapp: { type: Boolean, default: true },
       email: { type: Boolean, default: true }
     }
   },
@@ -161,6 +172,12 @@ const notificationPreferenceSchema = new mongoose.Schema({
       type: String,
       default: null
     },
+    // Optional separate WhatsApp number. Falls back to phone_number, then to the
+    // phone the account was registered with.
+    whatsapp_number: {
+      type: String,
+      default: null
+    },
     country_code: {
       type: String,
       default: '+254'
@@ -197,6 +214,7 @@ notificationPreferenceSchema.pre('save', function () {
     this.default_channels.toast ||
     this.default_channels.push ||
     this.default_channels.sms ||
+    this.default_channels.whatsapp ||
     this.default_channels.email;
 
   if (!hasEnabledChannel) {

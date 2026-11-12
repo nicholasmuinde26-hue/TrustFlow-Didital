@@ -33,6 +33,7 @@ import businessApi from "../api/business.api";
 import MerchantStoreProfile from "../components/MerchantStoreProfile";
 import Spinner from "@/shared/components/ui/Spinner";
 import toast from "react-hot-toast";
+import { marketplaceHubUrl, marketplaceListingUrl } from "@/shared/lib/marketplaceUrl";
 
 const HUBS = [
   { slug: "retail", name: "Retail Hub", icon: ShoppingBag, color: "text-emerald-500", desc: "Physical products, apparel, electronics, groceries" },
@@ -411,13 +412,14 @@ export default function BusinessMarketplacePage() {
 
         <div className="flex items-center gap-2">
           {isEnrolledIn(allowedHubSlug) === "approved" && (
-            <Link
-              to={`/marketplace/${allowedHubSlug}`}
+            <a
+              href={marketplaceHubUrl(allowedHubSlug)}
               target="_blank"
+              rel="noreferrer"
               className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-2xs"
             >
               <ExternalLink size={13} /> View {visibleHubs[0]?.name || "Marketplace"}
-            </Link>
+            </a>
           )}
           <button
             onClick={() => {
@@ -473,7 +475,7 @@ export default function BusinessMarketplacePage() {
                     </div>
                     <div>
                       <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">{hub.name}</h3>
-                      <span className="text-[10px] text-slate-400 font-mono">/marketplace/{hub.slug}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">/{hub.slug}</span>
                     </div>
                   </div>
                   <span
@@ -497,13 +499,14 @@ export default function BusinessMarketplacePage() {
                     <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5">
                       <CheckCircle2 size={15} /> Active & Publishing
                     </span>
-                    <Link
-                      to={`/marketplace/${hub.slug}`}
+                    <a
+                      href={marketplaceHubUrl(hub.slug)}
                       target="_blank"
+                      rel="noreferrer"
                       className="text-xs font-bold text-slate-600 hover:text-emerald-600 dark:text-slate-300 flex items-center gap-1"
                     >
                       Visit Hub <ExternalLink size={11} />
-                    </Link>
+                    </a>
                   </div>
                 ) : status === "pending" ? (
                   <span className="text-xs font-bold text-amber-600 flex items-center gap-1.5">
@@ -826,18 +829,15 @@ export default function BusinessMarketplacePage() {
                           <td className="p-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
                               {item.moderation_status === "approved" && isPublic && !isOccupied && (
-                                <Link
-                                  to={
-                                    item.category_slug === "rentals"
-                                      ? `/marketplace/rentals/listings/${item.slug}`
-                                      : `/marketplace/${item.category_slug}/products/${item.slug}`
-                                  }
+                                <a
+                                  href={marketplaceListingUrl(item.category_slug, item.slug)}
                                   target="_blank"
+                                  rel="noreferrer"
                                   className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
                                   title="View live listing on marketplace"
                                 >
                                   Live <ArrowUpRight size={12} />
-                                </Link>
+                                </a>
                               )}
                               <button
                                 onClick={() => startEditListing(item)}

@@ -13,6 +13,7 @@ import AppError from '../../utils/AppError.js';
 import paymentService from '../../payment/payment.service.js';
 import { PAYMENT_PROVIDER } from '../../payment/payment.constants.js';
 import mpesaService from '../../payment/providers/mpesa/mpesa.service.js';
+import { createAuditLog } from '../../services/audit.service.js';
 
 const id = (value, field = 'ID') => {
   if (!mongoose.Types.ObjectId.isValid(value)) throw new AppError(`Invalid ${field}`, 400);
@@ -57,12 +58,28 @@ export async function updateFundDetails(req, res, next) {
   try {
     const group = await groupOrThrow(req.params.groupId);
     const { target_amount, contribution_end_date, beneficiary, grace_period_days, reminder_policy, description, event_date, location } = req.body;
+    const previousGoal = money(group.target_amount);
+    const previousBeneficiary = String(group.beneficiary || '');
+    const sensitiveDetailsChanged = (target_amount !== undefined && Number(target_amount) !== previousGoal)
+      || (beneficiary !== undefined && String(beneficiary || '') !== previousBeneficiary);
     if (target_amount !== undefined && (!Number.isFinite(Number(target_amount)) || Number(target_amount) < 0)) throw new AppError('Target amount must be zero or more', 400);
     if (contribution_end_date !== undefined && contribution_end_date && Number.isNaN(new Date(contribution_end_date).getTime())) throw new AppError('Invalid contribution end date', 400);
     if (grace_period_days !== undefined && (!Number.isInteger(Number(grace_period_days)) || Number(grace_period_days) < 1 || Number(grace_period_days) > 90)) throw new AppError('Grace period must be between 1 and 90 days', 400);
     for (const key of ['target_amount', 'beneficiary', 'grace_period_days', 'description', 'event_date', 'location']) if (req.body[key] !== undefined) group[key] = req.body[key] || null;
     if (contribution_end_date !== undefined) group.contribution_end_date = contribution_end_date || null;
     if (reminder_policy !== undefined) group.reminder_policy = { ...group.reminder_policy?.toObject?.(), ...reminder_policy };
+    if (sensitiveDetailsChanged && group.verification?.status === 'verified') {
+      const before = { target_amount: previousGoal, beneficiary: previousBeneficiary, public_giving_enabled: group.verification.public_giving_enabled === true };
+      group.verification.status = 'pending';
+      group.verification.level = 'members';
+      group.verification.public_giving_enabled = false;
+      group.verification.verified_by = null;
+      group.verification.verified_at = null;
+      group.verification.expires_at = null;
+      await group.save();
+      await createAuditLog({ actorUserId: req.user._id, scopeType: 'CONTRIBUTION_GROUP', contributionGroupId: group._id, action: 'FUNDRAISER_DETAILS_SENT_FOR_REVIEW', resourceType: 'ContributionGroup', resourceId: group._id, before, after: { target_amount: money(group.target_amount), beneficiary: group.beneficiary || '', verification_status: group.verification.status, public_giving_enabled: false } });
+      return res.json({ success: true, data: { group, reReviewRequired: true } });
+    }
     await group.save();
     res.json({ success: true, data: { group } });
   } catch (error) { next(error); }
@@ -105,7 +122,11 @@ export async function listPledges(req, res, next) {
   try {
     const query = { contribution_group_id: req.params.groupId };
     if (!isManager(req.groupMembership) && req.groupMembership.role !== 'treasurer') query.member_id = req.groupMembership._id;
-    const pledges = await ContributionPledge.find(query).populate({ path: 'member_id', populate: { path: 'user_id', select: 'name phone' } }).populate('obligation_id').sort({ createdAt: -1 });
+    const pledges = await ContributionPledge.find(query)
+      .populate({ path: 'member_id', populate: { path: 'user_id', select: 'name phone' } })
+      .populate({ path: 'donor_id', select: 'display_name phone_number' })
+      .populate('obligation_id')
+      .sort({ createdAt: -1 });
     const rows = pledges.map((pledge) => ({ ...pledge.toJSON(), paid_amount: pledge.obligation_id?.paid_amount?.toString?.() || '0', balance: Math.max(0, money(pledge.pledged_amount) - money(pledge.obligation_id?.paid_amount)).toString(), payment_status: pledge.obligation_id?.status || pledge.status }));
     res.json({ success: true, data: { pledges: rows } });
   } catch (error) { next(error); }

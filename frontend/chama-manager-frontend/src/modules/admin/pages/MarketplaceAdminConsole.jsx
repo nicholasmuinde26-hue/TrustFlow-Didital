@@ -29,6 +29,7 @@ import {
 import marketplaceService from "../../marketplace/services/marketplace.service";
 import Spinner from "@/shared/components/ui/Spinner";
 import toast from "react-hot-toast";
+import { marketplaceHubUrl } from "@/shared/lib/marketplaceUrl";
 
 const DEFAULT_CATEGORY_FALLBACKS = [
   {
@@ -232,7 +233,7 @@ export default function MarketplaceAdminConsole() {
   };
 
   const copyShareableLink = (slug) => {
-    const url = `${window.location.origin}/marketplace/${slug}`;
+    const url = marketplaceHubUrl(slug);
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(url);
     }
@@ -369,7 +370,7 @@ export default function MarketplaceAdminConsole() {
           <div className="grid gap-5 sm:grid-cols-2">
             {displayCategories.map((cat) => {
               const Icon = getCategoryIcon(cat.slug);
-              const hubUrl = `${window.location.origin}/marketplace/${cat.slug}`;
+              const hubUrl = marketplaceHubUrl(cat.slug);
               const isCopied = copiedHubSlug === cat.slug;
               const merchantCount = enrollments.filter(
                 (e) => e.category_slug === cat.slug && e.status === "approved"

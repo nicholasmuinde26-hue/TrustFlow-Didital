@@ -23,6 +23,7 @@ import FinancialAccount
 
 import AppError
   from '../../utils/AppError.js';
+import { getPublicGroupPreviewByJoinCode as getSharedPublicGroupPreviewByJoinCode } from '../../shared/contributions-core/publicGroupPreview.js';
 import { formatPhone } from '../../utils/phone.js';
 
 import {
@@ -2478,7 +2479,13 @@ export const updateContributionGroup = async ({
 
     visibility:
 
-      group.visibility
+      group.visibility,
+
+    verification: {
+      status: group.verification?.status,
+      level: group.verification?.level,
+      public_giving_enabled: group.verification?.public_giving_enabled === true,
+    }
 
   };
 
@@ -2668,6 +2675,16 @@ export const updateContributionGroup = async ({
 
   }
 
+  const fundraiserIdentityChanged = before.name !== group.name || before.description !== group.description || before.type !== group.type || before.visibility !== group.visibility;
+  if (fundraiserIdentityChanged && group.verification?.status === 'verified') {
+    group.verification.status = 'pending';
+    group.verification.level = 'members';
+    group.verification.public_giving_enabled = false;
+    group.verification.verified_by = null;
+    group.verification.verified_at = null;
+    group.verification.expires_at = null;
+  }
+
 
   // ======================================
   // 6. SAVE
@@ -2730,7 +2747,12 @@ export const updateContributionGroup = async ({
 
       visibility:
 
-        group.visibility
+        group.visibility,
+      verification: {
+        status: group.verification?.status,
+        level: group.verification?.level,
+        public_giving_enabled: group.verification?.public_giving_enabled === true,
+      }
 
     }
 
@@ -3094,60 +3116,7 @@ export const updateContributionGroupStatus = async ({
 // PUBLIC GROUP PREVIEW BY JOIN CODE
 // ========================================
 
-export const getPublicGroupPreviewByJoinCode = async (joinCode) => {
-  if (!joinCode || typeof joinCode !== 'string') {
-    throw new AppError('Join code is required', 400);
-  }
-  const cleanCode = joinCode.trim().toUpperCase();
-  let group = await ContributionGroup.findOne({ join_code: cleanCode })
-    .populate('created_by', 'name phone email avatar_url')
-    .lean();
-
-  if (!group) {
-    throw new AppError('Contribution group not found with this join link', 404);
-  }
-
-  const memberCount = await ContributionGroupMember.countDocuments({
-    contribution_group_id: group._id,
-    status: 'active'
-  });
-
-  const pledges = await ContributionPledge.find({
-    contribution_group_id: group._id,
-    status: { $ne: 'cancelled' }
-  }).populate('obligation_id').lean();
-
-  const totalPledged = pledges.reduce((sum, p) => sum + (Number(p.pledged_amount?.toString?.() || p.pledged_amount) || 0), 0);
-  const totalCollected = pledges.reduce((sum, p) => sum + (Number(p.obligation_id?.paid_amount?.toString?.() || p.obligation_id?.paid_amount) || 0), 0);
-
-  return {
-    group: {
-      id: group._id,
-      name: group.name,
-      description: group.description,
-      type: group.type,
-      status: group.status,
-      visibility: group.visibility,
-      event_date: group.event_date,
-      contribution_end_date: group.contribution_end_date,
-      beneficiary: group.beneficiary,
-      target_amount: group.target_amount ? group.target_amount.toString() : null,
-      location: group.location,
-      join_code: group.join_code,
-      organizer: {
-        id: group.created_by?._id,
-        name: group.created_by?.name || 'Organizer'
-      }
-    },
-    totals: {
-      target: Number(group.target_amount?.toString?.() || 0),
-      pledged: totalPledged,
-      collected: totalCollected,
-      outstanding: Math.max(0, totalPledged - totalCollected)
-    },
-    memberCount
-  };
-};
+export const getPublicGroupPreviewByJoinCode = (joinCode, options = {}) => getSharedPublicGroupPreviewByJoinCode(joinCode, options);
 
 // ========================================
 // JOIN GROUP VIA JOIN CODE (+ OPTIONAL PLEDGE)
@@ -3163,7 +3132,7 @@ export const joinGroupViaJoinCode = async ({ joinCode, userId, pledgedAmount }) 
     throw new AppError('Contribution group not found with this join link', 404);
   }
 
-  if (['completed', 'cancelled', 'archived'].includes(group.status)) {
+  if (['completed', 'cancelled', 'archived', 'suspended'].includes(group.status)) {
     throw new AppError('This contribution group is no longer active', 409);
   }
 

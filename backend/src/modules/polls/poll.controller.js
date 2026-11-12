@@ -5,7 +5,7 @@ import AppError from "../../utils/AppError.js";
 function emitPollEvent(workspaceId, event, payload) {
   // Realtime is best-effort — a poll action must never fail just because
   // no socket server is attached (e.g. in tests or scripts).
-  import("../realtime/socketServer.js")
+  import("../realtime/index.js")
     .then(({ getIO }) => {
       try {
         getIO().to(`workspace:${workspaceId}`).emit(event, payload);

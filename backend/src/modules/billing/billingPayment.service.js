@@ -18,6 +18,7 @@ import {
   getPlan,
   invalidateEntitlement,
   priceForChama,
+  isPlanAvailableForFamily,
 } from './billingEntitlement.service.js';
 
 /**
@@ -36,9 +37,9 @@ const newInvoiceNumber = () => {
 };
 
 /** Open invoice for this plan and length, creating or re-using it. */
-export async function createInvoice({ chamaId, planCode, months, userId }) {
+export async function createInvoice({ chamaId, planCode, months, userId, organizationFamily = 'chama' }) {
   const listed = await getPlan(planCode);
-  if (!listed || !listed.is_active) throw new AppError('That plan is not available', 404);
+  if (!listed || !listed.is_active || !isPlanAvailableForFamily(listed, organizationFamily)) throw new AppError('That plan is not available for this organization type', 404);
   if (listed.code === FREE_PLAN) {
     throw new AppError('The Free plan has nothing to pay. Use "switch to Free" instead.', 400);
   }

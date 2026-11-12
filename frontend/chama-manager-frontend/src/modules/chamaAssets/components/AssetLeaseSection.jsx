@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import React, { useCallback, useEffect, useState } from "react";
 import chamaAssetsApi from "../api/chamaAssets.api";
 
@@ -238,8 +239,14 @@ export default function AssetLeaseSection({ chamaId, assetId, canManage, notify 
               <button
                 type="button"
                 className="text-[11px] font-medium text-slate-400 hover:text-rose-600 dark:text-mist-muted dark:hover:text-rose-400"
-                onClick={() => {
-                  if (!window.confirm("End this lease? Past seasons/receipts stay on record.")) return;
+                onClick={async () => {
+                  const ok = await confirmAction({
+                    title: "End this lease?",
+                    message: "Past seasons and receipts stay on record, but the lease will no longer be active.",
+                    variant: "warning",
+                    confirmText: "End lease",
+                  });
+                  if (!ok) return;
                   chamaAssetsApi.endLease(chamaId, lease._id, { reason: "Ended by treasurer/chairperson" })
                     .then(async () => { await load(); notify("Lease ended."); })
                     .catch((err) => notify(err.response?.data?.message || "Could not end the lease.", true));

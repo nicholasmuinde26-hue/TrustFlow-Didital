@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import workspaceModulesApi from "../api/workspaceModules.api";
+import workspaceModulesApi from '../api/workspaceModules.api.js';
 
 const CATALOG_KEY = ["workspace-modules", "catalog"];
 const settingsKey = (chamaId) => ["workspace-modules", "settings", chamaId];

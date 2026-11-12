@@ -34,6 +34,7 @@ const benefitPlanSchema = new mongoose.Schema(
             'spouse',
             'child',
             'parent',
+            'parent_in_law',
             'sibling',
             'guardian',
             'grandparent',

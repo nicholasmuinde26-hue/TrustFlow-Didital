@@ -6,6 +6,7 @@
 
 import mongoose from "mongoose";
 import ContributionObligation from "../../models/ContributionObligation.js";
+import ChamaFine from "../../models/ChamaFine.js";
 import { toDecimal, addMoney } from "../../shared/decimal.js"; // use decimal helpers
 
 const canUseTransactions = () => {
@@ -58,6 +59,18 @@ class ContributionObligationService {
         if (status === 'paid') obligation.paid_at = new Date();
 
         await obligation.save(opts);
+        // A fine is represented in both the fine register (reason, reminders)
+        // and the contribution ledger (payments, receipts and balances). Keep
+        // the register synchronized from the authoritative obligation.
+        const finePaid = Math.min(Number(newPaid.toString()), Number(expected.toString()));
+        await ChamaFine.updateOne(
+            { obligation_id: obligation._id, status: 'outstanding' },
+            { $set: {
+                paid_amount: finePaid,
+                ...(status === 'paid' ? { status: 'paid', settled_at: new Date() } : {}),
+            } },
+            opts
+        );
         return obligation;
     }
 

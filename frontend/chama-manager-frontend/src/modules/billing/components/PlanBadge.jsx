@@ -3,7 +3,7 @@ import { Gem } from "lucide-react";
 import clsx from "clsx";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { isChamaBackedType } from "@/modules/workspaces/config/workspaceModules";
+import { isChamaBackedType } from '@/modules/workspaces/index.js';
 import useBillingSummary from "../hooks/useBilling";
 
 const OFFICIALS = ["treasurer", "chairperson"];

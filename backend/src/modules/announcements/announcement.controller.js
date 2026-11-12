@@ -4,7 +4,7 @@ import ChamaMembership from "../../models/ChamaMembership.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
 import Business from "../../models/Business.js";
-import Announcement from "../../models/Announcement.js";
+import Announcement from "./Announcement.model.js";
 import notificationService from "../../services/notification.service.js";
 import AppError from "../../utils/AppError.js";
 

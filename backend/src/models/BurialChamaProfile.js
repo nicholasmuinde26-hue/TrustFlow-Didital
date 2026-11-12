@@ -89,6 +89,37 @@ const burialChamaProfileSchema = new mongoose.Schema(
       default: 'individual',
     },
 
+    // Shared risk pool policy. These are chama-level controls, never member
+    // savings balances. Case-specific levies are recorded separately against
+    // their BurialCase.
+    funding_rules: {
+      funding_model: { type: String, enum: ['fixed_annual', 'per_death_levy', 'hybrid'], default: 'fixed_annual' },
+      currency: { type: String, default: 'KES', uppercase: true, trim: true },
+      per_death_levy: { type: mongoose.Schema.Types.Decimal128, default: null },
+      hybrid_fund_limit: { type: mongoose.Schema.Types.Decimal128, default: null },
+      reserve_floor: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      case_levy_due_days: { type: Number, min: 1, default: 14 },
+      grace_period_days: { type: Number, min: 0, default: 7 },
+      reinstatement_fee: { type: mongoose.Schema.Types.Decimal128, default: null },
+      maximum_benefit_per_case: { type: mongoose.Schema.Types.Decimal128, default: null },
+      maximum_cases_per_year: { type: Number, min: 1, default: null }
+    },
+
+    // Household cover limits are evaluated per chama membership.
+    family_rules: {
+      enabled: { type: Boolean, default: true },
+      max_spouses: { type: Number, min: 0, default: 1 },
+      max_children: { type: Number, min: 0, default: 6 },
+      child_age_limit: { type: Number, min: 0, default: 18 },
+      college_child_age_limit: { type: Number, min: 0, default: 24 },
+      max_parents: { type: Number, min: 0, default: 2 },
+      max_parents_in_law: { type: Number, min: 0, default: 2 },
+    },
+    exit_policy: {
+      refund_welfare_contributions: { type: Boolean, default: false },
+      removed_member_cooldown_days: { type: Number, min: 0, default: 180 }
+    },
+
     // ---------------------------------------------------
     // MEMBERSHIP CLASSES
     // ---------------------------------------------------
@@ -688,6 +719,11 @@ burialChamaProfileSchema.set('toJSON', {
       'arrears_policy.arrears_threshold',
       'approval_rules.benefit_thresholds.max_amount',
       'fundraising_rules.minimum_contribution_amount'
+      , 'funding_rules.per_death_levy'
+      , 'funding_rules.hybrid_fund_limit'
+      , 'funding_rules.reserve_floor'
+      , 'funding_rules.reinstatement_fee'
+      , 'funding_rules.maximum_benefit_per_case'
     ];
     
     decimalFields.forEach(field => {

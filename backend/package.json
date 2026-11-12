@@ -5,7 +5,17 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "start:giving": "node src/giving.server.js",
+    "start:giving-worker": "node src/giving.worker.js",
+    "test:public-giving": "node src/tests/publicGiving.logic.test.js",
+    "migrate:public-donor-indexes": "node src/scripts/migratePublicDonorPledgeIndexes.js",
+    "lint:boundaries": "node scripts/module-boundaries.mjs",
+    "lint:boundaries:strict": "node scripts/module-boundaries.mjs --strict",
+    "lint:boundaries:backend:strict": "node scripts/module-boundaries.mjs --strict --backend-only",
+    "lint:boundaries:frontend": "node scripts/module-boundaries.mjs --frontend-only",
+    "test:module-registry": "node src/tests/module.registry.test.js",
+    "dev": "nodemon src/server.js",
+    "start:marketplace": "node src/marketplace.server.js"
   },
   "keywords": [],
   "type": "module",

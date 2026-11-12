@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Chama from '../models/Chama.js';
 import FinancialAccount from '../models/FinancialAccount.js';
-import { previewSeparation, applySeparation } from '../modules/finance/businessFundsSeparation.service.js';
+import { previewSeparation, applySeparation } from '../modules/finance/index.js';
 
 /**
  * Separate business & property money from the pooled chama accounts, for every chama.

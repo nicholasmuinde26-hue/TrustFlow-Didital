@@ -17,14 +17,21 @@ import FinancialTransaction from '../../models/FinancialTransaction.js';
 import C2bPayment from '../../models/C2bPayment.js';
 import ApprovalRequest from '../../models/ApprovalRequest.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
-import { findUnbalancedOwners } from '../finance/accounting/glBalance.service.js';
+import PublicGivingReport from '../../models/PublicGivingReport.js';
+import { findUnbalancedOwners } from '../finance/index.js';
 import AppError from '../../utils/AppError.js';
 import {
   WORKSPACE_PRESETS,
   PRESET_KEYS,
   buildWorkspaceConfig,
   validateModuleSelection,
+  sanitizeModuleLabels,
 } from '../../constants/workspaceModules.constants.js';
+import {
+  isOrganizationTypeValid,
+  getOrganizationPresetKey,
+  getDefaultTerminology,
+} from '../../constants/organizationTypes.constants.js';
 import { generateUniqueJoinCode } from '../../utils/joinCode.js';
 import { formatPhone } from '../../utils/phone.js';
 import { sendWorkspaceRequestStatusEmail } from '../../services/notifications/email.service.js';
@@ -556,6 +563,45 @@ export const listAdminActivity = async ({ page = 1, limit = 50, category = '', a
 // ========================================
 // LIST WORKSPACE REQUESTS
 // ========================================
+export const listPublicGivingReports = async () => PublicGivingReport.find({ status: 'open' })
+  .populate('contribution_group_id', 'name status join_code verification workspace_request_id')
+  .sort({ createdAt: 1 });
+
+export const reviewPublicGivingReports = async (groupId, { action, notes = '' }, adminUser) => {
+  if (!['dismiss', 'suspend', 'reverify'].includes(action)) throw new AppError('Choose dismiss, suspend, or reverify.', 400);
+  const group = await ContributionGroup.findById(groupId);
+  if (!group) throw new AppError('Contribution group not found.', 404);
+  const reports = await PublicGivingReport.find({ contribution_group_id: groupId, status: 'open' });
+  for (const report of reports) {
+    report.status = action === 'dismiss' ? 'dismissed' : 'reviewed';
+    report.reviewed_by = adminUser._id;
+    report.reviewed_at = new Date();
+    report.review_notes = String(notes).slice(0, 1000);
+    await report.save();
+  }
+  const before = { status: group.status, verification: group.verification?.toObject?.() || group.verification };
+  if (action === 'suspend') {
+    group.status = 'suspended';
+    group.verification.status = 'suspended';
+    group.verification.public_giving_enabled = false;
+  } else if (action === 'reverify') {
+    group.status = 'active';
+    group.verification.status = 'verified';
+    group.verification.level = 'public';
+    group.verification.public_giving_enabled = true;
+    group.verification.verified_by = adminUser._id;
+    group.verification.verified_at = new Date();
+    group.verification.expires_at = group.contribution_end_date || null;
+  } else if (group.status === 'suspended' && group.verification.status === 'suspended') {
+    group.status = 'active';
+    group.verification.status = 'verified';
+    group.verification.public_giving_enabled = false;
+  }
+  await group.save();
+  await createAuditLog({ actorUserId: adminUser._id, scopeType: 'CONTRIBUTION_GROUP', contributionGroupId: group._id, action: `PUBLIC_GIVING_${action.toUpperCase()}`, resourceType: 'ContributionGroup', resourceId: group._id, before, after: { status: group.status, verification: group.verification.toObject?.() || group.verification }, metadata: { openReportsReviewed: reports.length, notes: String(notes).slice(0, 1000) } });
+  return { group, reportsReviewed: reports.length };
+};
+
 export const listWorkspaceRequests = async ({ status = '', entityType = '' }) => {
   const filter = {};
 
@@ -620,13 +666,14 @@ const normalizeWorkspaceConfigInput = (input) => {
   if (!input || typeof input !== 'object') return null;
   const modules = Array.isArray(input.modules) ? input.modules : [];
   const preset = PRESET_KEYS.includes(input.preset) ? input.preset : (modules.length ? 'custom' : '');
-  if (modules.length === 0) return { preset, modules: [] };
+  const moduleLabels = sanitizeModuleLabels(input.moduleLabels);
+  if (modules.length === 0) return { preset, modules: [], moduleLabels };
 
   const result = validateModuleSelection(modules);
   if (!result.ok) {
     throw new AppError(`Workspace modules are not valid: ${result.errors.join('; ')}`, 400);
   }
-  return { preset, modules: result.enabled };
+  return { preset, modules: result.enabled, moduleLabels };
 };
 
 // What the new chama should be created with. An explicit module selection
@@ -637,10 +684,18 @@ const resolveChamaWorkspaceSetup = (request, adminUser) => {
     request.workspaceConfig?.toObject ? request.workspaceConfig.toObject() : request.workspaceConfig
   );
 
+  const family = request.organizationFamily || 'chama';
+  const orgType = request.organizationType || 'custom';
+  const terminology = {
+    ...getDefaultTerminology(family),
+    module_labels: sanitizeModuleLabels(selection?.moduleLabels),
+  };
+
   if (selection && selection.modules.length > 0) {
     const config = buildWorkspaceConfig({
       preset: selection.preset || 'custom',
       enabled: selection.modules,
+      terminology,
       configuredBy: adminUser?._id || null,
     });
     // `chama_type` picks the workspace shell (dashboard + overview). The
@@ -649,14 +704,21 @@ const resolveChamaWorkspaceSetup = (request, adminUser) => {
     return { config, chamaType };
   }
 
-  const legacyPreset = request.category === 'burial' ? 'burial' : 'standard';
+  // No explicit selection: start from the preset for the organization's
+  // family + type. Plain chamas with no type chosen keep the legacy behaviour.
+  const legacy = family === 'chama' && orgType === 'custom';
+  const defaultPreset = legacy
+    ? (request.category === 'burial' ? 'burial' : 'standard')
+    : getOrganizationPresetKey(family, orgType);
+  const defaultModules = WORKSPACE_PRESETS[defaultPreset].modules;
   return {
     config: buildWorkspaceConfig({
-      preset: legacyPreset,
-      enabled: WORKSPACE_PRESETS[legacyPreset].modules,
+      preset: defaultPreset,
+      enabled: defaultModules,
+      terminology,
       configuredBy: adminUser?._id || null,
     }),
-    chamaType: legacyPreset === 'burial' ? 'burial' : 'standard',
+    chamaType: defaultModules.includes('burial_welfare') ? 'burial' : 'standard',
   };
 };
 
@@ -673,6 +735,15 @@ const applyEditsToRequest = (request, edits = {}) => {
     request.monthlySavings = Number(edits.monthlySavings) || request.monthlySavings;
   }
   if (edits.adminNotes !== undefined) request.adminNotes = edits.adminNotes;
+  if (edits.organizationFamily !== undefined || edits.organizationType !== undefined) {
+    const family = edits.organizationFamily ?? request.organizationFamily ?? 'chama';
+    const type = edits.organizationType ?? request.organizationType ?? 'custom';
+    if (!isOrganizationTypeValid(family, type)) {
+      throw new AppError('Choose a valid organization family and type.', 400);
+    }
+    request.organizationFamily = family;
+    request.organizationType = type;
+  }
 
   if (edits.workspaceConfig !== undefined) {
     const normalized = normalizeWorkspaceConfigInput(edits.workspaceConfig);
@@ -683,6 +754,15 @@ const applyEditsToRequest = (request, edits = {}) => {
     request.details = { ...(request.details?.toObject ? request.details.toObject() : request.details), ...edits.details };
   }
 
+  if (edits.contributionGroupDetails && typeof edits.contributionGroupDetails === 'object') {
+    request.contributionGroupDetails = {
+      ...(request.contributionGroupDetails?.toObject ? request.contributionGroupDetails.toObject() : request.contributionGroupDetails),
+      ...edits.contributionGroupDetails,
+      ...(edits.contributionGroupDetails.payout && {
+        payout: { ...(request.contributionGroupDetails?.payout?.toObject ? request.contributionGroupDetails.payout.toObject() : request.contributionGroupDetails?.payout), ...edits.contributionGroupDetails.payout },
+      }),
+    };
+  }
   if (edits.chairperson) request.chairperson = applyPersonEdits(request.chairperson, edits.chairperson);
   if (edits.treasurer) request.treasurer = applyPersonEdits(request.treasurer, edits.treasurer);
   if (edits.secretary) request.secretary = applyPersonEdits(request.secretary, edits.secretary);
@@ -716,6 +796,7 @@ const hasMeaningfulEdits = (edits = {}) =>
 // ========================================
 export const updateWorkspaceRequest = async (requestId, edits, adminUser) => {
   const request = await getWorkspaceRequestById(requestId);
+  const previousAdminNotes = request.adminNotes || '';
 
   const currentStatus = String(request.status).toUpperCase();
   if (currentStatus === 'APPROVED' || currentStatus === 'REJECTED') {
@@ -732,6 +813,19 @@ export const updateWorkspaceRequest = async (requestId, edits, adminUser) => {
   });
 
   await request.save();
+  if (request.entityType === 'contribution_group' && request.adminNotes && request.adminNotes !== previousAdminNotes) {
+    try {
+      await sendWorkspaceRequestStatusEmail({
+        to: request.requestedBy?.email,
+        contactName: request.requestedBy?.name,
+        entityName: request.name,
+        entityType: request.entityType,
+        status: 'UNDER_REVIEW',
+        rejectionReason: request.adminNotes,
+        requestNumber: request.requestNumber,
+      });
+    } catch { /* notification is best-effort */ }
+  }
   return request;
 };
 
@@ -825,6 +919,8 @@ export const approveWorkspaceRequest = async (requestId, adminUser, edits = {}) 
       name: request.name,
       monthly_savings: request.monthlySavings || 1000,
       chama_type: chamaType,
+      organization_family: request.organizationFamily || 'chama',
+      organization_type: request.organizationType || 'custom',
       workspace_config: workspaceConfig,
       created_by: chairUser._id,
       status: 'active',
@@ -942,8 +1038,8 @@ export const approveWorkspaceRequest = async (requestId, adminUser, edits = {}) 
       const chama = request.chamaId ? await Chama.findById(request.chamaId).select('_id name') : null;
       if (!chama) throw new AppError('The chama this business was requested for no longer exists', 400);
 
-      const { ensureAssetPaymentRefCode } = await import('../chamaAssets/chamaAsset.service.js');
-      const { ensureBusinessAccounts } = await import('../business/business.service.js');
+      const { ensureAssetPaymentRefCode } = await import('../chamaAssets/index.js');
+      const { ensureBusinessAccounts } = await import('../business/index.js');
 
       const duplicateAsset = await ChamaAsset.findOne({
         chama_id: chama._id,
@@ -1021,30 +1117,60 @@ export const approveWorkspaceRequest = async (requestId, adminUser, edits = {}) 
         location: request.details?.location || '',
       });
 
-      const { ensureBusinessAccounts } = await import('../business/business.service.js');
+      const { ensureBusinessAccounts } = await import('../business/index.js');
       await ensureBusinessAccounts(business._id, ownerUser._id);
 
       createdEntityId = business._id;
     }
   } else if (request.entityType === 'contribution_group') {
-    const organizerUser = await findOrCreateUserStub({
-      fullName: request.chairperson?.fullName || request.chairperson?.name,
-      phone: request.chairperson?.phone,
-      email: request.chairperson?.email,
-      fallbackUserId: request.requestedBy?._id,
-    });
-
+    const organizerId = request.requestedBy?._id || request.requestedBy;
+    if (!organizerId) throw new AppError('The requesting organizer account could not be found.', 400);
+    const details = request.contributionGroupDetails?.toObject
+      ? request.contributionGroupDetails.toObject()
+      : (request.contributionGroupDetails || {});
+    const publicGivingEnabled = edits.publicGivingEnabled === true && details.publicGivingRequested === true;
+    if (publicGivingEnabled) {
+      const hasPayout = Boolean(details.payout?.method && details.payout?.accountName && (details.payout.method === 'mpesa' ? details.payout.phone : details.payout.paybill));
+      if (!details.nationalIdNumber || !details.evidence?.length || (details.referees || []).filter((referee) => referee.name && referee.phone).length < 2 || !hasPayout) {
+        throw new AppError('Public giving cannot be enabled until identity, cause evidence, two referees, and payout details have been reviewed.', 400);
+      }
+      if (request.riskFlags?.length) {
+        throw new AppError('Resolve the potential duplicate flags before enabling public giving.', 409);
+      }
+    }
     const group = await ContributionGroup.create({
       name: request.name,
-      group_type: request.category || 'rotational',
-      created_by: organizerUser._id,
+      description: request.description || '',
+      type: details.type || 'other',
+      target_amount: details.targetAmount || null,
+      event_date: details.eventDate || null,
+      contribution_end_date: details.contributionEndDate || null,
+      beneficiary: details.beneficiary || null,
+      location: details.location || '',
+      visibility: details.visibility || 'invite_only',
+      created_by: organizerId,
+      workspace_request_id: request._id,
       status: 'active',
+      verification: {
+        status: 'verified',
+        level: publicGivingEnabled ? 'public' : 'members',
+        verified_by: adminUser._id,
+        verified_at: new Date(),
+        expires_at: details.contributionEndDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        public_giving_enabled: publicGivingEnabled,
+        payout_destination: {
+          method: details.payout?.method || '',
+          phone: details.payout?.phone || '',
+          paybill: details.payout?.paybill || '',
+          account_name: details.payout?.accountName || '',
+        },
+      },
     });
 
     await ContributionGroupMember.create({
       contribution_group_id: group._id,
-      user_id: organizerUser._id,
-      role: 'admin',
+      user_id: organizerId,
+      role: 'organizer',
       status: 'active',
     });
 
@@ -1336,7 +1462,7 @@ const clearLeadershipAccess = (membership) => {
 // re-reads its role instead of waiting for a refresh. Best-effort only.
 const broadcastRoleChange = async (chamaId, changes) => {
   try {
-    const { getIO } = await import('../realtime/socketServer.js');
+    const { getIO } = await import('../realtime/index.js');
     const io = getIO();
     for (const c of changes) {
       io.to(`user:${String(c.userId)}`).emit('membership:role_changed', {

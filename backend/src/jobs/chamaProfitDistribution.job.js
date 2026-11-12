@@ -1,4 +1,4 @@
-import { sweepDueProfitDistributions } from "../modules/chamaAssets/chamaAsset.service.js";
+import { sweepDueProfitDistributions } from "../modules/chamaAssets/index.js";
 
 const INTERVAL_MS = 60 * 1000;
 

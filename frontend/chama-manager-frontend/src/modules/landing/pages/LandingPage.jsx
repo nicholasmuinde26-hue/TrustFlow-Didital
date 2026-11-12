@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 
 import BrandMark from "@/shared/components/layout/BrandMark";
+import chamaApi from "@/modules/chama/api/chama.api";
 import HeroSlider from "../components/HeroSlider";
 import Magnetic from "../components/Magnetic";
 import { prefersReducedMotion, useCountUp, useSmoothScroll } from "../hooks";
@@ -254,7 +255,7 @@ function Wordmark({ dark = false }) {
       <span
         className={`text-[1.15rem] font-black tracking-tight ${dark ? "text-white" : "text-slate-950"}`}
       >
-        Veri<span className="text-emerald-500">Circle</span>
+        Chama<span className="text-emerald-500">Manager</span>
       </span>
     </span>
   );
@@ -383,9 +384,20 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [progress, setProgress] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [publicChamas, setPublicChamas] = useState([]);
+  const [publicChamasLoading, setPublicChamasLoading] = useState(true);
 
   // Eased wheel scrolling + eased anchor jumps (desktop pointers only, off for reduced motion).
   useSmoothScroll();
+
+  useEffect(() => {
+    let cancelled = false;
+    chamaApi.getPublishedPublicProfiles({ limit: 6 })
+      .then(({ data }) => { if (!cancelled) setPublicChamas(data?.data?.profiles || []); })
+      .catch(() => { if (!cancelled) setPublicChamas([]); })
+      .finally(() => { if (!cancelled) setPublicChamasLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let raf = 0;
@@ -427,7 +439,7 @@ export default function LandingPage() {
             scrolled ? "h-14" : "h-16"
           }`}
         >
-          <Link to="/" aria-label="VeriCircle home" className="transition hover:opacity-90">
+          <Link to="/" aria-label="ChamaManager home" className="transition hover:opacity-90">
             <Wordmark dark />
           </Link>
 
@@ -444,6 +456,12 @@ export default function LandingPage() {
           </nav>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              to="/chamas/join"
+              className="hidden rounded-full border border-mint/40 px-3.5 py-2 text-sm font-bold text-mint transition hover:border-mint hover:bg-mint/10 sm:inline-flex"
+            >
+              View chamas
+            </Link>
             <Link
               to="/login"
               className="hidden rounded-full px-3 py-2 text-sm font-semibold text-mist! transition-colors hover:text-white! sm:inline-flex"
@@ -478,7 +496,7 @@ export default function LandingPage() {
         >
           <div className="overflow-hidden">
             <nav className="mx-auto flex max-w-7xl flex-col gap-1 px-5 pb-4 pt-1" aria-label="Mobile sections">
-              {[...NAV, { href: "/login", label: "Log in", route: true }, { href: "/register", label: "Sign up", route: true }].map((item) =>
+              {[...NAV, { href: "/chamas/join", label: "View chamas", route: true }, { href: "/login", label: "Log in", route: true }, { href: "/register", label: "Sign up", route: true }].map((item) =>
                 item.route ? (
                   <Link
                     key={item.href}
@@ -594,7 +612,7 @@ export default function LandingPage() {
                 eyebrow="For chamas"
                 title="Everything a chama actually does, in one place."
                 highlight="in one place."
-                text="From the first contribution to the annual share-out, VeriCircle follows the way Kenyan chamas really run - including merry-go-rounds, welfare and officials."
+                text="From the first contribution to the annual share-out, ChamaManager follows the way Kenyan chamas really run - including merry-go-rounds, welfare and officials."
               />
             </Reveal>
 
@@ -620,6 +638,38 @@ export default function LandingPage() {
                   </Reveal>
                 );
               })}
+            </div>
+
+            <div className="mt-20 border-t border-white/10 pt-12">
+              <div className="flex flex-wrap items-end justify-between gap-5">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-mint">Open to the public</p>
+                  <h3 className="mt-2 text-2xl font-black text-white sm:text-3xl">Explore chama profiles</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">See groups that have chosen to publish a profile. You can learn about each chama before creating an account.</p>
+                </div>
+                <Link to="/chamas/join" className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-bold text-white transition hover:border-mint hover:text-mint">Browse chamas <ArrowRight size={16} /></Link>
+              </div>
+              {publicChamasLoading ? (
+                <p className="mt-7 text-sm text-slate-400">Loading public profiles…</p>
+              ) : publicChamas.length ? (
+                <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {publicChamas.map((chama) => (
+                    <Link key={chama.id} to={`/chama-profile/${chama.id}`} className="group rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:-translate-y-1 hover:border-mint/50 hover:bg-white/10">
+                      <div className="flex items-center gap-3">
+                        {chama.logo_url ? <img src={chama.logo_url} alt="" className="h-12 w-12 rounded-xl bg-white object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-xl bg-emerald-400/15 text-mint"><Users size={21} /></span>}
+                        <div className="min-w-0">
+                          <h4 className="truncate font-bold text-white group-hover:text-mint">{chama.name}</h4>
+                          <p className="truncate text-xs text-slate-400">{[chama.location, `${chama.member_count} members`].filter(Boolean).join(" · ")}</p>
+                        </div>
+                      </div>
+                      {(chama.tagline || chama.purpose) && <p className="mt-4 line-clamp-2 text-sm leading-relaxed text-slate-300">{chama.tagline || chama.purpose}</p>}
+                      <span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-mint">View public profile <ArrowRight size={13} /></span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-7 rounded-2xl border border-dashed border-white/15 px-5 py-7 text-sm text-slate-400">No public chama profiles are published yet. Groups can publish theirs from their leadership settings.</div>
+              )}
             </div>
           </div>
         </section>
@@ -709,7 +759,7 @@ export default function LandingPage() {
                 eyebrow="Trust & governance"
                 title="Built so nobody has to take anyone's word for it."
                 highlight="take anyone's word for it."
-                text="Most chama disputes start with money nobody can account for. VeriCircle makes every action visible, attributable and checkable."
+                text="Most chama disputes start with money nobody can account for. ChamaManager makes every action visible, attributable and checkable."
               />
             </Reveal>
 
@@ -880,7 +930,7 @@ export default function LandingPage() {
             <Link to="/login" className="lp-link transition-colors hover:text-white!">Log in</Link>
             <Link to="/register" className="lp-link transition-colors hover:text-white!">Sign up</Link>
           </nav>
-          <p className="text-xs text-slate-500">&copy; {new Date().getFullYear()} VeriCircle. Trust · Connect · Grow</p>
+          <p className="text-xs text-slate-500">&copy; {new Date().getFullYear()} ChamaManager. Trust · Connect · Grow</p>
         </div>
       </footer>
     </div>

@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
@@ -19,7 +20,7 @@ import loanService from "@/modules/loans/services/loan.service";
 import {
   canDisburseLoan,
   isLoanOfficial,
-} from "@/modules/workspaces/permissions/Permissions";
+} from '@/modules/workspaces/index.js';
 
 import {
   EmptyState,
@@ -227,7 +228,14 @@ export default function LoansTab({ workspaceId, role, type, reload }) {
     );
   };
 
-  const handleDisburse = (loan) => {
+  const handleDisburse = async (loan) => {
+    const ok = await confirmAction({
+      title: "Send this loan now?",
+      message: "The loan amount will be sent to the borrower through M-Pesa. This cannot be undone once the transfer starts.",
+      variant: "danger",
+      confirmText: "Disburse loan",
+    });
+    if (!ok) return;
     run(
       loan._id,
       () => loanService.initiateDisbursement(workspaceId, loan._id),

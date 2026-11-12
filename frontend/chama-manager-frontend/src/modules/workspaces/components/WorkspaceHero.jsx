@@ -7,10 +7,12 @@ import {
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
+import { useTerminology } from '../hooks/useTerminology.js';
 
 export default function WorkspaceHero() {
     const { workspaceId } = useParams();
     const { workspaces } = useWorkspace();
+    const { workspace: organizationNoun } = useTerminology();
 
     const workspace = workspaces.find(
         (w) => (w._id ?? w.id) === workspaceId
@@ -30,7 +32,7 @@ export default function WorkspaceHero() {
 
                     <Sparkles size={16} />
 
-                    Active Workspace
+                    Active {organizationNoun}
 
                 </div>
 

@@ -6,9 +6,9 @@ import ChamaAsset from '../../models/ChamaAsset.js';
 import AppError from '../../utils/AppError.js';
 import phoneUtil from '../../utils/phone.js';
 import env from '../../config/env.js';
-import { recordC2bContribution } from '../chama/chamaFinance.service.js';
+import { recordC2bContribution } from '../chama/index.js';
 import { isAssetPaymentCode } from '../../utils/assetPaymentCode.js';
-import { recordVerifiedAssetIncomeFromC2b } from '../chamaAssets/chamaAsset.service.js';
+import { recordVerifiedAssetIncomeFromC2b } from '../chamaAssets/index.js';
 
 // ======================================================================
 // C2B RECONCILIATION SERVICE

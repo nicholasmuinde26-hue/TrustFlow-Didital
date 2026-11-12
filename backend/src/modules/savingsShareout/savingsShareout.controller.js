@@ -17,6 +17,7 @@ import {
 } from './savingsShareout.service.js';
 
 import { getSavingsOverview } from './savingsOverview.service.js';
+import AppError from '../../utils/AppError.js';
 
 // ========================================
 // POLICIES
@@ -180,6 +181,9 @@ export const cancelShareoutController = async (req, res, next) => {
 
 export const getSavingsOverviewController = async (req, res, next) => {
   try {
+    if (['burial', 'burial_welfare'].includes(req.chama?.chama_type) || ['burial', 'burial_welfare'].includes(req.chama?.workspace_config?.preset)) {
+      throw new AppError('Burial chama members have cover status and shared fund health, not personal savings balances.', 409);
+    }
     const overview = await getSavingsOverview(req.params.id);
     res.status(200).json({ success: true, data: overview });
   } catch (error) {

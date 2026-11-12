@@ -11,6 +11,23 @@ export const createBusiness = async (request, response, next) => {
   catch (error) { sendError(error, response, next); }
 };
 
+export const listBusinessStaff = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.listBusinessStaff(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+export const appointBusinessStaff = async (request, response, next) => {
+  try { response.status(201).json({ success: true, data: await businessService.appointBusinessStaff(request.params.businessId, request.user, request.body) }); }
+  catch (error) { sendError(error, response, next); }
+};
+export const revokeBusinessStaff = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.revokeBusinessStaff(request.params.businessId, request.params.staffId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+export const getBusinessActivity = async (request, response, next) => {
+  try { response.json({ success: true, data: await businessService.getBusinessActivity(request.params.businessId, request.user) }); }
+  catch (error) { sendError(error, response, next); }
+};
+
 export const getSummary = async (request, response, next) => {
   try { response.json({ success: true, data: await businessService.getSummary(request.params.businessId, request.user) }); }
   catch (error) { sendError(error, response, next); }

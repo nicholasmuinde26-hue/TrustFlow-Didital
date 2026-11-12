@@ -1,17 +1,24 @@
 import Notification from '../models/Notification.js';
 import ChamaMembership from '../models/ChamaMembership.js';
 import Chama from '../models/Chama.js';
+import { organizationLabel, organizationPlural, localizeOrganizationTerms } from '../utils/organizationTerminology.js';
 import User from '../models/User.js';
 import notificationPreferenceService from './notificationPreference.service.js';
+import NotificationPreference from '../models/NotificationPreference.js';
+import { sendSms, isSmsChannelConfigured } from './notifications/sms.service.js';
+import { sendWhatsappNotification, isWhatsappChannelConfigured } from './notifications/whatsapp.service.js';
+import { sendNotificationEmail, isEmailChannelConfigured } from './notifications/email.service.js';
+import env from '../config/env.js';
 import domainEventEmitter from './domainEvent.emitter.js';
 import {
   sendRealTimeNotification,
   sendToastToUser
-} from '../modules/realtime/socketServer.js';
+} from '../modules/realtime/index.js';
 import {
   NOTIFICATION_TYPES,
   NOTIFICATION_PRIORITIES,
   NOTIFICATION_CHANNELS,
+  resolveSupportedChannels,
   NOTIFICATION_STATES,
   ROLE_NOTIFICATION_RULES,
   DOMAIN_EVENTS,
@@ -31,6 +38,24 @@ import {
 // Business Logic → Domain Event → Notification Service → Delivery Channels
 //
 // ========================================
+
+// Events that are about ONE member ("Your loan was approved"). The role fan-out
+// below would otherwise deliver them to every member with that role - and now
+// that alerts also go out by SMS/WhatsApp, to every phone in the chama. For
+// these events the plain "member" audience is narrowed to the member the event
+// is about; officials still receive them (worded in the third person).
+const PERSONAL_EVENTS = new Set([
+  'CONTRIBUTION_MISSED', 'CONTRIBUTION_OVERDUE', 'FINE_APPLIED', 'FINE_WAIVED',
+  'LOAN_APPROVED', 'LOAN_REJECTED', 'LOAN_DISBURSED', 'LOAN_REPAYMENT_RECEIVED',
+  'LOAN_REPAYMENT_OVERDUE', 'WITHDRAWAL_APPROVED', 'WITHDRAWAL_REJECTED',
+  'PAYMENT_FAILED', 'MPESA_PAYMENT_SUCCESSFUL', 'MPESA_PAYMENT_FAILED',
+  'MEMBER_INVITED', 'MEMBER_SUSPENDED', 'MEMBER_REINSTATED', 'MEMBER_REMOVED',
+  'ROLE_CHANGED', 'COMMITTEE_APPOINTED', 'CLAIM_APPROVED', 'CLAIM_REJECTED',
+  'BENEFIT_PAYMENT_DISBURSED', 'NEW_DEVICE_LOGIN', 'PASSWORD_CHANGED',
+  'WALLET_DEPOSIT_CONFIRMED', 'WALLET_WITHDRAWAL_PROCESSED', 'MEMBER_EXIT_PROCESSED',
+  'PAYOUT_COMPLETED'
+]);
+const AUDIENCE_ROLES = new Set(['member', 'beneficiary', 'user']);
 
 class NotificationService {
   /**
@@ -65,6 +90,20 @@ class NotificationService {
         throw new Error('Recipient membership not found');
       }
 
+      let localizedTitle = title;
+      let localizedMessage = message;
+      let localizedDescription = description;
+      if (chamaId) {
+        const org = await Chama.findById(chamaId).select('organization_family workspace_config.terminology').lean();
+        if (org) {
+          const label = organizationLabel(org.organization_family, org.workspace_config?.terminology);
+          const plural = organizationPlural(label, org.organization_family);
+          localizedTitle = localizeOrganizationTerms(title, label, plural);
+          localizedMessage = localizeOrganizationTerms(message, label, plural);
+          localizedDescription = localizeOrganizationTerms(description, label, plural);
+        }
+      }
+
       // Get notification type configuration
       const notificationConfig = NOTIFICATION_TYPES[notificationType];
       if (!notificationConfig) {
@@ -77,13 +116,22 @@ class NotificationService {
         return null;
       }
 
-      // The user's global and category preferences govern delivery. A type's
-      // default channel list caps delivery to channels it actually supports.
+      // `priority` defaults to 'normal' in the signature, so a caller that did not
+      // choose one must inherit the type's own priority rather than silently
+      // downgrading an urgent alert to normal.
+      const effectivePriority =
+        priority && priority !== 'normal' ? priority : notificationConfig.priority || 'normal';
+
+      // The user's global and category preferences govern delivery. The type
+      // decides which channels it is allowed to use: alerts, approvals and
+      // anything high/urgent also reaches SMS and WhatsApp (see
+      // resolveSupportedChannels in notification.constants.js).
       const preferredChannels = await notificationPreferenceService.getEnabledChannels(
         membership.user_id,
-        notificationConfig.category
+        notificationConfig.category,
+        effectivePriority
       );
-      const supportedChannels = notificationConfig.defaultChannels || ['in-app'];
+      const supportedChannels = resolveSupportedChannels(notificationConfig, effectivePriority);
       const channels = preferredChannels.filter((channel) => supportedChannels.includes(channel));
       if (channels.length === 0) return null;
       const isPersistent = channels.includes(NOTIFICATION_CHANNELS.IN_APP);
@@ -97,9 +145,9 @@ class NotificationService {
         notification_type: notificationType,
         category: notificationConfig.category,
         icon: notificationConfig.icon,
-        title,
-        message,
-        description,
+        title: localizedTitle,
+        message: localizedMessage,
+        description: localizedDescription,
         metadata,
         related_entity_type: relatedEntityType,
         related_entity_id: relatedEntityId,
@@ -107,7 +155,7 @@ class NotificationService {
         action_text: actionText,
         action_method: actionMethod,
         state: NOTIFICATION_STATES.UNREAD,
-        priority: priority || notificationConfig.priority,
+        priority: effectivePriority,
         requires_action: requiresAction || notificationConfig.requiresAction,
         action_deadline: actionDeadline,
         delivery_channels: channels.map(channel => ({
@@ -238,8 +286,8 @@ class NotificationService {
           chamaId,
           recipientMembershipId: recipient.membershipId,
           notificationType: notificationConfig.type,
-          title: notificationConfig.title,
-          message: this.generateMessageForDomainEvent(domainEvent, eventData, recipient),
+          title: eventData.title || notificationConfig.title,
+          message: eventData.message || this.generateMessageForDomainEvent(domainEvent, eventData, recipient),
           description: notificationConfig.description || '',
           metadata: eventData,
           relatedEntityType: eventData.entityType,
@@ -358,18 +406,23 @@ class NotificationService {
             break;
 
           case NOTIFICATION_CHANNELS.PUSH:
-            // Push notifications would be handled by push service
             await this.sendPushNotification(notification, isPersistent);
             break;
 
+          // SMS, WhatsApp and email call external providers that can take
+          // seconds (or time out). They run in the background so a slow
+          // provider never delays the request that caused the notification.
+          // Each outcome is written back to delivery_channels honestly.
           case NOTIFICATION_CHANNELS.SMS:
-            // SMS notifications would be handled by SMS service
-            await this.sendSMSNotification(notification, isPersistent);
+            deliveryPromises.push(this.sendSMSNotification(notification, isPersistent));
+            break;
+
+          case NOTIFICATION_CHANNELS.WHATSAPP:
+            deliveryPromises.push(this.sendWhatsappNotification(notification, isPersistent));
             break;
 
           case NOTIFICATION_CHANNELS.EMAIL:
-            // Email notifications would be handled by email service
-            await this.sendEmailNotification(notification, isPersistent);
+            deliveryPromises.push(this.sendEmailNotification(notification, isPersistent));
             break;
 
           default:
@@ -377,7 +430,8 @@ class NotificationService {
         }
       }
 
-      await Promise.all(deliveryPromises);
+      // Never awaited by the caller; each sender already catches its own errors.
+      Promise.allSettled(deliveryPromises).catch(() => {});
 
     } catch (error) {
       console.error('Deliver notification error:', error);
@@ -386,75 +440,135 @@ class NotificationService {
   }
 
   /**
-   * Send push notification (placeholder for push service integration)
+   * Look up where to reach a user off-app. Preference overrides win, then the
+   * phone/email the account was registered with.
    */
-  async sendPushNotification(notification, isPersistent = true) {
-    try {
-      // Placeholder for push notification service integration
-      // This would integrate with Firebase Cloud Messaging, OneSignal, etc.
-      
-      console.log(`Push notification sent to user ${notification.recipient_user_id}: ${notification.title}`);
-      
-      if (isPersistent) {
-        await notification.updateDeliveryStatus('push', 'sent', {
-          externalId: `push_${notification._id}_${Date.now()}`
-        });
-      }
-
-    } catch (error) {
-      console.error('Push notification error:', error);
-      if (isPersistent) await notification.updateDeliveryStatus('push', 'failed', { reason: error.message });
-    }
+  async resolveContact(userId) {
+    const [user, prefs] = await Promise.all([
+      User.findById(userId).select('phone email name').lean(),
+      NotificationPreference.findOne({ user_id: userId }).select('sms_settings email_settings').lean()
+    ]);
+    const countryCode = prefs?.sms_settings?.country_code || '+254';
+    const withCountry = (value) => {
+      const raw = String(value || '').replace(/[^\d+]/g, '');
+      if (!raw) return null;
+      if (raw.startsWith('+')) return raw;
+      if (raw.startsWith('0')) return `${countryCode}${raw.slice(1)}`;
+      return raw.startsWith(countryCode.replace('+', '')) ? `+${raw}` : `${countryCode}${raw}`;
+    };
+    const smsNumber = withCountry(prefs?.sms_settings?.phone_number || user?.phone);
+    const whatsappNumber = withCountry(
+      prefs?.sms_settings?.whatsapp_number || prefs?.sms_settings?.phone_number || user?.phone
+    );
+    return {
+      name: user?.name || null,
+      sms: smsNumber,
+      whatsapp: whatsappNumber,
+      email: prefs?.email_settings?.email_address || user?.email || null
+    };
   }
 
   /**
-   * Send SMS notification (placeholder for SMS service integration)
+   * Runs one off-app delivery and records the real outcome. A channel that is
+   * not configured is recorded as failed with the reason - it is never marked
+   * "sent" when nothing left the server.
    */
-  async sendSMSNotification(notification, isPersistent = true) {
+  async runExternalDelivery(notification, isPersistent, channel, { configured, send }) {
+    const record = async (status, details = {}) => {
+      if (!isPersistent) return;
+      try {
+        await notification.updateDeliveryStatus(channel, status, details);
+      } catch (error) {
+        console.error(`Could not record ${channel} delivery status:`, error.message);
+      }
+    };
+
     try {
-      // Placeholder for SMS service integration
-      // This would integrate with M-Pesa SMS, Twilio, etc.
-      
-      // Only send SMS for urgent notifications
-      if (notification.priority !== 'urgent' && notification.priority !== 'high') {
-        if (isPersistent) await notification.updateDeliveryStatus('sms', 'failed', { reason: 'Not urgent enough for SMS' });
+      if (!configured()) {
+        await record('failed', { reason: `${channel} provider is not configured on this server` });
         return;
       }
-
-      console.log(`SMS notification sent to user ${notification.recipient_user_id}: ${notification.title}`);
-      
-      if (isPersistent) {
-        await notification.updateDeliveryStatus('sms', 'sent', {
-          externalId: `sms_${notification._id}_${Date.now()}`
-        });
+      const contact = await this.resolveContact(notification.recipient_user_id);
+      const result = await send(contact);
+      if (result === null) {
+        await record('failed', { reason: `No ${channel} address on file for this user` });
+        return;
       }
-
+      await record('sent', { externalId: result?.messageId || result?.id || undefined });
     } catch (error) {
-      console.error('SMS notification error:', error);
-      if (isPersistent) await notification.updateDeliveryStatus('sms', 'failed', { reason: error.message });
+      console.error(`${channel} notification error:`, error.message);
+      await record('failed', { reason: error.message });
     }
   }
 
   /**
-   * Send email notification (placeholder for email service integration)
+   * Push: no push provider (FCM/OneSignal) is integrated yet. In-app + WebSocket
+   * already reach anyone with the app open, so this records "failed: no
+   * provider" instead of pretending a push was delivered.
    */
-  async sendEmailNotification(notification, isPersistent = true) {
+  async sendPushNotification(notification, isPersistent = true) {
+    if (!isPersistent) return;
     try {
-      // Placeholder for email service integration
-      // This would integrate with SendGrid, Mailgun, etc.
-      
-      console.log(`Email notification sent to user ${notification.recipient_user_id}: ${notification.title}`);
-      
-      if (isPersistent) {
-        await notification.updateDeliveryStatus('email', 'sent', {
-          externalId: `email_${notification._id}_${Date.now()}`
+      await notification.updateDeliveryStatus('push', 'failed', {
+        reason: 'No push provider configured'
+      });
+    } catch (error) {
+      console.error('Push notification error:', error.message);
+    }
+  }
+
+  /**
+   * Send SMS (Africa's Talking). Sent for every notification routed to SMS -
+   * alerts, approvals and anything high/urgent - subject to user preferences.
+   */
+  async sendSMSNotification(notification, isPersistent = true) {
+    return this.runExternalDelivery(notification, isPersistent, 'sms', {
+      configured: isSmsChannelConfigured,
+      send: async (contact) => {
+        if (!contact.sms) return null;
+        const body = `${notification.title}: ${notification.message}`.replace(/\s+/g, ' ').trim();
+        const text = body.length > 300 ? `${body.slice(0, 297)}...` : body;
+        return sendSms({ to: contact.sms, message: `${text} - VeriCircle` });
+      }
+    });
+  }
+
+  /**
+   * Send WhatsApp (Meta Cloud API).
+   */
+  async sendWhatsappNotification(notification, isPersistent = true) {
+    return this.runExternalDelivery(notification, isPersistent, 'whatsapp', {
+      configured: isWhatsappChannelConfigured,
+      send: async (contact) => {
+        if (!contact.whatsapp) return null;
+        return sendWhatsappNotification({
+          to: contact.whatsapp,
+          title: notification.title,
+          message: notification.message
         });
       }
+    });
+  }
 
-    } catch (error) {
-      console.error('Email notification error:', error);
-      if (isPersistent) await notification.updateDeliveryStatus('email', 'failed', { reason: error.message });
-    }
+  /**
+   * Send email.
+   */
+  async sendEmailNotification(notification, isPersistent = true) {
+    return this.runExternalDelivery(notification, isPersistent, 'email', {
+      configured: isEmailChannelConfigured,
+      send: async (contact) => {
+        if (!contact.email) return null;
+        const base = String(env.appUrl || '').replace(/\/$/, '');
+        return sendNotificationEmail({
+          to: contact.email,
+          name: contact.name,
+          title: notification.title,
+          message: notification.message,
+          priority: notification.priority,
+          actionUrl: base && notification.action_url ? `${base}${notification.action_url}` : null
+        });
+      }
+    });
   }
 
   /**
@@ -474,9 +588,25 @@ class NotificationService {
    */
   async getRecipientsForDomainEvent(domainEvent, chamaId, eventData) {
     try {
+      // Targeted events (a specific member's loan, their own withdrawal, ...) name
+      // their recipients explicitly and skip the role fan-out.
+      const explicitMembershipIds = (eventData.recipientMembershipIds || []).map(String);
+      const explicitUserIds = (eventData.recipientUserIds || []).map(String);
+      if (explicitMembershipIds.length || explicitUserIds.length) {
+        const filter = { chama_id: chamaId, status: 'active', $or: [] };
+        if (explicitMembershipIds.length) filter.$or.push({ _id: { $in: explicitMembershipIds } });
+        if (explicitUserIds.length) filter.$or.push({ user_id: { $in: explicitUserIds } });
+        const direct = await ChamaMembership.find(filter);
+        const excluded = new Set((eventData.excludeMembershipIds || []).map(String));
+        return direct
+          .filter((m) => !excluded.has(String(m._id)))
+          .filter((m) => !(eventData.excludeInitiator && String(m._id) === String(eventData.sentBy)))
+          .map((m) => ({ membershipId: m._id, userId: m.user_id, role: m.role }));
+      }
+
       // Determine which roles should receive this event
-      const targetRoles = this.getRolesForDomainEvent(domainEvent);
-      
+      const targetRoles = this.getRolesForDomainEvent(domainEvent, eventData);
+
       if (targetRoles.length === 0) {
         return [];
       }
@@ -488,8 +618,34 @@ class NotificationService {
         status: 'active'
       });
 
+      // Personal events: keep officials, but narrow the ordinary-member audience
+      // to the member the event is about (and always include that member).
+      const subjectMembershipId = String(eventData.membershipId || eventData.memberMembershipId || '');
+      const subjectUserId = String(eventData.userId || eventData.memberUserId || '');
+      let pool = memberships;
+      if (PERSONAL_EVENTS.has(domainEvent) && (subjectMembershipId || subjectUserId)) {
+        const isSubject = (m) =>
+          (subjectMembershipId && String(m._id) === subjectMembershipId) ||
+          (subjectUserId && String(m.user_id) === subjectUserId);
+        pool = memberships.filter((m) => !AUDIENCE_ROLES.has(m.role) || isSubject(m));
+        if (!pool.some(isSubject)) {
+          // The subject is named explicitly by the event, so they are notified even
+          // when the event just changed them out of "active" (suspended, removed).
+          const subject = await ChamaMembership.findOne({
+            chama_id: chamaId,
+            ...(subjectMembershipId ? { _id: subjectMembershipId } : { user_id: subjectUserId })
+          });
+          if (subject) pool = [...pool, subject];
+        }
+        pool.forEach((m) => {
+          m.__isSubject = isSubject(m);
+        });
+      }
+
       // Apply additional filtering based on event data
-      const recipients = memberships.filter(membership => {
+      const excludedIds = new Set((eventData.excludeMembershipIds || []).map(String));
+      const recipients = pool.filter(membership => {
+        if (excludedIds.has(String(membership._id))) return false;
         // Example: exclude the person who triggered the event
         if (eventData.excludeInitiator && String(membership._id) === String(eventData.sentBy)) {
           return false;
@@ -511,7 +667,8 @@ class NotificationService {
       return recipients.map(membership => ({
         membershipId: membership._id,
         userId: membership.user_id,
-        role: membership.role
+        role: membership.role,
+        isSubject: membership.__isSubject !== false
       }));
 
     } catch (error) {
@@ -523,8 +680,32 @@ class NotificationService {
   /**
    * Get roles that should receive a domain event
    */
-  getRolesForDomainEvent(domainEvent) {
+  getRolesForDomainEvent(domainEvent, eventData = {}) {
+    if (Array.isArray(eventData.targetRoles) && eventData.targetRoles.length) return eventData.targetRoles;
+    const everyone = ['member', 'treasurer', 'secretary', 'chairperson', 'committee_member', 'auditor', 'patron'];
     const eventRoleMapping = {
+      // Full-coverage additions
+      MEETING_CANCELLED: everyone,
+      POLL_PUBLISHED: everyone,
+      POLL_CLOSED: everyone,
+      DISPUTE_RAISED: ['chairperson', 'secretary', 'treasurer'],
+      DISPUTE_UPDATED: ['chairperson', 'secretary'],
+      PAYOUT_CREATED: ['treasurer', 'chairperson', 'secretary'],
+      PAYOUT_COMPLETED: ['treasurer', 'chairperson', 'secretary'],
+      SHAREOUT_EXECUTED: everyone,
+      SETTINGS_CHANGED: ['chairperson', 'treasurer', 'secretary', 'auditor'],
+      MODULES_CHANGED: ['chairperson', 'treasurer', 'secretary'],
+      FINANCIAL_YEAR_CLOSED: everyone,
+      ASSET_ACQUIRED: ['treasurer', 'chairperson', 'secretary', 'auditor'],
+      LARGE_TRANSACTION_ALERT: ['treasurer', 'chairperson', 'auditor'],
+      MEMBER_EXIT_REQUESTED: ['chairperson', 'treasurer', 'secretary'],
+      MEMBER_EXIT_PROCESSED: ['chairperson', 'treasurer', 'secretary'],
+      // Previously defined but never wired
+      MPESA_PAYMENT_FAILED: ['treasurer'],
+      MPESA_PAYMENT_SUCCESSFUL: ['treasurer'],
+      FINE_APPLIED: ['treasurer'],
+      FINE_WAIVED: ['treasurer'],
+
       // Financial events
       CONTRIBUTION_RECEIVED: ['treasurer', 'chairperson'],
       CONTRIBUTION_MISSED: ['member'],
@@ -701,7 +882,15 @@ class NotificationService {
       RESOLUTION_CREATED: `A new resolution "${eventData.resolutionTitle || ''}" has been created`
     };
 
-    return messageTemplates[domainEvent] || `New notification: ${domainEvent}`;
+    const text = messageTemplates[domainEvent];
+    if (text && PERSONAL_EVENTS.has(domainEvent) && recipient && recipient.isSubject === false) {
+      const who = eventData.memberName || 'A member';
+      return text
+        .replace(/^Your /, `${who}'s `)
+        .replace(/^You /, `${who} `)
+        .replace(/ your /g, ` ${who}'s `);
+    }
+    return text || eventData.message || `${(NOTIFICATION_TYPES[domainEvent] || {}).title || 'New notification'}`;
   }
 
   /**

@@ -11,11 +11,24 @@ import {
 } from './chama.service.js';
 import PaymentIntent from '../../models/PaymentIntent.js';
 import { getMgrOverview, initiateSavingsDeposit, markMgrObligationPaid, reconcileSavingsIntent, recordMgrReminder, upsertMgrSettings } from './chamaFinance.service.js';
-import { registerAssetAtCreation } from '../chamaAssets/chamaAsset.service.js';
+import { registerAssetAtCreation } from '../chamaAssets/index.js';
+import { listPublicChamaProfiles } from './publicProfiles.service.js';
+
+export const listPublicChamaProfilesController = async (req, res, next) => {
+  try {
+    const profiles = await listPublicChamaProfiles({ search: req.query.search, limit: req.query.limit });
+    return res.status(200).json({ success: true, data: { profiles } });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const getPublicChamasController = async (req, res, next) => {
   try {
-    const chamas = await getPublicChamas();
+    const chamas = await getPublicChamas({
+      organizationFamily: req.query.organizationFamily,
+      organizationType: req.query.organizationType,
+    });
     return res.status(200).json({
       success: true,
       data: { chamas },
@@ -117,6 +130,8 @@ export const createChamaController = async (
       patronUserId,
       patronInput,
       workspaceModules,
+      organizationFamily,
+      organizationType,
       // Optional: "Does this chama already own a business or property?"
       // step in the creation wizard. Skippable — most chamas don't have
       // one yet, and the dashboard simply omits the Assets & Income panel
@@ -154,6 +169,8 @@ export const createChamaController = async (
         patronUserId,
         patronInput,
         workspaceModules,
+        organizationFamily,
+        organizationType,
       });
 
 

@@ -1,15 +1,14 @@
 import mongoose from "mongoose";
-import { creditMemberWallet } from "../finance/memberWallet.service.js";
+import { creditMemberWallet, accountingService } from "../finance/index.js";
 
 import Payout from "../../models/Payout.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import Chama from "../../models/Chama.js";
+import { notifyWorkspace } from "../../services/workspaceNotify.js";
 
 import AppError from "../../utils/AppError.js";
-import { ingestEvent as ingestSecurityEvent } from "../security/security.service.js";
+import { ingestEvent as ingestSecurityEvent } from "../security/index.js";
 
-import accountingService
-    from "../finance/accounting/accounting.service.js";
 
 
 import {
@@ -905,13 +904,24 @@ export const startPayout = async ({
 
 
 
-        return await Payout.findById(
+        const createdPayout = await Payout.findById(
             payout._id
         )
 
         .populate(
             RECIPIENT_POPULATE
         );
+
+        // Officials are told a payout has been created and is waiting to be
+        // approved / paid. (The recipient hears when it is actually sent -
+        // see markPayoutPaid.)
+        notifyWorkspace("Chama", chamaId, "PAYOUT_CREATED", {
+            message: `A payout of KES ${Number(String(payout.amount)).toLocaleString("en-KE")} has been scheduled${createdPayout?.member_id?.user_id?.name ? ` for ${createdPayout.member_id.user_id.name}` : ""} and is waiting to be processed.`,
+            entityType: "Payout",
+            entityId: payout._id,
+        });
+
+        return createdPayout;
 
 
 
@@ -1624,13 +1634,25 @@ export const markPayoutPaid = async ({
 
 
 
-        return await Payout.findById(
+        const paidPayout = await Payout.findById(
             payout._id
         )
 
         .populate(
             RECIPIENT_POPULATE
         );
+
+        // The recipient is told their money has been sent; officials see it too.
+        notifyWorkspace("Chama", chamaId, "PAYOUT_COMPLETED", {
+            message: `Your payout of KES ${Number(String(payout.amount)).toLocaleString("en-KE")} has been sent via ${String(disbursement_method || "the agreed method").replace(/_/g, " ")}.`,
+            membershipId: payout.membership_id,
+            userId: membership?.user_id,
+            memberName: paidPayout?.member_id?.user_id?.name,
+            entityType: "Payout",
+            entityId: payout._id,
+        });
+
+        return paidPayout;
 
 
 

@@ -176,6 +176,23 @@ export const businessService = {
     return res.data?.data || res.data;
   },
 
+  async getStaff(workspaceId) {
+    const res = await businessApi.getStaff(workspaceId);
+    return extractArray(res);
+  },
+  async appointStaff(workspaceId, payload) {
+    const res = await businessApi.appointStaff(workspaceId, payload);
+    return res.data?.data || res.data;
+  },
+  async revokeStaff(workspaceId, staffId) {
+    const res = await businessApi.revokeStaff(workspaceId, staffId);
+    return res.data?.data || res.data;
+  },
+  async getActivity(workspaceId) {
+    const res = await businessApi.getActivity(workspaceId);
+    return extractArray(res);
+  },
+
   async initiateMpesaStkPush(workspaceId, payload) {
     const res = await businessApi.initiateMpesaStkPush(workspaceId, payload);
     return res.data;

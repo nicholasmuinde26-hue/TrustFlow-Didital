@@ -2,7 +2,7 @@ import api from "@/app/services/api";
 
 export const marketplaceService = {
   // ==========================================================================
-  // PUBLIC MARKETPLACE
+  // PUBLIC MARKETPLACE (admin + merchant calls stay in ChamaManager, where login lives)
   // ==========================================================================
   async getCategories() {
     const { data } = await api.get("/marketplace/categories");
@@ -20,13 +20,13 @@ export const marketplaceService = {
   },
 
   async getRetailStores() {
-    const { data } = await api.get("/marketplace/retail/sellers");
+    const { data } = await api.get("/retail/sellers");
     return data.data || [];
   },
 
   async getListing(slug, category = null) {
     const url = category
-      ? `/marketplace/${category}/listings/${slug}`
+      ? `/${category}/listings/${slug}`
       : `/marketplace/listings/${slug}`;
     const { data } = await api.get(url);
     return data.data || null;
@@ -49,12 +49,84 @@ export const marketplaceService = {
     return data.data || null;
   },
 
-  // ==========================================================================
-  // MARKETPLACE BUSINESS ADMIN CONSOLE
-  // ==========================================================================
+  // Authenticated merchant operations stay on the ChamaManager API.
+  async getMerchantStatus(businessId) {
+    const { data } = await api.get(`/businesses/${businessId}/marketplace/status`);
+    return data.data || [];
+  },
+
+  async getMerchantListings(businessId, params = {}) {
+    const { data } = await api.get(`/businesses/${businessId}/marketplace/listings`, { params });
+    return data.data || [];
+  },
+
+  async getMerchantOrders(businessId, params = {}) {
+    const { data } = await api.get(`/businesses/${businessId}/marketplace/orders`, { params });
+    return data;
+  },
+
+  async getSettlements(businessId) {
+    const { data } = await api.get(`/businesses/${businessId}/marketplace/settlements`);
+    return data.data || { summary: {}, settlements: [] };
+  },
+
+  async enrollInHub(businessId, payload) {
+    const { data } = await api.post(`/businesses/${businessId}/marketplace/enroll`, payload);
+    return data.data || null;
+  },
+
+  async submitListing(businessId, payload) {
+    const { data } = await api.post(`/businesses/${businessId}/marketplace/listings`, payload);
+    return data.data || null;
+  },
+
+  async updateMerchantListing(businessId, listingId, payload) {
+    const { data } = await api.put(`/businesses/${businessId}/marketplace/listings/${listingId}`, payload);
+    return data.data || null;
+  },
+
+  async toggleListingOccupancy(businessId, listingId, isOccupied) {
+    const { data } = await api.patch(
+      `/businesses/${businessId}/marketplace/listings/${listingId}/occupancy`,
+      { is_occupied: isOccupied }
+    );
+    return data.data || null;
+  },
+
+  async toggleListingVisibility(businessId, listingId, visibility) {
+    const { data } = await api.patch(
+      `/businesses/${businessId}/marketplace/listings/${listingId}/visibility`,
+      { visibility }
+    );
+    return data.data || null;
+  },
+
+  async deleteMerchantListing(businessId, listingId) {
+    const { data } = await api.delete(`/businesses/${businessId}/marketplace/listings/${listingId}`);
+    return data;
+  },
+
+  async updateFulfillment(businessId, orderId, fulfillmentStatus) {
+    const { data } = await api.patch(
+      `/businesses/${businessId}/marketplace/orders/${orderId}/fulfillment`,
+      { fulfillment_status: fulfillmentStatus }
+    );
+    return data.data || null;
+  },
+
+  async getMerchantProfile(businessId) {
+    const { data } = await api.get(`/businesses/${businessId}/marketplace/profile`);
+    return data.data || {};
+  },
+
+  async updateMerchantProfile(businessId, payload) {
+    const { data } = await api.put(`/businesses/${businessId}/marketplace/profile`, payload);
+    return data.data || {};
+  },
+
   async getModerationQueue(params = {}) {
     const { data } = await api.get("/admin/marketplace/queue", { params });
-    return data || { listings: [], pagination: {} };
+    return data;
   },
 
   async reviewListing(listingId, payload) {
@@ -72,89 +144,14 @@ export const marketplaceService = {
     return data.data || null;
   },
 
-  async updateCategoryDesign(slug, payload) {
-    const { data } = await api.put(`/admin/marketplace/categories/${slug}/design`, payload);
-    return data.data || null;
-  },
-
   async getAnalytics() {
     const { data } = await api.get("/admin/marketplace/analytics");
     return data.data || {};
   },
 
-  // ==========================================================================
-  // MERCHANT PORTAL (IN BUSINESS DASHBOARD)
-  // ==========================================================================
-  async getMerchantStatus(businessId) {
-    const { data } = await api.get(`/businesses/${businessId}/marketplace/status`);
-    return data.data || [];
-  },
-
-  async enrollInHub(businessId, payload) {
-    const { data } = await api.post(`/businesses/${businessId}/marketplace/enroll`, payload);
+  async updateCategoryDesign(slug, payload) {
+    const { data } = await api.put(`/admin/marketplace/categories/${slug}/design`, payload);
     return data.data || null;
-  },
-
-  async getMerchantProfile(businessId) {
-    const { data } = await api.get(`/businesses/${businessId}/marketplace/profile`);
-    return data.data || {};
-  },
-
-  async updateMerchantProfile(businessId, payload) {
-    const { data } = await api.put(`/businesses/${businessId}/marketplace/profile`, payload);
-    return data.data || {};
-  },
-
-  async getMerchantListings(businessId, params = {}) {
-    const { data } = await api.get(`/businesses/${businessId}/marketplace/listings`, { params });
-    return data.data || [];
-  },
-
-  async submitListing(businessId, payload) {
-    const { data } = await api.post(`/businesses/${businessId}/marketplace/listings`, payload);
-    return data.data || null;
-  },
-
-  async updateMerchantListing(businessId, listingId, payload) {
-    const { data } = await api.put(`/businesses/${businessId}/marketplace/listings/${listingId}`, payload);
-    return data.data || null;
-  },
-
-  async deleteMerchantListing(businessId, listingId) {
-    const { data } = await api.delete(`/businesses/${businessId}/marketplace/listings/${listingId}`);
-    return data;
-  },
-
-  async toggleListingVisibility(businessId, listingId, visibility = null) {
-    const { data } = await api.patch(`/businesses/${businessId}/marketplace/listings/${listingId}/visibility`, {
-      visibility,
-    });
-    return data.data || null;
-  },
-
-  async toggleListingOccupancy(businessId, listingId, isOccupied = null) {
-    const { data } = await api.patch(`/businesses/${businessId}/marketplace/listings/${listingId}/occupancy`, {
-      is_occupied: isOccupied,
-    });
-    return data.data || null;
-  },
-
-  async getMerchantOrders(businessId, params = {}) {
-    const { data } = await api.get(`/businesses/${businessId}/marketplace/orders`, { params });
-    return data || { orders: [], pagination: {} };
-  },
-
-  async updateFulfillment(businessId, orderId, fulfillmentStatus) {
-    const { data } = await api.patch(
-      `/businesses/${businessId}/marketplace/orders/${orderId}/fulfillment`,
-      { fulfillment_status: fulfillmentStatus }
-    );
-    return data.data || null;
-  },
-
-  async getSettlements(businessId) {
-    const { data } = await api.get(`/businesses/${businessId}/marketplace/settlements`);
-    return data.data || { summary: {}, settlements: [] };
   },
 };
 

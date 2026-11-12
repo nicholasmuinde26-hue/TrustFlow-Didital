@@ -25,9 +25,7 @@ export function RentalOccupancySnapshot({ workspaceId, currency = "KES" }) {
   const { listings, isLoading } = useRentalListings(workspaceId);
   const listingList = Array.isArray(listings) ? listings : [];
 
-  if (isLoading || listingList.length === 0) {
-    return null;
-  }
+  if (isLoading) return <div className="h-36 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Loading rental portfolio" />;
 
   const totalUnits = listingList.length;
   const occupiedCount = listingList.filter((l) => l.status === "occupied").length;
@@ -58,6 +56,7 @@ export function RentalOccupancySnapshot({ workspaceId, currency = "KES" }) {
           </span>
         </p>
       )}
+      {listingList.length === 0 && <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">Add your first room, unit or plot to start tracking occupancy and expected rent.</p>}
     </div>
   );
 }

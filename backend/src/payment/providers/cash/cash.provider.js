@@ -21,7 +21,7 @@
  */
 
 import { PAYMENT_PROVIDER } from '../../payment.constants.js';
-import { assertCashInflowAllowed } from '../../../modules/finance/cashDeposit.service.js';
+import { assertCashInflowAllowed } from '../../../modules/finance/index.js';
 
 class CashProvider {
   name = PAYMENT_PROVIDER.CASH;

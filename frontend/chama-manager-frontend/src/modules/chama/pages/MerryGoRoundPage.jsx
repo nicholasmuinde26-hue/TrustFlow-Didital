@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -711,7 +712,13 @@ export default function MerryGoRoundPage() {
       ? window.prompt(`Enter the ${method === "mpesa" ? "M-Pesa receipt" : "bank transfer"} reference after sending the approved payout:`)?.trim()
       : window.prompt("Enter a cash receipt reference if available (optional):")?.trim() || "";
     if (["mpesa", "bank"].includes(method) && !externalReference) return;
-    if (!window.confirm("Confirm that the approved payout has been disbursed and record its reference?")) return;
+    const ok = await confirmAction({
+      title: "Record this payout as disbursed?",
+      message: "Only confirm once the approved money has actually been sent. The recipient will be asked to confirm receipt.",
+      variant: "warning",
+      confirmText: "Yes, it was sent",
+    });
+    if (!ok) return;
     setActionLoading(true);
     try {
       await mgrApi.disbursePayout(roundId, externalReference);
@@ -725,7 +732,13 @@ export default function MerryGoRoundPage() {
   };
 
   const handleMarkPayoutReceived = async (roundId) => {
-    if (!window.confirm("Confirm that you have received the MGR payout for this round?")) return;
+    const ok = await confirmAction({
+      title: "Confirm you received the payout?",
+      message: "This confirmation is recorded in the audit log and closes the round for you.",
+      variant: "info",
+      confirmText: "Yes, I received it",
+    });
+    if (!ok) return;
     setActionLoading(true);
     try {
       await mgrApi.markPayoutReceived(roundId);
@@ -740,7 +753,13 @@ export default function MerryGoRoundPage() {
 
   const handleConfirmRound = async (round) => {
     const recipient = resolveMemberDetails(round.recipient_id).name;
-    if (!window.confirm(`Confirm Round #${round.round_number} payout position for ${recipient}? This opens the contribution period.`)) return;
+    const ok = await confirmAction({
+      title: `Open Round #${round.round_number}?`,
+      message: `${recipient} is the payout recipient for this round. Confirming opens the contribution period for everyone.`,
+      variant: "info",
+      confirmText: "Open round",
+    });
+    if (!ok) return;
     setActionLoading(true);
     try {
       await mgrApi.confirmRoundPosition(round._id, round.recipient_id?._id || round.recipient_id);

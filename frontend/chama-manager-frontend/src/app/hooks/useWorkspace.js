@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import WorkspaceContext from "../store/workspace.store";
-import { hasModule as hasWorkspaceModule } from "@/modules/workspaces/config/workspaceModules";
+import { hasModule as hasWorkspaceModule } from '@/modules/workspaces/index.js';
 
 export function useWorkspace() {
   const context = useContext(WorkspaceContext);
@@ -48,6 +48,7 @@ export function useWorkspace() {
     currentWorkspace,
     workspaceId,
     workspaceType,
+    membershipId,
     membership,
     // Burial chamas are still Chama documents underneath (same
     // governance/settings/membership model) — just with an extra

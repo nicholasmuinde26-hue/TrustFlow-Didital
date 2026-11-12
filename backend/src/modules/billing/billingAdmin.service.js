@@ -91,11 +91,18 @@ export async function listAllPlans() {
   return BillingPlan.find({}).sort({ sort_order: 1 }).lean();
 }
 
-const EDITABLE = ['name', 'tagline', 'price_monthly', 'max_members', 'is_active'];
+const EDITABLE = ['name', 'tagline', 'price_monthly', 'max_members', 'is_active', 'organization_families'];
 
 export async function updatePlan(code, patch) {
   const update = {};
   for (const key of EDITABLE) if (patch[key] !== undefined) update[key] = patch[key];
+  if (update.organization_families !== undefined) {
+    const allowed = ['chama', 'sacco', 'cooperative'];
+    if (!Array.isArray(update.organization_families) || update.organization_families.some((family) => !allowed.includes(family))) {
+      throw new AppError('organization_families must contain only chama, sacco, or cooperative', 400);
+    }
+    update.organization_families = [...new Set(update.organization_families)];
+  }
   if (update.price_monthly !== undefined) {
     const price = Number(update.price_monthly);
     if (!Number.isInteger(price) || price < 0) throw new AppError('price_monthly must be a whole number of KES', 400);

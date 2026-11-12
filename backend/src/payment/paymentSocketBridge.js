@@ -1,6 +1,6 @@
 import paymentEventBus from "./payment.event.bus.js";
 import { PAYMENT_EVENTS, PAYMENT_STATUS } from "./payment.constants.js";
-import { getIO } from "../modules/realtime/socketServer.js";
+import { getIO } from "../modules/realtime/index.js";
 
 /**
  * ============================================================================

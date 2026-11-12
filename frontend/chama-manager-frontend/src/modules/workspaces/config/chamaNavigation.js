@@ -5,8 +5,6 @@ import {
   HandCoins,
   FileBarChart2,
   Coins,
-  CalendarClock,
-  Video,
   Receipt,
   BookOpen,
   Landmark,
@@ -22,19 +20,29 @@ import {
   HeartPulse,
   UserPlus,
   FileText,
-  MessageSquare,
   ShieldCheck,
   ShieldQuestion,
   Gavel,
   Star,
   Tent,
   Megaphone,
-  Vote,
   Gem,
 } from "lucide-react";
 
-import { canViewFullBooks, canManageBurialChamaSetup } from "../permissions/Permissions";
-import { hasModule } from "./workspaceModules";
+import { canViewFullBooks, canManageBurialChamaSetup } from '../permissions/Permissions.js';
+import { hasModule } from './workspaceModules.js';
+import { announcementsRegistration } from "@/modules/announcements/index.js";
+import { chatRegistration } from "@/modules/chat/index.js";
+import { meetingsRegistration } from "@/modules/meetings/index.js";
+import { pollsRegistration } from "@/modules/polls/index.js";
+
+const REGISTERED_NAV_ITEMS = [chatRegistration, meetingsRegistration, pollsRegistration, announcementsRegistration].map(({ navigation }) => ({
+  ...navigation,
+  section: by(navigation.sectionByShell.chama, navigation.sectionByShell.burial),
+  icon: navigation.iconByShell
+    ? by(navigation.iconByShell.chama, navigation.iconByShell.burial)
+    : navigation.icon,
+}));
 
 /**
  * ONE navigation list for every chama-backed workspace (standard + burial).
@@ -42,8 +50,8 @@ import { hasModule } from "./workspaceModules";
  * Each item is tagged with the module that owns it (`module`). The list is
  * filtered twice - first by the chama's enabled modules, then by the member's
  * role - so a chama without loans has no Loans link and a plain member has no
- * General Ledger link. Adding a feature = adding one line here and one key to
- * the backend catalog (be/src/constants/workspaceModules.constants.js).
+ * General Ledger link. Registered feature modules contribute their own nav
+ * metadata; the backend catalog remains the authority for enabled keys.
  *
  * The two "shells" (standard chama / burial chama) only differ in wording and
  * grouping, so those are expressed per item with by(chama, burial) instead of
@@ -56,7 +64,9 @@ import { hasModule } from "./workspaceModules";
  * Item order inside a section is the order of this list.
  */
 
-const by = (chama, burial = chama) => ({ __byShell: true, chama, burial });
+function by(chama, burial = chama) {
+  return { __byShell: true, chama, burial };
+}
 const resolve = (value, shell) => (value && value.__byShell ? value[shell] : value);
 
 // Section order + titles per shell. A section with no visible items is dropped.
@@ -73,11 +83,11 @@ const SECTIONS = {
     { key: "core" },
     { key: "assets", title: "Chama Assets" },
     { key: "burial", title: "Burial Chama" },
-    { key: "money", title: "Welfare & Contributions" },
-    { key: "ops", title: "Income & Fundraising" },
+    { key: "money", title: "Welfare & Cover" },
     { key: "notices", title: "Meetings & Notices" },
     { key: "trust", title: "Trust & Accountability" },
     { key: "books", title: "Books & Reports" },
+    { key: "ops", title: "Income & Fundraising" },
   ],
 };
 
@@ -99,10 +109,7 @@ export const CHAMA_NAV_ITEMS = [
   // features appear missing in standard workspaces.
   { module: "equipment_hire", section: "ops", title: "Equipment & Tent Hire", icon: Tent, to: "equipment-hire" },
   { module: "fundraising", section: "ops", title: "Harambee & Fundraising", icon: Megaphone, to: "fundraising" },
-  { module: "meetings", section: by("ops", "notices"), title: "Meeting Records", icon: by(CalendarClock, Video), to: "meetings" },
-  { module: "polls", section: by("ops", "notices"), title: "Polls", icon: Vote, to: "polls" },
-  { module: "announcements", section: by("ops", "notices"), title: "Announcements", icon: by(Megaphone, MessageSquare), to: "announcements" },
-  { module: "chat", section: by("ops", "notices"), title: "Messages", icon: MessageSquare, to: "chat" },
+  ...REGISTERED_NAV_ITEMS,
 
   // ---- assets ---------------------------------------------------------------
   { module: "assets", section: "assets", title: "Portfolio", icon: Building2, to: "assets" },
@@ -117,7 +124,8 @@ export const CHAMA_NAV_ITEMS = [
 
   // ---- money ----------------------------------------------------------------
   { module: "finance_core", section: "money", shell: "chama", title: "Dashboard", icon: Wallet, to: "finance" },
-  { module: "finance_core", section: "money", title: "Member Wallet", icon: Wallet, to: "finance/wallet" },
+  { module: "finance_core", section: "money", shell: "burial", title: "Welfare & Cover", icon: HeartHandshake, to: "finance" },
+  { module: "finance_core", section: "money", title: by("Member Wallet", "My Cover"), icon: by(Wallet, ShieldCheck), to: "finance/wallet" },
   // Standard chamas use the finance contributions view; burial chamas use the
   // contributions page (the old burial list pointed at /contributions).
   // Money & Contributions shows FIVE top-level tabs. Pages that overlap with
@@ -127,14 +135,15 @@ export const CHAMA_NAV_ITEMS = [
   //   Savings       -> Savings Share-Out
   //   Payouts       -> Withdrawals
   // `subTitle` is how a parent labels itself as the first sub-tab.
-  { module: "contributions", section: "money", title: "Contributions", subTitle: "Collection", icon: Coins, to: by("finance/contributions", "contributions") },
-  { module: "contributions", section: "money", title: "Record Contribution", icon: PlusCircle, to: "finance/record-contribution", role: "treasurerOnly", parent: by("finance/contributions", "contributions") },
+  { module: "contributions", section: "money", title: by("Contributions", "Welfare Contributions"), subTitle: by("Collection", "Welfare Dues"), icon: Coins, to: "finance/contributions" },
+  { module: "contributions", section: "money", title: by("Record Contribution", "Record Welfare Payment"), icon: PlusCircle, to: "finance/record-contribution", role: "treasurerOnly", parent: by("finance/contributions", "finance/contributions") },
   { module: "contributions", section: "money", shell: "chama", title: "Payment register", icon: FileText, to: "finance/contributions/register", parent: "finance/contributions" },
+  { module: "contributions", section: "money", shell: "burial", title: "Welfare Payment Register", icon: FileText, to: "finance/contributions/register", parent: "finance/contributions" },
   { module: "contributions", section: "money", shell: "chama", title: "Chama Contributions", icon: HeartHandshake, to: "chama-contributions", parent: "finance/contributions" },
-  { module: "savings", section: "money", title: by("Savings", "Welfare Fund"), subTitle: "Savings pool", icon: PiggyBank, to: "finance/savings" },
+  { module: "savings", section: "money", shell: "chama", title: "Savings", subTitle: "Savings pool", icon: PiggyBank, to: "finance/savings" },
   { module: "savings_shareout", section: "money", title: "Savings Share-Out", icon: PiggyBank, to: "finance/savings-shareout", parent: "finance/savings" },
   { module: "mgr", section: "money", title: "Merry-Go-Round (MGR)", icon: ArrowLeftRight, to: "mgr" },
-  { module: "payouts", section: "money", title: by("Payouts", "Benevolent Payouts"), subTitle: "Payouts", icon: ArrowLeftRight, to: "finance/payouts" },
+  { module: "payouts", section: "money", title: by("Payouts", "Case Payouts"), subTitle: by("Payouts", "Payments"), icon: ArrowLeftRight, to: "finance/payouts" },
   { module: "withdrawals", section: "money", title: "Withdrawals", icon: Landmark, to: "finance/withdrawals", parent: "finance/payouts" },
 
   // ---- trust ----------------------------------------------------------------

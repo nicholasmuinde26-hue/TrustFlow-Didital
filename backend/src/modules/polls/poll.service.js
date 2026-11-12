@@ -5,7 +5,7 @@ import Chama from "../../models/Chama.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
-import Poll, { POLL_CATEGORIES, POLL_TYPES, POLL_ELIGIBILITY, POLL_REVEAL_MODES } from "../../models/Poll.js";
+import Poll, { POLL_CATEGORIES, POLL_TYPES, POLL_ELIGIBILITY, POLL_REVEAL_MODES } from "./Poll.model.js";
 import AppError from "../../utils/AppError.js";
 
 // ============================================================================
@@ -363,6 +363,8 @@ export async function createPoll(workspaceId, workspaceType, userId, context, da
 // PUBLISH (draft -> open)
 // ============================================================================
 
+import { notifyWorkspace } from "../../services/workspaceNotify.js";
+
 export async function publishPoll(workspaceId, pollId, userId, context) {
   if (!context.canManage) throw new AppError("Only chama officials can open a poll for voting", 403);
 
@@ -382,6 +384,11 @@ export async function publishPoll(workspaceId, pollId, userId, context) {
   poll.published_by = userId;
   poll.published_at = new Date();
   await poll.save();
+  notifyWorkspace(poll.workspace_type, workspaceId, "POLL_PUBLISHED", {
+    message: `Vote now: "${poll.title || poll.question || 'New poll'}". Voting closes ${new Date(poll.closes_at).toLocaleDateString('en-KE', { dateStyle: 'medium' })}.`,
+    entityType: "Poll",
+    entityId: poll._id,
+  });
   return poll;
 }
 
@@ -442,6 +449,11 @@ async function closePollInternal(poll, userId, reason) {
   poll.closed_reason = reason;
   poll.result = computeTally(poll);
   await poll.save();
+  notifyWorkspace(poll.workspace_type, poll.workspace_id, "POLL_CLOSED", {
+    message: `Voting on "${poll.title || poll.question || 'the poll'}" has closed. Results are available.`,
+    entityType: "Poll",
+    entityId: poll._id,
+  });
   return poll;
 }
 

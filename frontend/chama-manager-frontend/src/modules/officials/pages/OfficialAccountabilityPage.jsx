@@ -4,7 +4,7 @@ import PageHeader from "@/shared/components/ui/PageHeader";
 import Spinner from "@/shared/components/ui/Spinner";
 
 import { useWorkspace } from "@/app/hooks/useWorkspace";
-import { canViewRatingDetail } from "@/modules/workspaces/permissions/Permissions";
+import { canViewRatingDetail } from '@/modules/workspaces/index.js';
 
 import { useOfficials, useSubmitOfficialRating } from "../hooks/useOfficials";
 import OfficialRatingCard from "../components/OfficialRatingCard";

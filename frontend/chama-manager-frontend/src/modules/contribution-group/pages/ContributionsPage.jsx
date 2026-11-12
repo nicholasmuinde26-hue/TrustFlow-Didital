@@ -53,7 +53,9 @@ function MemberStatusPill({ status }) {
 
 export default function ContributionsPage() {
   const { workspaceId: routeWorkspaceId } = useParams();
-  const { workspaceId: ctxWorkspaceId } = useWorkspace();
+  const workspace = useWorkspace();
+  const ctxWorkspaceId = workspace?.workspaceId;
+  const isBurialChama = workspace?.isBurialChama;
   const workspaceId = routeWorkspaceId || ctxWorkspaceId;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -169,9 +171,9 @@ export default function ContributionsPage() {
     return (
       <div className="space-y-6 pb-12">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-mist sm:text-3xl">My contributions</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-mist sm:text-3xl">{isBurialChama ? "My welfare payments" : "My contributions"}</h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
-            What you owe, what you have paid, and a Pay button for your own contributions.
+            {isBurialChama ? "Review welfare dues and pay your shared fund contributions." : "What you owe, what you have paid, and a Pay button for your own contributions."}
           </p>
         </div>
         <MyContributions chamaId={workspaceId} base={base} />
@@ -192,10 +194,10 @@ export default function ContributionsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-mist sm:text-3xl">
-            Money &amp; collections
+            {isBurialChama ? "Welfare collections" : "Money & collections"}
           </h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
-            Keep contributions moving and the group's finances clear.
+            {isBurialChama ? "Track member dues and case levies that support the shared welfare fund." : "Keep contributions moving and the group's finances clear."}
           </p>
         </div>
 
@@ -233,11 +235,13 @@ export default function ContributionsPage() {
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-900 p-5 text-white shadow-sm dark:from-mint-strong dark:via-mint-strong dark:to-mint-deep lg:col-span-2">
           <div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-white/5" />
           <span className="relative text-xs font-bold uppercase tracking-wider text-emerald-100/80 dark:text-mint/70">
-            Available group balance
+            {isBurialChama ? "Shared welfare fund" : "Available group balance"}
           </span>
-          <p className="relative mt-1 text-3xl font-black tracking-tight">{money(financeSummary?.cash_balance)}</p>
+          <p className="relative mt-1 text-3xl font-black tracking-tight">{money(isBurialChama ? financeSummary?.welfare_fund_balance : financeSummary?.cash_balance)}</p>
           <p className="relative mt-2 text-xs font-semibold text-emerald-100/90 dark:text-mist-muted">
-            ↑ {money(totalReceived)} collected this month
+            {isBurialChama
+              ? `${money(financeSummary?.fund_available_for_cases)} available above the reserve floor`
+              : `↑ ${money(totalReceived)} collected this month`}
           </p>
         </div>
 

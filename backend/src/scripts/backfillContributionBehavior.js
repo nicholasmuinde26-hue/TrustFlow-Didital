@@ -5,7 +5,7 @@ import {
   behaviorFromLegacy,
   ownsLedgerAccount,
 } from '../constants/contributionBehavior.constants.js';
-import { ensurePlanLedgerAccount } from '../modules/contributionPlan/planLedgerAccount.service.js';
+import { ensurePlanLedgerAccount } from '../modules/contributionPlan/index.js';
 
 /**
  * Backfill: contribution `behavior`

@@ -1,5 +1,6 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Building2, Landmark, Loader2, Pencil, PiggyBank, Plus, Shield, ShieldCheck, Star, Target, Trash2, Wallet } from "lucide-react";
+import { BookOpen, Building2, HeartPulse, Landmark, Loader2, Pencil, PiggyBank, Plus, Shield, ShieldCheck, Star, Target, Trash2, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import chamaApi from "@/modules/chama/api/chama.api";
@@ -11,7 +12,7 @@ import {
   canDecideWithdrawal,
   canSettleWithdrawal,
   canCancelAnyWithdrawal,
-} from "@/modules/workspaces/permissions/Permissions";
+} from '@/modules/workspaces/index.js';
 import useBankAccounts from "@/modules/finance/hooks/useBankAccounts";
 import BankAccountModal from "@/modules/finance/components/BankAccountModal";
 import financeService from "@/modules/finance/services/finance.service";
@@ -21,6 +22,7 @@ import { useMembers } from "@/modules/members/hooks/useMembers";
 import withdrawalService from "@/modules/withdrawal/services/withdrawal.service";
 import WithdrawalList from "@/modules/withdrawal/components/WithdrawalList";
 import WithdrawalDetailsPanel from "@/modules/withdrawal/components/WithdrawalDetailsPanel";
+import useFinanceSummary from "@/modules/finance/hooks/useFinanceSummary";
 
 import {
   EmptyState,
@@ -52,6 +54,7 @@ export default function TreasuryOversightTab({
   type,
   data,
   reload,
+  goToTab,
 }) {
   const [goalName, setGoalName] = useState("");
   const [goalTarget, setGoalTarget] = useState("");
@@ -68,6 +71,8 @@ export default function TreasuryOversightTab({
     : 0;
   const pendingKyc = (data?.pendingKyc || data?.kycQueue || []).filter(Boolean);
   const mayViewBooks = canViewFullBooks(role, type);
+  const isBurialChama = type?.toLowerCase().replace(/[-_]/g, "") === "burialchama";
+  const { summary: financeSummary, loading: loadingFinanceSummary } = useFinanceSummary(workspaceId);
 
   // ---------------- Bank accounts ----------------
   // Registering/editing a bank account is treasurer-only backend-side
@@ -88,7 +93,13 @@ export default function TreasuryOversightTab({
   };
 
   const handleDeactivateBankAccount = async (bankAccount) => {
-    if (!window.confirm(`Deactivate ${bankAccount.bank_name} — ${bankAccount.account_name}?`)) return;
+    const ok = await confirmAction({
+      title: "Deactivate bank account?",
+      message: `${bankAccount.bank_name} — ${bankAccount.account_name} will stop being offered for payments and payouts.`,
+      variant: "danger",
+      confirmText: "Deactivate",
+    });
+    if (!ok) return;
     setDeactivatingBankId(bankAccount._id);
     try {
       await financeService.deactivateBankAccount(workspaceId, bankAccount._id);
@@ -118,7 +129,10 @@ export default function TreasuryOversightTab({
   const [showPolicyWizard, setShowPolicyWizard] = useState(false);
 
   const loadShareoutPolicies = useCallback(async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || type !== "chama") {
+      setLoadingShareoutPolicies(false);
+      return;
+    }
     setLoadingShareoutPolicies(true);
     try {
       const res = await savingsShareoutService.getPolicies(workspaceId);
@@ -136,7 +150,7 @@ export default function TreasuryOversightTab({
     } finally {
       setLoadingShareoutPolicies(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, type]);
 
   useEffect(() => {
     loadShareoutPolicies();
@@ -292,11 +306,18 @@ export default function TreasuryOversightTab({
     <div className="grid items-start gap-5 lg:grid-cols-12">
       {feedback && <div className="lg:col-span-12"><Notice tone={feedback.tone}>{feedback.text}</Notice></div>}
 
+      {isBurialChama && <SectionCard icon={HeartPulse} title="Burial welfare fund position" description="Track the shared welfare pool against the protected reserve and keep bereavement support moving." className="lg:col-span-12" action={<Link to={`/workspace/${workspaceId}/burial-cases`} className="text-xs font-bold text-emerald-700 hover:underline dark:text-emerald-400">Open burial case register</Link>}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[["Welfare fund balance", financeSummary?.welfare_fund_balance, "Current pooled welfare funds"], ["Available for cases", financeSummary?.fund_available_for_cases, "After keeping the reserve floor"], ["Protected reserve", financeSummary?.fund_reserve_floor, "Minimum balance to preserve"], ["Pending case payouts", financeSummary?.pending_payouts, "Awaiting payment completion"]].map(([label, value, detail]) => <div key={label} className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 dark:border-emerald-950 dark:bg-emerald-950/20"><p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800/70 dark:text-emerald-300/70">{label}</p><p className="mt-2 text-lg font-black text-slate-900 dark:text-white">{loadingFinanceSummary ? "Loading…" : money(value)}</p><p className="mt-1 text-[11px] text-slate-500">{detail}</p></div>)}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => goToTab?.("burial-config")} className="rounded-xl border border-emerald-200 px-3.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-300">Review burial rules</button><Link to={`/workspace/${workspaceId}/finance`} className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200">Open finance books</Link></div>
+      </SectionCard>}
+
       {/* ---------------- Goals ---------------- */}
       <SectionCard
         icon={Target}
-        title="Group investment goals"
-        description="What the Chama is saving toward, and how far along it is."
+        title={isBurialChama ? "Burial support funding goals" : "Group investment goals"}
+        description={isBurialChama ? "Set transparent targets for funeral support, emergency welfare and reserve building." : "What the Chama is saving toward, and how far along it is."}
         className="lg:col-span-7"
       >
         <form onSubmit={addGoal} className="grid gap-3 sm:grid-cols-[1fr_200px_auto] sm:items-end">
@@ -304,7 +325,7 @@ export default function TreasuryOversightTab({
             label="Goal"
             value={goalName}
             onChange={setGoalName}
-            placeholder="e.g. Plot purchase"
+            placeholder={isBurialChama ? "e.g. Welfare reserve top-up" : "e.g. Plot purchase"}
           />
           <InputField
             label="Target (KES)"
@@ -453,7 +474,7 @@ export default function TreasuryOversightTab({
       <SectionCard
         icon={Landmark}
         title="Bank accounts"
-        description="Real-world bank accounts this chama deposits cash into. Members see these read-only; registering or changing one happens here."
+        description={isBurialChama ? "Accounts used for welfare collections and approved bereavement payouts. Members see these read-only; treasurer changes are recorded here." : "Real-world bank accounts this chama deposits cash into. Members see these read-only; registering or changing one happens here."}
         className="lg:col-span-6"
         action={
           isBankTreasurer && (
@@ -556,7 +577,7 @@ export default function TreasuryOversightTab({
       />
 
       {/* ---------------- Savings share-out policy ---------------- */}
-      <SectionCard
+      {!isBurialChama && <SectionCard
         icon={PiggyBank}
         title="Savings share-out policy"
         description="How and when accumulated savings get distributed back to contributors. Members see the active policy read-only on the Savings page."
@@ -610,9 +631,9 @@ export default function TreasuryOversightTab({
             Configuring this policy is limited to the treasurer and chairperson.
           </p>
         )}
-      </SectionCard>
+      </SectionCard>}
 
-      {showPolicyWizard && (
+      {!isBurialChama && showPolicyWizard && (
         <SavingsSharePolicyWizard
           workspaceId={workspaceId}
           members={chamaMembers}

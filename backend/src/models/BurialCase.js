@@ -98,6 +98,7 @@ const burialCaseSchema = new mongoose.Schema(
           'spouse',
           'child',
           'parent',
+          'parent_in_law',
           'sibling',
           'guardian',
           'grandparent',
@@ -118,8 +119,12 @@ const burialCaseSchema = new mongoose.Schema(
       national_id: {
         type: String,
         trim: true,
-        maxlength: 50
+        maxlength: 50,
+        select: false
       },
+      national_id_encrypted: { type: String, select: false, default: null },
+      national_id_hash: { type: String, select: false, default: null, index: true },
+      national_id_last4: { type: String, default: null },
       cause_of_death: {
         type: String,
         trim: true,
@@ -187,8 +192,12 @@ const burialCaseSchema = new mongoose.Schema(
       national_id: {
         type: String,
         trim: true,
-        maxlength: 50
-      }
+        maxlength: 50,
+        select: false
+      },
+      national_id_encrypted: { type: String, select: false, default: null },
+      national_id_hash: { type: String, select: false, default: null },
+      national_id_last4: { type: String, default: null }
     },
 
     // ---------------------------------------------------
@@ -198,6 +207,11 @@ const burialCaseSchema = new mongoose.Schema(
       type: String,
       enum: [
         'reported',
+        'documents_pending',
+        'treasurer_verification',
+        'chairman_secretary_approval',
+        'approved_for_payment',
+        'disbursed',
         'under_review',
         'documentation_required',
         'verified',
@@ -217,6 +231,20 @@ const burialCaseSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    status_history: [{
+      from: { type: String, default: null },
+      to: { type: String, required: true },
+      changed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      changed_at: { type: Date, default: Date.now },
+      note: { type: String, trim: true, maxlength: 1000 }
+    }],
+    fraud_flags: [{
+      flag_type: { type: String, enum: ['duplicate_deceased_id', 'duplicate_deceased_name', 'repeat_dependent'], required: true },
+      related_case_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BurialCase', default: null },
+      note: { type: String, trim: true, maxlength: 500 },
+      resolved_at: { type: Date, default: null },
+      resolved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
+    }],
 
     // ---------------------------------------------------
     // Case lifecycle timestamps
@@ -288,6 +316,7 @@ const burialCaseSchema = new mongoose.Schema(
         type: mongoose.Schema.Types.Decimal128,
         default: null
       },
+      ex_gratia: { type: Boolean, default: false },
       currency: {
         type: String,
         default: 'KES',
@@ -356,6 +385,8 @@ const burialCaseSchema = new mongoose.Schema(
             'chiefs_letter',
             'hospital_document',
             'burial_permit',
+            'deceased_id',
+            'matanga_photo',
             'other'
           ],
           required: true
@@ -387,6 +418,44 @@ const burialCaseSchema = new mongoose.Schema(
         }
       }
     ],
+
+    home_visit: {
+      completed: { type: Boolean, default: false },
+      verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      verified_at: { type: Date, default: null },
+      notes: { type: String, trim: true, maxlength: 1000, default: '' }
+    },
+    treasurer_verification: {
+      membership_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaMembership', default: null },
+      verified_at: { type: Date, default: null }
+    },
+    final_approval: {
+      membership_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ChamaMembership', default: null },
+      approved_at: { type: Date, default: null }
+    },
+    payout: {
+      status: { type: String, enum: ['not_requested', 'awaiting_approval', 'ready', 'processing', 'settling', 'settlement_pending', 'paid', 'failed'], default: 'not_requested' },
+      approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest', default: null },
+      recipient_name: { type: String, trim: true, maxlength: 200, default: null },
+      recipient_phone: { type: String, trim: true, maxlength: 30, default: null },
+      conversation_id: { type: String, trim: true, default: null },
+      mpesa_receipt: { type: String, trim: true, default: null },
+      initiated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      fund_allocations: [{ account_id: { type: mongoose.Schema.Types.ObjectId, ref: 'FinancialAccount' }, amount: mongoose.Schema.Types.Decimal128 }],
+      recipients: [{
+        full_name: { type: String, trim: true, maxlength: 200, required: true },
+        phone: { type: String, trim: true, maxlength: 30, required: true },
+        share_percentage: { type: Number, min: 0.01, max: 100, required: true },
+        amount: { type: mongoose.Schema.Types.Decimal128, required: true },
+        conversation_id: { type: String, trim: true, default: null },
+        receipt: { type: String, trim: true, default: null },
+        status: { type: String, enum: ['queued', 'processing', 'settling', 'paid', 'failed'], default: 'queued' },
+        failure_reason: { type: String, trim: true, maxlength: 500, default: null },
+        fund_allocations: [{ account_id: { type: mongoose.Schema.Types.ObjectId, ref: 'FinancialAccount' }, amount: mongoose.Schema.Types.Decimal128 }]
+      }],
+      completed_at: { type: Date, default: null },
+      failure_reason: { type: String, trim: true, maxlength: 500, default: null }
+    },
 
     // ---------------------------------------------------
     // Committee review
@@ -616,6 +685,24 @@ const burialCaseSchema = new mongoose.Schema(
       }
     },
 
+    // Case-level money trail. This is a shared-pool claim record, never a
+    // member balance. Related ledger transaction ids are kept for audit and
+    // reconciliation as the case funding and payout flows are posted.
+    case_money: {
+      funding_model: { type: String, enum: ['fixed_annual', 'per_death_levy', 'hybrid'], default: null },
+      approved_benefit: { type: mongoose.Schema.Types.Decimal128, default: null },
+      levy_expected: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      levy_collected: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      harambee_received: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      funeral_costs_paid: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      benefit_paid: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      fund_balance_before: { type: mongoose.Schema.Types.Decimal128, default: null },
+      reserve_floor: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      surplus_shortfall: { type: mongoose.Schema.Types.Decimal128, default: 0 },
+      related_transactions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'FinancialTransaction' }],
+      levy_plan_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ContributionPlan', default: null }
+    },
+
     // ---------------------------------------------------
     // Multiple beneficiary distribution
     // ---------------------------------------------------
@@ -804,6 +891,15 @@ burialCaseSchema.set('toJSON', {
       'emergency.temporary_amount',
       'fundraising.target_amount',
       'fundraising.raised_amount',
+      'case_money.approved_benefit',
+      'case_money.levy_expected',
+      'case_money.levy_collected',
+      'case_money.harambee_received',
+      'case_money.funeral_costs_paid',
+      'case_money.benefit_paid',
+      'case_money.fund_balance_before',
+      'case_money.reserve_floor',
+      'case_money.surplus_shortfall',
       'beneficiary_distribution.amount'
     ];
     

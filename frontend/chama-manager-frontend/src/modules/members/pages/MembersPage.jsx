@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useState, useRef, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
@@ -46,7 +47,7 @@ import {
   canDisburseLoan,
   canManageDisputes,
   canViewLeadershipDesk,
-} from "@/modules/workspaces/permissions/Permissions";
+} from '@/modules/workspaces/index.js';
 
 import {
   useMembers,
@@ -148,7 +149,8 @@ const currentMonthKey = () => {
 export default function MembersPage() {
   const { workspaceId } = useParams();
   const { user } = useAuth();
-  const { workspaces, currentWorkspace } = useWorkspace();
+  const { workspaces, currentWorkspace, hasModule } = useWorkspace();
+  const trustEnabled = hasModule("trust");
 
   const workspace = workspaces.find((w) => (w.id ?? w._id) === workspaceId) || currentWorkspace || {};
   const type = workspace?.type || "chama";
@@ -203,7 +205,7 @@ export default function MembersPage() {
   const [removeConfirmMember, setRemoveConfirmMember] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [treasurerRequiredModal, setTreasurerRequiredModal] = useState(false);
-  const { data: trustScore } = useTrustScore(workspaceId);
+  const { data: trustScore } = useTrustScore(workspaceId, trustEnabled);
   const [showRolesModal, setShowRolesModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
 
@@ -379,7 +381,12 @@ export default function MembersPage() {
     } catch (err) {
       const message = err.response?.data?.message || "Failed to start the member exit process.";
       if (err.response?.status === 409 && /arrears|loan|financial clearance/i.test(message)) {
-        window.alert(`MEMBER EXIT BLOCKED\n\n${message}\n\nThe member must clear the outstanding financial obligations before the Chama can close the membership.`);
+        await notifyResult({
+          variant: "warning",
+          title: "Member exit blocked",
+          message: `${message}\n\nThe member must clear the outstanding financial obligations before the Chama can close the membership.`,
+          confirmText: "Understood",
+        });
       }
       setActionError(message);
     }

@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ChevronRight, Home } from "lucide-react";
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { findWorkspaceNavigationMatch } from "@/modules/workspaces/config/workspaceNavigation";
+import { findWorkspaceNavigationMatch } from '@/modules/workspaces/index.js';
 
 const segmentMap = {
   business: { title: "Business Dashboard", path: "business" },
@@ -26,6 +26,7 @@ const segmentMap = {
   transactions: { title: "Transactions", path: "finance/transactions" },
   ledger: { title: "General Ledger", path: "finance/ledger" },
   savings: { title: "Savings", path: "finance/savings" },
+  wallet: { title: "Wallet", path: "finance/wallet" },
   "trial-balance": { title: "Trial Balance", path: "finance/trial-balance" },
   "balance-sheet": { title: "Balance Sheet", path: "finance/balance-sheet" },
   "income-statement": { title: "Income Statement", path: "finance/income-statement" },
@@ -86,6 +87,16 @@ export default function Breadcrumbs({ sections = [] }) {
     if (currentRelativePath === "finance" && routeOwner?.section?.title) {
       title = routeOwner.section.title;
       crumbPath = routeOwner.section.items?.[0]?.to?.replace(`/workspace/${workspaceId}/`, "") || currentRelativePath;
+    } else if (activeWorkspace?.type === "burial-chama" && currentRelativePath === "finance/savings") {
+      title = "Welfare & Cover";
+    } else if (activeWorkspace?.type === "burial-chama" && currentRelativePath === "finance/wallet") {
+      title = "My Cover";
+    } else if (activeWorkspace?.type === "burial-chama" && currentRelativePath === "finance/payouts") {
+      title = "Case Payouts";
+    } else if (activeWorkspace?.type === "burial-chama" && currentRelativePath === "contributions") {
+      title = "Collections & Levies";
+    } else if (routeOwner?.item?.module && activeWorkspace?.config?.terminology?.module_labels?.[routeOwner.item.module]) {
+      title = activeWorkspace.config.terminology.module_labels[routeOwner.item.module];
     } else if (mapped) {
       title = mapped.title;
     } else {

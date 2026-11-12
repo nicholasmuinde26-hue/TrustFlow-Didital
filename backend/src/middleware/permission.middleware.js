@@ -30,6 +30,23 @@ export const requirePermission = (permissionKey, options = {}) => {
 
   return async (req, res, next) => {
     try {
+      // Business workspaces have an owner and explicit worker permissions,
+      // not ChamaMembership rows. Resolve finance reads against that model.
+      if (req.businessAccess) {
+        const { role, permissions = [] } = req.businessAccess;
+        const reportPermissions = new Set([
+          'finance.summary.view', 'finance.trend.view', 'finance.accounts.view',
+          'finance.transactions.view', 'finance.reports.view'
+        ]);
+        const granted = role === 'owner' || role === 'manager' || permissions.includes('*') ||
+          (reportPermissions.has(permissionKey) && permissions.includes('reports.view'));
+        if (!granted) {
+          return res.status(403).json({ success: false, code: 'PERMISSION_DENIED', message: 'Your business role does not allow this action', permissionKey });
+        }
+        req.permissionResult = { granted: true, scope: 'all' };
+        return next();
+      }
+
       // System administrators are platform-level authorities and are not
       // constrained by Chama role-permission rows. This is also required
       // for protected operations such as removing a Chairperson.

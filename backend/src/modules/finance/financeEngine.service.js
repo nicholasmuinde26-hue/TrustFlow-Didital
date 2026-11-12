@@ -107,7 +107,7 @@ const getOpts = (session) =>
 class FinancialEngine {
 
     constructor() {
-        this.setupListeners();
+        this.listenersStarted = false;
     }
 
 
@@ -116,6 +116,9 @@ class FinancialEngine {
     // ==========================================================================
 
     setupListeners() {
+
+        if (this.listenersStarted) return;
+        this.listenersStarted = true;
 
         paymentEventBus.on(
             PAYMENT_EVENTS.COMPLETED,
@@ -365,10 +368,12 @@ class FinancialEngine {
             // ==================================================================
 
             const createdBy =
-                event.actor?.userId ||
-                context.actorId ||
-                metadata.actorId ||
-                ownerId;
+                metadata.publicDonation
+                    ? null
+                    : event.actor?.userId ||
+                      context.actorId ||
+                      metadata.actorId ||
+                      ownerId;
 
 
             // ==================================================================
@@ -612,7 +617,7 @@ class FinancialEngine {
             if (usesAllocation) {
 
                 const { applyContributionPayment } = await import(
-                    "../contributionPlan/contributionAllocation.service.js"
+                    "../contributionPlan/index.js"
                 );
 
                 await applyContributionPayment({
@@ -633,9 +638,7 @@ class FinancialEngine {
 
                 if (obligationId) {
 
-                    const contributionObligationService = (
-                        await import("../contributionPlan/contributionObligation.service.js")
-                    ).default;
+                    const { contributionObligationService } = await import("../contributionPlan/index.js");
 
                     const settled = await contributionObligationService.markPaid(
                         obligationId,
@@ -650,7 +653,7 @@ class FinancialEngine {
                     if (settled?.period_key && ruleName !== "MGR_CONTRIBUTION") {
 
                         const { applyCarryForward } = await import(
-                            "../contributionPlan/contributioncalendar.service.js"
+                            "../contributionPlan/index.js"
                         );
 
                         await applyCarryForward(settled._id, sessionLocal);
@@ -870,8 +873,8 @@ class FinancialEngine {
                         // proposal (proposePayout) plus multi-role
                         // approval sign-off (separation of duties).
                         const mgrService = (await import(
-                            "../mgr/mgr.service.js"
-                        )).default;
+                            "../mgr/index.js"
+                        )).mgrService;
 
                         await mgrService.syncRoundCollection({
                             chamaId,
@@ -892,7 +895,7 @@ class FinancialEngine {
                         // auto-payout-on-full-collection behavior is
                         // preserved for backwards compatibility.
                         const { maybeCreateMgrPayoutForChama } = await import(
-                            "../chama/chamaFinance.service.js"
+                            "../chama/index.js"
                         );
 
                         await maybeCreateMgrPayoutForChama(
@@ -934,9 +937,7 @@ class FinancialEngine {
                     event.context?.metadata?.chama_contribution_id ||
                     null;
 
-                const { parseAccountCodeFromReference } = await import(
-                    "./accounting/rules/chamaContribution.rule.js"
-                );
+                const { parseAccountCodeFromReference } = await import("./index.js");
                 const accountCode =
                     parseAccountCodeFromReference(event.payment?.reference) ||
                     event.payment?.metadata?.account_code ||
@@ -946,8 +947,8 @@ class FinancialEngine {
                 if (chamaContributionId || accountCode) {
 
                     const chamaContributionService = (await import(
-                        "../chama/chamaContribution.service.js"
-                    )).default;
+                        "../chama/index.js"
+                    )).chamaContributionService;
 
                     await chamaContributionService.recordPaymentPosted({
                         chamaContributionId,
@@ -995,4 +996,7 @@ class FinancialEngine {
 // EXPORT SINGLETON
 // ============================================================================
 
-export default new FinancialEngine();
+const financeEngine = new FinancialEngine();
+
+export const startFinanceEngine = () => financeEngine.setupListeners();
+export default financeEngine;

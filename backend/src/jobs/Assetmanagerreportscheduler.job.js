@@ -1,4 +1,4 @@
-import { sweepManagerReportSchedules } from "../modules/chamaAssets/assetManagerReport.service.js";
+import { sweepManagerReportSchedules } from "../modules/chamaAssets/index.js";
 
 // Every 6h is plenty — reporting periods are monthly/quarterly, nothing
 // here is time-critical to the minute, and it mirrors the existing

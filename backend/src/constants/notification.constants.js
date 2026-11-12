@@ -915,7 +915,44 @@ export const NOTIFICATION_CHANNELS = {
   TOAST: 'toast',
   PUSH: 'push',
   SMS: 'sms',
+  WHATSAPP: 'whatsapp',
   EMAIL: 'email'
+};
+
+// ========================================
+// CHANNEL POLICY
+// ========================================
+//
+// Every type lists the channels it was written with (defaultChannels). On top
+// of that, anything that is an alert, an approval, needs action, or is
+// high/urgent priority is ALSO pushed out to SMS and WhatsApp so it reaches
+// people who are not looking at the app. Urgent items and alerts additionally
+// go to email. A user's own preferences (notificationPreference.service.js)
+// still decide which of these they actually receive.
+//
+export const ESCALATED_PRIORITIES = ['high', 'urgent'];
+export const OFF_APP_CHANNELS = ['push', 'sms', 'whatsapp', 'email'];
+
+export const resolveSupportedChannels = (config = {}, priorityOverride = null) => {
+  const channels = new Set(config.defaultChannels || ['in-app']);
+  const priority = priorityOverride || config.priority;
+  const escalated =
+    ESCALATED_PRIORITIES.includes(priority) ||
+    config.requiresAction === true ||
+    config.category === NOTIFICATION_CATEGORIES.ALERT ||
+    config.category === NOTIFICATION_CATEGORIES.APPROVAL;
+
+  if (escalated) {
+    channels.add('in-app');
+    channels.add('toast');
+    channels.add('push');
+    channels.add('sms');
+    channels.add('whatsapp');
+  }
+  if (priority === 'urgent' || config.category === NOTIFICATION_CATEGORIES.ALERT) {
+    channels.add('email');
+  }
+  return [...channels];
 };
 
 // ========================================
@@ -1376,11 +1413,75 @@ export const ROLE_NOTIFICATION_RULES = {
   }
 };
 
+
+// ========================================
+// ADDITIONAL TYPES (full-coverage upgrade)
+// ========================================
+// These are merged into NOTIFICATION_TYPES and into the role rules below, so
+// every role listed in `roles` can receive them without editing each role list.
+
+const ADDITIONAL_TYPES = [
+  { type: 'MEETING_CANCELLED', route: 'meetings', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '🚫', title: 'Meeting cancelled', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: 'all' },
+  { type: 'POLL_PUBLISHED', route: 'polls', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '🗳️', title: 'New poll open for voting', priority: 'normal', requiresAction: true, defaultChannels: ['in-app','toast'], roles: 'all' },
+  { type: 'POLL_CLOSED', route: 'polls', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '📊', title: 'Poll closed - results available', priority: 'normal', requiresAction: false, defaultChannels: ['in-app'], roles: 'all' },
+  { type: 'DISPUTE_RAISED', route: 'disputes', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '⚖️', title: 'Dispute raised', priority: 'high', requiresAction: true, defaultChannels: ['in-app','toast'], roles: ['chairperson', 'secretary', 'treasurer', 'committee_member'] },
+  { type: 'DISPUTE_UPDATED', route: 'disputes', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '⚖️', title: 'Dispute updated', priority: 'normal', requiresAction: false, defaultChannels: ['in-app'], roles: ['member', 'chairperson', 'secretary', 'treasurer'] },
+  { type: 'PAYOUT_CREATED', route: 'finance/payouts', category: NOTIFICATION_CATEGORIES.FINANCIAL, icon: '💸', title: 'Payout scheduled', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: 'all' },
+  { type: 'PAYOUT_COMPLETED', route: 'finance/payouts', category: NOTIFICATION_CATEGORIES.FINANCIAL, icon: '✅', title: 'Payout completed', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: 'all' },
+  { type: 'SHAREOUT_EXECUTED', route: 'finance/savings', category: NOTIFICATION_CATEGORIES.FINANCIAL, icon: '🎉', title: 'Savings share-out completed', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: 'all' },
+  { type: 'WALLET_DEPOSIT_CONFIRMED', route: 'finance/wallet', category: NOTIFICATION_CATEGORIES.FINANCIAL, icon: '💰', title: 'Wallet deposit confirmed', priority: 'normal', requiresAction: false, defaultChannels: ['in-app','toast'], roles: ['member', 'treasurer', 'chairperson', 'secretary'] },
+  { type: 'WALLET_WITHDRAWAL_PROCESSED', route: 'finance/wallet', category: NOTIFICATION_CATEGORIES.FINANCIAL, icon: '🏦', title: 'Wallet withdrawal processed', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: ['member', 'treasurer', 'chairperson', 'secretary'] },
+  { type: 'APPROVAL_DECIDED', route: 'approvals', category: NOTIFICATION_CATEGORIES.APPROVAL, icon: '🧾', title: 'Approval decision made', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: ['member', 'treasurer', 'chairperson', 'secretary'] },
+  { type: 'SETTINGS_CHANGED', route: 'settings', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '⚙️', title: 'Workspace settings changed', priority: 'high', requiresAction: false, defaultChannels: ['in-app'], roles: ['chairperson', 'treasurer', 'secretary', 'auditor'] },
+  { type: 'MODULES_CHANGED', route: 'settings', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '🧩', title: 'Workspace modules changed', priority: 'normal', requiresAction: false, defaultChannels: ['in-app'], roles: ['chairperson', 'treasurer', 'secretary', 'member'] },
+  { type: 'ACCOUNT_LOCKED', route: 'settings', category: NOTIFICATION_CATEGORIES.ALERT, icon: '🔒', title: 'Account locked after failed sign-ins', priority: 'urgent', requiresAction: true, defaultChannels: ['in-app'], roles: ['member', 'treasurer', 'chairperson', 'secretary', 'auditor', 'committee_member', 'patron'] },
+  { type: 'LARGE_TRANSACTION_ALERT', route: 'finance/transactions', category: NOTIFICATION_CATEGORIES.ALERT, icon: '🚨', title: 'Large transaction detected', priority: 'urgent', requiresAction: true, defaultChannels: ['in-app'], roles: ['treasurer', 'chairperson', 'auditor'] },
+  { type: 'ASSET_ACQUIRED', route: 'assets', category: NOTIFICATION_CATEGORIES.FINANCIAL, icon: '🏠', title: 'Asset registered', priority: 'normal', requiresAction: false, defaultChannels: ['in-app'], roles: ['treasurer', 'chairperson', 'secretary', 'auditor'] },
+  { type: 'FINANCIAL_YEAR_CLOSED', route: 'finance', category: NOTIFICATION_CATEGORIES.GOVERNANCE, icon: '📅', title: 'Financial year closed', priority: 'high', requiresAction: false, defaultChannels: ['in-app','toast'], roles: 'all' },
+  { type: 'MEMBER_EXIT_REQUESTED', route: 'members', category: NOTIFICATION_CATEGORIES.MEMBERSHIP, icon: '🚪', title: 'Member exit requested', priority: 'high', requiresAction: true, defaultChannels: ['in-app'], roles: ['chairperson', 'treasurer', 'secretary'] },
+  { type: 'MEMBER_EXIT_PROCESSED', route: 'members', category: NOTIFICATION_CATEGORIES.MEMBERSHIP, icon: '🚪', title: 'Member exit processed', priority: 'high', requiresAction: false, defaultChannels: ['in-app'], roles: ['member', 'chairperson', 'treasurer', 'secretary'] },
+];
+
+const ALL_ROLE_KEYS = ['member', 'treasurer', 'secretary', 'chairperson', 'auditor', 'committee_member', 'patron'];
+
+
+for (const { roles, ...definition } of ADDITIONAL_TYPES) {
+  if (!NOTIFICATION_TYPES[definition.type]) NOTIFICATION_TYPES[definition.type] = definition;
+  const targetRoles = roles === 'all' ? ALL_ROLE_KEYS : roles;
+  for (const role of targetRoles) {
+    const rules = ROLE_NOTIFICATION_RULES[role];
+    if (!rules) continue;
+    if (!rules.canReceive.includes(definition.type)) rules.canReceive.push(definition.type);
+    rules.cannotReceive = rules.cannotReceive.filter((t) => t !== definition.type);
+  }
+}
+
 // ========================================
 // DOMAIN EVENTS
 // ========================================
 
 export const DOMAIN_EVENTS = {
+  // Full-coverage additions (keys mirror ADDITIONAL_TYPES)
+  MEETING_CANCELLED: 'MEETING_CANCELLED',
+  POLL_PUBLISHED: 'POLL_PUBLISHED',
+  POLL_CLOSED: 'POLL_CLOSED',
+  DISPUTE_RAISED: 'DISPUTE_RAISED',
+  DISPUTE_UPDATED: 'DISPUTE_UPDATED',
+  PAYOUT_CREATED: 'PAYOUT_CREATED',
+  PAYOUT_COMPLETED: 'PAYOUT_COMPLETED',
+  SHAREOUT_EXECUTED: 'SHAREOUT_EXECUTED',
+  WALLET_DEPOSIT_CONFIRMED: 'WALLET_DEPOSIT_CONFIRMED',
+  WALLET_WITHDRAWAL_PROCESSED: 'WALLET_WITHDRAWAL_PROCESSED',
+  APPROVAL_DECIDED: 'APPROVAL_DECIDED',
+  SETTINGS_CHANGED: 'SETTINGS_CHANGED',
+  MODULES_CHANGED: 'MODULES_CHANGED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  LARGE_TRANSACTION_ALERT: 'LARGE_TRANSACTION_ALERT',
+  ASSET_ACQUIRED: 'ASSET_ACQUIRED',
+  FINANCIAL_YEAR_CLOSED: 'FINANCIAL_YEAR_CLOSED',
+  MEMBER_EXIT_REQUESTED: 'MEMBER_EXIT_REQUESTED',
+  MEMBER_EXIT_PROCESSED: 'MEMBER_EXIT_PROCESSED',
+
   // Approvals (raise the attention popup for the officials who must decide)
   LOAN_REQUIRES_APPROVAL: 'LOAN_REQUIRES_APPROVAL',
   LOAN_REQUIRES_DISBURSEMENT: 'LOAN_REQUIRES_DISBURSEMENT',
@@ -1635,6 +1736,7 @@ export default {
   NOTIFICATION_TYPES,
   NOTIFICATION_PRIORITIES,
   NOTIFICATION_CHANNELS,
+  resolveSupportedChannels,
   NOTIFICATION_STATES,
   ROLE_NOTIFICATION_RULES,
   DOMAIN_EVENTS,

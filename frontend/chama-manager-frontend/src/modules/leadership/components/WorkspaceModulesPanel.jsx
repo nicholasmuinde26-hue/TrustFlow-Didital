@@ -4,17 +4,17 @@ import { Layers, Loader2 } from "lucide-react";
 import { useSocket } from "@/app/providers/SocketProvider";
 import useWorkspace from "@/app/hooks/useWorkspace";
 
-import WorkspaceSetupPicker from "@/modules/workspaces/components/WorkspaceSetupPicker";
+import { WorkspaceSetupPicker } from '@/modules/workspaces/index.js';
 import {
   useModuleCatalog,
   useModuleChangeMutations,
   useModuleSettings,
-} from "@/modules/workspaces/hooks/useWorkspaceModules";
+} from '@/modules/workspaces/index.js';
 import {
   dependencyProblems,
   diffSelections,
   matchPreset,
-} from "@/modules/workspaces/utils/moduleSelection";
+} from '@/modules/workspaces/index.js';
 
 import { FIELD_CLASS, LABEL_CLASS, Notice, SectionCard } from "./DeskUI";
 

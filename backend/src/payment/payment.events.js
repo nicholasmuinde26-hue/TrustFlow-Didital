@@ -7,6 +7,13 @@ class PaymentEventFactory {
     static create(type, context = {}, payload = {}) {
         const payment = context.payment || {};
         const meta = context.metadata || {};
+        const obligationId = payment.obligation_id || context.obligation?.id || context.obligation?._id || meta.obligationId || meta.obligation_id || null;
+        const planId = payment.plan_id || context.planId || context.plan_id || meta.planId || meta.plan_id || meta.contribution_plan_id || null;
+        const eventMetadata = {
+            ...meta,
+            ...(obligationId ? { obligationId, obligation_id: obligationId } : {}),
+            ...(planId ? { planId, plan_id: planId, contribution_plan_id: planId } : {})
+        };
 
         // Always normalize amount to Decimal string for event bus
         const amount = payment.amount ?? context.amount;
@@ -48,8 +55,10 @@ class PaymentEventFactory {
                 contributionGroupId: meta.contributionGroupId || null,
                 owner_id: meta.owner_id || context.ownerId || null,
                 owner_type: meta.owner_type || context.ownerType || null,
+                obligationId,
+                planId,
                 participantId: context.participant?.memberId || context.participant?.id || null,
-                metadata: meta
+                metadata: eventMetadata
             },
 
             provider: {
@@ -65,7 +74,7 @@ class PaymentEventFactory {
             },
 
             obligation: {
-                id: context.obligation?.id || context.obligation?._id || meta.obligationId || null,
+                id: obligationId,
                 type: meta.obligationType || null
             },
 
@@ -75,7 +84,7 @@ class PaymentEventFactory {
             },
 
             metadata: {
-                ...meta,
+                ...eventMetadata,
                 productType: payment.productType || meta.productType || context.type || null,
                 providerData: context.providerData || null
             },

@@ -408,14 +408,14 @@ class MemberStatementService {
         balance: summary.outstanding_balance,
         paid: summary.total_paid,
         rate: summary.payment_rate,
-        message: `Salio: KES ${summary.outstanding_balance}, Imelipwa: KES ${summary.total_paid}, Kiwango: ${summary.payment_rate}%`
+        message: `Michango inayodaiwa: KES ${summary.outstanding_balance}, Imelipwa: KES ${summary.total_paid}, Kiwango: ${summary.payment_rate}%`
       };
     } else {
       return {
         balance: summary.outstanding_balance,
         paid: summary.total_paid,
         rate: summary.payment_rate,
-        message: `Balance: KES ${summary.outstanding_balance}, Paid: KES ${summary.total_paid}, Rate: ${summary.payment_rate}%`
+        message: `Outstanding dues: KES ${summary.outstanding_balance}, Paid: KES ${summary.total_paid}, Collection rate: ${summary.payment_rate}%`
       };
     }
   }

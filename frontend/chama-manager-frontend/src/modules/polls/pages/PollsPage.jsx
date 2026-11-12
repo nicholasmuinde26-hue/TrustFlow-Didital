@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Vote } from "lucide-react";
+import { Plus, Vote } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { canManagePolls } from "@/modules/workspaces/permissions/Permissions";
+import { useTerminology } from '@/modules/workspaces/index.js';
+import { canManagePolls } from '@/modules/workspaces/index.js';
 
 import Spinner from "@/shared/components/ui/Spinner";
 import Badge from "@/shared/components/ui/Badge";
@@ -30,7 +31,9 @@ const FILTERS = [
 export default function PollsPage() {
   const { workspaceId } = useParams();
   const { workspaces } = useWorkspace();
+  const { moduleLabel, workspace: organizationNoun } = useTerminology();
   const [status, setStatus] = useState("all");
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const workspace = workspaces.find((w) => (w.id ?? w._id) === workspaceId);
   const manage = canManagePolls(workspace?.role, workspace?.type);
@@ -58,20 +61,25 @@ export default function PollsPage() {
         <div>
           <h1 className="flex items-center gap-2 text-3xl font-bold text-slate-900 dark:text-mist">
             <Vote className="text-violet-600 dark:text-mint" />
-            Polls & Voting
+            {moduleLabel("polls", "Polls & Voting")}
           </h1>
           <p className="mt-2 text-slate-500 dark:text-mist-muted">
             Call a vote on loans, expenditure, new members, elections, or any other
-            chama decision — and see results tally live.
+            {organizationNoun} decision — and see results tally live.
           </p>
         </div>
 
-        {openCount > 0 && <Badge variant="info">{openCount} open now</Badge>}
+        <div className="flex items-center gap-3">
+          {openCount > 0 && <Badge variant="info">{openCount} open now</Badge>}
+          {manage && <button type="button" onClick={() => setComposerOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-violet-700 dark:bg-mint dark:text-obsidian-rail"><Plus size={16} /> Create a vote</button>}
+        </div>
       </div>
 
       <div className="mt-6 space-y-6">
         {manage && (
           <PollComposer
+            open={composerOpen}
+            onClose={() => setComposerOpen(false)}
             submitting={createPoll.isPending}
             canPublish={manage}
             onSubmit={(payload) => createPoll.mutateAsync(payload)}

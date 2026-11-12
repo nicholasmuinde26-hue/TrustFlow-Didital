@@ -26,9 +26,10 @@ import {
   Plus,
 } from "lucide-react";
 import useWorkspace from "@/app/hooks/useWorkspace";
+import { useTerminology } from '@/modules/workspaces/index.js';
 import loanService from "../services/loan.service";
 import memberService from "@/modules/members/services/members.service";
-import { isLoanOfficial } from "@/modules/workspaces/permissions/Permissions";
+import { isLoanOfficial } from '@/modules/workspaces/index.js';
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 const clamp = (n, min = 0, max = 100) => Math.min(max, Math.max(min, n));
@@ -257,6 +258,7 @@ function buildFaqs(policy) {
 export default function LoansPage() {
   const { workspaceId: paramId } = useParams();
   const workspaceCtx = useWorkspace();
+  const { moduleLabel } = useTerminology();
   const workspaceId = paramId || workspaceCtx?.workspaceId;
   const role = workspaceCtx?.membership?.role;
   const type = workspaceCtx?.workspaceType;
@@ -583,7 +585,7 @@ export default function LoansPage() {
             </Link>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-mist">
-            Loans
+            {moduleLabel("loans", "Loans")}
           </h1>
           <p className="mt-1 text-xs sm:text-sm font-medium text-slate-500 dark:text-mist-muted">
             Your loans, applications and repayments

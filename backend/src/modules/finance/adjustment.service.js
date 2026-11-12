@@ -20,7 +20,7 @@ import LedgerAdjustment from "../../models/LedgerAdjustment.js";
 import FinancialAccount from "../../models/FinancialAccount.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import AppError from "../../utils/AppError.js";
-import approvalService from "../approval/approval.service.js";
+import approvalService from "../approval/index.js";
 import accountingService from "./accounting/accounting.service.js";
 import { createAuditLog, AUDIT_SCOPE_TYPES } from "../../services/audit.service.js";
 import { AUDIT_ACTIONS } from "../../constants/audit.constants.js";

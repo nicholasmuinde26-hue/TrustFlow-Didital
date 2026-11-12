@@ -38,7 +38,8 @@ export default function PosPage() {
       const matchesSearch =
         !search.trim() ||
         item.name?.toLowerCase().includes(search.toLowerCase()) ||
-        item.sku?.toLowerCase().includes(search.toLowerCase());
+        item.sku?.toLowerCase().includes(search.toLowerCase()) ||
+        item.barcode?.toLowerCase().includes(search.toLowerCase());
       return matchesCategory && matchesSearch;
     });
   }, [inventoryList, activeCategory, search]);

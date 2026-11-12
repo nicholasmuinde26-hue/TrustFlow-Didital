@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { getWorkspaceNavigation, getLeadershipDeskItem } from "@/modules/workspaces/config/workspaceNavigation";
+import { getWorkspaceNavigation, getLeadershipDeskItem } from '@/modules/workspaces/index.js';
 
 /**
  * Jump-to palette (Ctrl/Cmd + K).
@@ -68,7 +68,8 @@ export default function CommandPalette({ open, onClose }) {
         workspace.role,
         workspace.category,
         workspace.workspaceSettings,
-        workspace.modules
+        workspace.modules,
+        workspace.config?.terminology
       ).forEach((section) => {
         (section.items || []).forEach((item) => {
           items.push({

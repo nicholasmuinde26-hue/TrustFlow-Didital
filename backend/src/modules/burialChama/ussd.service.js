@@ -6,6 +6,7 @@ import ContributionObligation from '../../models/ContributionObligation.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
 import MemberStatementService from './memberStatement.service.js';
 import MemberCommunicationPreferences from '../../models/MemberCommunicationPreferences.js';
+import BurialChamaService from './burialChama.service.js';
 import { Decimal } from 'decimal.js';
 
 // ======================================================
@@ -17,6 +18,24 @@ import { Decimal } from 'decimal.js';
 // ======================================================
 
 class UssdService {
+  static async getSessionMembership(session, user) {
+    if (!user?._id) return null;
+    const filter = { user_id: user._id, status: 'active' };
+    if (session.membership_id) filter._id = session.membership_id;
+    if (session.chama_id) filter.chama_id = session.chama_id;
+    if (session.membership_id || session.chama_id) return ChamaMembership.findOne(filter).lean();
+
+    // A phone number can belong to several independent chamas. Only infer a
+    // workspace when there is exactly one membership; never pick an arbitrary
+    // membership by insertion order.
+    const memberships = await ChamaMembership.find(filter).select('_id chama_id').limit(2).lean();
+    if (memberships.length !== 1) return null;
+    session.membership_id = memberships[0]._id;
+    session.chama_id = memberships[0].chama_id;
+    await session.save();
+    return memberships[0];
+  }
+
   /**
    * Initialize USSD session
    */
@@ -694,7 +713,7 @@ class UssdService {
   static async getContributionHistory(session) {
     const lang = session.language;
     const user = await User.findById(session.user_id);
-    const membership = await ChamaMembership.findOne({ user_id: user._id });
+    const membership = await this.getSessionMembership(session, user);
     
     if (!membership) {
       return {
@@ -725,7 +744,7 @@ class UssdService {
   static async getArrearsInfo(session) {
     const lang = session.language;
     const user = await User.findById(session.user_id);
-    const membership = await ChamaMembership.findOne({ user_id: user._id });
+    const membership = await this.getSessionMembership(session, user);
     
     if (!membership) {
       return {
@@ -735,6 +754,8 @@ class UssdService {
     }
 
     const obligations = await ContributionObligation.find({
+      owner_type: 'Chama',
+      owner_id: membership.chama_id,
       participant_type: 'ChamaMembership',
       participant_id: membership._id,
       status: { $in: ['pending', 'overdue'] }
@@ -769,7 +790,7 @@ class UssdService {
   static async getOutstandingBalance(session) {
     const lang = session.language;
     const user = await User.findById(session.user_id);
-    const membership = await ChamaMembership.findOne({ user_id: user._id });
+    const membership = await this.getSessionMembership(session, user);
     
     if (!membership) {
       return {
@@ -779,9 +800,13 @@ class UssdService {
     }
 
     const balance = await MemberStatementService.getQuickBalance(membership._id, lang);
+    const coverage = await BurialChamaService.getMemberCoverage(membership._id);
+    const coverLabel = lang === 'sw'
+      ? ({ covered: 'Umefunikwa', waiting_period: `Kipindi cha kusubiri: siku ${coverage.days_remaining}`, at_risk: 'Michango inadaiwa; bima iko hatarini', lapsed: 'Ufunikaji umesitishwa' }[coverage.status])
+      : ({ covered: 'Covered', waiting_period: `Waiting period: ${coverage.days_remaining} days`, at_risk: 'Dues outstanding; cover at risk', lapsed: 'Cover lapsed' }[coverage.status]);
     
     return {
-      text: balance.message + '\n\n0. Nyuma',
+      text: `${coverLabel}\n${balance.message}\n\n0. Nyuma`,
       requires_input: true
     };
   }
@@ -835,7 +860,7 @@ class UssdService {
   static async getBeneficiaryList(session) {
     const lang = session.language;
     const user = await User.findById(session.user_id);
-    const membership = await ChamaMembership.findOne({ user_id: user._id });
+    const membership = await this.getSessionMembership(session, user);
     
     // This would integrate with the Beneficiary model
     // For now, return placeholder
@@ -860,7 +885,7 @@ class UssdService {
   static async getQuickStatement(session) {
     const lang = session.language;
     const user = await User.findById(session.user_id);
-    const membership = await ChamaMembership.findOne({ user_id: user._id });
+    const membership = await this.getSessionMembership(session, user);
     
     if (!membership) {
       return {
@@ -870,9 +895,13 @@ class UssdService {
     }
 
     const balance = await MemberStatementService.getQuickBalance(membership._id, lang);
+    const coverage = await BurialChamaService.getMemberCoverage(membership._id);
+    const coverLabel = lang === 'sw'
+      ? ({ covered: 'Umefunikwa', waiting_period: `Kipindi cha kusubiri: siku ${coverage.days_remaining}`, at_risk: 'Michango inadaiwa; bima iko hatarini', lapsed: 'Ufunikaji umesitishwa' }[coverage.status])
+      : ({ covered: 'Covered', waiting_period: `Waiting period: ${coverage.days_remaining} days`, at_risk: 'Dues outstanding; cover at risk', lapsed: 'Cover lapsed' }[coverage.status]);
     
     return {
-      text: balance.message + '\n\n0. Nyuma',
+      text: `${coverLabel}\n${balance.message}\n\n0. Nyuma`,
       requires_input: true
     };
   }

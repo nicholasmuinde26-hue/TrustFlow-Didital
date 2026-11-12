@@ -54,7 +54,9 @@ export default class PaymentContext {
         if (!amount) throw new Error("PaymentContext: amount is required");
         if (!resolvedOwnerId) throw new Error("PaymentContext: ownerId or chamaId is required");
         if (!participantId) throw new Error("PaymentContext: participantId is required");
-        if (!actorId) throw new Error("PaymentContext: actorId is required");
+        if (!actorId && !(metadata?.publicDonation && participantType === "ContributionDonor")) {
+            throw new Error("PaymentContext: actorId is required");
+        }
 
         // CORE PAYMENT DATA
         this.paymentId = paymentId; // ContributionPayment._id after creation

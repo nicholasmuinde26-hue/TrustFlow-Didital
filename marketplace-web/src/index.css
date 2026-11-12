@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-primary: #059669;
+  --color-obsidian: #0d1917;
+  --color-obsidian-card: #172623;
+  --color-obsidian-border: #20342f;
+}
+
+html, body, #root { width: 100%; min-height: 100%; }
+body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; }

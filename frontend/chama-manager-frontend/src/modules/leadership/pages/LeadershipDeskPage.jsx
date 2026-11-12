@@ -6,6 +6,7 @@ import {
   Menu,
   CalendarCheck,
   Flag,
+  FileHeart,
   HandCoins,
   HeartPulse,
   Landmark,
@@ -19,7 +20,7 @@ import {
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { hasModule } from "@/modules/workspaces/config/workspaceModules";
+import { hasModule } from '@/modules/workspaces/index.js';
 import chamaApi from "@/modules/chama/api/chama.api";
 import membersApi from "@/modules/members/api/members.api";
 import { useChamaJoinRequests } from "@/modules/chama/hooks/useChamaInvite";
@@ -38,11 +39,14 @@ import LoansTab from "../tabs/LoansTab";
 import TreasuryOversightTab from "../tabs/TreasuryOversightTab";
 import GovernanceSettingsTab from "../tabs/GovernanceSettingsTab";
 import BurialConfigurationTab from "../tabs/BurialConfigurationTab";
+import BurialCasesTab from "../tabs/BurialCasesTab";
+import BurialHouseholdsTab from "../tabs/BurialHouseholdsTab";
 import DangerZoneTab from "../tabs/DangerZoneTab";
 import BusinessWorkspacesTab from "../tabs/BusinessWorkspacesTab";
 import AssetReviewsTab from "../tabs/AssetReviewsTab";
 import ContributionsOversightTab from "../tabs/ContributionsOversightTab";
 import MemberExitRequestsTab from "../tabs/MemberExitRequestsTab";
+import FinesManagementTab from "../tabs/FinesManagementTab";
 
 // ========================================
 // LEADERSHIP DESK
@@ -76,9 +80,12 @@ const TABS = [
   { id: "meetings", label: "Meetings & Polls", icon: CalendarCheck, anyModule: ["meetings", "polls"], purpose: "Start a live meeting or put a decision to a vote.", keywords: "vote check-in attendance" },
   { id: "loans", label: "Loans", icon: HandCoins, module: "loans", purpose: "Review, approve and pay out member loans.", keywords: "disburse borrow repayment guarantor" },
   { id: "treasury", label: "Treasury Oversight", icon: Landmark, purpose: "Goals, KYC checks, bank accounts, share-outs and withdrawals.", keywords: "money kyc bank shareout goals withdrawals" },
+  { id: "fines", label: "Fines", icon: HandCoins, purpose: "Issue and follow up on member fines for late payments or missed meetings.", keywords: "penalty late attendance absence" },
   { id: "contributions", label: "Contributions Oversight", icon: CalendarCheck, module: "contributions", purpose: "Contribution years, plans and payment schedules.", keywords: "savings plan year schedule" },
   { id: "businesses", label: "Business Workspaces", icon: BriefcaseBusiness, module: "businesses", purpose: "Businesses the group runs, and who manages each.", keywords: "shop store manager capital" },
   { id: "asset-reviews", label: "Asset Reviews", icon: Flag, module: "assets", purpose: "Asset entries members have flagged as wrong.", keywords: "flagged discrepancy" },
+  { id: "burial-cases", label: "Burial Cases", icon: FileHeart, module: "burial_welfare", purpose: "Report bereavements for members and review cases awaiting committee decisions.", keywords: "burial welfare bereavement claims" },
+  { id: "burial-households", label: "Households", icon: UsersRound, module: "burial_welfare", purpose: "Manage household cover, heads and member contributions.", keywords: "welfare household family head members" },
   { id: "governance", label: "Governance Settings", icon: SlidersHorizontal, purpose: "Group rules, loan policy, payment details and features.", keywords: "paybill till bank policy interest fine threshold join code" },
   { id: "burial-config", label: "Burial Configuration", icon: HeartPulse, module: "burial_welfare", purpose: "Burial and welfare rules for this group.", keywords: "welfare bereavement levy" },
   { id: "danger", label: "Danger Zone", icon: ShieldAlert, tone: "danger", purpose: "Permanent actions, such as deleting the Chama.", keywords: "delete close" },
@@ -89,8 +96,8 @@ const TABS = [
 const TAB_GROUPS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, accent: "emerald", tabs: ["overview"] },
   { id: "people", label: "People", icon: UsersRound, accent: "sky", tabs: ["members", "exits"] },
-  { id: "finance", label: "Money", icon: HandCoins, accent: "amber", tabs: ["treasury", "contributions", "loans"] },
-  { id: "operations", label: "Operations", icon: Workflow, accent: "violet", tabs: ["meetings", "businesses", "asset-reviews"] },
+  { id: "finance", label: "Money", icon: HandCoins, accent: "amber", tabs: ["treasury", "fines", "contributions", "loans"] },
+  { id: "operations", label: "Operations", icon: Workflow, accent: "violet", tabs: ["meetings", "businesses", "asset-reviews", "burial-cases", "burial-households"] },
   { id: "settings", label: "Settings", icon: Settings2, accent: "slate", tabs: ["governance", "burial-config", "danger"] },
 ];
 
@@ -199,11 +206,20 @@ function LeadershipDeskContent({ workspaceId }) {
         if (tab.id === "businesses") return isTreasurer || isChairperson;
         if (tab.id === "asset-reviews") return canReviewAssets;
         if (tab.id === "exits") return isTreasurer || isChairperson;
+        if (tab.id === "fines") return isTreasurer || isChairperson;
         if (tab.id === "burial-config") return isBurialChama;
+        if (tab.id === "burial-cases") return isBurialChama && ["chairperson", "treasurer", "secretary", "committee_member"].includes(role);
+        if (tab.id === "burial-households") return isBurialChama && ["chairperson", "treasurer", "secretary"].includes(role);
         return true;
+      }).map((tab) => {
+        if (!isBurialChama) return tab;
+        if (tab.id === "treasury") return { ...tab, label: "Welfare Treasury", purpose: "Track the welfare pool, reserve, bank accounts and approved burial support payouts." };
+        if (tab.id === "fines") return { ...tab, label: "Penalty Waivers", purpose: "Review requests to waive late welfare contribution penalties." };
+        if (tab.id === "contributions") return { ...tab, label: "Burial Contributions", purpose: "Schedule welfare contributions and burial case levies." };
+        return tab;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isTreasurer, isChairperson, canReviewAssets, isBurialChama, workspace?.modules]
+    [isTreasurer, isChairperson, canReviewAssets, isBurialChama, role, workspace?.modules]
   );
 
   const visibleGroups = useMemo(
@@ -436,9 +452,12 @@ function LeadershipDeskContent({ workspaceId }) {
                   {activeTab === "meetings" && <MeetingsPollsTab {...shared} />}
                   {activeTab === "loans" && <LoansTab {...shared} />}
                   {activeTab === "treasury" && <TreasuryOversightTab {...shared} />}
+                  {activeTab === "fines" && (isTreasurer || isChairperson) && <FinesManagementTab {...shared} />}
                   {activeTab === "contributions" && <ContributionsOversightTab {...shared} chamaId={workspaceId} />}
                   {activeTab === "businesses" && <BusinessWorkspacesTab {...shared} />}
                   {activeTab === "asset-reviews" && canReviewAssets && <AssetReviewsTab {...shared} />}
+                  {activeTab === "burial-cases" && isBurialChama && <BurialCasesTab {...shared} />}
+                  {activeTab === "burial-households" && isBurialChama && <BurialHouseholdsTab {...shared} />}
                   {activeTab === "governance" && <GovernanceSettingsTab {...shared} />}
                   {activeTab === "burial-config" && isBurialChama && <BurialConfigurationTab {...shared} />}
                   {activeTab === "danger" && isTreasurer && <DangerZoneTab {...shared} />}

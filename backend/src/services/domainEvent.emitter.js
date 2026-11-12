@@ -27,7 +27,9 @@ class DomainEventEmitter extends EventEmitter {
    * Emit a domain event
    */
   emitDomainEvent(eventName, eventData = {}) {
-    console.log(`[Domain Event] ${eventName}:`, JSON.stringify(eventData));
+    // Log the event and which fields it carries - not the values. Payloads hold
+    // names, amounts and phone-adjacent data that should not sit in server logs.
+    console.log(`[Domain Event] ${eventName} (${Object.keys(eventData || {}).join(', ')})`);
     this.emit(eventName, eventData);
   }
 
@@ -269,7 +271,18 @@ class DomainEventEmitter extends EventEmitter {
    * Subscribe to domain events
    */
   onDomainEvent(eventName, handler) {
-    this.on(eventName, handler);
+    // Listeners are async. A rejected promise inside an EventEmitter listener is
+    // an unhandled rejection (and can take the process down), so a notification
+    // failure must be contained here and can never break the request that fired it.
+    this.on(eventName, (...args) => {
+      try {
+        Promise.resolve(handler(...args)).catch((error) =>
+          console.error(`[Domain Event] handler for ${eventName} failed:`, error.message)
+        );
+      } catch (error) {
+        console.error(`[Domain Event] handler for ${eventName} failed:`, error.message);
+      }
+    });
   }
 
   /**

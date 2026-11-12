@@ -1,6 +1,8 @@
 import BurialChamaProfile from '../../models/BurialChamaProfile.js';
 import BenefitPlan from '../../models/BenefitPlan.js';
 import Chama from '../../models/Chama.js';
+import BurialChamaSetupProgress from '../../models/BurialChamaSetupProgress.js';
+import mongoose from 'mongoose';
 
 // ======================================================
 // BURIAL CHAMA SETUP WIZARD SERVICE
@@ -358,13 +360,8 @@ class BurialChamaSetupWizardService {
       const validationResults = [];
       for (let i = 1; i <= 10; i++) {
         const stepKey = `step_${i}`;
-        if (wizardData[stepKey]) {
-          const validation = this.validateStep(i, wizardData[stepKey]);
-          validationResults.push({
-            step: i,
-            ...validation
-          });
-        }
+        const validation = this.validateStep(i, wizardData?.[stepKey] || {});
+        validationResults.push({ step: i, ...validation });
       }
 
       const hasErrors = validationResults.some(r => !r.valid);
@@ -375,25 +372,45 @@ class BurialChamaSetupWizardService {
         };
       }
 
+      const chama = await Chama.findById(chamaId).select('_id chama_type');
+      if (!chama || chama.chama_type !== 'burial') {
+        throw new Error('Setup is only available for a burial chama');
+      }
+
       // Build profile data from wizard data
       const profileData = this.buildProfileFromWizardData(wizardData);
-
-      // Create profile
-      const profile = await BurialChamaProfile.createOrUpdateProfile(
-        chamaId,
-        profileData,
-        userId
-      );
-
-      // Create benefit plan
-      const benefitPlanData = this.buildBenefitPlanFromWizardData(wizardData, profile._id);
-      const benefitPlan = new BenefitPlan(benefitPlanData);
-      await benefitPlan.save();
+      const profileFields = { ...profileData };
+      delete profileFields.status;
+      const session = await mongoose.startSession();
+      let profile;
+      let benefitPlan;
+      try {
+        await session.withTransaction(async () => {
+          profile = await BurialChamaProfile.findOneAndUpdate(
+            { chama_id: chamaId },
+            { $set: { ...profileFields, updated_by: userId }, $setOnInsert: { chama_id: chamaId, created_by: userId } },
+            { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true, session }
+          );
+          const benefitPlanData = this.buildBenefitPlanFromWizardData(wizardData, profile._id);
+          benefitPlan = await BenefitPlan.findOneAndUpdate(
+            { burial_chama_profile_id: profile._id },
+            { $set: benefitPlanData },
+            { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true, session }
+          );
+          await BurialChamaSetupProgress.findOneAndUpdate(
+            { chama_id: chamaId },
+            { $set: { status: 'completed', completed_at: new Date(), updated_by: userId, last_saved_at: new Date() } },
+            { session }
+          );
+        });
+      } finally {
+        await session.endSession();
+      }
 
       return {
         success: true,
         profile,
-        benefit_plan,
+        benefit_plan: benefitPlan,
         validation_results: validationResults
       };
     } catch (error) {
@@ -430,9 +447,13 @@ class BurialChamaSetupWizardService {
       membership_classes: step3.membership_classes || [],
       contribution_components: step4.contribution_components || [],
       beneficiary_categories: step5.beneficiary_categories || [],
+      family_rules: step5.family_rules || {},
       waiting_period_rules: {
-        waiting_period_days: step6.waiting_period_days || 90
+        waiting_period_days: step6.waiting_period_days || 90,
+        partial_coverage_during_waiting: false
       },
+      arrears_policy: step6.arrears_policy || { effect: 'suspend', arrears_threshold_type: 'amount' },
+      eligibility_rules: { good_standing_required: true, good_standing_definition: 'below_threshold' },
       approval_rules: step8.approval_rules || {},
       payment_rules: {
         accepted_methods: step9.payment_methods || ['mpesa', 'cash'],
@@ -631,27 +652,32 @@ class BurialChamaSetupWizardService {
    * Save wizard progress
    */
   static async saveProgress(chamaId, stepNumber, stepData, userId) {
-    // This would integrate with a WizardProgress model
-    // For now, return success
-    return {
-      success: true,
-      step_number: stepNumber,
-      saved_at: new Date()
-    };
+    if (!Number.isInteger(stepNumber) || stepNumber < 1 || stepNumber > 10) throw new Error('Invalid wizard step');
+    if (!stepData || typeof stepData !== 'object' || Array.isArray(stepData)) throw new Error('Step data must be an object');
+    if (JSON.stringify(stepData).length > 100_000) throw new Error('Wizard step data is too large');
+    const chama = await Chama.findOne({ _id: chamaId, chama_type: 'burial' }).select('_id');
+    if (!chama) throw new Error('Burial chama not found');
+    const now = new Date();
+    const progress = await BurialChamaSetupProgress.findOneAndUpdate(
+      { chama_id: chamaId },
+      {
+        $set: { current_step: stepNumber, [`step_data.step_${stepNumber}`]: stepData, last_saved_at: now, updated_by: userId, status: 'in_progress', completed_at: null },
+        $addToSet: { completed_steps: stepNumber },
+        $setOnInsert: { chama_id: chamaId, started_at: now },
+      },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+    return { success: true, progress };
   }
 
   /**
    * Load wizard progress
    */
   static async loadProgress(chamaId) {
-    // This would integrate with a WizardProgress model
-    // For now, return empty progress
-    return {
-      chama_id: chamaId,
-      completed_steps: [],
-      current_step: 1,
-      saved_data: {}
-    };
+    const chama = await Chama.findOne({ _id: chamaId, chama_type: 'burial' }).select('_id');
+    if (!chama) throw new Error('Burial chama not found');
+    const progress = await BurialChamaSetupProgress.findOne({ chama_id: chamaId }).lean();
+    return progress || { chama_id: chamaId, completed_steps: [], current_step: 1, step_data: {}, status: 'in_progress' };
   }
 
   // Helper validation methods

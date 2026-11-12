@@ -1,14 +1,15 @@
-import financeService from "./finance.service.js";
+import { financeService } from "./index.js";
 import financeReportsService from "./financeReports.service.js";
 import Chama from "../../models/Chama.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import Business from "../../models/Business.js";
-import { canAccessWorkspace } from "../chat/chat.permissions.js";
+import { getOwnedBusiness } from "../business/index.js";
+import { canAccessWorkspace } from "../chat/index.js";
 import AppError from "../../utils/AppError.js";
 import { postFinanceOperation } from "./financeOperation.service.js";
 import { getMyWallet } from "./wallet.service.js";
 import { initiateMemberWalletDeposit, initiateMemberWalletWithdrawal, setMemberWalletPin, changeMemberWalletPin } from "./memberWallet.service.js";
-import { withdrawFromChamaProfitWallet } from "../chamaAssets/chamaAsset.service.js";
+import { withdrawFromChamaProfitWallet } from "../chamaAssets/index.js";
 import { checkGlBalance } from "./accounting/glBalance.service.js";
 import { getCashDepositStatus, depositCashToBank } from "./cashDeposit.service.js";
 import { getContributionsRegister } from "./contributionsRegister.service.js";
@@ -66,12 +67,10 @@ async function resolveWorkspace(req) {
     return { ownerType, workspaceId };
   }
 
-  const business = await Business.exists({
-    _id: workspaceId,
-    created_by: req.user._id,
-  });
+  const business = await Business.exists({ _id: workspaceId });
 
   if (business) {
+    await getOwnedBusiness(workspaceId, req.user, { permission: "reports.view" });
     return { ownerType: "Business", workspaceId };
   }
 
@@ -81,6 +80,11 @@ async function resolveWorkspace(req) {
 export async function getFinanceSummary(req, res, next) {
   try {
     const { ownerType, workspaceId } = await resolveWorkspace(req);
+
+    if (ownerType === "Business") {
+      const summary = await financeService.getBusinessSummary(workspaceId);
+      return res.json({ success: true, data: { ...summary, scope: "all" } });
+    }
 
     // requirePermission('finance.summary.view') already ran for this route
     // and attached the effective scope for THIS caller's role - 'all' for
@@ -192,6 +196,10 @@ export async function getFinanceTrend(req, res, next) {
 export async function getFinanceAccounts(req, res, next) {
   try {
     const { ownerType, workspaceId } = await resolveWorkspace(req);
+    if (ownerType === "Business") {
+      const accounts = await financeService.getAccounts(ownerType, workspaceId, null, "all");
+      return res.json({ success: true, data: accounts });
+    }
     // Default scope is the chama's own pooled accounts; ?scope=business shows the
     // business & property fund, ?scope=all both.
     const scope = ["business", "all"].includes(String(req.query.scope)) ? String(req.query.scope) : "chama";
@@ -210,6 +218,11 @@ const MEMBERS_MAY_VIEW_CHAMA_TRANSACTIONS = true;
 export async function getFinanceTransactions(req, res, next) {
   try {
     const { ownerType, workspaceId } = await resolveWorkspace(req);
+
+    if (ownerType === "Business") {
+      const result = await financeService.getTransactions(ownerType, workspaceId, { scope: "all" });
+      return res.json({ success: true, data: result, meta: { view: "business", default_view: "business", can_toggle: false } });
+    }
 
     // 'all' for officials, 'own' for a plain member (finance.transactions.view).
     const permScope = req.permissionResult?.scope === "all" ? "all" : "own";
@@ -256,7 +269,7 @@ export async function getFinanceTransactions(req, res, next) {
 export async function getGeneralLedger(req, res, next) {
   try {
     const { ownerType, workspaceId } = await resolveWorkspace(req);
-    const scope = ["business", "chama"].includes(String(req.query.scope)) ? String(req.query.scope) : "all";
+    const scope = ownerType === "Business" ? "all" : ["business", "chama"].includes(String(req.query.scope)) ? String(req.query.scope) : "all";
     const { accountId, dateFrom, dateTo } = req.query;
     const ledger = await financeService.getLedger(ownerType, workspaceId, null, scope, {
       accountId: accountId ? String(accountId) : undefined,

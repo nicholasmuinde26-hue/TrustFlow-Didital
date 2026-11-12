@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import useWorkspace from "@/app/hooks/useWorkspace";
 
 import trustScoreService from "../services/trustScore.service";
 
@@ -10,19 +11,23 @@ function trustScoreHistoryKey(chamaId, page, limit) {
   return ["trust-score-history", chamaId, page, limit];
 }
 
-export function useTrustScore(chamaId) {
+export function useTrustScore(chamaId, enabled = true) {
+  const { hasModule } = useWorkspace();
   return useQuery({
     queryKey: trustScoreKey(chamaId),
     queryFn: () => trustScoreService.getLatest(chamaId),
-    enabled: Boolean(chamaId),
+    // Trust score cards are also embedded on the Members and Overview pages.
+    // Do not call the protected endpoint when the organization disabled trust.
+    enabled: Boolean(chamaId && enabled && hasModule("trust")),
   });
 }
 
 export function useTrustScoreHistory(chamaId, { page = 1, limit = 12 } = {}) {
+  const { hasModule } = useWorkspace();
   return useQuery({
     queryKey: trustScoreHistoryKey(chamaId, page, limit),
     queryFn: () => trustScoreService.getHistory(chamaId, { page, limit }),
-    enabled: Boolean(chamaId),
+    enabled: Boolean(chamaId && hasModule("trust")),
     keepPreviousData: true,
   });
 }

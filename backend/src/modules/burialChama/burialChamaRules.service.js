@@ -38,15 +38,13 @@ class BurialChamaRulesEngine {
     }
 
     // Determine membership class
-    let membershipClass = profile.membership_classes.find(
-      mc => mc.name === 'ordinary' // Default to ordinary
-    );
-
-    // Could be enhanced to check member's actual class
-    // For now, we'll use the first active class
-    if (profile.membership_classes.length > 0) {
-      membershipClass = profile.membership_classes.find(mc => mc.is_active) || membershipClass;
-    }
+    const activeClasses = (profile.membership_classes || []).filter((item) => item.is_active !== false);
+    const assignedClass = membership.burial_membership_class
+      ? activeClasses.find((item) => item.name.toLowerCase() === membership.burial_membership_class)
+      : null;
+    const membershipClass = assignedClass
+      || activeClasses.find((item) => item.name.toLowerCase() === 'ordinary')
+      || activeClasses[0];
 
     if (!membershipClass) {
       throw new Error('No active membership class found');
@@ -90,13 +88,13 @@ class BurialChamaRulesEngine {
       throw new Error('Burial chama profile not found');
     }
 
-    const membership = await ChamaMembership.findById(membershipId);
+    const membership = await ChamaMembership.findOne({ _id: membershipId, chama_id: profile.chama_id });
     if (!membership) {
       throw new Error('Membership not found');
     }
 
-    const beneficiary = await Beneficiary.findById(beneficiaryId);
-    if (!beneficiary) {
+    const beneficiary = beneficiaryId ? await Beneficiary.findOne({ _id: beneficiaryId, membership_id: membership._id, chama_id: profile.chama_id }) : null;
+    if (beneficiaryId && !beneficiary) {
       throw new Error('Beneficiary not found');
     }
 
@@ -117,24 +115,17 @@ class BurialChamaRulesEngine {
     }
 
     // Check waiting period
-    const waitingPeriodDays = profile.waiting_period_rules.waiting_period_days;
-    const membershipDays = Math.floor(
-      (new Date() - new Date(membership.joined_at)) / (1000 * 60 * 60 * 24)
-    );
+    const waitingPeriodDays = Math.max(Number(profile.waiting_period_rules?.waiting_period_days || 0), Number(profile.eligibility_rules?.minimum_membership_months || 0) * 30);
+    const joinedAt = membership.joined_at ? new Date(membership.joined_at) : null;
+    const membershipDays = joinedAt && !Number.isNaN(joinedAt.getTime())
+      ? Math.floor((Date.now() - joinedAt.getTime()) / 86400000)
+      : -1;
 
     if (membershipDays < waitingPeriodDays) {
       eligibility.waiting_period_satisfied = false;
       
-      if (!profile.waiting_period_rules.partial_coverage_during_waiting) {
-        eligibility.is_eligible = false;
-        eligibility.reasons.push(
-          `Waiting period not satisfied (${membershipDays}/${waitingPeriodDays} days)`
-        );
-      } else {
-        eligibility.partial_coverage = true;
-        eligibility.partial_coverage_percentage = 
-          profile.waiting_period_rules.partial_coverage_percentage;
-      }
+      eligibility.is_eligible = false;
+      eligibility.reasons.push(`Waiting period not satisfied (${membershipDays}/${waitingPeriodDays} days)`);
     }
 
     // Check contribution status and arrears
@@ -142,6 +133,35 @@ class BurialChamaRulesEngine {
     eligibility.contribution_status = arrearsInfo.status;
     eligibility.arrears_amount = arrearsInfo.arrears_amount;
     eligibility.arrears_months = arrearsInfo.arrears_months;
+    const configuredThreshold = profile.arrears_policy?.arrears_threshold;
+    const amountThreshold = profile.arrears_policy?.arrears_threshold_type === 'amount' && configuredThreshold != null
+      ? new Decimal(configuredThreshold.toString()) : null;
+    const amountExceeded = amountThreshold ? new Decimal(arrearsInfo.arrears_amount).gt(amountThreshold) : false;
+    eligibility.good_standing = !amountExceeded && (!profile.eligibility_rules?.good_standing_required || !arrearsInfo.has_arrears || profile.eligibility_rules?.good_standing_definition === 'below_threshold');
+    if (amountExceeded) {
+      eligibility.good_standing = false;
+      eligibility.is_eligible = false;
+      eligibility.reasons.push(`Arrears exceed the configured limit of ${amountThreshold.toFixed(2)}`);
+    }
+    const coverageStatus = membership.status !== 'active'
+      ? 'lapsed'
+      : !eligibility.waiting_period_satisfied
+        ? 'waiting_period'
+        : amountExceeded
+          ? 'out_of_good_standing'
+          : arrearsInfo.has_arrears
+            ? 'at_risk'
+            : 'covered';
+    membership.burial_coverage = {
+      ...(membership.burial_coverage?.toObject?.() || membership.burial_coverage || {}),
+      status: coverageStatus,
+      covered_since: membership.burial_coverage?.covered_since || (eligibility.waiting_period_satisfied ? membership.joined_at : null),
+      waiting_period_ends_at: membership.joined_at ? new Date(new Date(membership.joined_at).getTime() + waitingPeriodDays * 86400000) : null,
+      last_assessed_at: new Date(),
+      lapse_reason: amountExceeded ? `Arrears exceed ${amountThreshold.toFixed(2)}` : membership.status !== 'active' ? `Membership is ${membership.status}` : null,
+      reinstated_at: membership.burial_coverage?.reinstated_at || null
+    };
+    await membership.save();
 
     // Apply arrears policy
     if (arrearsInfo.has_arrears) {
@@ -158,7 +178,7 @@ class BurialChamaRulesEngine {
           // Reduction formula would be applied during benefit calculation
           break;
         case 'suspend':
-          if (arrearsInfo.arrears_months >= profile.arrears_policy.suspension_threshold_months) {
+          if (amountExceeded || ((!amountThreshold) && arrearsInfo.arrears_months >= profile.arrears_policy.suspension_threshold_months)) {
             eligibility.is_eligible = false;
             eligibility.reasons.push(
               `Eligibility suspended due to arrears (${arrearsInfo.arrears_months} months)`
@@ -176,29 +196,29 @@ class BurialChamaRulesEngine {
     }
 
     // Check beneficiary eligibility status
-    if (beneficiary.eligibility_status !== 'eligible') {
+    if (beneficiary && beneficiary.eligibility_status !== 'eligible') {
       eligibility.is_eligible = false;
       eligibility.reasons.push(`Beneficiary status is ${beneficiary.eligibility_status}`);
     }
 
     // Check beneficiary effective date range
     const now = new Date();
-    if (beneficiary.effective_from > now) {
+    if (beneficiary && beneficiary.effective_from > now) {
       eligibility.is_eligible = false;
       eligibility.reasons.push('Beneficiary coverage has not yet started');
     }
 
-    if (beneficiary.effective_to && beneficiary.effective_to < now) {
+    if (beneficiary && beneficiary.effective_to && beneficiary.effective_to < now) {
       eligibility.is_eligible = false;
       eligibility.reasons.push('Beneficiary coverage has expired');
     }
 
     // Check beneficiary age limits if applicable
-    const beneficiaryCategory = profile.beneficiary_categories.find(
+    const beneficiaryCategory = beneficiary && profile.beneficiary_categories.find(
       bc => bc.relationship === beneficiary.relationship
     );
 
-    if (beneficiaryCategory) {
+    if (beneficiaryCategory && beneficiary) {
       if (beneficiaryCategory.max_age && beneficiary.age > beneficiaryCategory.max_age) {
         eligibility.is_eligible = false;
         eligibility.reasons.push(
@@ -213,6 +233,15 @@ class BurialChamaRulesEngine {
         );
       }
     }
+    if (beneficiary && ['child', 'adopted_child'].includes(beneficiary.relationship)) {
+      const ageLimit = beneficiary.education_status === 'college'
+        ? Number(profile.family_rules?.college_child_age_limit ?? 24)
+        : Number(profile.family_rules?.child_age_limit ?? 18);
+      if (Number(beneficiary.age) > ageLimit) {
+        eligibility.is_eligible = false;
+        eligibility.reasons.push(`Child dependant exceeds the age limit of ${ageLimit}`);
+      }
+    }
 
     return eligibility;
   }
@@ -221,7 +250,11 @@ class BurialChamaRulesEngine {
    * Check member arrears status
    */
   static async checkArrears(membershipId, profile) {
+    const membership = await ChamaMembership.findOne({ _id: membershipId, chama_id: profile.chama_id }).select('_id chama_id');
+    if (!membership) throw new Error('Membership does not belong to this burial chama');
     const obligations = await ContributionObligation.find({
+      owner_type: 'Chama',
+      owner_id: membership.chama_id,
       participant_type: 'ChamaMembership',
       participant_id: membershipId,
       status: { $in: ['pending', 'partially_paid', 'overdue'] }
@@ -230,6 +263,8 @@ class BurialChamaRulesEngine {
     let totalArrears = new Decimal(0);
     let overdueMonths = new Set();
     const now = new Date();
+    const graceDays = Number(profile.grace_period_rules?.default_grace_days || 0);
+    const graceCutoff = new Date(now.getTime() - graceDays * 86400000);
 
     for (const obligation of obligations) {
       const expected = new Decimal(obligation.expected_amount.toString());
@@ -240,7 +275,7 @@ class BurialChamaRulesEngine {
         totalArrears = totalArrears.plus(balance);
 
         // Calculate overdue months
-        if (obligation.due_date < now) {
+        if (obligation.due_date < graceCutoff) {
           const monthKey = `${obligation.due_date.getFullYear()}-${obligation.due_date.getMonth()}`;
           overdueMonths.add(monthKey);
         }
@@ -260,7 +295,7 @@ class BurialChamaRulesEngine {
     }
 
     return {
-      has_arrears,
+      has_arrears: hasArrears,
       arrears_amount: totalArrears.toString(),
       arrears_months: arrearsMonths,
       status,
@@ -419,7 +454,7 @@ class BurialChamaRulesEngine {
     // Apply arrears deduction if policy requires
     const eligibility = await this.checkEligibility(
       burialCase.member.membership_id._id,
-      beneficiary._id,
+      beneficiary?._id || null,
       profile._id
     );
 
@@ -546,6 +581,10 @@ class BurialChamaRulesEngine {
       bc => bc.relationship === relationship
     );
 
+    const familyRelationships = ['spouse', 'child', 'adopted_child', 'parent', 'parent_in_law'];
+    if (!category && profile.family_rules?.enabled !== false && familyRelationships.includes(relationship)) {
+      return { valid: true, category: { relationship, required_documents: [] } };
+    }
     if (!category) {
       return {
         valid: false,
@@ -569,6 +608,30 @@ class BurialChamaRulesEngine {
         required_documents: category.required_documents
       }
     };
+  }
+
+  static async validateFamilyLimit(membershipId, relationship, profile, { excludeId = null, age = null, educationStatus = 'not_applicable' } = {}) {
+    if (profile.family_rules?.enabled === false) return { valid: true };
+    const limits = profile.family_rules || {};
+    const normalized = relationship === 'adopted_child' ? 'child' : relationship;
+    const limitByRelationship = {
+      spouse: Number(limits.max_spouses ?? 1), child: Number(limits.max_children ?? 6),
+      parent: Number(limits.max_parents ?? 2), parent_in_law: Number(limits.max_parents_in_law ?? 2)
+    };
+    if (normalized === 'child' && age != null) {
+      const maxAge = educationStatus === 'college' ? Number(limits.college_child_age_limit ?? 24) : Number(limits.child_age_limit ?? 18);
+      if (Number(age) > maxAge) return { valid: false, reason: `Children are covered up to age ${maxAge}${educationStatus === 'college' ? ' while in college' : ''}` };
+    }
+    if (limitByRelationship[normalized] === undefined) return { valid: true };
+    const currentCount = await Beneficiary.countDocuments({
+      membership_id: membershipId, chama_id: profile.chama_id,
+      relationship: normalized === 'child' ? { $in: ['child', 'adopted_child'] } : normalized,
+      eligibility_status: { $in: ['eligible', 'pending_verification'] },
+      $or: [{ effective_to: null }, { effective_to: { $gt: new Date() } }],
+      ...(excludeId ? { _id: { $ne: excludeId } } : {})
+    });
+    if (currentCount >= limitByRelationship[normalized]) return { valid: false, reason: `This membership has reached its limit of ${limitByRelationship[normalized]} ${normalized.replace('_', ' ')} dependants` };
+    return { valid: true };
   }
 
   /**

@@ -61,7 +61,12 @@ function needsAttention(notification) {
 
 function chamaIdOf(notification) {
   const chama = notification?.chama_id;
-  return String(typeof chama === "object" ? chama?._id || "" : chama || "");
+  return String(typeof chama === "object" ? chama?._id || chama?.id || chama?.toString?.() || "" : chama || "");
+}
+
+function workspaceIdOf(notification) {
+  const workspace = notification?.workspace_id || notification?.workspaceId || chamaIdOf(notification);
+  return String(typeof workspace === "object" ? workspace?._id || workspace?.id || workspace?.toString?.() || "" : workspace || "");
 }
 
 function readDismissed() {
@@ -135,6 +140,8 @@ function Inner({ onNavigate, router }) {
   const seen = useRef(new Set());
   const seeded = useRef(false);
   const baseTitle = useRef(null);
+  const scopedToastIds = useRef(new Map());
+  const previousWorkspaceId = useRef(activeWorkspaceId);
 
   const userId = String(user?._id ?? user?.id ?? "");
 
@@ -146,6 +153,10 @@ function Inner({ onNavigate, router }) {
   function show(notification) {
     const id = notificationId(notification);
     if (!id || seen.current.has(id)) return;
+    const notificationWorkspaceId = workspaceIdOf(notification);
+    // Never show a workspace alert while another workspace (or the global
+    // home screen) is active. The bell feed is fetched with the same scope.
+    if (!activeWorkspaceId || notificationWorkspaceId !== activeWorkspaceId) return;
     seen.current.add(id);
 
     if (!toastEnabled(notification.category)) return;
@@ -167,8 +178,6 @@ function Inner({ onNavigate, router }) {
     // The chat page owns a conversation-aware toast while it is open. This
     // prevents the global notification toast from duplicating that message.
     const openChat = matchPath({ path: "/workspace/:workspaceId/chat", end: true }, activePathname);
-    const notificationWorkspaceId = chamaIdOf(notification) ||
-      notification.action_url?.match(/^\/workspace\/([^/?]+)\/chat/)?.[1];
     if (
       notification.notification_type === "CHAT_MESSAGE_RECEIVED" &&
       openChat?.params?.workspaceId &&
@@ -177,6 +186,7 @@ function Inner({ onNavigate, router }) {
       return;
     }
 
+    const toastId = `notification-${id}`;
     toast.custom(
       (t) => (
         <NotificationToast
@@ -187,9 +197,23 @@ function Inner({ onNavigate, router }) {
           }}
         />
       ),
-      { id: `notification-${id}`, duration: durationFor(notification) }
+      { id: toastId, duration: durationFor(notification) }
     );
+    scopedToastIds.current.set(toastId, notificationWorkspaceId);
   }
+
+  // Toasts can outlive the route that produced them. Clear workspace scoped
+  // reminders immediately when the active chama changes.
+  useEffect(() => {
+    if (previousWorkspaceId.current === activeWorkspaceId) return;
+    previousWorkspaceId.current = activeWorkspaceId;
+    for (const [toastId, workspaceId] of scopedToastIds.current) {
+      if (workspaceId !== activeWorkspaceId) {
+        toast.dismiss(toastId);
+        scopedToastIds.current.delete(toastId);
+      }
+    }
+  }, [activeWorkspaceId]);
 
   // 1 + 2: instant events from the server.
   useEffect(() => {
@@ -206,21 +230,26 @@ function Inner({ onNavigate, router }) {
         show(payload.notification);
         return;
       }
+      const toastWorkspaceId = workspaceIdOf(payload);
+      if (!activeWorkspaceId || toastWorkspaceId !== activeWorkspaceId) return;
       if (!toastEnabled(payload.category)) return;
       const text = payload.title || payload.message;
       if (!text) return;
-      toast(text, {
+      const toastId = toast(text, {
         icon: payload.icon || undefined,
         duration: payload.duration || 3500,
       });
+      scopedToastIds.current.set(toastId, toastWorkspaceId);
     }
 
     function onCount(payload) {
       if (typeof payload?.unread !== "number") return;
-      queryClient.setQueryData(["notifications", "counts"], (old) => ({
-        ...(old || {}),
-        unread: payload.unread,
-      }));
+      // The socket count may aggregate memberships; refetch the active
+      // workspace-scoped count instead of applying a global value here.
+      queryClient.invalidateQueries({
+        queryKey: ["notifications", "counts"],
+        predicate: (query) => query.queryKey[2]?.workspaceId === activeWorkspaceId,
+      });
     }
 
     socket.on("notification:new", onNew);
@@ -234,10 +263,10 @@ function Inner({ onNavigate, router }) {
     };
     // `show` only reads refs and stable values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, queryClient, userId, notificationPreferences, activePathname]);
+  }, [socket, queryClient, userId, notificationPreferences, activePathname, activeWorkspaceId]);
 
   // 3: polling fallback (same query key as the bell, so no extra requests).
-  const { data: unread } = useUnreadNotifications({ limit: 20 });
+  const { data: unread } = useUnreadNotifications({ limit: 20, workspaceId: activeWorkspaceId });
 
   useEffect(() => {
     const list = Array.isArray(unread) ? unread : unread?.notifications;
@@ -261,7 +290,7 @@ function Inner({ onNavigate, router }) {
   // Attention popup for officials. Driven straight from the unread list the
   // nav badges already use (same query key, no extra requests), so it also
   // catches items that were waiting before the person opened the app.
-  const { data: unreadAll } = useUnreadNotifications({ limit: 100 });
+  const { data: unreadAll } = useUnreadNotifications({ limit: 100, workspaceId: activeWorkspaceId });
   const [dismissed, setDismissed] = useState(readDismissed);
   const [tick, setTick] = useState(0);
 
@@ -280,7 +309,7 @@ function Inner({ onNavigate, router }) {
     const now = Date.now();
     return list.filter((notification) => {
       if (!needsAttention(notification)) return false;
-      if (chamaIdOf(notification) !== activeWorkspaceId) return false;
+      if (workspaceIdOf(notification) !== activeWorkspaceId) return false;
       if (
         notification.recipient_user_id &&
         userId &&
@@ -314,7 +343,7 @@ function Inner({ onNavigate, router }) {
       .catch(() => null)
       .finally(() => queryClient.invalidateQueries({ queryKey: ["notifications"] }));
 
-    const chamaId = chamaIdOf(notification);
+    const chamaId = workspaceIdOf(notification);
     onNavigate?.(
       notification.action_url ||
         (chamaId ? `/workspace/${chamaId}/notifications` : "/home")
@@ -322,13 +351,13 @@ function Inner({ onNavigate, router }) {
   }
 
   function openAllAttention() {
-    const chamaId = chamaIdOf(attentionItems[0]);
+    const chamaId = workspaceIdOf(attentionItems[0]);
     snooze(attentionItems);
     if (chamaId) onNavigate?.(`/workspace/${chamaId}/notifications`);
   }
 
   // Unread count in the tab title.
-  const { data: counts } = useNotificationCounts();
+  const { data: counts } = useNotificationCounts({ workspaceId: activeWorkspaceId });
   const unreadCount = counts?.unread || 0;
 
   useEffect(() => {
@@ -351,6 +380,10 @@ function Inner({ onNavigate, router }) {
   // Never let popups pile up: keep the newest few, dismiss the rest.
   const { toasts } = useToasterStore();
   useEffect(() => {
+    const liveToastIds = new Set(toasts.map((item) => item.id));
+    for (const toastId of scopedToastIds.current.keys()) {
+      if (!liveToastIds.has(toastId)) scopedToastIds.current.delete(toastId);
+    }
     toasts
       .filter((t) => t.visible)
       .slice(MAX_VISIBLE)

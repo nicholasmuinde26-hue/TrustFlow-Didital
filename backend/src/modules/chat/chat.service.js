@@ -1,4 +1,4 @@
-import ChatMessage from "../../models/ChatMessage.js";
+import ChatMessage from "./ChatMessage.model.js";
 
 class ChatService {
 

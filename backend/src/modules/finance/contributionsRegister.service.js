@@ -111,13 +111,27 @@ export const getContributionsRegister = async (
   };
   if (planId) planQuery._id = new mongoose.Types.ObjectId(planId);
 
-  const plans = await ContributionPlan.find(planQuery)
-    .select("_id name contribution_type frequency status currency start_date end_date")
+  const allPlans = await ContributionPlan.find(planQuery)
+    .select("_id name contribution_type frequency status currency start_date end_date behavior system_key")
     .sort({ createdAt: -1 })
     .lean();
 
+  const isFinePlan = (plan) => plan.behavior === "fine" || plan.system_key === "late_penalties";
+  const plans = allPlans.filter((plan) => !isFinePlan(plan));
+  const finePlans = planId
+    ? await ContributionPlan.find({
+        owner_type: ownerType,
+        owner_id: ownerObjectId,
+        status: { $ne: "cancelled" },
+        $or: [{ behavior: "fine" }, { system_key: "late_penalties" }],
+      })
+        .select("_id name currency")
+        .lean()
+    : allPlans.filter(isFinePlan);
   const planIds = plans.map((p) => p._id);
+  const finePlanIds = finePlans.map((p) => p._id);
   const planById = new Map(plans.map((p) => [String(p._id), p]));
+  const finePlanById = new Map(finePlans.map((p) => [String(p._id), p]));
 
   const MembershipModel = membershipModelFor(ownerType);
   const memberships = await MembershipModel.find(
@@ -129,37 +143,6 @@ export const getContributionsRegister = async (
     .lean();
 
   const membershipById = new Map(memberships.map((m) => [String(m._id), m]));
-
-  if (!planIds.length) {
-    return {
-      plans: [],
-      payments: [],
-      members: memberships.map((m) => ({
-        ...shapeMember(m),
-        expected: 0,
-        paid: 0,
-        outstanding: 0,
-        payment_count: 0,
-        last_payment_at: null,
-        collection_rate: 0,
-        standing: "no_plan",
-      })),
-      totals: {
-        expected: 0,
-        collected: 0,
-        outstanding: 0,
-        in_flight: 0,
-        failed_count: 0,
-        payment_count: 0,
-        contributor_count: 0,
-        member_count: memberships.length,
-        collection_rate: 0,
-        collected_this_month: 0,
-        overdue_amount: 0,
-        overdue_member_count: 0,
-      },
-    };
-  }
 
   // --------------------------------------------------------
   // PAYMENTS - the received side. Filters here are the same
@@ -255,6 +238,48 @@ export const getContributionsRegister = async (
     obligationQuery.participant_id = new mongoose.Types.ObjectId(membershipId);
 
   const obligations = await ContributionObligation.find(obligationQuery).lean();
+  const fineObligations = finePlanIds.length
+    ? await ContributionObligation.find({
+        owner_type: ownerType,
+        owner_id: ownerObjectId,
+        plan_id: { $in: finePlanIds },
+        ...(membershipId ? { participant_id: new mongoose.Types.ObjectId(membershipId) } : {}),
+      }).lean()
+    : [];
+
+  const obligationRows = [...obligations.map((obligation) => ({ obligation, category: "contribution" })), ...fineObligations.map((obligation) => ({ obligation, category: "fine" }))]
+    .map(({ obligation: o, category }) => {
+      const plan = (category === "fine" ? finePlanById : planById).get(String(o.plan_id));
+      const member = membershipById.get(memberIdOf(o.participant_id));
+      const expected = round2(o.expected_amount ?? o.amount ?? 0);
+      const paid = round2(o.paid_amount ?? 0);
+      const balance = ["waived", "cancelled"].includes(o.status) ? 0 : Math.max(0, round2(expected - paid));
+      const period = o.period_key || "one-off";
+      return {
+        id: String(o._id), category, plan_id: String(o.plan_id), plan_name: plan?.name || (category === "fine" ? "Fine" : "Contribution"),
+        period_key: o.period_key || null, period_label: period === "one-off" ? "One-off" : period,
+        member: member ? shapeMember(member) : { membership_id: memberIdOf(o.participant_id), name: "Member", role: "member", is_active: false },
+        expected, paid, outstanding: balance, currency: o.currency || plan?.currency || "KES",
+        due_date: o.due_date || null, status: o.status, notes: o.notes || "",
+      };
+    });
+
+  const obligationGroupsMap = new Map();
+  for (const row of obligationRows) {
+    const key = `${row.category}:${row.plan_id}:${row.period_label}`;
+    if (!obligationGroupsMap.has(key)) obligationGroupsMap.set(key, {
+      id: key, category: row.category, plan_id: row.plan_id, plan_name: row.plan_name,
+      period_key: row.period_key, period_label: row.period_label, expected: 0, paid: 0,
+      outstanding: 0, member_count: 0, owing_count: 0, currency: row.currency,
+    });
+    const group = obligationGroupsMap.get(key);
+    const isClosed = ["waived", "cancelled"].includes(row.status);
+    if (!isClosed) group.expected = round2(group.expected + row.expected);
+    group.paid = round2(group.paid + row.paid);
+    group.outstanding = round2(group.outstanding + row.outstanding);
+    group.member_count += 1;
+    if (row.outstanding > 0) group.owing_count += 1;
+  }
 
   // --------------------------------------------------------
   // ROLLUPS
@@ -292,6 +317,10 @@ export const getContributionsRegister = async (
         payment_count: 0,
         last_payment_at: null,
         overdue_amount: 0,
+        fine_expected: 0,
+        fine_paid: 0,
+        fine_outstanding: 0,
+        fine_overdue: 0,
       });
     }
     return perMember.get(key);
@@ -304,10 +333,12 @@ export const getContributionsRegister = async (
   memberships.forEach((m) => bucketFor(m._id));
 
   let expectedTotal = 0;
+  let obligationOutstandingTotal = 0;
   let overdueTotal = 0;
   const overdueMembers = new Set();
 
   obligations.forEach((o) => {
+    if (["waived", "cancelled"].includes(o.status)) return;
     const expected = round2(o.expected_amount ?? o.amount ?? 0);
     const paid = round2(o.paid_amount ?? 0);
     const bucket = bucketFor(memberIdOf(o.participant_id));
@@ -322,6 +353,9 @@ export const getContributionsRegister = async (
     }
 
     const shortfall = Math.max(0, round2(expected - paid));
+    bucket.outstanding = round2(bucket.outstanding + shortfall);
+    obligationOutstandingTotal = round2(obligationOutstandingTotal + shortfall);
+    if (plan) plan.outstanding = round2(plan.outstanding + shortfall);
     const isOverdue =
       shortfall > 0 &&
       (o.status === "overdue" || (o.due_date && new Date(o.due_date) < now));
@@ -331,6 +365,32 @@ export const getContributionsRegister = async (
       overdueTotal = round2(overdueTotal + shortfall);
       overdueMembers.add(String(bucket.membership_id));
       if (plan) plan.overdue_count += 1;
+    }
+  });
+
+  let fineExpectedTotal = 0;
+  let fineCollectedTotal = 0;
+  let fineOutstandingTotal = 0;
+  let fineOverdueTotal = 0;
+  const fineOverdueMembers = new Set();
+  fineObligations.forEach((o) => {
+    if (["waived", "cancelled"].includes(o.status)) return;
+    const expected = round2(o.expected_amount ?? o.amount ?? 0);
+    const paid = round2(o.paid_amount ?? 0);
+    const outstanding = Math.max(0, round2(expected - paid));
+    const bucket = bucketFor(memberIdOf(o.participant_id));
+    const isOverdue = outstanding > 0 && (o.status === "overdue" || (o.due_date && new Date(o.due_date) < now));
+
+    bucket.fine_expected = round2(bucket.fine_expected + expected);
+    bucket.fine_paid = round2(bucket.fine_paid + paid);
+    bucket.fine_outstanding = round2(bucket.fine_outstanding + outstanding);
+    fineExpectedTotal = round2(fineExpectedTotal + expected);
+    fineCollectedTotal = round2(fineCollectedTotal + paid);
+    fineOutstandingTotal = round2(fineOutstandingTotal + outstanding);
+    if (isOverdue) {
+      bucket.fine_overdue = round2(bucket.fine_overdue + outstanding);
+      fineOverdueTotal = round2(fineOverdueTotal + outstanding);
+      fineOverdueMembers.add(String(bucket.membership_id));
     }
   });
 
@@ -383,10 +443,11 @@ export const getContributionsRegister = async (
   });
 
   const members = Array.from(perMember.values()).map((m) => {
-    const outstanding = Math.max(0, round2(m.expected - m.paid));
+    const outstanding = round2(m.outstanding || 0);
     return {
       ...m,
       outstanding,
+      fine_outstanding: round2(m.fine_outstanding || 0),
       collection_rate: m.expected > 0 ? Math.round((m.paid / m.expected) * 100) : 0,
       standing:
         m.expected === 0
@@ -405,18 +466,20 @@ export const getContributionsRegister = async (
 
   const planRows = Array.from(perPlan.values()).map((p) => ({
     ...p,
-    outstanding: Math.max(0, round2(p.expected - p.collected)),
+    outstanding: p.outstanding,
     collection_rate: p.expected > 0 ? Math.round((p.collected / p.expected) * 100) : 0,
   }));
 
   return {
     plans: planRows,
+    obligations: obligationRows.sort((a, b) => (a.due_date ? new Date(a.due_date).getTime() : 0) - (b.due_date ? new Date(b.due_date).getTime() : 0) || a.plan_name.localeCompare(b.plan_name) || a.member.name.localeCompare(b.member.name)),
+    obligation_groups: Array.from(obligationGroupsMap.values()).sort((a, b) => (b.period_key || b.period_label).localeCompare(a.period_key || a.period_label) || a.plan_name.localeCompare(b.plan_name)),
     payments,
     members,
     totals: {
       expected: expectedTotal,
       collected: collectedTotal,
-      outstanding: Math.max(0, round2(expectedTotal - collectedTotal)),
+      outstanding: obligationOutstandingTotal,
       in_flight: inFlightTotal,
       failed_count: failedCount,
       payment_count: settledDocs.filter((p) => SETTLED_STATUSES.includes(p.status)).length,
@@ -427,6 +490,13 @@ export const getContributionsRegister = async (
       collected_this_month: collectedThisMonth,
       overdue_amount: overdueTotal,
       overdue_member_count: overdueMembers.size,
+      fines: {
+        expected: fineExpectedTotal,
+        collected: fineCollectedTotal,
+        outstanding: fineOutstandingTotal,
+        overdue_amount: fineOverdueTotal,
+        overdue_member_count: fineOverdueMembers.size,
+      },
     },
   };
 };

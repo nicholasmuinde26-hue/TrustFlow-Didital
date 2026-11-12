@@ -28,7 +28,7 @@ router.post(
 router.get(
   '/:chamaId/officials/:membershipId/ratings',
   protect,
-  requireAuditAccess,
+  requireChamaMember, requireModule('officials'), requireAuditAccess,
   getOfficialRatingDetailController
 );
 

@@ -60,6 +60,7 @@ router.get("/org-kyc", ...leaderGuard, controller.getOrgKyc);
 router.post("/org-kyc", ...leaderGuard, controller.submitOrgKyc);
 router.put("/kyc/:membershipId", ...leaderGuard, controller.verifyKyc);
 router.post("/invitations", ...leaderGuard, controller.makeInvite);
+router.delete("/invitations/:invitationId", ...leaderGuard, controller.cancelInvite);
 // Loans moved to modules/loans/loan.routes.js (mounted at /api/v1/chamas/:chamaId/loans)
 router.post("/meeting-records", ...guard, controller.createMeetingRecord);
 router.post("/meeting-records/:meetingId/check-in", ...guard, controller.checkInMeeting);

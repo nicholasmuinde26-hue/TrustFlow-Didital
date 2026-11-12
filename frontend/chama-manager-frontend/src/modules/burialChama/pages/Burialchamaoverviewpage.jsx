@@ -85,7 +85,7 @@ export default function BurialChamaOverviewPage({ dashboard = {} }) {
   const userName = user?.first_name || user?.name?.split(" ")[0] || "User";
   const base = `/workspace/${workspaceId}`;
 
-  const welfareFundBalance = financeSummary?.savings_balance ?? financeSummary?.cash_balance ?? 0;
+  const welfareFundBalance = financeSummary?.welfare_fund_balance ?? 0;
   const monthContributions = financeSummary?.total_contributions ?? financeSummary?.cash_in ?? 0;
   const outstandingDues = financeSummary?.outstanding_loans ?? 0;
   const memberCount = stats?.memberCount ?? 0;

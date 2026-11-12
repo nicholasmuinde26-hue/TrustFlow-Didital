@@ -44,6 +44,31 @@ export default function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.pathname === "/auth/giving-handoff") {
+      const code = url.searchParams.get("code");
+      const workspaceId = url.searchParams.get("workspaceId");
+      // Remove the one-time code from the address bar and browser history immediately.
+      window.history.replaceState(null, "", "/auth/giving-handoff");
+      (async () => {
+        try {
+          if (!code) throw new Error("Missing sign-in handoff code");
+          await authService.redeemHandoff(code);
+          const data = await authService.me();
+          setUser(data.user ?? data);
+          const safeWorkspaceId = /^[a-f0-9]{24}$/i.test(workspaceId || "") ? workspaceId : "";
+          window.location.replace(safeWorkspaceId ? `/workspace/${safeWorkspaceId}` : "/home");
+        } catch {
+          localStorage.removeItem("accessToken");
+          localStorage.removeItem("refreshToken");
+          setUser(null);
+          window.location.replace("/login?handoff=expired");
+        } finally {
+          setLoading(false);
+        }
+      })();
+      return;
+    }
     loadUser();
   }, []);
 

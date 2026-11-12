@@ -1,6 +1,8 @@
 import api from '@/app/services/api';
 
 const adminService = {
+  async getPublicGivingReports() { const { data } = await api.get('/admin/public-giving/reports'); return data.data || []; },
+  async reviewPublicGivingReports(groupId, action, notes = '') { const { data } = await api.post(`/admin/public-giving/${groupId}/review`, { action, notes }); return data.data; },
   async getMyProfile() {
     const { data } = await api.get('/admin/me');
     return data.data || null;

@@ -33,7 +33,7 @@ import Spinner from "@/shared/components/ui/Spinner";
 import BrandMark from "@/shared/components/layout/BrandMark";
 import workspaceRequestService from "@/app/services/workspaceRequest.service";
 import adminService from "@/modules/admin/services/admin.service";
-import WorkspaceRequestModal from "@/modules/workspaces/components/WorkspaceRequestModal";
+import { WorkspaceRequestModal } from '@/modules/workspaces/index.js';
 
 /* ============================================================
    HOME PAGE — one page, four audiences.
@@ -61,7 +61,7 @@ import WorkspaceRequestModal from "@/modules/workspaces/components/WorkspaceRequ
 ============================================================ */
 
 const REQUEST_OPTIONS = [
-  { type: "chama", icon: Building2, title: "Request a Chama", description: "Members, treasury & rotational payouts", color: "violet" },
+  { type: "chama", icon: Building2, title: "Request an Organization", description: "Set up a chama, SACCO or cooperative", color: "violet" },
   { type: "contribution_group", icon: Wallet, title: "Request a Group", description: "Welfare, fundraisers & collections", color: "emerald" },
   { type: "business", icon: Store, title: "Request a Business", description: "Sales, inventory & POS", color: "blue" },
 ];
@@ -274,7 +274,7 @@ export default function HomePage() {
                   <UserPlus size={20} />
                 </div>
                 <div>
-                  <h3 className="text-base font-black">Have a chama invitation code?</h3>
+                  <h3 className="text-base font-black">Have an organization invitation code?</h3>
                   <p className="mt-0.5 text-xs text-mist-muted">Join an existing community workspace in a minute.</p>
                 </div>
               </div>
@@ -335,7 +335,7 @@ function HomeHero({ persona, firstName, isSuperAdmin, invitationCount, pendingCo
       cta: null,
     },
     new: {
-      eyebrow: "Welcome to VeriCircle",
+      eyebrow: "Welcome to ChamaManager",
       title: "Let's get you set up",
       text: "Request a verified workspace for your group, or join one you were invited to.",
       cta: null,
@@ -435,7 +435,7 @@ function AdminPanel({ stats, workspaces }) {
 
   const tiles = [
     { label: "Pending requests", value: overview.pendingRequests ?? pending.length, to: "/admin/requests", icon: Clock },
-    { label: "Chamas", value: overview.totalChamas, to: "/admin/directory?tab=chamas", icon: Building2 },
+    { label: "Organizations", value: overview.totalChamas, to: "/admin/directory?tab=chamas", icon: Building2 },
     { label: "Inquiries", to: "/admin/inquiries", icon: MessageSquare },
     { label: "People", to: "/admin/people", icon: Users },
   ];

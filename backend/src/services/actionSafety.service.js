@@ -2,7 +2,7 @@ import ChamaMembership from '../models/ChamaMembership.js';
 import Chama from '../models/Chama.js';
 import ChamaLoan from '../models/ChamaLoan.js';
 import permissionService from './permission.service.js';
-import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from '../modules/loans/Loan.constants.js';
+import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from '../modules/loans/index.js';
 
 // ========================================
 // ACTION SAFETY ENGINE

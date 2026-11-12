@@ -187,6 +187,31 @@ const chamaMembershipSchema = new mongoose.Schema(
       default: null
     },
 
+    burial_coverage: {
+      status: { type: String, enum: ['covered', 'waiting_period', 'at_risk', 'out_of_good_standing', 'lapsed'], default: null },
+      covered_since: { type: Date, default: null },
+      waiting_period_ends_at: { type: Date, default: null },
+      last_assessed_at: { type: Date, default: null },
+      lapse_reason: { type: String, trim: true, maxlength: 300, default: null },
+      reinstated_at: { type: Date, default: null }
+    },
+
+    // Burial welfare contribution class for this membership. Null keeps
+    // existing memberships on the profile's configured default class.
+    burial_membership_class: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      maxlength: 60,
+      default: null,
+    },
+    burial_class_assigned_at: { type: Date, default: null },
+    burial_class_assigned_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ChamaMembership',
+      default: null,
+    },
+
     returned_at: {
       type: Date,
       default: null

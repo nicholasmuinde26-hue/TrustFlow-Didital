@@ -49,6 +49,7 @@ class PaymentStore {
             reference: context.reference,
             display_reference: context.displayReference,
             idempotency_key: idemKey,
+            phone_number: context.phoneNumber || null,
             participant_id: context.participantId,
             participant_type: context.participantType,
             obligation_id: context.obligationId || null,

@@ -13,6 +13,8 @@ import {
   ArrowRight,
   ArrowLeft,
   CheckCircle2,
+  Globe,
+  X,
 } from "lucide-react";
 
 import useAuth from "@/app/hooks/useAuth";
@@ -23,8 +25,14 @@ import AuthLayout from "@/layouts/AuthLayout";
 import AuthCard from "@/modules/auth/components/AuthCard";
 import Button from "@/shared/components/ui/Button";
 import Spinner from "@/shared/components/ui/Spinner";
+import { organizationLabel } from '@/modules/workspaces/index.js';
 
 export default function JoinChamaPage() {
+  const directoryTypes = {
+    chama: [["merry_go_round", "Merry-go-round"], ["table_banking", "Table banking"], ["investment_group", "Investment group"], ["welfare", "Welfare / burial"], ["housing", "Housing group"], ["farmer_group", "Farmer group"], ["custom", "Other / custom"]],
+    sacco: [["community_sacco", "Community SACCO"], ["employee_sacco", "Employee SACCO"], ["farmer_sacco", "Farmer SACCO"], ["housing_sacco", "Housing SACCO"], ["investment_sacco", "Investment SACCO"], ["custom", "Other / custom"]],
+    cooperative: [["agricultural", "Agricultural cooperative"], ["consumer", "Consumer cooperative"], ["housing", "Housing cooperative"], ["worker", "Worker cooperative"], ["producer", "Producer cooperative"], ["custom", "Other / custom"]],
+  };
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
   const navigate = useNavigate();
@@ -56,6 +64,9 @@ export default function JoinChamaPage() {
   const [publicChamas, setPublicChamas] = useState([]);
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [publicSearch, setPublicSearch] = useState("");
+  const [directoryFamily, setDirectoryFamily] = useState("all");
+  const [directoryType, setDirectoryType] = useState("all");
+  const [authPromptChamaId, setAuthPromptChamaId] = useState(null);
 
   // Chamas the user already has an unapproved request pending for —
   // used alongside myChamaIds so the directory (and handleJoinWithCode)
@@ -77,17 +88,17 @@ export default function JoinChamaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // Fetch public chamas directory if no token is provided or for browsing
   useEffect(() => {
     if (token) return;
-
     setLoadingPublic(true);
-    chamaService
-      .getPublicChamas()
-      .then((data) => setPublicChamas(data))
-      .catch(() => {})
-      .finally(() => setLoadingPublic(false));
-  }, [token]);
+    setDirectoryError("");
+    chamaService.getPublicChamas({
+      ...(directoryFamily !== "all" ? { organizationFamily: directoryFamily } : {}),
+      ...(directoryType !== "all" ? { organizationType: directoryType } : {}),
+    }).then(setPublicChamas).catch((error) => {
+      setDirectoryError(error?.response?.data?.message || "Could not load public organizations. Please try again.");
+    }).finally(() => setLoadingPublic(false));
+  }, [token, directoryFamily, directoryType]);
 
   // Fetch the user's own pending join requests so the directory can
   // mark chamas they've already requested to join.
@@ -120,7 +131,7 @@ export default function JoinChamaPage() {
       setRequestMessage(
         membership?.status === "pending"
           ? "Your request has been sent. The chairperson or treasurer will review it shortly."
-          : "You've joined the Chama."
+          : "You've joined the organization."
       );
     } catch (err) {
       setRequestState("error");
@@ -138,7 +149,7 @@ export default function JoinChamaPage() {
     }
 
     if (!isAuthenticated) {
-      navigate("/login", { state: authRedirectState });
+      setAuthPromptChamaId(chamaId);
       return;
     }
 
@@ -150,7 +161,7 @@ export default function JoinChamaPage() {
       setRequestMessage(
         membership?.status === "pending"
           ? "Your request to join has been sent successfully. The chairperson or treasurer will review it shortly."
-          : "You have joined the Chama."
+          : "You have joined the organization."
       );
     } catch (err) {
       setCodeError(
@@ -179,11 +190,11 @@ export default function JoinChamaPage() {
     // Check membership/pending state locally before sending anything
     // to the backend.
     if (myChamaIds.has(String(chamaId))) {
-      setDirectoryError("You're already a member of this Chama.");
+      setDirectoryError("You're already a member of this organization.");
       return;
     }
     if (pendingChamaIds.has(String(chamaId))) {
-      setDirectoryError("You already have a request pending approval for this Chama.");
+      setDirectoryError("You already have a request pending approval for this organization.");
       return;
     }
 
@@ -195,7 +206,7 @@ export default function JoinChamaPage() {
       setRequestMessage(
         membership?.status === "pending"
           ? "Your request to join has been sent successfully. The chairperson or treasurer will review it shortly."
-          : "You have joined the Chama."
+          : "You have joined the organization."
       );
     } catch (err) {
       setDirectoryError(
@@ -285,7 +296,7 @@ export default function JoinChamaPage() {
               </div>
 
               <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
-                You're invited to join {preview.chama?.name || "a Chama"}
+                You're invited to join {preview.chama?.name || "an organization"}
               </h2>
 
               <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
@@ -392,37 +403,44 @@ export default function JoinChamaPage() {
                 className="w-full py-3 text-xs font-bold"
                 disabled={codeSubmitting || !inputCode.trim()}
               >
-                {codeSubmitting ? "Submitting request..." : "Join Chama with Code"}
+                {codeSubmitting ? "Submitting request..." : "Join Organization with Code"}
               </Button>
             </form>
           </div>
 
           {/* 2. PUBLIC DIRECTORY */}
-          <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5">
+          <div className="min-w-0 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6 lg:p-8">
+            <div className="mb-5 grid min-w-0 gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Users className="text-violet-600 dark:text-violet-400" size={18} />
-                  Browse Public Chamas
+                  Browse Public Organizations
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Explore active public Chama circles looking for new members
+                  Explore public chamas, SACCOs and cooperatives looking for new members
                 </p>
               </div>
 
-              {/* Search Bar */}
-              <div className="relative sm:w-56">
-                <Search
-                  size={14}
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="text"
-                  placeholder="Search public chamas..."
-                  value={publicSearch}
-                  onChange={(e) => setPublicSearch(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 pl-9 pr-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-violet-600 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                />
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                {/* Search Bar */}
+                <div className="relative min-w-0">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search public organizations..."
+                    value={publicSearch}
+                    onChange={(e) => setPublicSearch(e.target.value)}
+                    className="w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50/60 py-2 pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-violet-600 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                  />
+                </div>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  <select aria-label="Filter by organization" value={directoryFamily} onChange={(event) => { setDirectoryFamily(event.target.value); setDirectoryType("all"); }} className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white sm:flex-none">
+                    <option value="all">All organizations</option><option value="chama">Chamas</option><option value="sacco">SACCOs</option><option value="cooperative">Cooperatives</option>
+                  </select>
+                  {directoryFamily !== "all" && <select aria-label="Filter by organization type" value={directoryType} onChange={(event) => setDirectoryType(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white sm:flex-none">
+                    <option value="all">All types</option>{directoryTypes[directoryFamily].map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                  </select>}
+                </div>
               </div>
             </div>
 
@@ -441,16 +459,16 @@ export default function JoinChamaPage() {
               <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                 <Landmark size={24} className="text-slate-400 mb-2" />
                 <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  No public Chamas found
+                  No public organizations found
                 </p>
                 <p className="text-[11px] text-slate-400 max-w-xs mt-0.5">
                   {publicSearch
-                    ? "No Chama matched your search filter."
-                    : "There are currently no public Chamas listed. You can join directly using an invitation code above."}
+                    ? "No organization matched your search filter."
+                    : "There are currently no public organizations listed. You can join directly using an invitation code above."}
                 </p>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 {filteredPublicChamas.map((chama) => {
                   const myMembership = myChamaWorkspaces.find(
                     (w) => String(w.id ?? w._id) === String(chama._id)
@@ -461,21 +479,38 @@ export default function JoinChamaPage() {
                   return (
                     <div
                       key={chama._id}
-                      className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:border-violet-300 hover:bg-white dark:border-slate-800 dark:bg-slate-800/40 dark:hover:border-violet-500/40 dark:hover:bg-slate-800"
+                      className="flex min-w-0 flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/50 p-4 transition-all hover:border-violet-300 hover:bg-white dark:border-slate-800 dark:bg-slate-800/40 dark:hover:border-violet-500/40 dark:hover:bg-slate-800"
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[10px] font-bold text-violet-700 dark:bg-violet-500/10 dark:text-violet-300">
                             PUBLIC
                           </span>
-                          <span className="text-[11px] font-semibold text-slate-500">
+                          <span className="ml-2 shrink-0 text-right text-[11px] font-semibold text-slate-500">
                             KES {chama.monthly_savings?.toLocaleString()} / mo
                           </span>
                         </div>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                          {chama.name}
-                        </h4>
+                        <div className="flex min-w-0 items-start gap-2.5">
+                          {chama.has_public_profile && chama.public_profile?.logo_url && <img src={chama.public_profile.logo_url} alt="" className="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white object-cover dark:border-slate-700" />}
+                          <div className="min-w-0">
+                            <h4 className="break-words text-sm font-bold text-slate-900 dark:text-white">{chama.name}</h4>
+                            {chama.has_public_profile && (chama.public_profile?.tagline || chama.public_profile?.purpose || chama.public_profile?.description) && <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-slate-600 dark:text-slate-300">{chama.public_profile.tagline || chama.public_profile.purpose || chama.public_profile.description}</p>}
+                          </div>
+                        </div>
+                        <p className="mt-1 break-words text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                          {organizationLabel(chama.organization_family || "chama", chama.workspace_config?.terminology?.workspace)} · {(directoryTypes[chama.organization_family || "chama"]?.find(([key]) => key === (chama.organization_type || "custom"))?.[1] || (chama.organization_type || "custom").replaceAll("_", " "))}
+                        </p>
+                        {chama.has_public_profile && chama.public_profile?.location && <p className="mt-1 break-words text-[11px] text-slate-500 dark:text-slate-400">{chama.public_profile.location}</p>}
                       </div>
+
+                      {chama.has_public_profile && (
+                        <Link
+                          to={`/chama-profile/${chama._id}`}
+                          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                        >
+                          <Globe size={14} /> View public profile
+                        </Link>
+                      )}
 
                       {alreadyMember ? (
                         <Button
@@ -522,6 +557,21 @@ export default function JoinChamaPage() {
           </div>
         </div>
       )}
+      {authPromptChamaId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setAuthPromptChamaId(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="join-auth-title" className="relative w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-7">
+            <button type="button" onClick={() => setAuthPromptChamaId(null)} aria-label="Close" className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"><X size={18} /></button>
+            <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"><Users size={23} /></div>
+            <h2 id="join-auth-title" className="pr-8 text-xl font-black text-slate-900 dark:text-white">Are you already using ChamaManager?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">Sign in if you already have an account, or create one first. Then you can send your request to join {publicChamas.find((item) => String(item._id) === String(authPromptChamaId))?.name || "this organization"}.</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <Button className="w-full py-3 text-sm font-bold" onClick={() => navigate("/login", { state: authRedirectState })}><LogIn size={17} />I have an account</Button>
+              <Button variant="secondary" className="w-full py-3 text-sm font-bold" onClick={() => navigate("/register", { state: authRedirectState })}><UserPlus size={17} />Create account</Button>
+            </div>
+            <button type="button" onClick={() => setAuthPromptChamaId(null)} className="mt-4 w-full py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">Maybe later</button>
+          </section>
+        </div>
+      )}
     </div>
   );
 
@@ -536,7 +586,7 @@ export default function JoinChamaPage() {
             </span>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-                Join an Existing Chama
+                Join an Existing Organization
               </h1>
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
                 Connect with your community treasury using an invitation code or explore public circles.
@@ -559,7 +609,7 @@ export default function JoinChamaPage() {
 
   // If user is NOT LOGGED IN: render with AuthLayout guest frame
   return (
-    <AuthLayout>
+    <AuthLayout wide>
       <AuthCard>{content}</AuthCard>
     </AuthLayout>
   );

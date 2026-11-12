@@ -5,7 +5,7 @@ import {
 } from '../yearEnd.period.js';
 import {
   assertPeriodOpen, resolvePostingDate, resolveChamaId, PERIOD_CLOSED,
-} from '../../finance/accounting/periodGuard.logic.js';
+} from '../../finance/index.js';
 
 const CHAMA = 'a'.repeat(24);
 const d = (s) => new Date(`${s}T00:00:00.000Z`);

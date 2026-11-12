@@ -34,12 +34,12 @@ const MPESA_TRANSACTION_TYPE = process.env.MPESA_TRANSACTION_TYPE?.trim() || "Cu
 const MPESA_FORCE_MOCK = String(process.env.MPESA_FORCE_MOCK || "").toLowerCase() === "true";
 const MPESA_BASE_URL = MPESA_ENVIRONMENT === "production" ? "https://api.safaricom.co.ke" : "https://sandbox.safaricom.co.ke";
 
-export function validateConfiguration() {
+export function validateConfiguration({ callbackUrl, requireCallback = false } = {}) {
   const missing = [];
   if (!MPESA_CONSUMER_KEY) missing.push("MPESA_CONSUMER_KEY");
   if (!MPESA_CONSUMER_SECRET) missing.push("MPESA_CONSUMER_SECRET");
   if (!MPESA_PASSKEY) missing.push("MPESA_PASSKEY");
-  if (!MPESA_CALLBACK_URL) missing.push("MPESA_CALLBACK_URL");
+  if (requireCallback && !(callbackUrl || MPESA_CALLBACK_URL)) missing.push("MPESA_CALLBACK_URL (or per-payment callbackUrl)");
   if (missing.length > 0) throw new Error(`Missing M-Pesa configuration parameters: ${missing.join(", ")}`);
   return true;
 }
@@ -162,8 +162,8 @@ const createMockStkResponse = ({ amount, phoneNumber, accountReference }) => ({
 /**
  * STK PUSH - Customer pays us
  */
-const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayReference, transactionDescription, allowMock = true }) => {
-  validateConfiguration();
+const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayReference, transactionDescription, callbackUrl, allowMock = true }) => {
+  validateConfiguration({ callbackUrl, requireCallback: true });
   // Callers that move real money (platform billing) pass allowMock: false so a
   // leftover MPESA_FORCE_MOCK=true can never "pay" them without a real payment.
   if (MPESA_FORCE_MOCK && allowMock === false) {
@@ -189,7 +189,7 @@ const initiateStkPush = async ({ amount, phoneNumber, accountReference, displayR
     const payload = {
       BusinessShortCode: MPESA_SHORTCODE, Password: password, Timestamp: timestamp,
       TransactionType: MPESA_TRANSACTION_TYPE, Amount: validatedAmount, PartyA: normalizedPhone,
-      PartyB: MPESA_SHORTCODE, PhoneNumber: normalizedPhone, CallBackURL: MPESA_CALLBACK_URL,
+      PartyB: MPESA_SHORTCODE, PhoneNumber: normalizedPhone, CallBackURL: callbackUrl || MPESA_CALLBACK_URL,
       AccountReference: displayRef, TransactionDesc: String(transactionDescription).substring(0, 100),
     };
     

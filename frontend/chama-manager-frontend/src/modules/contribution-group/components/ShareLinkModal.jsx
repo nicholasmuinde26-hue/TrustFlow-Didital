@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { X, Copy, Check, Share2, MessageSquare } from "lucide-react";
+import { givingUrl } from "@/shared/lib/givingUrl";
 
 export default function ShareLinkModal({ isOpen, onClose, group = {} }) {
   const [copied, setCopied] = useState(false);
@@ -7,10 +8,15 @@ export default function ShareLinkModal({ isOpen, onClose, group = {} }) {
   if (!isOpen) return null;
 
   const joinCode = group.join_code || group.joinCode || "CG-XXXXXX";
-  const shareUrl = `${window.location.origin}/g/${joinCode}`;
+  const publicGivingEnabled = group.verification?.status === "verified" && group.verification?.level === "public" && group.verification?.public_giving_enabled === true;
+  const shareUrl = publicGivingEnabled
+    ? givingUrl(joinCode)
+    : `${window.location.origin}/groups/join/${encodeURIComponent(joinCode)}`;
   
   const whatsappMessage = encodeURIComponent(
-    `🤝 Join our contribution group: *${group.name || "Cause"}*!\n\nPledge and support directly here:\n${shareUrl}`
+    publicGivingEnabled
+      ? `🤝 Support *${group.name || "Cause"}*!\n\nView the fundraiser and donate securely here:\n${shareUrl}`
+      : `🤝 Join *${group.name || "Contribution Group"}*!\n\nOpen the group and sign in to join and contribute:\n${shareUrl}`
   );
   const whatsappUrl = `https://api.whatsapp.com/send?text=${whatsappMessage}`;
 
@@ -31,7 +37,7 @@ export default function ShareLinkModal({ isOpen, onClose, group = {} }) {
             </div>
             <div>
               <h3 className="text-lg font-black text-slate-900 dark:text-white">Share Cause</h3>
-              <p className="text-xs text-slate-500">Invite anyone to view & pledge</p>
+              <p className="text-xs text-slate-500">{publicGivingEnabled ? "Invite anyone to view & donate" : "Invite members to join this group"}</p>
             </div>
           </div>
           <button
@@ -53,7 +59,7 @@ export default function ShareLinkModal({ isOpen, onClose, group = {} }) {
 
         {/* Share Link Input */}
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Public Shareable Link</label>
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300">{publicGivingEnabled ? "Public fundraiser link" : "Contribution group join link"}</label>
           <div className="flex items-center gap-2">
             <input
               type="text"

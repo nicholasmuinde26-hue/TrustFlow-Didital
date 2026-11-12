@@ -9,6 +9,7 @@ import contributionPaymentRule from "./rules/contributionPayment.rule.js";
 import payoutRule from "./rules/payout.rule.js";
 import withdrawalRule from "./rules/withdrawal.rule.js";
 import savingsShareoutRule from "./rules/savingsShareout.rule.js";
+import fineShareoutRule from "./rules/fineShareout.rule.js";
 import chamaContributionPayoutRule from "./rules/chamaContributionPayout.rule.js";
 import chamaAssetIncomeRule from "./rules/chamaAssetIncome.rule.js";
 import chamaAssetExpenseRule from "./rules/chamaAssetExpense.rule.js";
@@ -16,6 +17,9 @@ import chamaAssetPurchaseRule from "./rules/chamaAssetPurchase.rule.js";
 import chamaProfitDistributionRule from "./rules/chamaProfitDistribution.rule.js";
 import businessFundsReclassRule from "./rules/businessFundsReclass.rule.js";
 import adjustmentRule from "./rules/adjustment.rule.js";
+import burialBenefitRule from "./rules/burialBenefit.rule.js";
+import burialFundraisingRule from "./rules/burialFundraising.rule.js";
+import burialEquipmentHireRule from "./rules/burialEquipmentHire.rule.js";
 import accountingValidator from "./accounting.validator.js";
 import journalService from "./journal.service.js";
 import ledgerService from "./ledger.service.js";
@@ -45,6 +49,9 @@ class AccountingService {
             SAVINGS_SHAREOUT_OBLIGATION: savingsShareoutRule,
             SAVINGS_SHAREOUT_SETTLEMENT: savingsShareoutRule,
             SAVINGS_SHAREOUT_CANCELLATION: savingsShareoutRule,
+            FINE_SHAREOUT_OBLIGATION: fineShareoutRule,
+            FINE_SHAREOUT_SETTLEMENT: fineShareoutRule,
+            FINE_SHAREOUT_CANCELLATION: fineShareoutRule,
             CHAMA_CONTRIB_PAYOUT_SETTLEMENT: chamaContributionPayoutRule,
             CHAMA_ASSET_INCOME_POSTING: chamaAssetIncomeRule,
             CHAMA_ASSET_EXPENSE_POSTING: chamaAssetExpenseRule,
@@ -55,7 +62,10 @@ class AccountingService {
             CHAMA_PROFIT_WALLET_CREDIT_POSTING: chamaProfitDistributionRule,
             CHAMA_PROFIT_WALLET_WITHDRAWAL_POSTING: chamaProfitDistributionRule,
             BUSINESS_FUNDS_RECLASS: businessFundsReclassRule,
-            LEDGER_ADJUSTMENT_POSTING: adjustmentRule
+            LEDGER_ADJUSTMENT_POSTING: adjustmentRule,
+            BURIAL_BENEFIT_DISBURSEMENT: burialBenefitRule,
+            BURIAL_FUNDRAISING_RECEIPT: burialFundraisingRule,
+            EQUIPMENT_HIRE_PAYMENT: burialEquipmentHireRule,
         };
     }
 

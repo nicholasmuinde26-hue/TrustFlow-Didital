@@ -14,6 +14,8 @@ import {
   getMeController,
   updateMeController,
   getOtpChannelsController,
+  createAuthHandoffController,
+  redeemAuthHandoffController,
 } from './auth.controller.js';
 
 import { protect } from '../../middleware/auth.middleware.js';
@@ -82,6 +84,11 @@ router.post('/register', authLimiter, registerController);
  * @access  Public
  */
 router.post('/login', authLimiter, loginController);
+
+// Cross-app session handoff. Codes are one-time, expire after 60 seconds,
+// and are redeemed for a fresh session by the destination app.
+router.post('/handoff', protect, authLimiter, createAuthHandoffController);
+router.post('/handoff/redeem', authLimiter, redeemAuthHandoffController);
 
 // ========================================
 // PROTECTED ROUTES

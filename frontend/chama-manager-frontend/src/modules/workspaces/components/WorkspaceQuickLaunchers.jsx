@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Megaphone, MessageCircle } from "lucide-react";
 
-import { useAnnouncements } from "@/modules/announcements/hooks/useAnnouncements";
+import { useAnnouncements } from "@/modules/announcements/index.js";
 import { useMessages } from "@/modules/chat/hooks/useChat";
 
 /* ============================================================

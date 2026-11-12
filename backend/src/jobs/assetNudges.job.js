@@ -44,7 +44,7 @@ import ChamaMembership from "../models/ChamaMembership.js";
 import Chama from "../models/Chama.js";
 import { isModuleEnabled } from "../constants/workspaceModules.constants.js";
 import notificationService from "../services/notification.service.js";
-import { recomputePeriodStatus } from "../modules/chamaAssets/assetLease.service.js";
+import { recomputePeriodStatus } from "../modules/chamaAssets/index.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

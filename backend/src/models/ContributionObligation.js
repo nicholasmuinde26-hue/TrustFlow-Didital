@@ -119,6 +119,10 @@ const contributionObligationSchema =
 
       mgr_round_id: { type: mongoose.Schema.Types.ObjectId, ref: 'MgrRound', default: null, index: true },
 
+      // Case-specific levies in burial chamas remain normal contribution
+      // obligations for collection, but are attributable to a single death.
+      case_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BurialCase', default: null, index: true },
+
 
       // ========================================
       // CONTRIBUTION GROUP / CHAMA OWNER
@@ -211,7 +215,9 @@ const contributionObligationSchema =
 
           'ChamaMembership',
 
-          'ContributionGroupMember'
+          'ContributionGroupMember',
+
+          'ContributionDonor'
 
         ],
 
@@ -975,6 +981,7 @@ contributionObligationSchema.set('toJSON', {
 contributionObligationSchema.index({ owner_type: 1, owner_id: 1, period_key: 1, status: 1 });
 contributionObligationSchema.index({ plan_id: 1, period_key: 1 });
 contributionObligationSchema.index({ participant_id: 1, period_start: 1 });
+contributionObligationSchema.index({ case_id: 1, participant_id: 1 }, { unique: true, partialFilterExpression: { case_id: { $type: 'objectId' } }, name: 'one_case_levy_per_member' });
 
 
 export default mongoose.model(

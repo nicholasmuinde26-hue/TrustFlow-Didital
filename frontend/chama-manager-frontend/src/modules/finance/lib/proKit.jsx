@@ -28,6 +28,7 @@ const CHIP = {
   arrears: ["bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300", AlertTriangle, "Arrears"],
   partial: ["bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300", CircleDashed, "Partial"],
   excused: ["bg-slate-100 text-slate-600 dark:bg-obsidian-raised dark:text-mist-muted", MinusCircle, "Excused"],
+  no_dues: ["bg-slate-100 text-slate-600 dark:bg-obsidian-raised dark:text-mist-muted", MinusCircle, "No dues"],
 };
 
 export function StatusChip({ status, label }) {

@@ -18,8 +18,8 @@ const notificationsApi = {
     return api.get(`/notifications/category/${category}`, { params });
   },
 
-  getNotificationCounts() {
-    return api.get("/notifications/counts");
+  getNotificationCounts(params) {
+    return api.get("/notifications/counts", { params });
   },
 
   getNotificationById(notificationId) {
@@ -30,8 +30,8 @@ const notificationsApi = {
     return api.patch(`/notifications/${notificationId}/read`);
   },
 
-  markAllNotificationsAsRead() {
-    return api.patch("/notifications/read-all");
+  markAllNotificationsAsRead(params) {
+    return api.patch("/notifications/read-all", {}, { params });
   },
 
   // Clear the badge for a page the user just opened (exact-page match).

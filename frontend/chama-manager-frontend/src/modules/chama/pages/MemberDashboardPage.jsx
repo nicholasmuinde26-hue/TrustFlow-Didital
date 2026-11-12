@@ -21,9 +21,11 @@ import {
   ChevronUp,
   PartyPopper,
   Bell,
+  UsersRound,
 } from "lucide-react";
 
 import chamaApi from "../api/chama.api";
+import finesApi from "@/modules/fines/api/fines.api";
 import loansApi from "@/modules/loans/api/loans.api";
 import useAuth from "@/app/hooks/useAuth";
 import KycSubmitModal from "../components/KycSubmitModal";
@@ -321,6 +323,16 @@ function MemberDashboardView({ data, loanSummary, workspaceId }) {
   // desktop always shows it in full via the lg:grid override, so this
   // only matters below the lg breakpoint.
   const [showMemberCard, setShowMemberCard] = useState(false);
+  const [fineShareouts, setFineShareouts] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    finesApi.listShareouts(workspaceId).then((shareoutResult) => {
+      if (!active) return;
+      setFineShareouts(shareoutResult?.data?.data?.shareouts || []);
+    }).catch(() => { if (active) setFineShareouts([]); });
+    return () => { active = false; };
+  }, [workspaceId]);
 
   /* ==========================================================================
    * SAFE DATA EXTRACTION
@@ -335,6 +347,9 @@ function MemberDashboardView({ data, loanSummary, workspaceId }) {
     kycStatus !== MEMBER_DASHBOARD_CONFIG.kycStatuses.pending;
 
   const memberId = getMemberId(membership);
+  const myFineShareouts = fineShareouts.flatMap((batch) => (batch.items || [])
+    .filter((item) => String(item.member_id?._id || item.member_id) === String(memberId))
+    .map((item) => ({ ...item, periodLabel: batch.period_label, batchStatus: batch.status })));
 
   const activeLoan =
     loanSummary?.active_loan || null;
@@ -478,6 +493,11 @@ function MemberDashboardView({ data, loanSummary, workspaceId }) {
           </div>
         </div>
       </header>
+
+      {myFineShareouts.length > 0 && <section className="rounded-3xl border border-violet-200 bg-violet-50 p-5 shadow-sm dark:border-violet-900 dark:bg-violet-950/30">
+        <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/60 dark:text-violet-300"><UsersRound size={18} /></span><div><h2 className="font-bold text-violet-950 dark:text-violet-100">Fine share-outs</h2><p className="text-sm text-violet-800 dark:text-violet-200">Your separately tracked share of fines distributed by the Chama.</p></div></div>
+        <div className="mt-3 divide-y divide-violet-200 dark:divide-violet-900">{myFineShareouts.map((item) => <div key={item._id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span className="font-medium">{item.periodLabel || 'Fine share-out'} · {String(item.batchStatus).replaceAll('_', ' ')}</span><span className="font-bold">{money(item.amount)} · {item.status}</span></div>)}</div>
+      </section>}
 
       {/* ======================================================================
        * QUICK ACTIONS (MOBILE FIRST)

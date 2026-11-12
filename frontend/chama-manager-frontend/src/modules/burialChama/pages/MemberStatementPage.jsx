@@ -16,9 +16,11 @@ function CardTitle({ children }) {
 }
 import { Download, Send, FileText, Smartphone, MessageSquare } from 'lucide-react';
 import api from '@/app/services/api';
+import { useWorkspace } from '@/app/hooks/useWorkspace';
 
 export default function MemberStatementPage() {
   const { workspaceId } = useParams();
+  const { membershipId } = useWorkspace();
   const queryClient = useQueryClient();
   const [selectedFormat, setSelectedFormat] = useState('app');
   const [selectedLanguage, setSelectedLanguage] = useState('sw');
@@ -27,8 +29,9 @@ export default function MemberStatementPage() {
   // Generate statement mutation
   const generateStatementMutation = useMutation({
     mutationFn: async (format) => {
+      if (!membershipId) throw new Error('Your membership is still loading. Refresh and try again.');
       const response = await api.post(
-        `/burial-chama/membership/${workspaceId}/statement`,
+        `/burial-chama/membership/${membershipId}/statement`,
         {
           format,
           language: selectedLanguage

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Smartphone, X, CheckCircle2, AlertCircle, Loader2, Clock, XCircle, RefreshCcw } from "lucide-react";
 import chamaApi from "@/modules/chama/api/chama.api";
 import financeApi from "@/modules/finance/api/finance.api";
+import contributionGroupApi from "@/modules/contribution-group/api/contributionGroup.api";
 import useStkPushFlow from "@/shared/hooks/useStkPushFlow";
 
 export default function MpesaStkModal({
@@ -11,12 +12,25 @@ export default function MpesaStkModal({
   obligationId = null,
   onSuccess,
   title = "Deposit to Savings via M-Pesa",
+  initiatedByOfficial = false,
+  initialAmount = "",
+  initialPhoneNumber = "",
+  existingPaymentIntentId = null,
+  existingCheckoutRequestId = null,
+  waitingOnly = false,
+  ownerType = "Chama",
 }) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [formError, setFormError] = useState(null);
 
   const fetchStatus = async (paymentIntentId) => {
+    if (ownerType === "ContributionGroup") {
+      const { data } = await contributionGroupApi.getPaymentIntentStatus(paymentIntentId);
+      const intent = data?.data;
+      if (!intent) return null;
+      return { status: intent.status, failureReason: intent.failure_reason, raw: intent };
+    }
     const { data } = await chamaApi.getPaymentIntent(chamaId, paymentIntentId);
     const intent = data?.data?.paymentIntent;
     if (!intent) return null;
@@ -38,10 +52,13 @@ export default function MpesaStkModal({
 
   useEffect(() => {
     if (isOpen) {
-      setPhoneNumber("");
-      setAmount("");
+      setPhoneNumber(initialPhoneNumber || "");
+      setAmount(initialAmount === "" ? "" : String(initialAmount));
       setFormError(null);
       reset();
+      if (waitingOnly && existingPaymentIntentId) {
+        beginWaiting(existingPaymentIntentId, existingCheckoutRequestId);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -71,7 +88,14 @@ export default function MpesaStkModal({
       startSending();
       const idempotencyKey = crypto.randomUUID();
 
-      const { data } = obligationId
+      const { data } = obligationId && initiatedByOfficial
+        ? await financeApi.initiateContributionObligationPayment({
+            obligationId,
+            amount: Number(amount),
+            paymentMethod: "MPESA",
+            phoneNumber: formattedPhone,
+          })
+        : obligationId
         ? await financeApi.initiateMpesaStkPush({
             chamaId,
             productType: "contribution",
@@ -149,7 +173,7 @@ export default function MpesaStkModal({
               </p>
             </div>
           </div>
-          <button onClick={onClose} disabled={isLocked} className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30">
+          <button onClick={onClose} disabled={isLocked && !waitingOnly} className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30">
             <X size={18} />
           </button>
         </div>
@@ -189,9 +213,7 @@ export default function MpesaStkModal({
             <div className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
               <Clock size={14} /> <span>Waiting... {secondsLeft}s</span>
             </div>
-            <button onClick={handleCancel} className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700">
-              <XCircle size={14} /> Cancel
-            </button>
+            {waitingOnly ? <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600">Close</button> : <button onClick={handleCancel} className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700"><XCircle size={14} /> Cancel</button>}
           </div>
         )}
 
@@ -214,7 +236,7 @@ export default function MpesaStkModal({
           </div>
         )}
 
-        {(phase === "idle" || isTerminalError) && (
+        {!waitingOnly && (phase === "idle" || isTerminalError) && (
           <form onSubmit={handleSubmit} className="mt-4 space-y-4">
             <div>
               <label className="mb-1 block text-xs font-bold">M-Pesa Phone *</label>
@@ -230,6 +252,7 @@ export default function MpesaStkModal({
             </button>
           </form>
         )}
+        {waitingOnly && isTerminalError && <button onClick={onClose} className="w-full rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-700">Close</button>}
       </div>
     </div>
   );

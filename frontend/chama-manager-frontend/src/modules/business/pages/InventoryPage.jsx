@@ -7,6 +7,7 @@ import { useBusinessInventory } from "../hooks/useBusiness";
 import PageHeader from "../../../shared/components/ui/PageHeader";
 import Spinner from "../../../shared/components/ui/Spinner";
 import { readImageAsDataUri } from "../../../shared/utils/readImageAsDataUri";
+import { marketplaceListingUrl } from "@/shared/lib/marketplaceUrl";
 
 const CATEGORY_COPY = {
   restaurant: { singular: "Menu Item", plural: "Menu Items", tracksStockDefault: false },
@@ -29,12 +30,16 @@ const MARKETPLACE_BADGE = {
 const EMPTY_FORM = {
   name: "",
   sku: "",
+  barcode: "",
   category: "",
   description: "",
   price: "",
   online_price: "",
   cost_price: "",
   quantity: "",
+  reorder_level: "5",
+  batch_number: "",
+  expiry_date: "",
   track_stock: true,
   visible_online: true,
   publish_to_marketplace: false,
@@ -87,12 +92,16 @@ export default function InventoryPage() {
     setForm({
       name: item.name || "",
       sku: item.sku || "",
+      barcode: item.barcode || "",
       category: item.category || "",
       description: item.description || "",
       price: item.price ?? "",
       online_price: item.online_price ?? "",
       cost_price: item.cost_price ?? "",
       quantity: item.quantity ?? "",
+      reorder_level: item.reorder_level ?? 5,
+      batch_number: item.batch_number || "",
+      expiry_date: item.expiry_date ? String(item.expiry_date).slice(0, 10) : "",
       track_stock: item.track_stock !== false,
       visible_online: item.visible_online !== false,
       icon: item.icon || "📦",
@@ -134,12 +143,16 @@ export default function InventoryPage() {
     const payload = {
       name: form.name,
       sku: form.sku,
+      barcode: form.barcode,
       category: form.category,
       description: form.description,
       price: Number(form.price),
       online_price: form.online_price === "" ? null : Number(form.online_price),
       cost_price: Number(form.cost_price || 0),
       quantity: form.track_stock ? Number(form.quantity || 0) : 0,
+      reorder_level: Number(form.reorder_level || 0),
+      batch_number: form.batch_number,
+      expiry_date: form.expiry_date || null,
       track_stock: form.track_stock,
       visible_online: form.visible_online,
       icon: form.icon,
@@ -183,6 +196,22 @@ export default function InventoryPage() {
     await restockInventoryItem({ itemId: restockTarget._id || restockTarget.id, add_quantity: Number(restockQty) });
     setRestockTarget(null);
     setRestockQty("");
+  };
+
+  const reconcileStock = async (item) => {
+    const entered = window.prompt(`Count the units physically on hand for ${item.name}:`, String(item.quantity || 0));
+    if (entered === null) return;
+    const count = Number(entered);
+    if (!Number.isInteger(count) || count < 0) {
+      toast.error("Enter a whole number of zero or more.");
+      return;
+    }
+    try {
+      await restockInventoryItem({ itemId: item._id || item.id, set_quantity: count });
+      toast.success(`Stock reconciled to ${count} units.`);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Could not reconcile stock.");
+    }
   };
 
   // Rentals publish rooms/plots from Rental Listings, so no publish controls here.
@@ -297,6 +326,9 @@ export default function InventoryPage() {
         ) : (
           inventoryList.map((item) => {
             const tracksStock = item.track_stock !== false;
+            const expired = item.expiry_date && new Date(item.expiry_date) < new Date(new Date().toDateString());
+            const expiringSoon = item.expiry_date && !expired && new Date(item.expiry_date) <= new Date(Date.now() + 30 * 86400000);
+            const lowStock = tracksStock && Number(item.quantity || 0) <= Number(item.reorder_level ?? 5);
             return (
               <div
                 key={item._id || item.id}
@@ -314,11 +346,20 @@ export default function InventoryPage() {
                     <div className="min-w-0">
                       <h3 className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {item.sku ? `SKU: ${item.sku}` : item.category || "General"}
+                      {item.sku ? `SKU: ${item.sku}` : item.category || "General"}{item.barcode ? ` · Barcode: ${item.barcode}` : ""}
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {(lowStock || expired || expiringSoon || item.batch_number) && (
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                    {lowStock && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-950 dark:text-amber-200">Low stock · reorder at {item.reorder_level ?? 5}</span>}
+                    {expired && <span className="rounded-full bg-red-50 px-2 py-1 text-red-700 dark:bg-red-950 dark:text-red-200">Expired</span>}
+                    {expiringSoon && <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700 dark:bg-orange-950 dark:text-orange-200">Expires {new Date(item.expiry_date).toLocaleDateString()}</span>}
+                    {item.batch_number && <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600 dark:bg-slate-700 dark:text-slate-200">Batch {item.batch_number}</span>}
+                  </div>
+                )}
 
                 {canPublish && (() => {
                   const badge = MARKETPLACE_BADGE[item.marketplace?.state || "not_published"];
@@ -353,12 +394,15 @@ export default function InventoryPage() {
 
                 <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                   {tracksStock && (
+                    <>
                     <button
                       onClick={() => openRestock(item)}
                       className="flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300"
                     >
                       <PackagePlus size={13} /> Restock
                     </button>
+                    <button onClick={() => reconcileStock(item)} className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100 dark:bg-sky-950 dark:text-sky-300">Count stock</button>
+                    </>
                   )}
                   {canPublish && (() => {
                     const state = item.marketplace?.state || "not_published";
@@ -378,14 +422,15 @@ export default function InventoryPage() {
                     return (
                       <>
                         {state === "live" && item.marketplace?.slug && (
-                          <Link
-                            to={`/marketplace/${item.marketplace.category_slug || "retail"}/listings/${item.marketplace.slug}`}
+                          <a
+                            href={marketplaceListingUrl(item.marketplace.category_slug, item.marketplace.slug)}
                             target="_blank"
+                            rel="noreferrer"
                             title="View on marketplace"
                             className="flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300"
                           >
                             <ExternalLink size={13} /> View
-                          </Link>
+                          </a>
                         )}
                         <button
                           onClick={() => handleUnpublish(item)}
@@ -473,6 +518,25 @@ export default function InventoryPage() {
                     onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
                     className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-primary dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-500">Barcode</label>
+                  <input value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white" placeholder="Scan or enter barcode" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-500">Batch / lot number</label>
+                  <input value={form.batch_number} onChange={(e) => setForm((f) => ({ ...f, batch_number: e.target.value }))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-500">Expiry date</label>
+                  <input type="date" value={form.expiry_date} onChange={(e) => setForm((f) => ({ ...f, expiry_date: e.target.value }))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-500">Low stock alert at</label>
+                  <input type="number" min="0" value={form.reorder_level} onChange={(e) => setForm((f) => ({ ...f, reorder_level: e.target.value }))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
                 </div>
               </div>
 

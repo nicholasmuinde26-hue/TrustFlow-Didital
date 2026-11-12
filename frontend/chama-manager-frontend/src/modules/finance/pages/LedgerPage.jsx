@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import Spinner from "@/shared/components/ui/Spinner";
 import useLedger from "../hooks/useLedger";
-import { Download, ChevronLeft, ChevronRight, Users, Coins, X } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, Users, Coins, X, Building2 } from "lucide-react";
+import useWorkspace from "@/app/hooks/useWorkspace";
 import financeService from "../services/finance.service";
 
 const { safeNumber } = financeService;
@@ -33,7 +34,7 @@ const isIncomeFundAccount = (account) => {
   return /^(BIZ_|ASI_|ASE_)/.test(code) || code === "PROFIT_WALLET_PAYABLE";
 };
 
-const fundOf = (account) => (isIncomeFundAccount(account) ? "income" : "chama");
+const fundOf = (account, isBusiness = false) => isBusiness ? "business" : (isIncomeFundAccount(account) ? "income" : "chama");
 
 const FUNDS = {
   chama: {
@@ -59,6 +60,18 @@ const FUNDS = {
     tabOn: "bg-amber-500 text-white shadow-xs",
     mainStat: "text-amber-600 dark:text-amber-400",
     mainLabel: "Income Balance",
+  },
+  business: {
+    key: "business",
+    label: "Business Activity",
+    blurb: "Sales, purchases, expenses and cash movements recorded by this business",
+    icon: Building2,
+    badge: "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300",
+    border: "border-sky-200/80 dark:border-sky-500/30",
+    bar: "bg-sky-500",
+    tabOn: "bg-sky-600 text-white shadow-xs",
+    mainStat: "text-sky-600 dark:text-sky-400",
+    mainLabel: "Business Equity",
   },
 };
 
@@ -103,7 +116,12 @@ function FundSection({ fund, data, selectedAccountId, onPickAccount, fetching })
   const held = sumBalances(accounts, (a) => a.account_type === "asset");
   let mainBalance;
   let subline;
-  if (fund === "chama") {
+  if (fund === "business") {
+    mainBalance = sumBalances(accounts, (a) => a.account_type === "equity");
+    const incomeEarned = sumBalances(accounts, (a) => a.account_type === "income");
+    const expenses = sumBalances(accounts, (a) => a.account_type === "expense");
+    subline = `Sales and other income ${money(incomeEarned)} · Expenses ${money(expenses)} · Cash, bank and M-Pesa ${money(held)}`;
+  } else if (fund === "chama") {
     mainBalance = sumBalances(accounts, (a) => a.account_type === "equity");
     subline = `Held as cash, bank and M-Pesa: ${money(held)}`;
   } else {
@@ -275,9 +293,15 @@ function FundSection({ fund, data, selectedAccountId, onPickAccount, fetching })
 // ------------------------------------------------------------
 export default function LedgerPage() {
   const { workspaceId } = useParams();
-  const [tab, setTab] = useState("all"); // all | chama | income
+  const workspace = useWorkspace();
+  const isBusiness = workspace?.isBusiness || workspace?.workspaceType === "business";
+  const [tab, setTab] = useState(isBusiness ? "business" : "all"); // all | chama | income | business
   const [filters, setFilters] = useState({ accountId: "", dateFrom: "", dateTo: "" });
   const [accounts, setAccounts] = useState([]);
+
+  useEffect(() => {
+    if (isBusiness) setTab("business");
+  }, [isBusiness]);
 
   // scope=all so the dropdown also lists the income fund's accounts
   // (the endpoint defaults to the pooled chama accounts only).
@@ -291,8 +315,9 @@ export default function LedgerPage() {
             setAccounts(
               data.map((a) => ({
                 ...a,
+                name: isBusiness && a.account_code === "CHAMA_CAPITAL" ? "Owner Capital" : a.name,
                 id: String(a._id || a.id),
-                fund: fundOf(a),
+                fund: fundOf(a, isBusiness),
               }))
             );
           }
@@ -302,7 +327,7 @@ export default function LedgerPage() {
     return () => {
       mounted = false;
     };
-  }, [workspaceId]);
+  }, [workspaceId, isBusiness]);
 
   // Only send filters that are actually set.
   const queryFilters = useMemo(() => {
@@ -347,17 +372,19 @@ export default function LedgerPage() {
           ts: Number.isFinite(ts) ? ts : 0,
           date: formatDate(when),
           journalRef: e.journal_ref || e.reference || "-",
-          accountName: e.account_name || account?.name || "Unknown Account",
+          accountName: isBusiness && account?.account_code === "CHAMA_CAPITAL"
+            ? "Owner Capital"
+            : e.account_name || account?.name || "Unknown Account",
           accountCode: account?.account_code || "",
           description: e.description || e.account_name || "General Ledger Entry",
           categoryLabel: e.category && e.category_label !== "Other" ? e.category_label : "",
           debit: safeNumber(e.debit),
           credit: safeNumber(e.credit),
-          fund: fundOf(account),
+          fund: fundOf(account, isBusiness),
         };
       })
       .sort((a, b) => b.ts - a.ts);
-  }, [entries]);
+  }, [entries, isBusiness]);
 
   const sections = useMemo(() => {
     const build = (fund) => {
@@ -369,14 +396,14 @@ export default function LedgerPage() {
         accounts: accounts.filter((a) => a.fund === fund),
       };
     };
-    return { chama: build("chama"), income: build("income") };
+    return { chama: build("chama"), income: build("income"), business: build("business") };
   }, [normalized, accounts]);
 
   const visibleFunds = useMemo(() => {
-    const funds = tab === "all" ? ["chama", "income"] : [tab];
+    const funds = isBusiness ? ["business"] : tab === "all" ? ["chama", "income"] : [tab];
     // With a specific account picked, hide a fund that has nothing to show.
     return filters.accountId ? funds.filter((f) => sections[f].entries.length > 0) : funds;
-  }, [tab, filters.accountId, sections]);
+  }, [tab, filters.accountId, sections, isBusiness]);
 
   const visibleEntries = useMemo(
     () => visibleFunds.flatMap((f) => sections[f].entries).sort((a, b) => b.ts - a.ts),
@@ -460,7 +487,7 @@ export default function LedgerPage() {
           aria-label="Ledger fund"
           className="mb-5 inline-flex flex-wrap gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-obsidian"
         >
-          {TABS.map((t) => {
+          {(isBusiness ? [{ key: "business", label: FUNDS.business.label }] : TABS).map((t) => {
             const active = tab === t.key;
             const onClass =
               t.key === "all"

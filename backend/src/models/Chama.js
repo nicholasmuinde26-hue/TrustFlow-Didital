@@ -75,6 +75,16 @@ const chamaSchema = new mongoose.Schema(
       default: 'standard'
     },
 
+    // Organization family and subtype are descriptive metadata. They do not
+    // determine which features are enabled; workspace_config.modules does.
+    organization_family: {
+      type: String,
+      enum: ['chama', 'sacco', 'cooperative'],
+      default: 'chama',
+      index: true,
+    },
+    organization_type: { type: String, default: 'custom', trim: true, maxlength: 60 },
+
 
     // ========================================
     // CHAMA STATUS
@@ -140,6 +150,7 @@ const chamaSchema = new mongoose.Schema(
     workspace_config: {
       preset: { type: String, default: 'standard' },
       modules: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      terminology: { type: mongoose.Schema.Types.Mixed, default: () => ({ workspace: 'Chama', module_labels: {} }) },
       version: { type: Number, default: 1 },
       configured_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       configured_at: { type: Date, default: null }

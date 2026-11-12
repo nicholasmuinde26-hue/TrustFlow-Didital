@@ -1,3 +1,4 @@
+import { alertUser } from "../../services/accountAlert.service.js";
 import mongoose from "mongoose";
 import MemberWallet, { MemberWalletEntry } from "../../models/MemberWallet.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
@@ -42,6 +43,11 @@ export async function changeMemberWalletPin({ userId, currentPin, newPin }) {
   wallet.wallet_pin_failed_attempts = 0;
   wallet.wallet_pin_locked_until = null;
   await wallet.save();
+  alertUser(userId, {
+    title: "Wallet PIN changed",
+    message: "Your wallet PIN was just changed. If this was not you, contact your chama leadership straight away.",
+    urgent: true,
+  });
   return { pin_set: true };
 }
 
@@ -60,6 +66,11 @@ async function verifyMemberWalletPin(userId, pin) {
         { _id: wallet._id },
         { $set: { wallet_pin_locked_until: new Date(Date.now() + PIN_LOCKOUT_MS), wallet_pin_failed_attempts: 0 } }
       );
+      alertUser(userId, {
+        title: "Wallet locked",
+        message: "Your wallet was locked for 15 minutes after several wrong PIN attempts. If this was not you, change your PIN.",
+        urgent: true,
+      });
       throw new AppError("Too many incorrect wallet PIN attempts. Wallet actions are locked for 15 minutes.", 429);
     }
     throw new AppError("Incorrect wallet PIN", 401);
@@ -132,6 +143,10 @@ export async function reconcileMemberWalletDeposit({ checkoutRequestId, success,
     entry.status = "failed";
     entry.failure_reason = reason || "M-Pesa deposit was not completed";
     await entry.save();
+    alertUser(entry.user_id, {
+      title: "Wallet deposit failed",
+      message: `Your deposit of KES ${Number(entry.amount?.toString?.() ?? entry.amount).toLocaleString("en-KE")} was not completed. No money was taken from your wallet.`,
+    });
     return entry;
   }
   const updated = await MemberWalletEntry.findOneAndUpdate(
@@ -141,6 +156,10 @@ export async function reconcileMemberWalletDeposit({ checkoutRequestId, success,
   );
   if (!updated) return MemberWalletEntry.findById(entry._id);
   await MemberWallet.updateOne({ user_id: entry.user_id }, { $inc: { balance: decimal(entry.amount) } });
+  alertUser(entry.user_id, {
+    title: "Wallet deposit received",
+    message: `KES ${Number(entry.amount?.toString?.() ?? entry.amount).toLocaleString("en-KE")} has been added to your wallet.`,
+  });
   return updated;
 }
 
@@ -213,6 +232,10 @@ export async function reconcileMemberWalletWithdrawal({ conversationId, success,
       ? { $inc: { reserved_balance: decimal(-entry.amount) } }
       : { $inc: { balance: decimal(entry.amount), reserved_balance: decimal(-entry.amount) } }
   );
+  const amountText = `KES ${Number(entry.amount?.toString?.() ?? entry.amount).toLocaleString("en-KE")}`;
+  alertUser(entry.user_id, success
+    ? { title: "Wallet withdrawal sent", message: `${amountText} was sent to your M-Pesa.` }
+    : { title: "Wallet withdrawal failed", message: `Your withdrawal of ${amountText} failed and the money is back in your wallet.`, urgent: true });
   return entry;
 }
 

@@ -25,7 +25,7 @@ const colors = {
     inverse: "#FFFFFF",
   },
 
-  // "VeriCircle dark" — sampled directly from the Doc1 mockup screens.
+  // "ChamaManager dark" — sampled directly from the Doc1 mockup screens.
   // This is the palette the .dark class now renders (see
   // styles/variables.css); ThemeProvider toggles it on, light stays default.
   dark: {

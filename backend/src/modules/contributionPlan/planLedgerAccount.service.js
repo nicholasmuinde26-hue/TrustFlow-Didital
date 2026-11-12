@@ -43,9 +43,13 @@ const savingsChildrenEnabled = () => String(process.env.PLAN_LEDGER_SAVINGS || '
 
 export const planAccountCode = (plan) => `CP-${String(plan._id).slice(-12).toUpperCase()}`;
 
-const parentCodeFor = (plan) => (plan.behavior === 'savings' ? 'MEMBER_SAVINGS' : 'MEMBER_CONTRIBUTIONS');
+const parentCodeFor = (plan) => {
+  if (plan.behavior === 'savings') return 'MEMBER_SAVINGS';
+  if (plan.behavior === 'fine' || plan.system_key === 'late_penalties') return 'FINE_BALANCE';
+  return 'MEMBER_CONTRIBUTIONS';
+};
 
-const accountName = (plan, suffix = '') => `Contributions - ${plan.name}${suffix}`.slice(0, 100);
+const accountName = (plan, suffix = '') => `${plan.behavior === 'fine' || plan.system_key === 'late_penalties' ? 'Fines' : 'Contributions'} - ${plan.name}${suffix}`.slice(0, 100);
 
 const findParent = async (plan) => {
   const filter = { owner_type: plan.owner_type, owner_id: plan.owner_id, account_code: parentCodeFor(plan) };
@@ -65,17 +69,32 @@ const findParent = async (plan) => {
  */
 export const ensurePlanLedgerAccount = async (plan, { force = false, actorUserId = null } = {}) => {
   if (!plan || !ownsLedgerAccount(plan)) return null;
+  const isFinePlan = plan.behavior === 'fine' || plan.system_key === 'late_penalties';
   // Chama plans only: contribution-group funds pay out against the shared account.
   if (plan.owner_type !== 'Chama') return null;
-  if (!force && !planLedgersEnabled()) return null;
+  if (!force && !planLedgersEnabled() && !isFinePlan) return null;
   if (plan.behavior === 'savings' && !savingsChildrenEnabled()) return null;
 
+  const parent = await findParent(plan);
   if (plan.ledger_account_id) {
     const existing = await FinancialAccount.findById(plan.ledger_account_id);
-    if (existing) return existing;
+    if (existing) {
+      // Fine plans used to share the Member Contributions parent. Reattach
+      // their existing sub-ledger so historic fine balances remain intact
+      // while future receipts and share-outs stay in the fine fund.
+      if ((plan.behavior === 'fine' || plan.system_key === 'late_penalties') && parent && (
+        String(existing.parent_account_id || '') !== String(parent._id) || existing.account_category === 'contribution'
+      )) {
+        existing.parent_account_id = parent._id;
+        existing.account_category = 'other';
+        existing.name = accountName(plan);
+        existing.description = `Fine balance collected under the "${plan.name}" plan`;
+        await existing.save();
+      }
+      return existing;
+    }
   }
 
-  const parent = await findParent(plan);
   if (!parent) return null;
 
   const filter = { owner_type: plan.owner_type, owner_id: plan.owner_id, account_code: planAccountCode(plan) };
@@ -93,7 +112,7 @@ export const ensurePlanLedgerAccount = async (plan, { force = false, actorUserId
       // Not a system account: system accounts may not be closed or renamed,
       // and the model only allows a system_key on those.
       is_system_account: false,
-      description: `Money collected under the "${plan.name}" contribution`,
+      description: `${plan.behavior === 'fine' || plan.system_key === 'late_penalties' ? 'Fine balance collected' : 'Money collected'} under the "${plan.name}" plan`,
       created_by: actorUserId || plan.created_by || null,
     };
     try {

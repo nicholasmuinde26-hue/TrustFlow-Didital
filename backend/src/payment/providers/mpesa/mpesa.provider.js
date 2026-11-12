@@ -14,7 +14,8 @@ class MpesaProvider {
       phoneNumber: context.phoneNumber,
       accountReference: context.reference,
       displayReference: context.reference,
-      transactionDescription: context.metadata?.description || `Chama Payment: ${context.reference}`
+      transactionDescription: context.metadata?.description || `Chama Payment: ${context.reference}`,
+      callbackUrl: context.metadata?.callbackUrl || undefined,
     });
 
     if (!result.success) {

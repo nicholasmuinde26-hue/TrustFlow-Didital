@@ -28,7 +28,7 @@ import {
   useChamaSettings,
   useUpdateChamaSettings,
 } from "@/modules/chama/hooks/useChamaSettings";
-import { canEditChamaSettings } from "@/modules/workspaces/permissions/Permissions";
+import { canEditChamaSettings } from '@/modules/workspaces/index.js';
 
 import WorkspaceModulesPanel from "../components/WorkspaceModulesPanel";
 import ChamaPublicProfileEditor from "@/modules/chama/components/ChamaPublicProfileEditor";

@@ -1,15 +1,16 @@
 import React from "react";
-import { Building2, Sparkles, RefreshCw, Users, Eye } from "lucide-react";
+import { Building2, Sparkles, Users, Eye } from "lucide-react";
 
-const ROLE_LABELS = { chairperson: "Chairperson", treasurer: "Treasurer", manager: "Business manager", member: "Member" };
+const ROLE_LABELS = { owner: "Business owner", manager: "Business manager", cashier: "Cashier", inventory: "Stock manager", accountant: "Accounts", chairperson: "Chairperson", treasurer: "Treasurer", member: "Member" };
 
-export function BusinessHeader({ profile, onRefresh, refreshing }) {
+export function BusinessHeader({ profile }) {
   const isChamaOwned = profile?.owner_type === "chama";
   const canManage = profile?.access?.canManage !== false;
   const role = profile?.access?.role;
+  const category = profile?.category_label || ({ retail: "Retail & wholesale", rental: "Rental property", restaurant: "Restaurant & food", service: "Service provider", other: "General business" }[profile?.category] || "Business");
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
+    <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 dark:border-slate-800">
       <div className="flex items-center gap-3.5">
         <div className="h-12 w-12 rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300 border border-violet-200 dark:border-violet-800 flex items-center justify-center font-bold">
           <Building2 size={24} />
@@ -31,10 +32,13 @@ export function BusinessHeader({ profile, onRefresh, refreshing }) {
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                Personal
+              {role && role !== "owner" ? "Business staff" : "Independent business"}
               </span>
             )}
           </div>
+          {!isChamaOwned && role && role !== "owner" && (
+            <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">Your access: {ROLE_LABELS[role] || role}</p>
+          )}
           {isChamaOwned && role && (
             <p className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
               {canManage ? null : <Eye size={11} />}
@@ -42,19 +46,11 @@ export function BusinessHeader({ profile, onRefresh, refreshing }) {
             </p>
           )}
           <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-            {profile?.category} • Currency: {profile?.currency || "KES"} • Till: #{profile?.mPesaTill}
+            {category} · {profile?.location || "Location not set"} · {profile?.currency || "KES"}{(profile?.mpesa_till || profile?.mPesaTill) ? ` · Till ${profile.mpesa_till || profile.mPesaTill}` : ""}
           </p>
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={refreshing}
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 disabled:opacity-50"
-      >
-        <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Sync Data
-      </button>
     </div>
   );
 }

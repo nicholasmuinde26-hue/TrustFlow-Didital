@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import React, { useState } from "react";
 import { X, AlertTriangle, AlertCircle, ShieldAlert, ExternalLink, Check } from "lucide-react";
 import {
@@ -68,7 +69,12 @@ export default function ActionConfirmationDialog({
       });
     } catch (err) {
       // Show record-changed / validation-failed error from the backend envelope
-      alert(err?.response?.data?.message || 'This action could not be completed. Please try again.');
+      await notifyResult({
+        variant: 'danger',
+        title: 'This action could not be completed',
+        message: err?.response?.data?.message || 'Please try again.',
+        confirmText: 'OK'
+      });
       return;
     }
 

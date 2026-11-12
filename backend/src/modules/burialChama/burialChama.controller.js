@@ -3,6 +3,7 @@ import BurialChamaRulesEngine from './burialChamaRules.service.js';
 import MemberStatementService from './memberStatement.service.js';
 import UssdService from './ussd.service.js';
 import BurialChamaSetupWizardService from './setupWizard.service.js';
+import BurialOperationsService from './burialOperations.service.js';
 
 // ======================================================
 // BURIAL CHAMA CONTROLLER
@@ -11,6 +12,114 @@ import BurialChamaSetupWizardService from './setupWizard.service.js';
 // ======================================================
 
 class BurialChamaController {
+  static async listFundraisingCampaigns(req, res) {
+    try { res.json({ success: true, data: await BurialOperationsService.listCampaigns(req.membership.chama_id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async createFundraisingCampaign(req, res) {
+    try { res.status(201).json({ success: true, data: await BurialOperationsService.createCampaign(req.membership.chama_id, req.user.id, req.body) }); }
+    catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+  }
+  static async recordFundraisingContribution(req, res) {
+    try { res.status(201).json({ success: true, data: await BurialOperationsService.recordCampaignContribution(req.membership.chama_id, req.params.campaignId, req.user.id, req.body) }); }
+    catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+  }
+  static async listBurialEquipment(req, res) {
+    try { res.json({ success: true, data: await BurialOperationsService.listEquipment(req.membership.chama_id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async createBurialEquipment(req, res) {
+    try { res.status(201).json({ success: true, data: await BurialOperationsService.createEquipment(req.membership.chama_id, req.user.id, req.body) }); }
+    catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+  }
+  static async listBurialEquipmentBookings(req, res) {
+    try { res.json({ success: true, data: await BurialOperationsService.listEquipmentBookings(req.membership.chama_id, req.membership.role) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async createBurialEquipmentBooking(req, res) {
+    try { res.status(201).json({ success: true, data: await BurialOperationsService.createEquipmentBooking(req.membership.chama_id, req.user.id, req.body) }); }
+    catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+  }
+  static async returnBurialEquipmentBooking(req, res) {
+    try { res.json({ success: true, data: await BurialOperationsService.returnEquipment(req.membership.chama_id, req.params.bookingId, req.body) }); }
+    catch (error) { res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+  }
+  static async listBurialCases(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.listBurialCases(req.membership.chama_id, req.membership._id, req.membership.role) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async getBurialCase(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.getBurialCase(req.params.caseId, req.membership.chama_id, req.membership._id, req.membership.role) }); }
+    catch (error) { res.status(404).json({ success: false, message: error.message }); }
+  }
+  static async addCaseDocuments(req, res) {
+    try { res.status(201).json({ success: true, data: await BurialChamaService.addCaseDocuments(req.params.caseId, req.membership.chama_id, req.user.id, req.body.documents) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async verifyCaseDocument(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.verifyCaseDocument(req.params.caseId, req.params.documentId, req.membership.chama_id, req.user.id, req.membership, req.body.verified !== false) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async recordHomeVisit(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.recordHomeVisit(req.params.caseId, req.membership.chama_id, req.membership, req.user.id, req.body.completed, req.body.notes) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async resolveFraudFlag(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.resolveFraudFlag(req.params.caseId, req.params.flagId, req.membership.chama_id, req.membership, req.user.id, req.body.reason) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async getNextOfKin(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.getNextOfKin(req.params.membershipId, req.membership.chama_id, req.user.id, req.membership?.role) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async replaceNextOfKin(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.replaceNextOfKin(req.params.membershipId, req.membership.chama_id, req.body.contacts, req.user.id, req.membership?.role) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async requestBurialPayoutApproval(req, res) {
+    try { res.status(201).json({ success: true, data: await BurialChamaService.requestBurialPayoutApproval(req.params.caseId, req.membership.chama_id, req.membership, req.user.id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async disburseBurialBenefit(req, res) {
+    try { res.status(202).json({ success: true, data: await BurialChamaService.disburseBurialBenefit(req.params.caseId, req.membership.chama_id, req.membership, req.user.id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async listChamaBeneficiaries(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.listChamaBeneficiaries(req.params.chamaId) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async listHouseholds(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.listHouseholds(req.membership.chama_id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async getHousehold(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.getHousehold(req.params.householdId, req.membership.chama_id) }); }
+    catch (error) { res.status(404).json({ success: false, message: error.message }); }
+  }
+  static async updateHousehold(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.updateHousehold(req.params.householdId, req.membership.chama_id, req.body, req.user.id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async removeHouseholdMember(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.removeHouseholdMember(req.params.householdId, req.membership.chama_id, req.params.membershipId) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async dissolveHousehold(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.dissolveHousehold(req.params.householdId, req.membership.chama_id, req.user.id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async listPenaltyWaivers(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.listPenaltyWaivers(req.params.chamaId) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async listMeetingRecords(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.listMeetingRecords(req.params.chamaId) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
+  static async getMyCoverage(req, res) {
+    try { res.json({ success: true, data: await BurialChamaService.getMemberCoverage(req.membership._id) }); }
+    catch (error) { res.status(400).json({ success: false, message: error.message }); }
+  }
   /**
    * Create or update burial chama profile
    */
@@ -95,7 +204,9 @@ class BurialChamaController {
       const beneficiary = await BurialChamaService.addBeneficiary(
         membershipId,
         beneficiaryData,
-        userId
+        userId,
+        req.membership?.role,
+        req.membership?.chama_id
       );
 
       res.status(201).json({
@@ -123,7 +234,9 @@ class BurialChamaController {
       const beneficiary = await BurialChamaService.updateBeneficiary(
         beneficiaryId,
         updateData,
-        userId
+        userId,
+        req.membership?.role,
+        req.membership?.chama_id
       );
 
       res.status(200).json({
@@ -146,7 +259,7 @@ class BurialChamaController {
     try {
       const { membershipId } = req.params;
 
-      const beneficiaries = await BurialChamaService.getMemberBeneficiaries(membershipId);
+      const beneficiaries = await BurialChamaService.getMemberBeneficiaries(membershipId, req.user.id, req.membership?.role, req.membership?.chama_id);
 
       res.status(200).json({
         success: true,
@@ -223,7 +336,7 @@ class BurialChamaController {
       const caseData = req.body;
       const userId = req.user.id;
 
-      const burialCase = await BurialChamaService.createBurialCase(caseData, userId);
+      const burialCase = await BurialChamaService.createBurialCase(caseData, userId, req.membership);
 
       res.status(201).json({
         success: true,
@@ -249,9 +362,11 @@ class BurialChamaController {
 
       const burialCase = await BurialChamaService.updateBurialCaseStatus(
         caseId,
+        req.membership.chama_id,
         status,
         updateData,
-        userId
+        userId,
+        req.membership
       );
 
       res.status(200).json({
@@ -274,7 +389,7 @@ class BurialChamaController {
     try {
       const { caseId } = req.params;
 
-      const burialCase = await BurialChamaService.calculateCaseBenefit(caseId);
+      const burialCase = await BurialChamaService.calculateCaseBenefit(caseId, req.membership.chama_id, req.user.id, req.body?.ex_gratia === true, req.membership);
 
       res.status(200).json({
         success: true,
@@ -351,6 +466,7 @@ class BurialChamaController {
 
       const waiver = await BurialChamaService.approvePenaltyWaiver(
         waiverId,
+        req.membership.chama_id,
         approvalData,
         userId
       );
@@ -437,6 +553,20 @@ class BurialChamaController {
         success: false,
         message: error.message
       });
+    }
+  }
+
+  static async assignMembershipClass(req, res) {
+    try {
+      const membership = await BurialChamaService.assignMembershipClass(
+        req.params.chamaId,
+        req.params.membershipId,
+        req.body.class_name,
+        req.membership?._id
+      );
+      res.json({ success: true, data: membership });
+    } catch (error) {
+      res.status(400).json({ success: false, message: error.message });
     }
   }
 
@@ -555,10 +685,11 @@ class BurialChamaController {
         membershipId,
         language || 'sw'
       );
+      const coverage = await BurialChamaService.getMemberCoverage(membershipId);
 
       res.status(200).json({
         success: true,
-        data: balance
+        data: { ...balance, coverage }
       });
     } catch (error) {
       res.status(400).json({

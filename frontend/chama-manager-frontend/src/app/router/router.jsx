@@ -1,4 +1,6 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useLocation, useParams } from "react-router-dom";
+import { marketplaceUrl } from "@/shared/lib/marketplaceUrl";
+import { givingUrl } from "@/shared/lib/givingUrl";
 
 import ProtectedRoute from "./ProtectedRoute";
 import GuestRoute from "./GuestRoute";
@@ -47,6 +49,7 @@ import HomePage from "@/modules/home/pages/HomePage";
 import CreateChamaPage from "@/modules/home/pages/CreateChamaPage";
 import JoinChamaPage from "@/modules/home/pages/JoinChamaPage";
 import CreateContributionGroupPage from "@/modules/home/pages/CreateContributionGroupPage";
+import PublicCausePreviewPage from "@/modules/contribution-group/pages/PublicCausePreviewPage";
 import CreateBusinessPage from "@/modules/home/pages/CreateBusinessPage";
 
 // ======================================================
@@ -65,12 +68,12 @@ import AccountSettingsPage from "@/modules/account/pages/AccountSettingsPage";
 // Workspace Core
 // ======================================================
 
-import WorkspaceOverviewPage from "@/modules/workspaces/pages/WorkspaceOverviewPage";
-import WorkspaceSettingsPage from "@/modules/workspaces/pages/WorkspaceSettingsPage";
-import WorkspacesPage from "@/modules/workspaces/pages/WorkspacesPage";
+import { WorkspaceOverviewPage } from '@/modules/workspaces/index.js';
+import { WorkspaceSettingsPage } from '@/modules/workspaces/index.js';
+import { WorkspacesPage } from '@/modules/workspaces/index.js';
 import RequireWorkspaceRole from "@/shared/components/routing/RequireWorkspaceRole";
 import RequireModule from "@/shared/components/routing/RequireModule";
-import { canViewAdministration, canViewLeadershipDesk, canManageBurialChamaSetup } from "@/modules/workspaces/permissions/Permissions";
+import { canViewAdministration, canViewLeadershipDesk, canManageBurialChamaSetup } from '@/modules/workspaces/index.js';
 import LegacyLeadershipRedirect from "@/modules/leadership/components/LegacyLeadershipRedirect";
 
 // ======================================================
@@ -92,15 +95,7 @@ import PosPage from "@/modules/business/pages/PosPage";
 import KitchenPage from "@/modules/business/pages/KitchenPage";
 import BusinessMarketplacePage from "@/modules/business/pages/BusinessMarketplacePage";
 
-// ======================================================
-// Marketplace Hubs & Public Discovery
-// ======================================================
-
-import MarketplaceHomePage from "@/modules/marketplace/pages/MarketplaceHomePage";
-import MarketplaceCategoryPage from "@/modules/marketplace/pages/MarketplaceCategoryPage";
-import MarketplaceListingDetailPage from "@/modules/marketplace/pages/MarketplaceListingDetailPage";
-import MarketplacePublicBusinessPage from "@/modules/marketplace/pages/MarketplacePublicBusinessPage";
-import MarketplaceOrderTrackPage from "@/modules/marketplace/pages/MarketplaceOrderTrackPage";
+// Marketplace administration stays in ChamaManager; public browsing lives on the standalone shop.
 import MarketplaceAdminConsole from "@/modules/admin/pages/MarketplaceAdminConsole";
 import AdminRevenuePage from "@/modules/admin/pages/AdminRevenuePage";
 import AdminSupportPage from "@/modules/admin/pages/AdminSupportPage";
@@ -113,7 +108,6 @@ import BillingPage from "@/modules/billing/pages/BillingPage";
 // Public cause preview (no auth)
 // ======================================================
 
-import PublicCausePreviewPage from "@/modules/contribution-group/pages/PublicCausePreviewPage";
 
 // ======================================================
 // Members
@@ -125,11 +119,8 @@ import MembersPage from "@/modules/members/pages/MembersPage";
 // Communication
 // ======================================================
 
-import AnnouncementsPage from "@/modules/announcements/pages/AnnouncementsPage";
-import ChatPage from "@/modules/chat/pages/ChatPage";
-import CollaborationLayout from "@/modules/chat/layouts/CollaborationLayout";
-import MeetingsPage from "@/modules/meetings/pages/MeetingsPage";
-import PollsPage from "@/modules/polls/pages/PollsPage";
+import { CollaborationLayout } from "@/modules/chat/index.js";
+import { workspaceFeatureModules } from "@/modules/registry";
 import NotificationCenterPage from "@/modules/notifications/pages/NotificationCenterPage";
 import NotificationPreferencesPage from "@/modules/notifications/pages/NotificationPreferencesPage";
 
@@ -156,7 +147,7 @@ import PublicChamaProfilePage from "@/modules/chama/pages/PublicChamaProfilePage
 // survive as redirects (LegacyLeadershipRedirect) so bookmarks and
 // in-app links that still point at /command-center keep working.
 import LeadershipDeskPage from "@/modules/leadership/pages/LeadershipDeskPage";
-import MyChamaRouterPage from "@/modules/workspaces/pages/MyChamaRouterPage";
+import { MyChamaRouterPage } from '@/modules/workspaces/index.js';
 
 // ======================================================
 // Burial Chama Module
@@ -185,6 +176,7 @@ import UpdatesPage from "@/modules/contribution-group/pages/UpdatesPage";
 import MoneyDashboardPage from "@/modules/finance/pages/MoneyDashboardPage";
 import MyWalletPage from "@/modules/finance/pages/MyWalletPage";
 import RecordContributionPage from "@/modules/finance/pages/RecordContributionPage";
+import MemberFinesPage from "@/modules/fines/pages/MemberFinesPage";
 import FinanceContributionsPage from "@/modules/finance/pages/ContributionsPage";
 import ContributionRegisterPage from "@/modules/finance/pages/ContributionRegisterPage";
 import TransactionsPage from "@/modules/finance/pages/TransactionsPage";
@@ -205,6 +197,21 @@ import PayoutsPage from "@/modules/finance/pages/PayoutsPage";
 import CreatePayoutPage from "@/modules/finance/pages/CreatePayoutPage";
 import FinanceOperationPage from "@/modules/finance/pages/FinanceOperationPage";
 
+function ExternalMarketplaceRedirect() {
+  const { pathname, search } = useLocation();
+  const target = pathname.startsWith("/businesses/")
+    ? pathname.replace("/businesses/", "/stores/")
+    : pathname.replace(/^\/marketplace/, "") || "/";
+  window.location.replace(marketplaceUrl(`${target}${search}`));
+  return null;
+}
+
+function GivingRedirect() {
+  const { joinCode } = useParams();
+  window.location.replace(givingUrl(joinCode));
+  return null;
+}
+
 const router = createBrowserRouter([
   // ======================================================
   // PUBLIC
@@ -214,41 +221,18 @@ const router = createBrowserRouter([
     path: "/",
     element: <LandingPage />,
   },
-
-  // Public Cause Preview link (e.g. /g/CG-X89K2P)
   {
-    path: "/g/:joinCode",
-    element: <PublicCausePreviewPage />,
+    path: "/auth/giving-handoff",
+    element: <main className="min-h-screen grid place-items-center"><p>Securing your sign-in and opening your workspace…</p></main>,
   },
 
-  // ======================================================
-  // PUBLIC MARKETPLACE (Category Hubs & Multi-Vendor Discovery)
-  // ======================================================
+  // Public cause links move to the standalone Giving site.
+  { path: "/g/:joinCode", element: <GivingRedirect /> },
+  { path: "/groups/join/:joinCode", element: <PublicCausePreviewPage /> },
 
-  {
-    path: "/marketplace",
-    element: <Navigate to="/marketplace/retail" replace />,
-  },
-  {
-    path: "/marketplace/track",
-    element: <MarketplaceOrderTrackPage />,
-  },
-  {
-    path: "/marketplace/:categorySlug",
-    element: <MarketplaceCategoryPage />,
-  },
-  {
-    path: "/marketplace/:category/products/:slug",
-    element: <MarketplaceListingDetailPage />,
-  },
-  {
-    path: "/marketplace/:category/listings/:slug",
-    element: <MarketplaceListingDetailPage />,
-  },
-  {
-    path: "/businesses/:businessSlug",
-    element: <MarketplacePublicBusinessPage />,
-  },
+  // Old public marketplace URLs move to the standalone marketplace domain.
+  { path: "/marketplace/*", element: <ExternalMarketplaceRedirect /> },
+  { path: "/businesses/:businessSlug", element: <ExternalMarketplaceRedirect /> },
 
   // Public Chama Trust Score share link (e.g. /trust-score/:token) — a
   // bank, SACCO federation, or prospective member opens this with no
@@ -754,6 +738,14 @@ const router = createBrowserRouter([
                   </RequireModule>
                 ),
               },
+              {
+                path: "finance/fines",
+                element: (
+                  <RequireModule module="contributions">
+                    <MemberFinesPage />
+                  </RequireModule>
+                ),
+              },
               // Backwards-compatible aliases
               // Contributions is the REGISTER (read): every payment, each
               // member's standing, and the per-plan breakdown. It used to
@@ -937,38 +929,16 @@ const router = createBrowserRouter([
           {
             element: <CollaborationLayout />,
             children: [
-              {
-                path: "chat",
-                element: (
-                  <RequireModule module="chat">
-                    <ChatPage />
-                  </RequireModule>
-                ),
-              },
-              {
-                path: "announcements",
-                element: (
-                  <RequireModule module="announcements">
-                    <AnnouncementsPage />
-                  </RequireModule>
-                ),
-              },
-              {
-                path: "meetings",
-                element: (
-                  <RequireModule module="meetings">
-                    <MeetingsPage />
-                  </RequireModule>
-                ),
-              },
-              {
-                path: "polls",
-                element: (
-                  <RequireModule module="polls">
-                    <PollsPage />
-                  </RequireModule>
-                ),
-              },
+              ...workspaceFeatureModules.flatMap(({ key, routes }) =>
+                routes.map(({ path, Component }) => ({
+                  path,
+                  element: (
+                    <RequireModule module={key}>
+                      <Component />
+                    </RequireModule>
+                  ),
+                }))
+              ),
             ],
           },
 

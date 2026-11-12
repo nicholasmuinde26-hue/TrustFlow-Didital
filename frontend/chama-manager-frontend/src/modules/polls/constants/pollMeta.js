@@ -1,4 +1,4 @@
-// Mirrors POLL_CATEGORIES / POLL_TYPES in backend/src/models/Poll.js.
+// Mirrors POLL_CATEGORIES / POLL_TYPES in backend/src/modules/polls/Poll.model.js.
 // Suggested defaults reflect common Kenyan chama governance norms (e.g.
 // secret ballot + supermajority for expulsion, plurality for elections),
 // but every field stays editable — these are starting points, not rules.

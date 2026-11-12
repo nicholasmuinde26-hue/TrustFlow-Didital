@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Check, FileText, Flag, Plus, ReceiptText, X } from "lucide-react";
 import { Link } from "react-router-dom";
+import Dialog from "@/shared/components/ui/Dialog";
 import { Stat, StatStrip } from "@/modules/chama/components/overview/primitives";
 import { useChamaAssets } from "../hooks/useChamaAssets";
 import chamaAssetsApi from "../api/chamaAssets.api";
@@ -13,7 +14,7 @@ import AssetManagerReportsSection from "./AssetManagerReportsSection";
 import AssetDiscrepancyQueue from "./AssetDiscrepancyQueue";
 
 const KES = (value) => `KES ${Number(value || 0).toLocaleString("en-KE")}`;
-const inputClass = "min-h-9 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist";
+const inputClass = "min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist";
 const actionClass = "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-obsidian-border dark:text-mist dark:hover:bg-obsidian-raised";
 const primaryClass = "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50";
 
@@ -482,8 +483,8 @@ export default function ChamaAssetsPanel({ chamaId, canManage = false, canApprov
       )}
 
       <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-obsidian-border">
-        {showInvestments && <button type="button" className={actionClass} onClick={() => { setShowProposalForm((value) => !value); setShowRegistrationForm(false); }}><Plus size={14} />Propose investment</button>}
-        {showAssets && canManage && <button type="button" className={actionClass} onClick={() => { setShowRegistrationForm((value) => !value); setShowProposalForm(false); }}><Plus size={14} />Register existing asset</button>}
+        {showInvestments && <button type="button" className={actionClass} onClick={() => { setShowProposalForm(true); setShowRegistrationForm(false); }}><Plus size={14} />Propose investment</button>}
+        {showAssets && canManage && <button type="button" className={actionClass} onClick={() => { setShowRegistrationForm(true); setShowProposalForm(false); }}><Plus size={14} />Register existing asset</button>}
       </div>
 
       {showAssets && canManage && showBusinessRequestForm && (
@@ -503,8 +504,8 @@ export default function ChamaAssetsPanel({ chamaId, canManage = false, canApprov
         </form>
       )}
 
-      {showInvestments && showProposalForm && (
-        <form className="grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 dark:border-obsidian-border" onSubmit={submitProposal}>
+      <Dialog open={showInvestments && showProposalForm} onClose={() => setShowProposalForm(false)} title="Propose an investment" description="Share the expected cost, funding source, and risks for chama review." icon={Plus} size="lg">
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitProposal}>
           <input className={inputClass} placeholder="Investment name" value={proposalForm.title} onChange={(event) => setProposalForm((form) => ({ ...form, title: event.target.value }))} required />
           <select className={inputClass} aria-label="Asset type" value={proposalForm.asset_type} onChange={(event) => setProposalForm((form) => ({ ...form, asset_type: event.target.value }))}>
             <option value="property">Property</option>
@@ -524,12 +525,12 @@ export default function ChamaAssetsPanel({ chamaId, canManage = false, canApprov
             <option value="external">External</option>
           </select>
           <textarea className={`${inputClass} sm:col-span-2`} placeholder="Risk notes" value={proposalForm.risk_notes} onChange={(event) => setProposalForm((form) => ({ ...form, risk_notes: event.target.value }))} rows={2} />
-          <button type="submit" className={`${primaryClass} sm:col-span-2 sm:justify-self-start`} disabled={busy}>Submit proposal</button>
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:col-span-2 sm:flex-row sm:justify-end dark:border-obsidian-border"><button type="button" className={actionClass} onClick={() => setShowProposalForm(false)}>Cancel</button><button type="submit" className={primaryClass} disabled={busy}>{busy ? 'Submitting…' : 'Submit proposal'}</button></div>
         </form>
-      )}
+      </Dialog>
 
-      {showAssets && showRegistrationForm && (
-        <form className="grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 dark:border-obsidian-border" onSubmit={submitRegistration}>
+      <Dialog open={showAssets && canManage && showRegistrationForm} onClose={() => setShowRegistrationForm(false)} title="Register an existing asset" description="Record an asset the chama already owns. It will be sent for the required approval." icon={ReceiptText} size="lg">
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitRegistration}>
           <input className={inputClass} placeholder="Asset name" value={registrationForm.name} onChange={(event) => setRegistrationForm((form) => ({ ...form, name: event.target.value }))} required />
           <select className={inputClass} aria-label="Asset type" value={registrationForm.asset_type} onChange={(event) => setRegistrationForm((form) => ({ ...form, asset_type: event.target.value }))}>
             <option value="property">Property</option>
@@ -552,9 +553,9 @@ export default function ChamaAssetsPanel({ chamaId, canManage = false, canApprov
             <option value="other">Other</option>
           </select>
           <input className={inputClass} type="url" placeholder="Document URL (optional)" value={registrationForm.file_url} onChange={(event) => setRegistrationForm((form) => ({ ...form, file_url: event.target.value }))} />
-          <button type="submit" className={`${primaryClass} sm:col-span-2 sm:justify-self-start`} disabled={busy}>Submit asset</button>
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:col-span-2 sm:flex-row sm:justify-end dark:border-obsidian-border"><button type="button" className={actionClass} onClick={() => setShowRegistrationForm(false)}>Cancel</button><button type="submit" className={primaryClass} disabled={busy}>{busy ? 'Submitting…' : 'Submit asset'}</button></div>
         </form>
-      )}
+      </Dialog>
     </div>
   );
 }

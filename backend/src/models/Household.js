@@ -256,15 +256,33 @@ householdSchema.index({
 // ======================================================
 
 householdSchema.pre('save', function () {
-  // Validate contribution split percentages sum to 100
-  if (this.contribution_config && this.contribution_config.contribution_split) {
+  // Percentage splits are required only when that contribution method is used.
+  const method = this.contribution_config?.method || 'single_primary';
+  if (method === 'split_members') {
+    if (!this.contribution_config.contribution_split?.length) {
+      throw new Error('Add at least one member to the contribution split');
+    }
     const totalPercentage = this.contribution_config.contribution_split.reduce(
       (sum, split) => sum + split.percentage,
       0
     );
-    
-    if (totalPercentage !== 100) {
+    if (Math.abs(totalPercentage - 100) > 0.001) {
       throw new Error('Contribution split percentages must sum to 100');
+    }
+  }
+
+  const memberIds = new Set((this.members || []).map((member) => String(member.membership_id)));
+  if (this.primary_member_id && !memberIds.has(String(this.primary_member_id))) {
+    throw new Error('The household head must be a member of the household');
+  }
+  if (method === 'single_primary' || method === 'combined') {
+    const contributorId = this.contribution_config?.primary_contributor_id || this.primary_member_id;
+    if (!memberIds.has(String(contributorId))) throw new Error('The primary contributor must be a household member');
+    this.contribution_config.primary_contributor_id = contributorId;
+  }
+  if (method === 'split_members') {
+    for (const split of this.contribution_config.contribution_split) {
+      if (!memberIds.has(String(split.membership_id))) throw new Error('Every contribution split member must belong to the household');
     }
   }
 

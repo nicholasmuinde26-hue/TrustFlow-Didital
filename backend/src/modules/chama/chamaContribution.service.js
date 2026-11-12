@@ -9,12 +9,12 @@ import ContributionPayment from "../../models/ContributionPayment.js";
 import FinancialAccount from "../../models/FinancialAccount.js";
 
 import paymentService from "../../payment/payment.service.js";
-import accountingService from "../finance/accounting/accounting.service.js";
-import approvalService from "../approval/approval.service.js";
-import { accountCodeForContribution } from "../finance/accounting/rules/chamaContribution.rule.js";
+import { accountingService } from "../finance/index.js";
+import approvalService from "../approval/index.js";
+import { accountCodeForContribution } from "../finance/index.js";
 import { PAYMENT_PROVIDER } from "../../payment/payment.constants.js";
 import { toDecimal } from "../../shared/decimal.js";
-import { creditMemberWallet } from "../finance/memberWallet.service.js";
+import { creditMemberWallet } from "../finance/index.js";
 
 // Chairperson, Treasurer, Secretary - same "officials" set used elsewhere
 // for chama-wide management actions (see officialRoles in

@@ -4,6 +4,10 @@ import FinancialAccount from "../../models/FinancialAccount.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import LedgerEntry from "../../models/LedgerEntry.js";
 import ContributionPayment from "../../models/ContributionPayment.js";
+import ContributionPlan from "../../models/ContributionPlan.js";
+import BurialChamaProfile from "../../models/BurialChamaProfile.js";
+import Chama from "../../models/Chama.js";
+import Fund from "../../models/Fund.js";
 import {
   isBusinessFundAccount,
   BUSINESS_FUND_ACCOUNT_CODES,
@@ -54,6 +58,8 @@ const OUTFLOW_TRANSACTION_TYPES = [
   "withdrawal",
   "customer_payout",
   "expense",
+  "burial_benefit_disbursement",
+  "equipment_hire_payment",
 ];
 
 const startOfMonth = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), 1);
@@ -69,6 +75,44 @@ const startOfWeek = (d) => {
 };
 
 class FinanceService {
+  async getBusinessSummary(ownerId, session = null) {
+    const opts = getOpts(session);
+    const owner = { owner_type: "Business", owner_id: ownerId };
+    const accounts = await FinancialAccount.find({ ...owner, status: "active" }, null, opts).lean();
+    const monthStart = startOfMonth();
+    const monthEnd = startOfNextMonth();
+    const [monthly, transactionCount, ledgerCount, transactions] = await Promise.all([
+      FinancialTransaction.aggregate([
+        { $match: { ...owner, status: "posted", createdAt: { $gte: monthStart, $lt: monthEnd } } },
+        { $group: { _id: "$transaction_type", total: { $sum: { $toDecimal: "$amount" } } } },
+      ], opts),
+      FinancialTransaction.countDocuments({ ...owner, status: "posted" }, opts),
+      LedgerEntry.countDocuments(owner, opts),
+      FinancialTransaction.find({ ...owner, status: "posted" }, null, opts).sort({ createdAt: -1 }).limit(8),
+    ]);
+    const totalFor = (types) => monthly.filter((row) => types.includes(row._id)).reduce((sum, row) => sum + toNumber(row.total), 0);
+    const cashIn = totalFor(["sale", "income", "rental_income"]);
+    const cashOut = totalFor(["expense", "customer_payout", "purchase"]);
+    const cashBalance = accounts.filter((account) => account.account_type === "asset").reduce((sum, account) => sum + toNumber(account.current_balance), 0);
+    const businessBalance = accounts.filter((account) => ["income", "expense"].includes(account.account_type)).reduce((sum, account) => sum + toNumber(account.current_balance), 0);
+    return {
+      workspace_type: "business",
+      cash_balance: cashBalance,
+      cash_in: cashIn,
+      cash_out: cashOut,
+      net_activity: cashIn - cashOut,
+      business_balance: businessBalance,
+      total_transactions: transactionCount,
+      transactions: transactionCount,
+      ledger_entries: ledgerCount,
+      accounts: accounts.length,
+      assets: accounts.filter((account) => account.account_type === "asset").reduce((sum, account) => sum + toNumber(account.current_balance), 0),
+      liabilities: accounts.filter((account) => account.account_type === "liability").reduce((sum, account) => sum + toNumber(account.current_balance), 0),
+      equity: accounts.filter((account) => account.account_type === "equity").reduce((sum, account) => sum + toNumber(account.current_balance), 0),
+      recent_transactions: transactions,
+    };
+  }
+
   /**
    * ============================================================
    * FINANCE SUMMARY
@@ -76,6 +120,13 @@ class FinanceService {
    */
   async getSummary(ownerType, ownerId, session = null) {
     const opts = getOpts(session);
+    const finePlans = await ContributionPlan.find({
+      owner_type: ownerType,
+      owner_id: ownerId,
+      $or: [{ behavior: "fine" }, { system_key: "late_penalties" }],
+    }).select("_id ledger_account_id").lean();
+    const finePlanIds = finePlans.map((plan) => plan._id);
+    const fineAccountIds = new Set(finePlans.map((plan) => String(plan.ledger_account_id || "")).filter(Boolean));
 
     const accounts = await FinancialAccount.find(
       {
@@ -86,6 +137,13 @@ class FinanceService {
       null,
       opts
     );
+
+    const burialProfile = ownerType === 'Chama'
+      ? await BurialChamaProfile.findOne({ chama_id: ownerId }).select('funding_rules').lean()
+      : null;
+    const burialFunds = burialProfile
+      ? await Fund.find({ owner_type: 'Chama', owner_id: ownerId, kind: { $in: ['welfare', 'reserve', 'case'] } }).select('kind ledger_account_id').lean()
+      : [];
 
     const transactions =
       await FinancialTransaction.countDocuments(
@@ -99,6 +157,7 @@ class FinanceService {
 
     let cash = 0;
     let contributions = 0;
+    let fineBalance = 0;
     let savings = 0;
     let loans = 0;
     let payouts = 0;
@@ -134,10 +193,14 @@ class FinanceService {
           break;
       }
 
+      if (fineAccountIds.has(String(account._id))) {
+        fineBalance += balance;
+      }
+
       // Per-plan contribution accounts (planLedgerAccount.service.js) are
       // children of MEMBER_CONTRIBUTIONS and count toward the contributions
       // total alongside it.
-      if (account.account_category === "contribution" && account.parent_account_id) {
+      if (account.account_category === "contribution" && account.parent_account_id && !fineAccountIds.has(String(account._id))) {
         contributions += balance;
       }
 
@@ -168,6 +231,22 @@ class FinanceService {
           break;
       }
     }
+
+    const burialFundAccountIds = new Set(burialFunds.map((fund) => String(fund.ledger_account_id)));
+    const balanceForFundKind = (kind) => {
+      const ids = new Set(burialFunds.filter((fund) => fund.kind === kind).map((fund) => String(fund.ledger_account_id)));
+      return accounts.filter((account) => ids.has(String(account._id))).reduce((sum, account) => sum + toNumber(account.current_balance), 0);
+    };
+    // Unassigned welfare-plan accounts still count as welfare, while case
+    // funds stay in their own bucket. Never infer either from the shared
+    // MEMBER_CONTRIBUTIONS account, which can contain unrelated dues.
+    const welfareFundBalance = accounts
+      .filter((account) => account.account_category === 'welfare' && !burialFundAccountIds.has(String(account._id)))
+      .reduce((sum, account) => sum + toNumber(account.current_balance), 0)
+      + balanceForFundKind('welfare');
+    const caseFundBalance = balanceForFundKind('case');
+    const reserveFundBalance = balanceForFundKind('reserve');
+    const reserveFloor = toNumber(burialProfile?.funding_rules?.reserve_floor);
 
     // Business income posted before the business fund existed is still sitting inside
     // cash_balance. Report how much, so the dashboard can offer to move it out.
@@ -264,6 +343,7 @@ class FinanceService {
               owner_type: ownerType,
               owner_id: new mongoose.Types.ObjectId(ownerId),
               status: "completed",
+            plan_id: { $nin: finePlanIds },
             },
           },
           {
@@ -286,7 +366,16 @@ class FinanceService {
 
     return {
       cash_balance: cash,
-      savings_balance: savings,
+      savings_balance: burialProfile ? 0 : savings,
+      ...(burialProfile ? {
+        welfare_fund_balance: welfareFundBalance,
+        case_fund_balance: caseFundBalance,
+        reserve_fund_balance: reserveFundBalance,
+        fund_reserve_floor: reserveFloor,
+        fund_below_reserve: welfareFundBalance < reserveFloor,
+        fund_available_for_cases: Math.max(0, welfareFundBalance - reserveFloor),
+      } : {}),
+      fine_balance: fineBalance,
 
       total_contributions:
         completedContributions || contributions,
@@ -426,13 +515,27 @@ class FinanceService {
     { membershipId = null, session = null, scope = "chama" } = {}
   ) {
     const opts = getOpts(session);
+    const chama = ownerType === "Chama"
+      ? await Chama.findById(ownerId).select("chama_type").lean()
+      : null;
+    const isBurialChama = chama?.chama_type === "burial";
 
     const query = {
       owner_type: ownerType,
       owner_id: ownerId,
     };
     // Business and property postings are not part of the chama's own activity feed.
-    if (scope === "chama") query.transaction_type = { $nin: BUSINESS_TRANSACTION_TYPES };
+    if (scope === "chama") {
+      const excludedTypes = [...BUSINESS_TRANSACTION_TYPES];
+      if (isBurialChama) {
+        excludedTypes.push(
+          "deposit", "withdrawal", "withdrawal_obligation", "withdrawal_settlement", "withdrawal_cancellation",
+          "savings_shareout_obligation", "savings_shareout_settlement", "savings_shareout_cancellation",
+          "loan_disbursement", "loan_repayment", "mgr_contribution", "chama_contrib_payout_settlement"
+        );
+      }
+      query.transaction_type = { $nin: excludedTypes };
+    }
     else if (scope === "business") query.transaction_type = { $in: BUSINESS_TRANSACTION_TYPES };
 
     if (membershipId) {
@@ -473,6 +576,11 @@ class FinanceService {
    */
   async getMemberSummary(ownerType, ownerId, membershipId, session = null) {
     const opts = getOpts(session);
+    const finePlanIds = await ContributionPlan.find({
+      owner_type: ownerType,
+      owner_id: ownerId,
+      $or: [{ behavior: "fine" }, { system_key: "late_penalties" }],
+    }).distinct("_id");
 
     const contributionRows = await ContributionPayment.aggregate(
       [
@@ -483,6 +591,7 @@ class FinanceService {
             participant_type: "ChamaMembership",
             participant_id: new mongoose.Types.ObjectId(membershipId),
             status: "completed",
+            plan_id: { $nin: finePlanIds },
           },
         },
         {
@@ -505,6 +614,7 @@ class FinanceService {
         owner_id: ownerId,
         participant_type: "ChamaMembership",
         participant_id: membershipId,
+        plan_id: { $nin: finePlanIds },
       },
       null,
       opts

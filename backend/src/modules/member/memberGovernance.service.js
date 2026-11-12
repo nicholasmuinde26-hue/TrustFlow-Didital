@@ -6,12 +6,12 @@ import MemberExitRequest from '../../models/MemberExitRequest.js';
 import ApprovalRequest from '../../models/ApprovalRequest.js';
 import MeetingRecord from '../../models/MeetingRecord.js';
 import ChamaMeetingRecord from '../../models/ChamaMeetingRecord.js';
-import Meeting from '../../models/Meeting.js';
+import { findNextMeeting } from '../meetings/index.js';
 
 import AppError from '../../utils/AppError.js';
-import approvalService from '../approval/approval.service.js';
+import approvalService from '../approval/index.js';
 import notificationService from '../../services/notification.service.js';
-import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from '../loans/Loan.constants.js';
+import { LOAN_STATUS, LOAN_OFFICIAL_ROLES } from '../loans/index.js';
 import { createAuditLog, AUDIT_SCOPE_TYPES } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 import { assessMemberExit } from './member.service.js';
@@ -625,15 +625,12 @@ export const getMembersOverview = async ({ chamaId, actorUserId }) => {
       LOAN_OFFICIAL_ROLES.includes(actor.role)
         ? ChamaLoan.countDocuments({ chama_id: chamaId, status: LOAN_STATUS.PENDING_APPROVAL })
         : 0,
-      Meeting.findOne({
-        workspace_id: chamaId,
-        workspace_type: 'Chama',
-        cancelled_at: null,
-        starts_at: { $gte: new Date(), $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-      })
-        .sort({ starts_at: 1 })
-        .select('title starts_at')
-        .lean(),
+      findNextMeeting({
+        workspaceId: chamaId,
+        workspaceType: 'Chama',
+        from: new Date(),
+        until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      }),
     ]);
 
     const mineToSign = pendingApprovals.filter(

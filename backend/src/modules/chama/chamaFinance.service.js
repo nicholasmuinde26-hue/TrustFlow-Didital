@@ -12,7 +12,7 @@ import MgrReminder from "../../models/MgrReminder.js";
 import paymentService from "../../payment/payment.service.js";
 
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
-import { startPayout } from "../payout/payout.service.js";
+import { startPayout } from "../payout/index.js";
 import { PAYMENT_PROVIDER, PAYMENT_STATUS } from "../../payment/payment.constants.js";
 import { toDecimal } from "../../shared/decimal.js";
 

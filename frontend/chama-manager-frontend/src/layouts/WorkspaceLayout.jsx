@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { getWorkspaceNavigation } from "@/modules/workspaces/config/workspaceNavigation";
+import { getWorkspaceNavigation } from '@/modules/workspaces/index.js';
 import {
   isChamaBackedType,
   isPathEnabled,
   moduleForPath,
   relativeWorkspacePath,
-} from "@/modules/workspaces/config/workspaceModules";
+} from '@/modules/workspaces/index.js';
 
 import Sidebar from "@/shared/components/layout/sidebar";
 import Topbar from "@/shared/components/layout/Topbar";
@@ -16,7 +16,7 @@ import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import Spinner from "@/shared/components/ui/Spinner";
 import ContributionGroupLayout from "./ContributionGroupLayout";
 import { AiAssistantWidget } from "@/modules/ai";
-import WorkspaceQuickLaunchers from "@/modules/workspaces/components/WorkspaceQuickLaunchers";
+import { WorkspaceQuickLaunchers } from '@/modules/workspaces/index.js';
 import GlBalanceGuard from "@/modules/finance/components/GlBalanceGuard";
 import BillingBanner from "@/modules/billing/components/BillingBanner";
 import useBillingSummary from "@/modules/billing/hooks/useBilling";
@@ -24,7 +24,7 @@ import { isModuleLocked, markLockedItems } from "@/modules/billing/utils/planLoc
 import MobileBottomNav from "@/shared/components/layout/MobileBottomNav/MobileBottomNav";
 import SectionTabs from "@/shared/components/layout/SectionTabs/SectionTabs";
 import { useClearNotificationsOnVisit } from "@/modules/notifications/hooks/useNotifications";
-import { getLeadershipDeskItem } from "@/modules/workspaces/config/workspaceNavigation";
+import { getLeadershipDeskItem } from '@/modules/workspaces/index.js';
 
 
 export default function WorkspaceLayout() {
@@ -107,7 +107,8 @@ export default function WorkspaceLayout() {
       workspace?.role,
       workspace?.category,
       workspace?.workspaceSettings,
-      workspace?.modules
+      workspace?.modules,
+      workspace?.config?.terminology
     ),
     isChamaBackedType(workspace?.type) ? billing : null
   );
@@ -142,7 +143,7 @@ export default function WorkspaceLayout() {
 
         {/* The single section tab bar. Lives outside <main> so it never
             scrolls over the breadcrumbs / page content. */}
-        <SectionTabs sections={sections} />
+        <SectionTabs sections={sections} workspaceId={workspaceId} />
 
         <main className="workspace-page-container min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 pb-20 sm:p-5 sm:pb-24 lg:p-8 lg:pb-8">
           <Breadcrumbs sections={sections} />

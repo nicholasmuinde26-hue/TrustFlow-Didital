@@ -26,12 +26,22 @@
  * ============================================================================
  */
 
+import {
+  ORGANIZATION_FAMILIES,
+  ORGANIZATION_TYPES,
+  ORGANIZATION_TERMINOLOGY,
+  getOrganizationPresetKey,
+} from './organizationTypes.constants.js';
+
 export const MODULE_GROUPS = Object.freeze([
   { key: 'core', label: 'Core' },
   { key: 'money', label: 'Money & contributions' },
   { key: 'lending', label: 'Lending' },
+  { key: 'member_capital', label: 'Member capital & returns' },
+  { key: 'cooperative_trade', label: 'Cooperative trade' },
   { key: 'portfolio', label: 'Assets, property & businesses' },
   { key: 'governance', label: 'Meetings & communication' },
+  { key: 'compliance', label: 'Compliance & reporting' },
   { key: 'trust', label: 'Trust & accountability' },
   { key: 'welfare', label: 'Welfare / burial' },
 ]);
@@ -106,6 +116,64 @@ export const WORKSPACE_MODULES = Object.freeze({
     description: 'Member loans, guarantors, approvals and repayments.',
   },
 
+  // ---- SACCO capital and lending -----------------------------------------
+  share_capital: {
+    label: 'Share capital & member share accounts',
+    group: 'member_capital',
+    requires: ['finance_core', 'members'],
+    description: 'Member share capital balances, transactions and statements.',
+  },
+  dividends_interest: {
+    label: 'Dividends & deposit interest',
+    group: 'member_capital',
+    requires: ['finance_core', 'savings', 'share_capital'],
+    description: 'Configure and allocate dividends and interest on member deposits.',
+  },
+  member_numbers: {
+    label: 'SACCO member numbers',
+    group: 'member_capital',
+    requires: ['members'],
+    description: 'Assign and manage each member’s permanent SACCO number.',
+  },
+  loan_products: {
+    label: 'Loan products & rules',
+    group: 'lending',
+    requires: ['loans'],
+    description: 'Set separate eligibility, pricing and repayment rules for loan types.',
+  },
+  share_linked_limits: {
+    label: 'Share & savings-linked loan limits',
+    group: 'lending',
+    requires: ['loans', 'loan_products', 'share_capital', 'savings'],
+    description: 'Set loan limits as a multiple of member shares or savings.',
+  },
+
+  // ---- cooperative trade --------------------------------------------------
+  produce_collection: {
+    label: 'Produce collection & sales',
+    group: 'cooperative_trade',
+    requires: ['members', 'finance_core'],
+    description: 'Record member produce deliveries, grading, sales and settlements.',
+  },
+  cooperative_sales: {
+    label: 'Goods & cooperative sales',
+    group: 'cooperative_trade',
+    requires: ['finance_core'],
+    description: 'Track goods sold by the cooperative and member transactions.',
+  },
+  patronage_refunds: {
+    label: 'Patronage refunds',
+    group: 'cooperative_trade',
+    requires: ['finance_core', 'members'],
+    description: 'Allocate surplus to members based on their cooperative activity.',
+  },
+  cooperative_store: {
+    label: 'Supplies & cooperative store',
+    group: 'cooperative_trade',
+    requires: ['finance_core', 'members'],
+    description: 'Manage store stock, member purchases and supplies issued.',
+  },
+
   // ---- portfolio ----------------------------------------------------------
   assets: {
     label: 'Asset portfolio',
@@ -131,6 +199,13 @@ export const WORKSPACE_MODULES = Object.freeze({
   polls: { label: 'Polls & voting', group: 'governance', requires: [], description: 'Member polls.' },
   announcements: { label: 'Announcements', group: 'governance', requires: [], description: 'Broadcast notices to members.' },
   chat: { label: 'Chat', group: 'governance', requires: [], description: 'Member messaging.' },
+  agm: { label: 'AGM scheduling', group: 'governance', requires: ['meetings'], description: 'Schedule annual general meetings and manage attendance.' },
+  resolutions: { label: 'Resolutions & quorum', group: 'governance', requires: ['meetings'], description: 'Record motions, quorum, votes and adopted resolutions.' },
+  committees: { label: 'Board & supervisory committees', group: 'governance', requires: ['members'], description: 'Assign board and supervisory committee roles and terms.' },
+
+  // ---- compliance ---------------------------------------------------------
+  regulator_reporting: { label: 'Regulator reporting (SASRA)', group: 'compliance', requires: ['finance_core', 'members'], description: 'Prepare SACCO regulatory reports, including SASRA returns where applicable.' },
+  annual_returns: { label: 'Annual returns', group: 'compliance', requires: ['finance_core'], description: 'Track annual return requirements, filing dates and submitted records.' },
 
   // ---- trust --------------------------------------------------------------
   trust: { label: 'Trust score & timeline', group: 'trust', requires: ['finance_core'], description: 'Chama trust score and trust timeline.' },
@@ -165,6 +240,7 @@ export const LOCKED_MODULE_KEYS = Object.freeze(
 
 const without = (keys) => MODULE_KEYS.filter((key) => !keys.includes(key));
 const only = (keys) => [...new Set([...LOCKED_MODULE_KEYS, ...keys])];
+const GENERAL_MODULES = ['contributions', 'savings', 'savings_shareout', 'mgr', 'payouts', 'withdrawals', 'loans', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes'];
 
 /**
  * PRESETS -> which modules start enabled.
@@ -177,12 +253,12 @@ const only = (keys) => [...new Set([...LOCKED_MODULE_KEYS, ...keys])];
 export const WORKSPACE_PRESETS = Object.freeze({
   standard: {
     label: 'Standard chama (everything)',
-    modules: without(['burial_welfare', 'equipment_hire', 'fundraising']),
+    modules: only(GENERAL_MODULES),
   },
   burial: {
     label: 'Burial / welfare chama',
     modules: only([
-      'contributions', 'savings', 'payouts', 'loans',
+      'contributions', 'payouts',
       'assets', 'businesses', 'property_leases',
       'meetings', 'polls', 'announcements',
       'burial_welfare', 'equipment_hire', 'fundraising',
@@ -191,7 +267,7 @@ export const WORKSPACE_PRESETS = Object.freeze({
   burial_welfare: {
     label: 'Burial / welfare chama',
     modules: only([
-      'contributions', 'savings', 'payouts', 'loans',
+      'contributions', 'payouts',
       'assets', 'businesses', 'property_leases',
       'meetings', 'polls', 'announcements',
       'burial_welfare', 'equipment_hire', 'fundraising',
@@ -229,9 +305,49 @@ export const WORKSPACE_PRESETS = Object.freeze({
       'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes',
     ]),
   },
+  community_sacco: {
+    label: 'Community SACCO',
+    modules: only(['contributions', 'savings', 'savings_shareout', 'payouts', 'withdrawals', 'loans', 'loan_products', 'share_capital', 'dividends_interest', 'member_numbers', 'share_linked_limits', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'regulator_reporting', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  farmer_sacco: {
+    label: 'Farmer SACCO',
+    modules: only(['contributions', 'savings', 'payouts', 'loans', 'loan_products', 'share_capital', 'dividends_interest', 'member_numbers', 'share_linked_limits', 'produce_collection', 'cooperative_sales', 'patronage_refunds', 'assets', 'businesses', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'regulator_reporting', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  employee_sacco: {
+    label: 'Employee SACCO',
+    modules: only(['contributions', 'savings', 'savings_shareout', 'payouts', 'withdrawals', 'loans', 'loan_products', 'share_capital', 'dividends_interest', 'member_numbers', 'share_linked_limits', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'regulator_reporting', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  investment_sacco: {
+    label: 'Investment SACCO',
+    modules: only(['contributions', 'savings', 'payouts', 'loans', 'loan_products', 'share_capital', 'dividends_interest', 'member_numbers', 'share_linked_limits', 'assets', 'businesses', 'property_leases', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'regulator_reporting', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  housing_sacco: {
+    label: 'Housing SACCO',
+    modules: only(['contributions', 'savings', 'savings_shareout', 'payouts', 'loans', 'loan_products', 'share_capital', 'dividends_interest', 'member_numbers', 'share_linked_limits', 'assets', 'businesses', 'property_leases', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'regulator_reporting', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  cooperative: {
+    label: 'General cooperative',
+    modules: only(['contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'cooperative_sales', 'patronage_refunds', 'cooperative_store', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  agricultural_cooperative: {
+    label: 'Agricultural cooperative',
+    modules: only(['contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'produce_collection', 'cooperative_sales', 'patronage_refunds', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  housing_cooperative: {
+    label: 'Housing cooperative',
+    modules: only(['contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'property_leases', 'patronage_refunds', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'annual_returns', 'trust', 'officials', 'disputes']),
+  },
+  farmer_group: {
+    label: 'Farmer group',
+    modules: only(['contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  },
+  housing_group: {
+    label: 'Housing group',
+    modules: only(['contributions', 'savings', 'payouts', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  },
   mixed: {
     label: 'Mixed (rotating pot + lending + assets)',
-    modules: without(['burial_welfare', 'equipment_hire', 'fundraising']),
+    modules: only(GENERAL_MODULES),
   },
   custom: {
     label: 'Custom',
@@ -240,6 +356,29 @@ export const WORKSPACE_PRESETS = Object.freeze({
 });
 
 export const PRESET_KEYS = Object.freeze(Object.keys(WORKSPACE_PRESETS));
+
+// Frozen pre-customization module sets for workspaces that have never stored
+// an explicit config. Do not derive these from WORKSPACE_PRESETS: preset edits
+// apply to newly created workspaces only, and must not expand existing ones.
+export const LEGACY_MODULES_BY_PRESET = Object.freeze({
+  standard: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'savings_shareout', 'mgr', 'payouts', 'withdrawals', 'loans', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  burial: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'payouts', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'burial_welfare', 'equipment_hire', 'fundraising']),
+  merry_go_round: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'mgr', 'payouts', 'meetings', 'polls', 'announcements', 'chat']),
+  table_banking: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'savings_shareout', 'payouts', 'withdrawals', 'loans', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  investment_group: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'payouts', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  property_sacco: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  community_sacco: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'savings_shareout', 'payouts', 'withdrawals', 'loans', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  farmer_sacco: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  employee_sacco: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'savings_shareout', 'payouts', 'withdrawals', 'loans', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  investment_sacco: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  housing_sacco: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'savings_shareout', 'payouts', 'loans', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  cooperative: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  agricultural_cooperative: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  housing_cooperative: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  farmer_group: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  housing_group: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'savings', 'payouts', 'assets', 'businesses', 'property_leases', 'meetings', 'polls', 'announcements', 'chat', 'trust', 'officials', 'disputes']),
+  custom: Object.freeze(['members', 'finance_core', 'settings', 'contributions', 'meetings', 'announcements']),
+});
 
 /** chama_type -> the preset that reproduces its legacy behaviour. */
 export const LEGACY_PRESET_BY_CHAMA_TYPE = Object.freeze({
@@ -250,6 +389,18 @@ export const LEGACY_PRESET_BY_CHAMA_TYPE = Object.freeze({
   investment: 'investment_group',
   investment_group: 'investment_group',
   property_sacco: 'property_sacco',
+  community_sacco: 'community_sacco',
+  employee_sacco: 'employee_sacco',
+  investment_sacco: 'investment_sacco',
+  farmer_sacco: 'farmer_sacco',
+  housing_sacco: 'housing_sacco',
+  farmer_group: 'farmer_group',
+  housing_group: 'housing_group',
+  agricultural: 'agricultural_cooperative',
+  housing: 'housing_cooperative',
+  consumer: 'cooperative',
+  worker: 'cooperative',
+  producer: 'cooperative',
   burial_welfare: 'burial_welfare',
 });
 
@@ -306,14 +457,19 @@ export function buildWorkspaceConfig({
  * run yet) resolves from its chama_type, so the app keeps working unchanged.
  */
 export function getEnabledModules(chama) {
+  const isBurial = ['burial', 'burial_welfare'].includes(chama?.chama_type)
+    || ['burial', 'burial_welfare'].includes(chama?.workspace_config?.preset);
+  const burialSafe = (keys) => isBurial
+    ? keys.filter((key) => !['loans', 'savings', 'savings_shareout', 'withdrawals'].includes(key))
+    : keys;
   const stored = chama?.workspace_config?.modules;
   if (stored && Object.keys(stored).length > 0) {
     // Mongoose Mixed may hand back a Map-like or plain object; toEnabledKeys copes.
     const plain = typeof stored.toObject === 'function' ? stored.toObject() : stored;
-    return withLocked(toEnabledKeys(plain));
+    return withLocked(burialSafe(toEnabledKeys(plain)));
   }
   const presetKey = LEGACY_PRESET_BY_CHAMA_TYPE[chama?.chama_type] || 'standard';
-  return withLocked(WORKSPACE_PRESETS[presetKey].modules);
+  return withLocked(burialSafe(LEGACY_MODULES_BY_PRESET[presetKey] || LEGACY_MODULES_BY_PRESET.standard));
 }
 
 export const isModuleEnabled = (chama, moduleKey) => getEnabledModules(chama).includes(moduleKey);
@@ -348,9 +504,28 @@ export function validateModuleSelection(modules) {
   return { ok: errors.length === 0, errors, enabled };
 }
 
+/** { moduleKey: 'label' } -> only known keys, trimmed, non-empty, max 60 chars. */
+export function sanitizeModuleLabels(labels) {
+  if (!labels || typeof labels !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(labels)
+      .filter(([key, label]) => WORKSPACE_MODULES[key] && typeof label === 'string')
+      .map(([key, label]) => [key, label.trim().slice(0, 60)])
+      .filter(([, label]) => label)
+  );
+}
+
 /** Shape sent to the admin picker. */
 export function getCatalogForClient() {
   return {
+    organizations: ORGANIZATION_FAMILIES.map((family) => ({
+      ...family,
+      terminology: ORGANIZATION_TERMINOLOGY[family.key],
+      types: ORGANIZATION_TYPES[family.key].map((type) => ({
+        ...type,
+        preset: getOrganizationPresetKey(family.key, type.key),
+      })),
+    })),
     groups: MODULE_GROUPS,
     modules: MODULE_KEYS.map((key) => ({ key, ...WORKSPACE_MODULES[key] })),
     presets: PRESET_KEYS.map((key) => ({

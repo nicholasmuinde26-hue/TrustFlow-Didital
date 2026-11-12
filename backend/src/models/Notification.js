@@ -164,7 +164,7 @@ const notificationSchema = new mongoose.Schema({
   delivery_channels: [{
     channel: {
       type: String,
-      enum: ['in-app', 'toast', 'push', 'sms', 'email']
+      enum: ['in-app', 'toast', 'push', 'sms', 'whatsapp', 'email']
     },
     status: {
       type: String,

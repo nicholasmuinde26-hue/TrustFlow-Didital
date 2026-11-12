@@ -151,7 +151,12 @@ export const computePlanPenalty = ({ rule, obligation, graceDays = 0, now = new 
 export const ensurePenaltyPlan = async ({ chamaId, actorUserId = null }) => {
   const filter = { owner_type: 'Chama', owner_id: chamaId, system_key: PENALTY_PLAN_KEY };
   const existing = await ContributionPlan.findOne(filter);
-  if (existing) return existing;
+  if (existing) {
+    await ensurePlanLedgerAccount(existing, { actorUserId }).catch((err) =>
+      console.warn('[planPenalty] fine ledger account not reconciled:', err.message)
+    );
+    return existing;
+  }
 
   // The creator must be a real user id; fall back to any plan creator in the chama.
   let createdBy = actorUserId;

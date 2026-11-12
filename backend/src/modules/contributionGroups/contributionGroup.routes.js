@@ -2,8 +2,6 @@ import express from 'express';
 
 import {
 
-  createContributionGroupController,
-
   getContributionGroupController,
 
   getMyContributionGroupsController,
@@ -37,7 +35,6 @@ import {
 import {
   protect
 } from '../../middleware/auth.middleware.js';
-import { requireAdmin } from '../../middleware/admin.middleware.js';
 
 import {
   requireContributionGroupMember,
@@ -54,35 +51,6 @@ const router = express.Router();
 
 router.get('/join/:joinCode', getPublicGroupPreviewController);
 router.post('/join/:joinCode', protect, joinGroupViaCodeController);
-
-
-// ========================================
-// CREATE CONTRIBUTION GROUP
-// ========================================
-//
-// POST
-// /api/v1/contribution-groups
-//
-// Any authenticated user can create ONE
-// active contribution group.
-//
-// The creator automatically becomes:
-//
-// role: organizer
-//
-// ========================================
-
-router.post(
-
-  '/',
-
-  protect,
-
-  requireAdmin,
-
-  createContributionGroupController
-
-);
 
 
 // ========================================

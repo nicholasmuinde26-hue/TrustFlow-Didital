@@ -14,12 +14,14 @@ import {
 } from "lucide-react";
 import useTransactions from "../hooks/useTransactions";
 import useFinanceSummary from "../hooks/useFinanceSummary";
+import useWorkspace from "@/app/hooks/useWorkspace";
 import Spinner from "@/shared/components/ui/Spinner";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;
 
 export default function TransactionsPage() {
   const { workspaceId } = useParams();
+  const { isBurialChama } = useWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [filters, setFilters] = useState({
@@ -47,18 +49,38 @@ export default function TransactionsPage() {
 
   const txList = (transactions?.items || transactions || []).map((tx, idx) => {
     const amt = Number(tx.amount || 0);
-    const type = String(tx.type || tx.category || "").toLowerCase();
-    const isCredit = type.includes("contribution") || type.includes("deposit") || type.includes("income") || type.includes("repayment");
+    const type = String(tx.transaction_type || tx.type || tx.category || "").toLowerCase();
+    const outflowTypes = new Set([
+      "burial_benefit_disbursement", "equipment_hire_payment", "equipment_deposit_settlement",
+      "payout", "payout_settlement", "loan_disbursement", "withdrawal", "expense", "customer_payout",
+    ]);
+    const isCredit = !outflowTypes.has(type) && !type.includes("reversal") && !type.includes("cancellation");
+    const group = type.includes("burial_benefit") || type.includes("payout")
+      ? "case_benefits"
+      : type.includes("fundraising")
+        ? "fundraising"
+        : type.includes("equipment_")
+          ? "equipment_hire"
+          : type.includes("contribution") || type.includes("levy")
+            ? "welfare_contributions"
+            : type.includes("expense") || type.includes("adjustment")
+              ? "expenses"
+              : type.includes("loan_disbursement")
+                ? "loan_disbursements"
+                : type.includes("loan_repayment")
+                  ? "loan_repayments"
+                  : "other";
     return {
       id: tx._id || tx.id || idx,
-      reference: tx.reference || tx.mpesa_reference || `TRX-2026-${String(idx + 1).padStart(4, "0")}`,
-      date: tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent",
-      description: tx.description || tx.type || "Transaction Entry",
-      account: tx.account_name || tx.category || (isCredit ? "Contributions A/c" : "Expenses A/c"),
+      reference: tx.reference || tx.mpesa_reference || "—",
+      date: tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("en-KE", { month: "short", day: "numeric", year: "numeric" }) : "—",
+      description: tx.description || tx.category_label || tx.transaction_type || tx.type || "Transaction Entry",
+      account: tx.account_name || tx.category_label || tx.category || (isCredit ? "Contributions A/c" : "Expenses A/c"),
       member: tx.member_name || tx.user_id?.name || tx.payee || "Member",
       debit: !isCredit ? amt : 0,
       credit: isCredit ? amt : 0,
-      status: tx.status || "completed",
+      group,
+      status: tx.status === "posted" ? "completed" : tx.status || "completed",
     };
   });
 
@@ -74,7 +96,7 @@ export default function TransactionsPage() {
   const totalTxCount = isMine ? txList.length : transactions?.total ?? txList.length;
 
   const filteredTxList = txList.filter((tx) => {
-    const matchesTab = activeTab === "all" || tx.account.toLowerCase().includes(activeTab.toLowerCase());
+    const matchesTab = activeTab === "all" || tx.group === activeTab;
     const matchesSearch = tx.reference.toLowerCase().includes(filters.search.toLowerCase()) || tx.member.toLowerCase().includes(filters.search.toLowerCase()) || tx.description.toLowerCase().includes(filters.search.toLowerCase());
     return matchesTab && matchesSearch;
   });
@@ -96,7 +118,9 @@ export default function TransactionsPage() {
             Transactions
           </h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
-            {isMine ? "Your own contributions and payments" : "View and track all financial transactions"}
+            {isMine
+              ? isBurialChama ? "Your welfare contributions and case support payments" : "Your own contributions and payments"
+              : isBurialChama ? "Track welfare collections, case benefits, fundraising, and equipment activity" : "View and track all financial transactions"}
           </p>
           {canToggle && (
             <div
@@ -138,7 +162,7 @@ export default function TransactionsPage() {
             to={`/workspace/${workspaceId}/finance/record-contribution`}
             className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition dark:bg-mint dark:text-obsidian-rail dark:hover:bg-mint-hover"
           >
-            <Plus size={16} /> New Transaction
+            <Plus size={16} /> {isBurialChama ? "Record Welfare Payment" : "New Transaction"}
           </Link>
         </div>
       </div>
@@ -152,27 +176,27 @@ export default function TransactionsPage() {
           <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">
             {totalTxCount.toLocaleString()}
           </p>
-          <span className="mt-1 text-xs font-bold text-slate-400 block">{isMine ? "Your transactions" : "All chama transactions"}</span>
+          <span className="mt-1 text-xs font-bold text-slate-400 block">{isMine ? "Your transactions" : isBurialChama ? "All welfare transactions" : "All chama transactions"}</span>
         </div>
 
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-            TOTAL INFLOWS
+            {isBurialChama ? "MONTHLY WELFARE INFLOWS" : "MONTHLY INFLOWS"}
           </span>
           <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">
             {money(totalInflows)}
           </p>
-          <span className="mt-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 block">Total Income & Deposits</span>
+          <span className="mt-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 block">{isBurialChama ? "Member contributions received this month" : "Income & deposits received this month"}</span>
         </div>
 
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-            TOTAL OUTFLOWS
+            {isBurialChama ? "MONTHLY WELFARE OUTFLOWS" : "MONTHLY OUTFLOWS"}
           </span>
           <p className="mt-2 text-2xl font-black text-slate-900 dark:text-mist">
             {money(totalOutflows)}
           </p>
-          <span className="mt-1 text-xs font-bold text-rose-500 block">Total Payouts & Expenses</span>
+          <span className="mt-1 text-xs font-bold text-rose-500 block">{isBurialChama ? "Benefits and expenses paid this month" : "Payouts & expenses paid this month"}</span>
         </div>
 
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-obsidian-border dark:bg-obsidian-card">
@@ -192,10 +216,20 @@ export default function TransactionsPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100 dark:border-obsidian-border">
           {[
             { id: "all", label: "All" },
-            { id: "contribution", label: "Contributions" },
-            { id: "disbursement", label: "Loan Disbursements" },
-            { id: "repayment", label: "Loan Repayments" },
-            { id: "expense", label: "Expenses" },
+            ...(isBurialChama
+              ? [
+                  { id: "welfare_contributions", label: "Welfare Contributions" },
+                  { id: "case_benefits", label: "Case Benefits" },
+                  { id: "fundraising", label: "Harambee" },
+                  { id: "equipment_hire", label: "Equipment Hire" },
+                  { id: "expenses", label: "Expenses" },
+                ]
+              : [
+                  { id: "welfare_contributions", label: "Contributions" },
+                  { id: "loan_disbursements", label: "Loan Disbursements" },
+                  { id: "loan_repayments", label: "Loan Repayments" },
+                  { id: "expenses", label: "Expenses" },
+                ]),
           ].map((tab) => (
             <button
               key={tab.id}

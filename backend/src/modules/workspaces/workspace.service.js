@@ -3,6 +3,7 @@ import ChamaMembership from "../../models/ChamaMembership.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
 import Business from "../../models/Business.js";
+import BusinessStaff from "../../models/BusinessStaff.js";
 
 import {
     mapChamaWorkspace,
@@ -38,11 +39,18 @@ export async function getUserWorkspaces(userId) {
     // is reached only through chama membership - NOT through created_by, which
     // for those is just the officer who filed the request and must not keep
     // access after leaving the chama.
+    const businessStaff = await BusinessStaff.find({ user_id: userId, status: "active" }).lean();
+    const staffByBusiness = new Map(businessStaff.map((row) => [String(row.business_id), row]));
     const businesses = await Business.find({
         $or: [
-            { owner_type: { $ne: "chama" }, owner_id: userId },
-            { owner_type: { $ne: "chama" }, owner_id: null, created_by: userId },
-            { owner_type: "chama", owner_id: { $in: chamaIds }, chama_asset_id: { $ne: null } }
+            { owner_type: "user", owner_id: userId },
+            // Legacy standalone businesses may have no owner_type/owner_id;
+            // created_by is only an ownership fallback for those rows.
+            { owner_type: { $in: [null, "user"] }, owner_id: null, created_by: userId },
+            // A chama-owned business is visible only through membership in
+            // that exact owning chama. It need not also have an asset link.
+            { owner_type: "chama", owner_id: { $in: chamaIds } },
+            { _id: { $in: businessStaff.map((row) => row.business_id) }, owner_type: { $in: [null, "user"] } }
         ]
     });
     const ownerChamas = await Chama.find({ _id: { $in: [...new Set(businesses.filter((b) => b.owner_type === "chama").map((b) => String(b.owner_id)))] } }).select("name").lean();
@@ -54,7 +62,8 @@ export async function getUserWorkspaces(userId) {
         ...businesses.map((business) => mapBusinessWorkspace(
             business,
             membershipByChama.get(String(business.owner_id)),
-            chamaNameById.get(String(business.owner_id)) || null
+            chamaNameById.get(String(business.owner_id)) || null,
+            staffByBusiness.get(String(business._id)) || null
         ))
     ].sort(sortWorkspaces);
 
@@ -214,7 +223,7 @@ function sortWorkspaces(a, b) {
  * Used by new users post-OTP to discover existing workspaces.
  * ==========================================================
  */
-export async function getDirectoryWorkspaces(type, query = '') {
+export async function getDirectoryWorkspaces(type, query = '', { organizationFamily, organizationType } = {}) {
     const normalizedType = String(type || '').toLowerCase();
     const results = {
         chamas: [],
@@ -224,8 +233,13 @@ export async function getDirectoryWorkspaces(type, query = '') {
 
     const searchRegex = query ? new RegExp(query.trim(), 'i') : null;
 
-    if (!normalizedType || normalizedType === 'chama') {
+    const requestedOrganizationFamily = organizationFamily || (['sacco', 'cooperative'].includes(normalizedType) ? normalizedType : '');
+    if (!normalizedType || ['chama', 'sacco', 'cooperative'].includes(normalizedType)) {
         const chamaFilter = { status: 'active' };
+        if (requestedOrganizationFamily === 'chama') chamaFilter.$and = [{ $or: [{ organization_family: 'chama' }, { organization_family: { $exists: false } }] }];
+        else if (['sacco', 'cooperative'].includes(requestedOrganizationFamily)) chamaFilter.organization_family = requestedOrganizationFamily;
+        if (organizationType === 'custom') chamaFilter.$and = [...(chamaFilter.$and || []), { $or: [{ organization_type: 'custom' }, { organization_type: { $exists: false } }] }];
+        else if (organizationType) chamaFilter.organization_type = organizationType;
         if (searchRegex) {
             chamaFilter.$or = [
                 { name: searchRegex },
@@ -234,7 +248,7 @@ export async function getDirectoryWorkspaces(type, query = '') {
         }
 
         const chamas = await Chama.find(chamaFilter)
-            .select('name monthly_savings chama_type status visibility join_code created_by createdAt')
+            .select('name monthly_savings chama_type organization_family organization_type workspace_config status visibility join_code created_by createdAt')
             .populate('created_by', 'name phone email')
             .sort({ createdAt: -1 })
             .lean();
@@ -307,7 +321,7 @@ export async function getDirectoryWorkspaces(type, query = '') {
         }));
     }
 
-    if (normalizedType === 'chama') return results.chamas;
+    if (['chama', 'sacco', 'cooperative'].includes(normalizedType)) return results.chamas;
     if (normalizedType === 'business') return results.businesses;
     if (normalizedType === 'contribution_group' || normalizedType === 'contribution') return results.contributionGroups;
 

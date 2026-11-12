@@ -16,6 +16,7 @@ import {
   markMgrPaidController,
   verifyTreasurerController,
   getPublicChamasController,
+  listPublicChamaProfilesController,
   joinWithCodeController,
   requestToJoinPublicChamaController,
 } from './chama.controller.js';
@@ -48,9 +49,11 @@ router.get('/verify-treasurer', protect, verifyTreasurerController);
 // PUBLIC DIRECTORY & JOIN CODE
 // ========================================
 
+// Published Chama profiles are safe to browse without an account.
+router.get('/directory/public-profiles', listPublicChamaProfilesController);
+
 router.get(
   '/directory/public',
-  protect,
   getPublicChamasController
 );
 

@@ -22,6 +22,10 @@ const authApi = {
     return api.post("/auth/verify-otp", payload);
   },
 
+  redeemHandoff(code) {
+    return api.post("/auth/handoff/redeem", { code });
+  },
+
   sendOtp(payload) {
     return api.post("/auth/send-otp", payload);
   },

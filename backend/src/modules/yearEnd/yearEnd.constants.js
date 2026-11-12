@@ -1,6 +1,8 @@
 // ============================================================================
 // YEAR-END CONSTANTS
 // ============================================================================
+import { SETTLEMENTS } from '../../constants/settlement.constants.js';
+export { SETTLEMENTS };
 
 // Lifecycle of a financial year's close. This is deliberately separate from
 // ChamaFinancialYear.status ('upcoming' | 'active' | 'closed'): the year stays
@@ -37,12 +39,6 @@ export const RUN_STATES = Object.freeze({
 //   distributed - account is fully paid out to members by year end: carries
 //                 nothing, and the close REFUSES to start if a balance is left
 //                 (otherwise that money would silently disappear).
-export const SETTLEMENTS = Object.freeze({
-  RETAINED: 'retained',
-  CLEARED: 'cleared',
-  DISTRIBUTED: 'distributed',
-});
-
 // Snapshot movement buckets (signed, in the account's own normal-balance terms).
 export const BUCKETS = Object.freeze([
   'contributions',
@@ -56,6 +52,7 @@ export const CONTRIBUTION_TX_TYPES = Object.freeze([
   'contribution',
   'contribution_payment',
   'contribution_reversal',
+  'fine_payment_reclassification',
   'mgr_contribution',
   'chama_contribution_payment',
 ]);
@@ -69,6 +66,9 @@ export const PAYOUT_TX_TYPES = Object.freeze([
   'savings_shareout_obligation',
   'savings_shareout_settlement',
   'savings_shareout_cancellation',
+  'fine_shareout_obligation',
+  'fine_shareout_settlement',
+  'fine_shareout_cancellation',
   'withdrawal',
   'withdrawal_obligation',
   'withdrawal_settlement',

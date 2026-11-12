@@ -202,9 +202,14 @@ class ContributionPaymentController {
       }
 
       // 1. Load obligation
-      const obligation = await ContributionObligation.findById(obligationId).populate('plan_id', 'name contribution_type');
+      const obligation = await ContributionObligation.findById(obligationId).populate('plan_id', 'name contribution_type behavior system_key');
       if (!obligation) return res.status(404).json({ success: false, message: "Obligation not found" });
       if (obligation.status === 'paid') return res.status(409).json({ success: false, message: "Obligation already paid" });
+      const isFineObligation = obligation.plan_id?.behavior === 'fine' || obligation.plan_id?.system_key === 'late_penalties';
+      if (isFineObligation) {
+        const outstanding = Math.max(0, Number(obligation.expected_amount?.toString?.() ?? obligation.expected_amount) - Number(obligation.paid_amount?.toString?.() ?? obligation.paid_amount ?? 0));
+        if (Number(amount) > outstanding) return res.status(400).json({ success: false, message: `Fine payment cannot exceed the outstanding amount of KES ${outstanding.toFixed(2)}.` });
+      }
 
       // 2. Determine product type
       const productType = obligation.plan_id?.contribution_type === 'merry_go_round' ? 'MGR' : 'CONTRIBUTION';

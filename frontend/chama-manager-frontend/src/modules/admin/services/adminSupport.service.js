@@ -1,5 +1,5 @@
 import api from '@/app/services/api';
-import adminService from './admin.service';
+import adminService from './admin.service.js';
 
 // Platform support console API (/admin/support). The server enforces every
 // permission; the UI only hides what a person could not use anyway.

@@ -7,16 +7,17 @@ import {
   X,
   BookOpen,
   Lock,
+  Megaphone,
 } from "lucide-react";
 import { NavLink, Link, useLocation } from "react-router-dom";
-import { isChamaBackedType } from "@/modules/workspaces/config/workspaceModules";
+import { isChamaBackedType } from '@/modules/workspaces/index.js';
 
 import Logo from "../Logo";
 import SidebarSection from "./SidebarSection";
 import BrandMark from "../BrandMark";
-import AdminInquiryBottomPanel from "@/modules/workspaces/components/AdminInquiryBottomPanel";
+import { AdminInquiryBottomPanel } from '@/modules/workspaces/index.js';
 import useAuth from "@/app/hooks/useAuth";
-import { findWorkspaceNavigationMatch, getLeadershipDeskItem } from "@/modules/workspaces/config/workspaceNavigation";
+import { findWorkspaceNavigationMatch, getLeadershipDeskItem } from '@/modules/workspaces/index.js';
 import { useNotificationBadges } from "@/modules/notifications/hooks/useNotifications";
 
 // -----------------------------------------------------------------------------
@@ -77,13 +78,13 @@ const CHAMA_RAIL_ORDER = [
 
 const BURIAL_RAIL_ORDER = [
   "Overview",
+  "Welfare & Cover",
   "Members",
-  "Contributions",
   "Burial Cases",
-  "Welfare Fund",
   "Meeting Records",
   "Messages",
   "Books",
+  "Income & Fundraising",
 ];
 
 // -----------------------------------------------------------------------------
@@ -145,8 +146,10 @@ const RAIL_SHORT_LABELS = {
   Dashboard: "Money",
   "Trust Score": "Trust",
   Contributions: "Money",
+  "Welfare & Cover": "Welfare",
   "Burial Cases": "Cases",
   "Welfare Fund": "Welfare",
+  "Income & Fundraising": "Income",
   "Meeting Records": "Meetings",
   Messages: "Chat",
   Chat: "Chat",
@@ -214,7 +217,13 @@ function pickRailItems(
     .map((title) => {
       const item = title === "Books"
         ? pickBooksItem(sections)
-        : items.find((candidate) => candidate.title === title);
+        : title === "Income & Fundraising"
+          ? (() => {
+              const sectionItem = items.find((candidate) => candidate.title === "Harambee & Fundraising") ||
+                items.find((candidate) => candidate.title === "Equipment & Tent Hire");
+              return sectionItem ? { ...sectionItem, title, icon: Megaphone } : null;
+            })()
+          : items.find((candidate) => candidate.title === title);
       if (!item || item.sectionKey) return item;
       const section = sections.find((candidate) => candidate.items?.some((navItem) => navItem.to === item.to));
       return { ...item, sectionKey: section?.sectionKey };
@@ -258,7 +267,7 @@ export default function Sidebar({
 
   const booksItem = pickBooksItem(sections);
 
-  const { countForRoute } = useNotificationBadges();
+  const { countForRoute } = useNotificationBadges(workspaceId);
   const { user } = useAuth();
 
   // ---------------------------------------------------------------------------
@@ -449,7 +458,8 @@ export default function Sidebar({
                     title={locked ? `${label} (upgrade to unlock)` : label}
                     className={({ isActive }) => {
                       const isSectionOwnedRailItem = (title === "Books" && sectionKey === "books") ||
-                        (title === "Dashboard" && sectionKey === "money");
+                        (title === "Dashboard" && sectionKey === "money") ||
+                        (title === "Welfare & Cover" && sectionKey === "money");
                       const active = isSectionOwnedRailItem
                         ? routeOwner?.section.sectionKey === sectionKey
                         : isActive;
@@ -589,7 +599,7 @@ export default function Sidebar({
           )}
 
           {/* Chama assets */}
-          {isChama ? (
+          {isChama || isBurial ? (
             <div
               ref={assetsLauncherRef}
               className="relative"
@@ -1041,7 +1051,7 @@ export default function Sidebar({
       {/* CHAMA SUPPORT LAUNCHER                                              */}
       {/* ------------------------------------------------------------------- */}
 
-      {isChama && (
+      {(isChama || isBurial) && (
         <AdminInquiryBottomPanel
           workspace={workspace}
           workspaceId={workspaceId}

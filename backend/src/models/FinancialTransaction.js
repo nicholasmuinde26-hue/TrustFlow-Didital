@@ -69,6 +69,10 @@ const TRANSACTION_TYPES = [
   'savings_shareout_obligation',
   'savings_shareout_settlement',
   'savings_shareout_cancellation',
+  'fine_shareout_obligation',
+  'fine_shareout_settlement',
+  'fine_shareout_cancellation',
+  'fine_payment_reclassification',
   'loan_disbursement',
   'loan_repayment',
   'deposit',
@@ -94,6 +98,21 @@ const TRANSACTION_TYPES = [
   'chama_profit_distribution',
   'chama_profit_wallet_credit',
   'chama_profit_wallet_withdrawal',
+  // Exact journal event names used by accounting rules and persisted by
+  // financeTransactionService when their posting context has no override.
+  'chama_asset_income_posting',
+  'chama_asset_expense_posting',
+  'chama_asset_purchase_posting',
+  'chama_profit_distribution_posting',
+  'chama_profit_wallet_credit_posting',
+  'chama_profit_wallet_withdrawal_posting',
+  'ledger_adjustment_posting',
+  // Burial welfare and equipment-hire journals.
+  'burial_benefit_disbursement',
+  'burial_fundraising_receipt',
+  'burial_fundraising_handover',
+  'equipment_hire_payment',
+  'equipment_deposit_settlement',
   // One-off move of historic business money out of the pooled chama accounts
   // (scripts/separateBusinessFunds.js, rules/businessFundsReclass.rule.js).
   'business_funds_reclass'
@@ -275,7 +294,7 @@ const financialTransactionSchema =
       created_by: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        default: null
       },
 
 
@@ -400,6 +419,19 @@ financialTransactionSchema.index(
   },
   {
     name: 'financial_transaction_source_lookup'
+  }
+);
+
+// A single M-Pesa recipient callback must never create two ledger entries.
+financialTransactionSchema.index(
+  { owner_type: 1, owner_id: 1, transaction_type: 1, source_type: 1, source_id: 1 },
+  {
+    name: 'burial_recipient_disbursement_idempotency',
+    unique: true,
+    partialFilterExpression: {
+      source_type: 'BurialCaseRecipient',
+      transaction_type: 'burial_benefit_disbursement'
+    }
   }
 );
 

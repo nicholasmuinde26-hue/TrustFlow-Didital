@@ -5,9 +5,10 @@ import ContributionGroupMember from '../../models/ContributionGroupMember.js';
 import ContributionPlan from '../../models/ContributionPlan.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
-import Meeting from '../../models/Meeting.js';
+import { listUpcomingMeetings } from '../meetings/index.js';
 import Business from '../../models/Business.js';
-import { getSummary } from '../business/business.service.js';
+import BusinessStaff from '../../models/BusinessStaff.js';
+import { getSummary } from '../business/index.js';
 import AppError from '../../utils/AppError.js';
 import mongoose from 'mongoose';
 import { WORKSPACE_TYPES } from './workspace.constants.js';
@@ -20,17 +21,27 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
   // 1. Check if workspaceId is a Business
   const business = await Business.findById(workspaceId).lean();
   if (business) {
+    let chamaMembership = null;
+    let staffAccess = null;
+    let isOwner = false;
+    if (business.owner_type === 'chama') {
+      chamaMembership = await ChamaMembership.findOne({ chama_id: business.owner_id, user_id: userId, status: 'active' }).lean();
+      if (!chamaMembership) throw new AppError('You do not have access to this chama-owned business', 403);
+    } else if (business.owner_type === 'user' || !business.owner_type) {
+      isOwner = String(business.owner_id || business.created_by) === String(userId);
+      if (!isOwner) staffAccess = await BusinessStaff.findOne({ business_id: business._id, user_id: userId, status: 'active' }).lean();
+      if (!isOwner && !staffAccess) throw new AppError('You are not assigned to this business workspace', 403);
+    } else {
+      throw new AppError('Unsupported business owner type', 403);
+    }
     const summary = await getSummary(workspaceId, { _id: userId });
-    const chamaMembership = business.owner_type === 'chama'
-      ? await ChamaMembership.findOne({ chama_id: business.owner_id, user_id: userId, status: 'active' }).lean()
-      : null;
     return {
       type: 'business',
       workspace: {
         id: String(business._id),
         name: business.name,
         status: 'active',
-        role: business.owner_type === 'chama' ? (chamaMembership?.role || 'member') : 'owner',
+        role: business.owner_type === 'chama' ? (chamaMembership?.role || 'member') : isOwner ? 'owner' : staffAccess?.role || 'staff',
         category: business.category,
         currency: business.currency,
         ownerType: business.owner_type || 'user',
@@ -51,13 +62,6 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
     ChamaMembership.findOne({ chama_id: workspaceId, user_id: userId, status: 'active' }).lean(),
     ContributionGroupMember.findOne({ contribution_group_id: workspaceId, user_id: userId, status: 'active' }).lean(),
   ]);
-
-  if (!chamaMembership && !groupMembership) {
-    const chamaCreated = await Chama.findOne({ _id: workspaceId, created_by: userId }).lean();
-    if (chamaCreated) {
-      chamaMembership = { chama_id: workspaceId, user_id: userId, role: 'admin', status: 'active' };
-    }
-  }
 
   const type = chamaMembership ? 'chama' : groupMembership ? 'contribution-group' : null;
   if (!type) throw new AppError('You do not have access to this workspace', 403);
@@ -92,7 +96,7 @@ export async function getWorkspaceDashboard({ workspaceId, userId }) {
       { $match: { ...ownerFilter, status: 'completed' } },
       { $group: { _id: null, total: { $sum: { $toDouble: '$amount' } } } },
     ]),
-    Meeting.find({ workspace_id: workspaceId, cancelled_at: null, starts_at: { $gte: now } }).sort({ starts_at: 1 }).limit(3).lean(),
+    listUpcomingMeetings({ workspaceId, limit: 3, now }),
     ContributionPayment.aggregate([
       { $match: { ...ownerFilter, status: 'completed' } },
       { $group: { _id: '$user_id', total: { $sum: { $toDouble: '$amount' } } } },

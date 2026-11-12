@@ -64,9 +64,10 @@ export const fromScaled = (n) => {
 export const signedEffect = (normalBalance, entryType, amountScaled) =>
   entryType === normalBalance ? amountScaled : -amountScaled;
 
-export const classifyBucket = ({ accountType, transactionType }) => {
+export const classifyBucket = ({ accountType, transactionType, behavior = null }) => {
   if (accountType === 'income') return 'income';
   if (accountType === 'expense') return 'expenses';
+  if (behavior === 'fine' && CONTRIBUTION_TX_TYPES.includes(transactionType)) return 'income';
   if (CONTRIBUTION_TX_TYPES.includes(transactionType)) return 'contributions';
   if (PAYOUT_TX_TYPES.includes(transactionType)) return 'payouts';
   return 'other';

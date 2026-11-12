@@ -2,7 +2,7 @@ import ChamaMembership from '../../models/ChamaMembership.js';
 import ContributionGroupMember from '../../models/ContributionGroupMember.js';
 import notificationPreferenceService from '../../services/notificationPreference.service.js';
 import notificationService from '../../services/notification.service.js';
-import { sendChatMessageToUser, sendToastToUser } from '../realtime/socketServer.js';
+import { sendChatMessageToUser, sendToastToUser } from '../realtime/index.js';
 
 const idOf = (value) => String(value?._id || value || '');
 const previewOf = (message = '') => {

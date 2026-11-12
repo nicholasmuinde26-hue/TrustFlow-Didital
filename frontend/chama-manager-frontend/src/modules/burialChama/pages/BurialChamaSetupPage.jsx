@@ -48,6 +48,34 @@ export default function BurialChamaSetupPage() {
   const [wizardData, setWizardData] = useState({});
   const [loading, setLoading] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState(null);
+  const [progressLoaded, setProgressLoaded] = useState(false);
+
+  const { data: savedProgress } = useQuery({
+    queryKey: ['burial-chama-wizard-progress', workspaceId],
+    enabled: Boolean(workspaceId),
+    queryFn: async () => {
+      const response = await api.get(`/burial-chama/chama/${workspaceId}/wizard/progress`);
+      return response.data.data;
+    },
+  });
+
+  useEffect(() => {
+    if (!savedProgress) return;
+    setWizardData(savedProgress.step_data || {});
+    setCurrentStep(Math.min(10, Math.max(1, savedProgress.current_step || 1)));
+    setProgressLoaded(true);
+  }, [savedProgress]);
+
+  useEffect(() => {
+    if (!progressLoaded || !workspaceId || !wizardData[`step_${currentStep}`]) return undefined;
+    const timeout = setTimeout(() => {
+      api.post(
+        `/burial-chama/chama/${workspaceId}/wizard/progress/${currentStep}`,
+        wizardData[`step_${currentStep}`]
+      ).catch(() => toast.error('Could not save setup progress. Your latest changes may not be saved.'));
+    }, 700);
+    return () => clearTimeout(timeout);
+  }, [currentStep, progressLoaded, wizardData, workspaceId]);
 
   // Fetch wizard template
   const {
@@ -85,6 +113,7 @@ export default function BurialChamaSetupPage() {
     onSuccess: () => {
       toast.success('Burial chama setup completed successfully!');
       queryClient.invalidateQueries(['burial-chama-profile']);
+      queryClient.invalidateQueries(['burial-chama-wizard-progress', workspaceId]);
       navigate(`/workspace/${workspaceId}`);
     },
     onError: (error) => {
@@ -110,6 +139,15 @@ export default function BurialChamaSetupPage() {
     }
 
     if (currentStep < 10) {
+      try {
+        await api.post(
+          `/burial-chama/chama/${workspaceId}/wizard/progress/${currentStep}`,
+          wizardData[`step_${currentStep}`] || {}
+        );
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Could not save setup progress');
+        return;
+      }
       setCurrentStep(currentStep + 1);
     }
   };
@@ -147,7 +185,8 @@ export default function BurialChamaSetupPage() {
           contribution_components: preset.config.contribution_components
         },
         step_5: {
-          beneficiary_categories: preset.config.beneficiary_categories
+          beneficiary_categories: preset.config.beneficiary_categories,
+          family_rules: preset.config.family_rules || { enabled: true, max_spouses: 1, max_children: 6, child_age_limit: 18, college_child_age_limit: 24, max_parents: 2, max_parents_in_law: 2 }
         },
         step_6: {
           waiting_period_days: preset.config.waiting_period_days
@@ -560,6 +599,8 @@ function ContributionsStep({ data, onChange }) {
 }
 
 function BeneficiariesStep({ data, onChange }) {
+  const familyRules = data?.family_rules || { enabled: true, max_spouses: 1, max_children: 6, child_age_limit: 18, college_child_age_limit: 24, max_parents: 2, max_parents_in_law: 2 };
+  const updateFamilyRule = (field, value) => onChange({ family_rules: { ...familyRules, [field]: value } });
   const [categories, setCategories] = useState(data?.beneficiary_categories || [
     { relationship: 'self' },
     { relationship: 'spouse' },
@@ -585,6 +626,20 @@ function BeneficiariesStep({ data, onChange }) {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
+        <h3 className="font-semibold">Family cover limits</h3>
+        <p className="text-sm text-slate-600">Set who each membership can cover. Children in college can stay covered through the age limit.</p>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            ['max_spouses', 'Maximum spouses', 1], ['max_children', 'Maximum children', 6],
+            ['child_age_limit', 'Child age limit', 18], ['college_child_age_limit', 'College age limit', 24],
+            ['max_parents', 'Maximum parents', 2], ['max_parents_in_law', 'Maximum parents-in-law', 2]
+          ].map(([field, label, fallback]) => <div key={field}>
+            <Label htmlFor={field}>{label}</Label>
+            <Input id={field} type="number" min="0" value={familyRules[field] ?? fallback} onChange={(e) => updateFamilyRule(field, Number(e.target.value))} />
+          </div>)}
+        </div>
+      </div>
       {categories.map((category, index) => (
         <div key={index} className="p-4 border rounded-lg space-y-3">
           <div className="flex justify-between items-center">
@@ -605,7 +660,9 @@ function BeneficiariesStep({ data, onChange }) {
               <option value="self">Self</option>
               <option value="spouse">Spouse</option>
               <option value="child">Child</option>
+              <option value="adopted_child">Adopted child</option>
               <option value="parent">Parent</option>
+              <option value="parent_in_law">Parent-in-law</option>
               <option value="sibling">Sibling</option>
               <option value="dependant">Dependant</option>
             </select>
@@ -641,16 +698,19 @@ function WaitingPeriodStep({ data, onChange }) {
           placeholder="90"
         />
         <p className="text-sm text-gray-600 mt-1">
-          New members must wait this many days before becoming eligible for benefits
+          Claims stay locked until this waiting period is complete.
         </p>
       </div>
-      <div className="flex items-center space-x-2">
-        <Checkbox
-          id="partial_coverage"
-          checked={data?.partial_coverage_during_waiting || false}
-          onCheckedChange={(checked) => onChange({ partial_coverage_during_waiting: checked })}
+      <div>
+        <Label htmlFor="arrears_threshold">Maximum arrears before cover is suspended (KES)</Label>
+        <Input
+          id="arrears_threshold"
+          type="number"
+          min="0"
+          value={data?.arrears_policy?.arrears_threshold ?? 1500}
+          onChange={(e) => onChange({ arrears_policy: { ...data?.arrears_policy, effect: 'suspend', arrears_threshold_type: 'amount', arrears_threshold: Number(e.target.value) } })}
         />
-        <Label htmlFor="partial_coverage">Allow partial coverage during waiting period</Label>
+        <p className="text-sm text-gray-600 mt-1">Members owing more than this amount are marked out of good standing and cannot open a claim.</p>
       </div>
     </div>
   );
@@ -701,6 +761,7 @@ function BenefitsStep({ data, onChange }) {
               <option value="spouse">Spouse</option>
               <option value="child">Child</option>
               <option value="parent">Parent</option>
+              <option value="parent_in_law">Parent-in-law</option>
             </select>
           </div>
           <div>

@@ -49,6 +49,28 @@ class NotificationEventHandler {
       );
     });
 
+    // Full-coverage events (meetings cancelled, polls, disputes, payouts, share-outs,
+    // settings changes, wallet activity, large-transaction alerts, ...). The
+    // routing for each lives in notification.service.js, so one generic handler
+    // covers them all.
+    [
+      'MEETING_CANCELLED', 'POLL_PUBLISHED', 'POLL_CLOSED', 'DISPUTE_RAISED',
+      'DISPUTE_UPDATED', 'PAYOUT_CREATED', 'PAYOUT_COMPLETED', 'SHAREOUT_EXECUTED',
+      'WALLET_DEPOSIT_CONFIRMED', 'WALLET_WITHDRAWAL_PROCESSED', 'APPROVAL_DECIDED',
+      'SETTINGS_CHANGED', 'MODULES_CHANGED', 'ACCOUNT_LOCKED', 'LARGE_TRANSACTION_ALERT',
+      'ASSET_ACQUIRED', 'FINANCIAL_YEAR_CLOSED', 'MEMBER_EXIT_REQUESTED', 'MEMBER_EXIT_PROCESSED'
+    ].forEach((eventName) => {
+      domainEventEmitter.onDomainEvent(eventName, (eventData) =>
+        notificationService
+          .sendDomainEventNotification({
+            domainEvent: eventName,
+            chamaId: eventData.chamaId,
+            eventData
+          })
+          .catch((error) => console.error(`Notification for ${eventName} failed:`, error.message))
+      );
+    });
+
     // Financial events
     domainEventEmitter.onDomainEvent('CONTRIBUTION_RECEIVED', this.handleContributionReceived.bind(this));
     domainEventEmitter.onDomainEvent('CONTRIBUTION_MISSED', this.handleContributionMissed.bind(this));

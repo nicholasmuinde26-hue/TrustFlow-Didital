@@ -168,7 +168,9 @@ const contributionPlanSchema =
 
           'ChamaMembership',
 
-          'ContributionGroupMember'
+          'ContributionGroupMember',
+
+          'ContributionDonor'
 
         ],
 
@@ -1104,13 +1106,11 @@ contributionPlanSchema.pre(
 
       'ContributionGroup' &&
 
-      this.participant_type !==
-
-      'ContributionGroupMember'
+      !['ContributionGroupMember', 'ContributionDonor'].includes(this.participant_type)
 
     ) {
 
-      throw new Error('ContributionGroup contribution plans must use ContributionGroupMember participants');
+      throw new Error('ContributionGroup plans must use a ContributionGroupMember or ContributionDonor participant');
 
     }
 

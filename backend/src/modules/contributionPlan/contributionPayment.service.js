@@ -7,6 +7,7 @@
 import mongoose from "mongoose";
 import crypto from "node:crypto";
 import ContributionPayment from "../../models/ContributionPayment.js";
+import ContributionPledge from "../../models/ContributionPledge.js";
 import contributionObligationService from "./contributionObligation.service.js";
 import { toDecimal, isMoneyPositive } from "../../shared/decimal.js";
 import domainEventEmitter from "../../services/domainEvent.emitter.js";
@@ -100,15 +101,23 @@ class ContributionPaymentService {
     contributionPayment.completed_at = new Date();
     await contributionPayment.save(opts);
 
-    await contributionObligationService.markPaid(
+    const settledObligation = await contributionObligationService.markPaid(
       obligation._id,
       toDecimal(contributionPayment.amount),
       session
     );
 
-    // Emit domain event for contribution received
-    domainEventEmitter.emitContributionReceived({
+    if (contributionPayment.participant_type === 'ContributionDonor') {
+      await ContributionPledge.updateOne(
+        { obligation_id: settledObligation._id },
+        { $set: { status: settledObligation.status } },
+        getOpts(session)
+      );
+    }
+
+    const receiptEvent = {
       chamaId: obligation.owner_id,
+      ownerType: obligation.owner_type,
       contributionPaymentId: contributionPayment._id,
       amount: Number(contributionPayment.amount),
       participantId: contributionPayment.participant_id,
@@ -116,10 +125,15 @@ class ContributionPaymentService {
       sentBy: contributionPayment.created_by,
       entityType: 'ContributionPayment',
       entityId: contributionPayment._id
-    });
+    };
+    if (contributionPayment.participant_type === 'ContributionDonor') {
+      domainEventEmitter.emitDomainEvent('PUBLIC_DONATION_RECEIVED', receiptEvent);
+    } else {
+      domainEventEmitter.emitContributionReceived(receiptEvent);
+    }
 
     if (obligation.owner_type === 'Chama') {
-      const { maybeCreateMgrPayoutForChama } = await import('../chama/chamaFinance.service.js');
+      const { maybeCreateMgrPayoutForChama } = await import('../chama/index.js');
       await maybeCreateMgrPayoutForChama(String(obligation.owner_id), String(contributionPayment.participant_id)).catch(() => null);
 
       try {
@@ -137,7 +151,7 @@ class ContributionPaymentService {
         const activePolicy = await MgrPolicy.findOne({ chama_id: obligation.owner_id, status: 'active' }).select('_id');
 
         if (activePolicy) {
-          const mgrService = (await import('../mgr/mgr.service.js')).default;
+          const { mgrService } = await import('../mgr/index.js');
           await mgrService.syncRoundCollection({
             chamaId: obligation.owner_id,
             policyId: activePolicy._id,

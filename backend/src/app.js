@@ -10,118 +10,115 @@ import { globalLimiter } from "./middleware/rateLimit.middleware.js";
 // ============================================================================
 
 // Authentication
-import authRoutes from "./modules/auth/auth.routes.js";
+import { authRoutes } from "./modules/auth/index.js";
 
 // Admin & Workspace Requests
-import adminRoutes from "./modules/admin/admin.routes.js";
-import securityRoutes from "./modules/security/security.routes.js";
-import workspaceRequestRoutes from "./modules/workspaces/workspaceRequest.routes.js";
+import { adminRoutes } from "./modules/admin/index.js";
+import { securityRoutes } from "./modules/security/index.js";
+import { workspaceRequestRoutes } from "./modules/workspaces/index.js";
 
 // Workspace
-import workspaceRoutes from "./modules/workspaces/workspace.routes.js";
+import { workspaceRoutes } from "./modules/workspaces/index.js";
+import { fineRoutes } from "./modules/fines/index.js";
 
 // Chamas
-import chamaRoutes from "./modules/chama/chama.routes.js";
-import chamaOperationsRoutes from "./modules/chama/chamaOperations.routes.js";
-import chamaAssetRoutes from "./modules/chamaAssets/chamaAsset.routes.js";
-import assetLeaseRoutes from "./modules/chamaAssets/assetLease.routes.js";
-import assetComplianceRoutes from "./modules/chamaAssets/assetCompliance.routes.js";
-import leadershipPinRoutes from "./modules/leadership/leadershipPin.routes.js";
-import chamaInvitationRoutes from "./modules/chama/chamaInvitation.routes.js";
-import memberRoutes from "./modules/member/member.routes.js";
-import chamaContributionRoutes from "./modules/chama/chamaContribution.routes.js";
+import { chamaRoutes } from "./modules/chama/index.js";
+import { chamaOperationsRoutes } from "./modules/chama/index.js";
+import { chamaAssetRoutes } from "./modules/chamaAssets/index.js";
+import { assetLeaseRoutes } from "./modules/chamaAssets/index.js";
+import { assetComplianceRoutes } from "./modules/chamaAssets/index.js";
+import { leadershipPinRoutes } from "./modules/leadership/index.js";
+import { chamaInvitationRoutes } from "./modules/chama/index.js";
+import { memberRoutes } from "./modules/member/index.js";
+import { chamaContributionRoutes } from "./modules/chama/index.js";
 
 // Contribution Groups
-import contributionGroupRoutes from "./modules/contributionGroups/contributionGroup.routes.js";
-import contributionFundRoutes from "./modules/contributionGroups/contributionFund.routes.js";
-import contributionGroupPlanRoutes from "./modules/contributionPlan/contributionGroupPlan.routes.js";
-import contributionPlanRoutes from "./modules/contributionPlan/contributionPlan.routes.js";
-import financialYearRoutes from "./modules/contributionPlan/financialYear.routes.js";
-import yearEndRoutes from "./modules/yearEnd/yearEnd.routes.js";
-import contributionCalendarRoutes from "./modules/contributionPlan/contributionCalendar.routes.js";
-import billingRoutes from "./modules/billing/billing.routes.js";
-import billingAdminRoutes from "./modules/billing/billingAdmin.routes.js";
-import adminSupportRoutes from "./modules/support/adminSupport.routes.js";
-import contributionPaymentRoutes from "./modules/contributionPlan/contributionPayment.routes.js";
+import { contributionGroupRoutes } from "./modules/contributionGroups/index.js";
+import { publicGivingRoutes } from "./modules/publicGiving/index.js";
+import { contributionFundRoutes } from "./modules/contributionGroups/index.js";
+import { contributionGroupPlanRoutes } from "./modules/contributionPlan/index.js";
+import { contributionPlanRoutes } from "./modules/contributionPlan/index.js";
+import { financialYearRoutes } from "./modules/contributionPlan/index.js";
+import { yearEndRoutes } from "./modules/yearEnd/index.js";
+import { contributionCalendarRoutes } from "./modules/contributionPlan/index.js";
+import { billingRoutes } from "./modules/billing/index.js";
+import { billingAdminRoutes } from "./modules/billing/index.js";
+import { adminSupportRoutes } from "./modules/support/index.js";
+import { contributionPaymentRoutes } from "./modules/contributionPlan/index.js";
 import mpesaRoutes from "./payment/providers/mpesa/mpesa.routes.js";
-import mpesaC2bRoutes from "./modules/mpesaC2b/c2b.routes.js";
+import { mpesaC2bRoutes } from "./modules/mpesaC2b/index.js";
 
 // Finance
-import financeRoutes from "./modules/finance/finance.routes.js";
+import { financeRoutes } from "./modules/finance/index.js";
 
 // Payouts
-import payoutRoutes from "./modules/payout/payout.routes.js";
-import withdrawalRoutes from "./modules/withdrawal/withdrawal.routes.js";
-import savingsShareoutRoutes from "./modules/savingsShareout/savingsShareout.routes.js";
+import { payoutRoutes } from "./modules/payout/index.js";
+import { withdrawalRoutes } from "./modules/withdrawal/index.js";
+import { savingsShareoutRoutes } from "./modules/savingsShareout/index.js";
+import { fineShareoutRoutes } from "./modules/fines/index.js";
 
 // Chat
-import chatRoutes from "./modules/chat/chat.routes.js";
 
 // Meetings
-import meetingRoutes from "./modules/meetings/meetings.routes.js";
 
 // Announcements
-import announcementRoutes from "./modules/announcements/announcement.routes.js";
 
 // Polls & Voting
-import pollRoutes from "./modules/polls/poll.routes.js";
+import { mountRegisteredModuleRoutes } from "./modules/registry.js";
 
 // Audit
-import auditRoutes from "./modules/audit/audit.routes.js";
+import { auditRoutes } from "./modules/audit/index.js";
 
 // Chama Trust Score (shareable score/report + public share-link view)
-import trustScoreRoutes from "./modules/trustScore/Trustscore.routes.js";
-import publicTrustScoreRoutes from "./modules/trustScore/Publictrustscore.routes.js";
+import { trustScoreRoutes } from "./modules/trustScore/index.js";
+import { publicTrustScoreRoutes } from "./modules/trustScore/index.js";
 
 // Official peer ratings (accountability)
-import officialRatingRoutes from "./modules/officials/Officialrating.routes.js";
 
 // Disputes (accountability)
-import disputeRoutes from "./modules/disputes/Dispute.routes.js";
-import businessRoutes from "./modules/business/business.routes.js";
-import productRoutes from "./modules/business/product.routes.js";
-import cartRoutes from "./modules/business/cart.routes.js";
-import loanRoutes from "./modules/loans/loan.routes.js";
-import marketplaceRoutes from "./modules/marketplace/marketplace.routes.js";
-import marketplaceAdminRoutes from "./modules/marketplace/marketplaceAdmin.routes.js";
-import marketplaceMerchantRoutes from "./modules/marketplace/marketplaceMerchant.routes.js";
+import { businessRoutes } from "./modules/business/index.js";
+import { productRoutes } from "./modules/business/index.js";
+import { cartRoutes } from "./modules/business/index.js";
+import { loanRoutes } from "./modules/loans/index.js";
+import { marketplaceRoutes } from "./modules/marketplace/index.js";
+import { marketplaceAdminRoutes } from "./modules/marketplace/index.js";
+import { marketplaceMerchantRoutes } from "./modules/marketplace/index.js";
 
 // Notifications
-import notificationRoutes from "./modules/notifications/notifications.routes.js";
+import { notificationRoutes } from "./modules/notifications/index.js";
 import notificationEventHandler from "./services/notificationEventHandler.service.js";
 
 // Action Safety Engine
 import actionSafetyRoutes from "./routes/actionSafety.routes.js";
 
 // AI Assistant
-import aiRoutes from "./modules/ai/ai.routes.js";
+import { aiRoutes } from "./modules/ai/index.js";
 
 // MGR & Approvals Engine
-import mgrRoutes from "./modules/mgr/mgr.routes.js";
-import approvalRoutes from "./modules/approval/approval.routes.js";
+import { mgrRoutes } from "./modules/mgr/index.js";
+import { approvalRoutes } from "./modules/approval/index.js";
 
 // Committee System
-import committeeRoutes from "./modules/committee/committee.routes.js";
+import { committeeRoutes } from "./modules/committee/index.js";
 
 // Burial Chama
-import burialChamaRoutes from "./modules/burialChama/burialChama.routes.js";
+import { burialChamaRoutes } from "./modules/burialChama/index.js";
 
 // USSD (general — standard chamas)
-import ussdRoutes from "./modules/ussd/ussd.routes.js";
+import { ussdRoutes } from "./modules/ussd/index.js";
 
 // Chairperson Loan Settings
-import chairpersonLoanSettingsRoutes from "./modules/chairperson/chairpersonLoanSettings.routes.js";
-import workspaceModuleRoutes from "./modules/workspaces/workspaceModules.routes.js";
+import { chairpersonLoanSettingsRoutes } from "./modules/chairperson/index.js";
+import { workspaceModuleRoutes } from "./modules/workspaces/index.js";
 
 // Platform Inquiries & Support
-import inquiryRoutes, { adminInquiryRouter } from "./modules/inquiries/inquiry.routes.js";
-
-import "./modules/finance/financeEngine.service.js";
+import { inquiryRoutes, adminInquiryRouter } from "./modules/inquiries/index.js";
 
 // Bridges payment.completed/failed/cancelled events (contributions, MGR,
 // savings) onto Socket.IO so the paying member's STK modal resolves the
 // instant M-Pesa's callback lands, instead of only via HTTP polling.
 import { registerPaymentSocketBridge } from "./payment/paymentSocketBridge.js";
+import { registerPaymentNotificationHandler } from "./payment/paymentNotification.handler.js";
 registerPaymentSocketBridge();
 
 
@@ -171,7 +168,7 @@ if (trustProxy) {
 // the exact thing the same-origin policy exists to prevent.
 //
 // Now an explicit allowlist from CORS_ALLOWED_ORIGINS.
-const allowedOrigins = env.corsAllowedOrigins;
+const allowedOrigins = [...env.corsAllowedOrigins, ...env.marketplaceAllowedOrigins, ...env.givingAllowedOrigins];
 
 if (!allowedOrigins.length && env.isProduction) {
     throw new Error(
@@ -295,6 +292,7 @@ app.use(
     "/api/v1/workspaces",
     workspaceRoutes
 );
+app.use("/api/v1/workspaces", fineRoutes);
 
 // ============================================================================
 // CHAMAS
@@ -371,6 +369,7 @@ app.use(
     "/api/v1/chamas",
     savingsShareoutRoutes
 );
+app.use("/api/v1/chamas", fineShareoutRoutes);
 app.use("/api/v1/chamas", loanRoutes);
 app.use("/api/v1/chamas", chairpersonLoanSettingsRoutes);
 app.use("/api/v1/chamas", workspaceModuleRoutes);
@@ -383,6 +382,8 @@ app.use(
     "/api/v1/contribution-groups",
     contributionGroupRoutes
 );
+
+app.use("/api/v1/giving", publicGivingRoutes);
 
 app.use(
     "/api/v1/contribution-groups/:groupId/fund",
@@ -477,15 +478,7 @@ app.use(
     financeRoutes
 );
 
-app.use(
-    "/api/v1/workspaces",
-    meetingRoutes
-);
-
-app.use(
-    "/api/v1/workspaces",
-    announcementRoutes
-);
+mountRegisteredModuleRoutes(app);
 
 // ============================================================================
 // POLLS & VOTING
@@ -501,10 +494,6 @@ app.use(
 //
 // ============================================================================
 
-app.use(
-    "/api/v1/workspaces",
-    pollRoutes
-);
 
 // ============================================================================
 // AI ASSISTANT
@@ -536,11 +525,6 @@ app.use(
 // by Socket.IO in socketServer.js.
 //
 // ============================================================================
-
-app.use(
-    "/api/v1/chat",
-    chatRoutes
-);
 
 // ============================================================================
 // AUDIT LOGS
@@ -581,14 +565,6 @@ app.use(
     trustScoreRoutes
 );
 app.use(
-    "/api/v1/chamas",
-    officialRatingRoutes
-);
-app.use(
-    "/api/v1/chamas",
-    disputeRoutes
-);
-app.use(
     "/api/v1/public/trust-score",
     publicTrustScoreRoutes
 );
@@ -626,6 +602,7 @@ app.use("/api/v1/ussd", ussdRoutes);
 
 // Initialize notification event listeners
 notificationEventHandler.initializeEventListeners();
+registerPaymentNotificationHandler();
 
 // ============================================================================
 // 404 HANDLER

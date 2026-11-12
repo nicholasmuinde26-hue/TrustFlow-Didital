@@ -13,6 +13,7 @@ import useWorkspace from "@/app/hooks/useWorkspace";
 import useWorkspacePermissions from "../hooks/useworkspacepermissions";
 import MpesaStkModal from "@/modules/finance/components/MpesaStkModal";
 import savingsShareoutService from "@/modules/chama/services/savingsShareout.service";
+import BurialMoneyDashboard from "./BurialMoneyDashboard";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -37,7 +38,7 @@ const initials = (name = "") =>
     .map((n) => n[0]?.toUpperCase())
     .join("") || "?";
 
-export default function SavingsPage() {
+function SavingsPageContent() {
   const { workspaceId: routeWorkspaceId } = useParams();
   const workspace = useWorkspace();
   const chamaId = routeWorkspaceId || workspace.workspaceId;
@@ -642,4 +643,9 @@ export default function SavingsPage() {
       />
     </div>
   );
+}
+
+export default function SavingsPage() {
+  const workspace = useWorkspace();
+  return workspace?.isBurialChama ? <BurialMoneyDashboard /> : <SavingsPageContent />;
 }

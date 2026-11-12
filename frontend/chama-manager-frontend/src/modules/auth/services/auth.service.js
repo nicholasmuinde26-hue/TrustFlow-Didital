@@ -41,6 +41,13 @@ const authService = {
     return result;
   },
 
+  async redeemHandoff(code) {
+    const { data } = await authApi.redeemHandoff(code);
+    const result = data.data || data;
+    if (result?.accessToken) setAuthTokens(result.accessToken, result.refreshToken);
+    return result;
+  },
+
   // Standalone or Resend OTP
   async sendOtp(payload) {
     const { data } = await authApi.sendOtp(payload);

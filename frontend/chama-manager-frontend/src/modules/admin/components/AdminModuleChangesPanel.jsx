@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock, Info, XCircle } from "lucide-react";
 
 import Spinner from "@/shared/components/ui/Spinner";
-import { useModuleCatalog } from "@/modules/workspaces/hooks/useWorkspaceModules";
+import { useModuleCatalog } from '@/modules/workspaces/index.js';
 import AdminWorkspaceFeatureManager from "./AdminWorkspaceFeatureManager";
 import adminService from "../services/admin.service";
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { MapPin, Users, CalendarDays, ShieldCheck, BadgeCheck, ArrowRight, Globe } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { MapPin, Users, CalendarDays, ShieldCheck, BadgeCheck, ArrowRight, Globe, X } from "lucide-react";
 import chamaApi from "../api/chama.api";
 import MemberAvatar from "@/modules/members/components/MemberAvatar";
 import { PersonProfileModal } from "../components/PersonProfileCard";
@@ -24,6 +24,7 @@ function PersonTile({ chamaId, person, onOpen }) {
 
 export default function PublicChamaProfilePage() {
   const { chamaId } = useParams();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [openPerson, setOpenPerson] = useState(null);
@@ -43,6 +44,15 @@ export default function PublicChamaProfilePage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-emerald-950 to-slate-950 px-4 py-10 text-white sm:px-6">
+      <button
+        type="button"
+        onClick={() => navigate(window.history.state?.idx > 0 ? -1 : "/chamas/join")}
+        aria-label="Close profile and go back"
+        title="Go back"
+        className="fixed right-4 top-4 z-30 grid h-11 w-11 place-items-center rounded-full border border-white/25 bg-slate-950/70 text-white shadow-lg backdrop-blur transition hover:bg-white hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+      >
+        <X size={21} />
+      </button>
       <article className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-white/10 bg-white text-slate-900 shadow-2xl">
         <header className="relative bg-gradient-to-br from-emerald-800 to-teal-600 text-white">
           {profile.cover_url && <img src={profile.cover_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />}

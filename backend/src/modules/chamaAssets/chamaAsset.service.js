@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import ChamaAsset from "../../models/ChamaAsset.js";
-import accountingService from "../finance/accounting/accounting.service.js";
-import { getIO } from "../realtime/socketServer.js";
+import { accountingService } from "../finance/index.js";
+import { getIO } from "../realtime/index.js";
 import AppError from "../../utils/AppError.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import ContributionPayment from "../../models/ContributionPayment.js";
@@ -16,7 +16,7 @@ import ChamaProfitWalletEntry from "../../models/ChamaProfitWalletEntry.js";
 import FinancialTransaction from "../../models/FinancialTransaction.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import notificationService from "../../services/notification.service.js";
-import approvalService from "../approval/approval.service.js";
+import approvalService from "../approval/index.js";
 import C2bPayment from "../../models/C2bPayment.js";
 import AssetLease from "../../models/AssetLease.js";
 import Chama from "../../models/Chama.js";

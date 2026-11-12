@@ -2,7 +2,7 @@ import {
   listRateableOfficials,
   submitOfficialRating,
   getOfficialRatingDetail,
-} from '../../services/Officialrating.service.js';
+} from './Officialrating.service.js';
 
 // ========================================
 // LIST OFFICIALS + AGGREGATE RATINGS

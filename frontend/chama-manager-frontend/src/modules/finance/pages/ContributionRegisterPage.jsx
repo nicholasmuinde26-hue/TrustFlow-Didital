@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Receipt,
   Filter,
+  HandCoins,
+  ClipboardList,
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
@@ -72,6 +74,7 @@ const TABS = [
   { key: "activity", label: "Payment activity", icon: Receipt },
   { key: "members", label: "By member", icon: Users },
   { key: "plans", label: "By plan", icon: Wallet },
+  { key: "obligations", label: "Obligation balances", icon: ClipboardList },
 ];
 
 export default function ContributionRegisterPage() {
@@ -134,6 +137,8 @@ export default function ContributionRegisterPage() {
 
   const totals = register?.totals || {};
   const plans = register?.plans || [];
+  const obligations = register?.obligations || [];
+  const obligationGroups = register?.obligation_groups || [];
   const payments = register?.payments || [];
   const members = register?.members || [];
   const isOwnScope = register?.scope !== "all";
@@ -178,6 +183,25 @@ export default function ContributionRegisterPage() {
     if (!query) return members;
     return members.filter((m) => m.name?.toLowerCase().includes(query));
   }, [members, query]);
+
+  const filteredObligations = useMemo(() => obligations.filter((obligation) => {
+    if (filters.planId && obligation.plan_id !== filters.planId) return false;
+    if (query && ![obligation.member?.name, obligation.plan_name, obligation.period_label, obligation.notes, obligation.category, obligation.status].some((value) => String(value || "").toLowerCase().includes(query))) return false;
+    if (filters.status) {
+      const selected = filters.status.split(",");
+      const statusMatches = selected.includes(obligation.status) || (selected.includes("completed") && obligation.status === "paid") || (selected.includes("pending") && ["pending", "partially_paid"].includes(obligation.status));
+      if (!statusMatches) return false;
+    }
+    if (filters.from && obligation.due_date && new Date(obligation.due_date) < new Date(`${filters.from}T00:00:00`)) return false;
+    if (filters.to && obligation.due_date && new Date(obligation.due_date) > new Date(`${filters.to}T23:59:59`)) return false;
+    return true;
+  }), [obligations, filters, query]);
+
+  const filteredObligationGroups = useMemo(() => obligationGroups.filter((group) => {
+    if (filters.planId && group.plan_id !== filters.planId) return false;
+    if (query && ![group.plan_name, group.period_label, group.category].some((value) => String(value || "").toLowerCase().includes(query))) return false;
+    return filteredObligations.some((obligation) => obligation.category === group.category && obligation.plan_id === group.plan_id && obligation.period_label === group.period_label);
+  }), [obligationGroups, filters.planId, query, filteredObligations]);
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
@@ -344,7 +368,7 @@ export default function ContributionRegisterPage() {
       {/* Headline figures — always the whole book, never just the
           filtered page, so the totals can't quietly contradict the
           rows underneath them. */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label={isOwnScope ? "You have contributed" : "Total collected"}
           value={money(totals.collected)}
@@ -376,6 +400,18 @@ export default function ContributionRegisterPage() {
             totals.overdue_amount > 0
               ? `${money(totals.overdue_amount)} of it overdue`
               : "Nothing past its due date"
+          }
+        />
+
+        <StatCard
+          label={isOwnScope ? "My fine balance" : "Fine balance"}
+          value={money(totals.fines?.outstanding || 0)}
+          icon={HandCoins}
+          tone="amber"
+          footnote={
+            totals.fines?.overdue_amount > 0
+              ? `${money(totals.fines.overdue_amount)} overdue`
+              : "Tracked separately from contributions"
           }
         />
 
@@ -440,7 +476,7 @@ export default function ContributionRegisterPage() {
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search member, reference or plan..."
+              placeholder="Search member, reference, plan or period..."
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-100 dark:border-obsidian-border dark:bg-obsidian-raised/40 dark:text-mist"
             />
           </div>
@@ -522,7 +558,7 @@ export default function ContributionRegisterPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-2 dark:border-obsidian-border">
-        {TABS.filter((tab) => !(isOwnScope && tab.key === "members")).map(
+        {TABS.filter((tab) => !(isOwnScope && tab.key === "members") && (tab.key !== "obligations" || isOwnScope || showChamaBook)).map(
           ({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -645,6 +681,39 @@ export default function ContributionRegisterPage() {
         </Card>
       )}
 
+      {/* Exact balance on each member obligation, with a Chama-wide rollup by plan and period. */}
+      {activeTab === "obligations" && (isOwnScope || showChamaBook) && (
+        <div className="space-y-5">
+          <Card className="p-6">
+            <SectionHeading title={isOwnScope ? "My totals by obligation" : "Chama-wide balance by obligation"} subtitle={isOwnScope ? "Your plan periods and fine obligations, kept separate." : "Each plan period is totalled across its members. Fine obligations remain labelled separately."} />
+            {filteredObligationGroups.length === 0 ? (
+              <EmptyState icon={ClipboardList} title="No obligation balances match this view" description="Try another plan, period or search term. Open obligations appear here as soon as they are raised." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-extrabold uppercase text-slate-400 dark:border-obsidian-border dark:bg-obsidian-raised/40"><tr><th className="px-4 py-3">Contribution obligation</th><th className="px-4 py-3">Period</th><th className="px-4 py-3 text-right">Members</th><th className="px-4 py-3 text-right">Expected</th><th className="px-4 py-3 text-right">Paid</th><th className="px-4 py-3 text-right">Balance remaining</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold dark:divide-obsidian-border">{filteredObligationGroups.map((group) => <tr key={group.id} className="hover:bg-slate-50/60 dark:hover:bg-obsidian-raised/30"><td className="px-4 py-3.5"><span className="font-bold text-slate-900 dark:text-mist">{group.plan_name}</span><span className={`ml-2 rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${group.category === "fine" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{group.category}</span></td><td className="px-4 py-3.5 text-slate-600 dark:text-mist-muted">{group.period_label}</td><td className="px-4 py-3.5 text-right">{group.member_count} <span className="text-slate-400">· {group.owing_count} owing</span></td><td className="px-4 py-3.5 text-right font-mono">{money(group.expected)}</td><td className="px-4 py-3.5 text-right font-mono text-emerald-600 dark:text-mint">{money(group.paid)}</td><td className={`px-4 py-3.5 text-right font-mono font-black ${group.outstanding > 0 ? "text-rose-500" : "text-emerald-600 dark:text-mint"}`}>{money(group.outstanding)}</td></tr>)}</tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <SectionHeading title={isOwnScope ? "My obligation balances" : "Balance for each member obligation"} subtitle={`${filteredObligations.length} obligation${filteredObligations.length === 1 ? "" : "s"} shown · expected minus payments applied to that exact obligation`} />
+            {filteredObligations.length === 0 ? (
+              <EmptyState icon={ClipboardList} title="No individual obligations match this view" description="Clear the filters or search another member, plan or period." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-extrabold uppercase text-slate-400 dark:border-obsidian-border dark:bg-obsidian-raised/40"><tr>{!isOwnScope && <th className="px-4 py-3">Member</th>}<th className="px-4 py-3">Obligation</th><th className="px-4 py-3">Period / due</th><th className="px-4 py-3 text-right">Expected</th><th className="px-4 py-3 text-right">Applied</th><th className="px-4 py-3 text-right">Exact balance</th><th className="px-4 py-3 text-center">Status</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold dark:divide-obsidian-border">{filteredObligations.map((obligation) => <tr key={obligation.id} className="hover:bg-slate-50/60 dark:hover:bg-obsidian-raised/30">{!isOwnScope && <td className="px-4 py-3.5 font-bold text-slate-900 dark:text-mist">{obligation.member?.name || "Member"}</td>}<td className="px-4 py-3.5"><span className="font-bold text-slate-900 dark:text-mist">{obligation.plan_name}</span><span className={`ml-2 rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${obligation.category === "fine" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{obligation.category}</span>{obligation.notes && <p className="mt-1 max-w-xs truncate text-[10px] text-slate-400">{obligation.notes}</p>}</td><td className="whitespace-nowrap px-4 py-3.5 text-slate-600 dark:text-mist-muted">{obligation.period_label}{obligation.due_date && <span className="block text-[10px] text-slate-400">Due {formatDate(obligation.due_date)}</span>}</td><td className="px-4 py-3.5 text-right font-mono">{money(obligation.expected)}</td><td className="px-4 py-3.5 text-right font-mono text-emerald-600 dark:text-mint">{money(obligation.paid)}</td><td className={`px-4 py-3.5 text-right font-mono font-black ${obligation.outstanding > 0 ? "text-rose-500" : "text-emerald-600 dark:text-mint"}`}>{money(obligation.outstanding)}</td><td className="px-4 py-3.5 text-center"><StatusPill status={obligation.status} /></td></tr>)}</tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
       {/* Per-member standing — the view a treasurer actually chases from */}
       {activeTab === "members" && !isOwnScope && (
         <Card className="p-6">
@@ -668,6 +737,7 @@ export default function ContributionRegisterPage() {
                     <th className="px-4 py-3.5 text-right">Expected</th>
                     <th className="px-4 py-3.5 text-right">Paid</th>
                     <th className="px-4 py-3.5 text-right">Outstanding</th>
+                    <th className="px-4 py-3.5 text-right">Fine balance</th>
                     <th className="px-4 py-3.5">Progress</th>
                     <th className="px-4 py-3.5">Last payment</th>
                     <th className="px-4 py-3.5 text-center">Standing</th>
@@ -707,6 +777,9 @@ export default function ContributionRegisterPage() {
                         }`}
                       >
                         {money(member.outstanding)}
+                      </td>
+                      <td className={`px-4 py-3.5 text-right font-mono font-bold ${member.fine_outstanding > 0 ? "text-amber-700 dark:text-amber-300" : "text-slate-400"}`}>
+                        {money(member.fine_outstanding || 0)}
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="w-28">

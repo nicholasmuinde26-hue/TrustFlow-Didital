@@ -7,17 +7,14 @@ import ChamaLoan from "../../models/ChamaLoan.js";
 import FinancialAccount from "../../models/FinancialAccount.js";
 
 import AppError from "../../utils/AppError.js";
-import accountingService from "../finance/accounting/accounting.service.js";
-import financeAccountService from "../finance/financeAccount.service.js";
-import approvalService from "../approval/approval.service.js";
+import { accountingService, financeAccountService, creditMemberWallet } from "../finance/index.js";
+import approvalService from "../approval/index.js";
 import domainEventEmitter from "../../services/domainEvent.emitter.js";
 
-import { evaluatePolicyAction } from "../policyEngine/services/policyEngine.service.js";
-import { ACTION_TYPES } from "../policyEngine/constants/policyEngine.constants.js";
-import { OPEN_LOAN_STATUSES } from "../loans/Loan.constants.js";
+import { evaluatePolicyAction, ACTION_TYPES } from "../policyEngine/index.js";
+import { OPEN_LOAN_STATUSES } from "../loans/index.js";
 
-import { getMemberSavingsBalance } from "../savingsShareout/savingsShareout.service.js";
-import { creditMemberWallet } from "../finance/memberWallet.service.js";
+import { getMemberSavingsBalance } from "../savingsShareout/index.js";
 
 import {
     toDecimal,

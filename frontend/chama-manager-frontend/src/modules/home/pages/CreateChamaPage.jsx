@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Building2,
@@ -28,9 +28,9 @@ import useWorkspace from "@/app/hooks/useWorkspace";
 import chamaService from "@/modules/chama/services/chama.service";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
-import WorkspaceSetupPicker from "@/modules/workspaces/components/WorkspaceSetupPicker";
-import { useModuleCatalog } from "@/modules/workspaces/hooks/useWorkspaceModules";
-import { dependencyProblems } from "@/modules/workspaces/utils/moduleSelection";
+import { WorkspaceSetupPicker } from '@/modules/workspaces/index.js';
+import { useModuleCatalog } from '@/modules/workspaces/index.js';
+import { dependencyProblems } from '@/modules/workspaces/index.js';
 
 // Presets are a shortcut, not a new kind of Chama — every option below
 // still creates a plain `standard` (or `burial`) Chama underneath.
@@ -91,7 +91,26 @@ export default function CreateChamaPage() {
   // Workspace Setup: preset + the exact feature modules this chama starts with.
   // Filled from the "standard" preset once the catalog loads.
   const [setup, setSetup] = useState({ preset: "standard", modules: [] });
+  const [organizationFamily, setOrganizationFamily] = useState("chama");
+  const ORG_TYPES = {
+    chama: [["merry_go_round", "Merry-go-round"], ["table_banking", "Table banking"], ["investment_group", "Investment group"], ["welfare", "Welfare / burial"], ["housing", "Housing group"], ["farmer_group", "Farmer group"], ["custom", "Other / custom"]],
+    sacco: [["community_sacco", "Community SACCO"], ["employee_sacco", "Employee SACCO"], ["farmer_sacco", "Farmer SACCO"], ["housing_sacco", "Housing SACCO"], ["investment_sacco", "Investment SACCO"], ["custom", "Other / custom"]],
+    cooperative: [["agricultural", "Agricultural cooperative"], ["consumer", "Consumer cooperative"], ["housing", "Housing cooperative"], ["worker", "Worker cooperative"], ["producer", "Producer cooperative"], ["custom", "Other / custom"]],
+  };
+  const [organizationType, setOrganizationType] = useState("merry_go_round");
+  const ORG_PRESETS = { merry_go_round: "merry_go_round", table_banking: "table_banking", investment_group: "investment_group", welfare: "burial_welfare", community_sacco: "community_sacco", employee_sacco: "employee_sacco", farmer_sacco: "farmer_sacco", housing_sacco: "housing_sacco", investment_sacco: "investment_sacco", agricultural: "agricultural_cooperative", housing: "housing_cooperative", consumer: "cooperative", worker: "cooperative", producer: "cooperative" };
+  function applyOrganizationType(type) {
+    setOrganizationType(type);
+    const key = ORG_PRESETS[type];
+    const catalogPreset = moduleCatalog?.presets?.find((item) => item.key === key);
+    if (catalogPreset) setSetup({ preset: catalogPreset.key, modules: catalogPreset.modules });
+  }
   const { data: moduleCatalog } = useModuleCatalog();
+  useEffect(() => {
+    if (setup.modules.length || !moduleCatalog?.presets) return;
+    const initial = moduleCatalog.presets.find((item) => item.key === "merry_go_round");
+    if (initial) setSetup({ preset: initial.key, modules: initial.modules });
+  }, [moduleCatalog]);
   const preset = setup.preset;
   const [presetResult, setPresetResult] = useState(null);
 
@@ -239,6 +258,8 @@ export default function CreateChamaPage() {
         // Provisioning (MGR/loan policies) keys off the preset; "standard" has none.
         preset: setup.preset === "standard" ? "custom" : setup.preset,
         workspaceModules: { preset: setup.preset, modules: setup.modules },
+        organizationFamily,
+        organizationType,
         treasurerUserId: treasurerUser._id,
         treasurerInput: form.treasurerInput.trim(),
         secretaryUserId: secretaryUser._id,
@@ -382,17 +403,30 @@ export default function CreateChamaPage() {
         onSubmit={handleSubmit}
         className="space-y-6 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-xs dark:border-slate-800 dark:bg-slate-900"
       >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Organization
+            <select value={organizationFamily} onChange={(e) => { const family = e.target.value; setOrganizationFamily(family); applyOrganizationType(ORG_TYPES[family][0][0]); }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+              <option value="chama">Chama</option><option value="sacco">SACCO</option><option value="cooperative">Cooperative</option>
+            </select>
+          </label>
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Organization type
+            <select value={organizationType} onChange={(e) => applyOrganizationType(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+              {ORG_TYPES[organizationFamily].map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+
         {/* Section 0: Workspace Setup - preset picker + module checklist (shared component) */}
         <div className="space-y-3">
           <h2 className="text-sm font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
             0. Workspace Setup
           </h2>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-2">
-            Choose what this Chama starts with. You can turn features on or off later from the
+            Choose what this organization starts with. You can turn features on or off later from the
             Leadership Desk (changes need approval from two officials).
           </p>
 
-          <WorkspaceSetupPicker value={setup} onChange={setSetup} defaultPreset="standard" />
+          <WorkspaceSetupPicker value={setup} onChange={setSetup} />
         </div>
 
         {/* Section 1: Basic Information */}

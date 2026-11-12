@@ -4,7 +4,7 @@ import ChamaMembership from '../../models/ChamaMembership.js';
 import ChamaInvitation from '../../models/ChamaInvitation.js';
 import ContributionGroupInvitation from '../../models/ContributionGroupInvitation.js';
 import ContributionGroupMember from '../../models/ContributionGroupMember.js';
-import Announcement from '../../models/Announcement.js';
+import { listLatestApprovedForWorkspaces } from '../announcements/index.js';
 import ChamaLoan from '../../models/ChamaLoan.js';
 import Payout from '../../models/Payout.js';
 import ChamaMemberKyc from '../../models/ChamaMemberKyc.js';
@@ -172,11 +172,7 @@ export const syncLiveUserNotifications = async (userId) => {
     }
 
     // 4. Latest Workspace Announcements
-    const announcements = await Announcement.find({
-      chamaId: { $in: chamaIds },
-    })
-      .sort({ createdAt: -1 })
-      .limit(5);
+    const announcements = await listLatestApprovedForWorkspaces(chamaIds, 5);
 
     for (const ann of announcements) {
       const existing = await Notification.findOne({

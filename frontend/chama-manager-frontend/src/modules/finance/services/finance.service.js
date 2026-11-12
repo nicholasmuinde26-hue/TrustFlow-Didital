@@ -30,6 +30,11 @@ export const CATEGORY_LABELS = {
   sale: "Sale",
   expense: "Expense",
   customer_payout: "Customer Payout",
+  burial_benefit_disbursement: "Burial Benefit",
+  burial_fundraising_receipt: "Harambee Contribution",
+  burial_fundraising_handover: "Fundraising Handover",
+  equipment_hire_payment: "Equipment Hire",
+  equipment_deposit_settlement: "Equipment Deposit Settlement",
 };
 
 // Coerce to a finite number. Handles Decimal128, strings, null, undefined
@@ -288,7 +293,9 @@ const financeService = {
     const items = rawItems.map(tx => ({
       ...tx,
       amount: safeNumber(tx.amount),
-      formatted_amount: formatCurrency(tx.amount)
+      formatted_amount: formatCurrency(tx.amount),
+      category_label: CATEGORY_LABELS[String(tx.transaction_type || "").toLowerCase()]
+        || String(tx.transaction_type || "Other").replaceAll("_", " "),
     }));
     const meta = res?.data?.meta || {};
     return {

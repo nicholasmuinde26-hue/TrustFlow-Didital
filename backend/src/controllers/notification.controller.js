@@ -550,7 +550,8 @@ export const updateSMSSettings = async (req, res) => {
   try {
     const { user } = req;
     const userId = user._id;
-    const { smsSettings } = req.body;
+    // The web app sends the settings object itself; older callers wrapped it as { smsSettings }.
+    const smsSettings = req.body?.smsSettings || req.body;
 
     const preferences = await notificationPreferenceService.updateSMSSettings(
       userId,

@@ -1,4 +1,4 @@
-import mgrService from '../modules/mgr/mgr.service.js';
+import { mgrService } from '../modules/mgr/index.js';
 
 let timer = null;
 

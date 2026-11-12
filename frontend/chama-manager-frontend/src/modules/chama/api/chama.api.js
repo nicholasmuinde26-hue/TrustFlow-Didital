@@ -13,8 +13,12 @@ const chamaApi = {
     return api.get(`/chamas/${chamaId}`);
   },
 
-  getPublicChamas() {
-    return api.get('/chamas/directory/public');
+  getPublicChamas(params = {}) {
+    return api.get('/chamas/directory/public', { params });
+  },
+
+  getPublishedPublicProfiles(params = {}) {
+    return api.get('/chamas/directory/public-profiles', { params });
   },
 
   joinWithCode(joinCode) {

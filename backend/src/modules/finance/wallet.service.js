@@ -7,9 +7,9 @@ import Withdrawal from "../../models/Withdrawal.js";
 import Payout from "../../models/Payout.js";
 
 import financeService from "./finance.service.js";
-import { getMemberSavingsBalance } from "../savingsShareout/savingsShareout.service.js";
-import loanDashboardService from "../loans/Loandashboard.service.js";
-import { getChamaProfitWallet } from "../chamaAssets/chamaAsset.service.js";
+import { getMemberSavingsBalance } from "../savingsShareout/index.js";
+import { loanDashboardService } from "../loans/index.js";
+import { getChamaProfitWallet } from "../chamaAssets/index.js";
 import { getMemberWallet } from "./memberWallet.service.js";
 
 const money = (value) => {
@@ -66,6 +66,18 @@ export async function getMyWallet(ownerType, workspaceId, membershipId, userId) 
     // than let a stale id 500 further down.
     return {
       scope: "contributions_only",
+      contributions,
+      savings: null,
+      loan: null,
+      pending_payout: null,
+      withdrawals: null,
+      member_wallet: memberWallet,
+    };
+  }
+
+  if (['burial', 'burial_welfare'].includes(chama.chama_type) || chama.workspace_config?.preset === 'burial' || chama.workspace_config?.preset === 'burial_welfare') {
+    return {
+      scope: 'burial_fund_health',
       contributions,
       savings: null,
       loan: null,

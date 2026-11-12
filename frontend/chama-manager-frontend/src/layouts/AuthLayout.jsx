@@ -48,7 +48,7 @@ function TechBackdrop() {
   );
 }
 
-export default function AuthLayout({ children }) {
+export default function AuthLayout({ children, wide = false }) {
   return (
     <div className="auth-layout min-h-screen bg-slate-50 text-slate-900">
       <div className="auth-split">
@@ -56,7 +56,7 @@ export default function AuthLayout({ children }) {
           <TechBackdrop />
           <div className="auth-split__brand">
             <BrandMark size={44} className="shrink-0" />
-            <div><p className="text-lg font-black tracking-tight text-white">VeriCircle</p><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mist">Financial OS</p></div>
+            <div><p className="text-lg font-black tracking-tight text-white">ChamaManager</p><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-mist">Financial OS</p></div>
           </div>
           <div className="auth-split__message">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-mint/20 bg-obsidian/40 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-mist backdrop-blur-md"><Sparkles size={13} className="text-mint" />Built for collective progress</div>
@@ -67,11 +67,11 @@ export default function AuthLayout({ children }) {
         </aside>
         <main className="auth-split__form-area">
           <header className="auth-split__form-header">
-            <div className="flex items-center gap-2 lg:hidden"><BrandMark size={36} className="shrink-0" /><span className="font-black tracking-tight">VeriCircle</span></div>
+            <div className="flex items-center gap-2 lg:hidden"><BrandMark size={36} className="shrink-0" /><span className="font-black tracking-tight">ChamaManager</span></div>
             <div className="ml-auto rounded-full border border-slate-200 bg-white p-1 shadow-sm"><ThemeToggle /></div>
           </header>
-          <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} className="auth-split__form-wrap">
-            <div className="mb-8 text-center"><div className="mx-auto mb-4 hidden lg:block"><BrandMark size={48} /></div><p className="text-sm font-semibold text-slate-500">Welcome to VeriCircle</p><p className="mt-1 text-xs text-slate-400">Your trusted workspace for progress</p></div>
+          <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} className={`auth-split__form-wrap${wide ? " auth-split__form-wrap--wide" : ""}`}>
+            <div className="mb-8 text-center"><div className="mx-auto mb-4 hidden lg:block"><BrandMark size={48} /></div><p className="text-sm font-semibold text-slate-500">Welcome to ChamaManager</p><p className="mt-1 text-xs text-slate-400">Your trusted workspace for progress</p></div>
             <div className="auth-split__content"><div className="relative w-full">{children ?? <Outlet />}</div><div className="mt-6 flex items-center justify-center gap-2 text-[11px] font-medium text-slate-400"><LockKeyhole size={12} className="text-emerald-600" />Secure workspace authentication<ShieldCheck size={12} className="text-emerald-600" /></div></div>
           </motion.div>
         </main>

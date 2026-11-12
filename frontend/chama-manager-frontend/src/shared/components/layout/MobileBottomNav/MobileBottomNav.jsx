@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Home, Layers, MoreHorizontal, Search, User, X } from "lucide-react";
 import { Link, NavLink, useLocation, useParams } from "react-router-dom";
-import { findWorkspaceNavigationMatch } from "@/modules/workspaces/config/workspaceNavigation";
+import { findWorkspaceNavigationMatch } from '@/modules/workspaces/index.js';
 
 const SHORT_LABELS = {
   Overview: "Home",

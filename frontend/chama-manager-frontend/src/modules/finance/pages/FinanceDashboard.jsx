@@ -25,6 +25,7 @@ import {
   Activity,
   CreditCard,
   Banknote,
+  HandCoins,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -487,6 +488,12 @@ export default function FinanceDashboard() {
             value: money(totals.outstanding || 0),
             detail: `${totals.overdue_member_count || 0} members overdue`,
             danger: Number(totals.overdue_member_count) > 0,
+          },
+          {
+            icon: HandCoins,
+            label: seesGroupBooks ? "Fine fund balance" : "My fines due",
+            value: money(seesGroupBooks ? summary?.fine_balance || 0 : totals.fines?.outstanding || 0),
+            detail: seesGroupBooks ? "Collected fines held separately" : "Separate from contributions",
           },
           {
             icon: PiggyBank,

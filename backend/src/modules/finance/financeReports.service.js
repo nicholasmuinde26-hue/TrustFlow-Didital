@@ -13,7 +13,7 @@ import {
 } from "./accounting/businessFunds.constants.js";
 import { checkGlBalance } from "./accounting/glBalance.service.js";
 import { parseReportPeriod } from "./reportPeriod.js";
-import { toScaled } from "../yearEnd/yearEnd.calc.js";
+import { toScaled } from "../yearEnd/index.js";
 import {
   balancesFromTotals,
   buildTrialBalance,
@@ -284,8 +284,8 @@ class FinanceReportsService {
     if (mode === "CHAMA") {
       // Contributions into a fine or fee plan are reported as fines / fees.
       const plans = await ContributionPlan.find({ owner_type: ownerType, owner_id: ownerId, ledger_account_id: { $ne: null } })
-        .select("behavior ledger_account_id").lean();
-      const behaviorByAccountId = new Map(plans.map((p) => [String(p.ledger_account_id), p.behavior]));
+        .select("behavior system_key ledger_account_id").lean();
+      const behaviorByAccountId = new Map(plans.map((p) => [String(p.ledger_account_id), p.system_key === 'late_penalties' ? 'fine' : p.behavior]));
       return { ...buildIncomeStatement(accounts, movements, { behaviorByAccountId }), integrity, warnings };
     }
     return { ...buildBusinessIncome(accounts, movements), integrity, warnings };
@@ -414,10 +414,10 @@ class FinanceReportsService {
       fromDate ? sumByAccountAndSide({ ...base, posted_at: { $lt: fromDate } }) : [],
       sumByAccountAndSide({ ...base, ...dateRange(null, cutoffDate) }),
       ContributionPlan.find({ owner_type: ownerType, owner_id: ownerId, ledger_account_id: { $ne: null } })
-        .select("name behavior ledger_account_id").lean(),
+        .select("name behavior system_key ledger_account_id").lean(),
     ]);
 
-    const behaviorByAccountId = new Map(plans.map((p) => [String(p.ledger_account_id), p.behavior]));
+    const behaviorByAccountId = new Map(plans.map((p) => [String(p.ledger_account_id), p.system_key === 'late_penalties' ? 'fine' : p.behavior]));
     const planNameByAccountId = new Map(plans.map((p) => [String(p.ledger_account_id), p.name]));
     const report = buildReceiptsPayments(accounts, txs, { openingTotals, closingTotals, behaviorByAccountId, planNameByAccountId });
 

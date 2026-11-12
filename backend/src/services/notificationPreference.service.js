@@ -36,90 +36,10 @@ class NotificationPreferenceService {
    */
   async createDefaultPreferences(userId) {
     try {
-      const preferences = await NotificationPreference.create({
-        user_id: userId,
-        default_channels: {
-          in_app: true,
-          toast: true,
-          push: false,
-          sms: false,
-          email: false
-        },
-        category_preferences: {
-          financial: {
-            in_app: true,
-            toast: true,
-            push: false,
-            sms: false,
-            email: false
-          },
-          membership: {
-            in_app: true,
-            toast: true,
-            push: false,
-            sms: false,
-            email: false
-          },
-          governance: {
-            in_app: true,
-            toast: true,
-            push: false,
-            sms: false,
-            email: false
-          },
-          burial: {
-            in_app: true,
-            toast: true,
-            push: false,
-            sms: false,
-            email: false
-          },
-          system: {
-            in_app: true,
-            toast: true,
-            push: false,
-            sms: false,
-            email: false
-          },
-          approval: {
-            in_app: true,
-            toast: true,
-            push: true,
-            sms: false,
-            email: false
-          },
-          alert: {
-            in_app: true,
-            toast: true,
-            push: true,
-            sms: true,
-            email: true
-          }
-        },
-        quiet_hours: {
-          enabled: false,
-          start_time: '22:00',
-          end_time: '08:00',
-          timezone: 'Africa/Nairobi'
-        },
-        do_not_disturb: {
-          enabled: false,
-          until: null
-        },
-        mobile_settings: {
-          sound_enabled: true,
-          vibration_enabled: true,
-          badge_enabled: true
-        },
-        email_settings: {
-          email_address: null,
-          digest_frequency: 'immediate'
-        },
-        sms_settings: {
-          phone_number: null,
-          country_code: '+254'
-        }
-      });
+      // Schema defaults are the single source of truth (see NotificationPreference.js):
+      // in-app/toast always on, SMS + WhatsApp on for alerts, approvals, burial,
+      // governance, financial and system items.
+      const preferences = await NotificationPreference.create({ user_id: userId });
 
       return preferences;
 
@@ -136,7 +56,10 @@ class NotificationPreferenceService {
     try {
       const preferences = await this.getUserPreferences(userId);
 
-      Object.assign(preferences.default_channels, channelPreferences);
+      const allowedChannels = ['in_app', 'toast', 'push', 'sms', 'whatsapp', 'email'];
+      for (const key of allowedChannels) {
+        if (typeof channelPreferences?.[key] === 'boolean') preferences.default_channels[key] = channelPreferences[key];
+      }
       preferences.updated_at = new Date();
 
       await preferences.save();
@@ -255,7 +178,22 @@ class NotificationPreferenceService {
     try {
       const preferences = await this.getUserPreferences(userId);
 
-      Object.assign(preferences.sms_settings, smsSettings);
+      // Whitelist: never merge arbitrary client keys into the preferences document.
+      const phonePattern = /^\+?[0-9 ()-]{7,20}$/;
+      const next = {};
+      for (const key of ['phone_number', 'whatsapp_number']) {
+        const value = smsSettings?.[key];
+        if (value === undefined) continue;
+        const trimmed = value === null ? '' : String(value).trim();
+        if (trimmed && !phonePattern.test(trimmed)) {
+          throw new Error(`Enter a valid ${key === 'whatsapp_number' ? 'WhatsApp' : 'phone'} number, e.g. +254712345678`);
+        }
+        next[key] = trimmed || null;
+      }
+      if (typeof smsSettings?.country_code === 'string' && /^\+\d{1,4}$/.test(smsSettings.country_code)) {
+        next.country_code = smsSettings.country_code;
+      }
+      Object.assign(preferences.sms_settings, next);
       preferences.updated_at = new Date();
 
       await preferences.save();
@@ -343,7 +281,7 @@ class NotificationPreferenceService {
   /**
    * Get all channels a user wants to receive notifications for
    */
-  async getEnabledChannels(userId, category = null) {
+  async getEnabledChannels(userId, category = null, priority = 'normal') {
     try {
       const preferences = await this.getUserPreferences(userId);
       const enabledChannels = [];
@@ -352,12 +290,26 @@ class NotificationPreferenceService {
         ['toast', 'toast'],
         ['push', 'push'],
         ['sms', 'sms'],
+        ['whatsapp', 'whatsapp'],
         ['email', 'email']
       ];
+
+      // Do-not-disturb and quiet hours silence the channels that interrupt a
+      // person (toast, push, SMS, WhatsApp). The item is still saved to the
+      // in-app notification centre so nothing is lost, and urgent alerts break
+      // through quiet hours (never through an explicit do-not-disturb).
       const dnd = preferences.do_not_disturb;
-      if (dnd?.enabled && (!dnd.until || dnd.until > new Date())) return [];
-      if (preferences.quiet_hours?.enabled && this.isInQuietHours(preferences.quiet_hours)) return [];
+      const dndActive = Boolean(dnd?.enabled && (!dnd.until || dnd.until > new Date()));
+      const quietActive = Boolean(
+        preferences.quiet_hours?.enabled && this.isInQuietHours(preferences.quiet_hours)
+      );
+      const muteIntrusive = dndActive || (quietActive && priority !== 'urgent');
+      const intrusive = new Set(['toast', 'push', 'sms', 'whatsapp']);
+
       for (const [preferenceKey, deliveryChannel] of mapping) {
+        if (muteIntrusive && intrusive.has(deliveryChannel)) continue;
+        // A master switch that was never stored (older preference documents
+        // pre-date WhatsApp) falls back to the schema default of "on".
         if (preferences.default_channels?.[preferenceKey] === false) continue;
         const categoryValue = category
           ? preferences.category_preferences?.[category]?.[preferenceKey]

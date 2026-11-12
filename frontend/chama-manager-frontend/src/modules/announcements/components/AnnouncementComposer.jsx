@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Pin } from "lucide-react";
+import { Megaphone, Pin } from "lucide-react";
 
-import Button from "@/shared/components/ui/Button";
+import Dialog from "@/shared/components/ui/Dialog";
 import Input from "@/shared/components/ui/Input/Input";
 
 export default function AnnouncementComposer({
@@ -11,6 +11,8 @@ export default function AnnouncementComposer({
   needsApproval = false,
   canPin = false,
   approverLabel = "an approver",
+  open = false,
+  onClose,
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -63,6 +65,7 @@ export default function AnnouncementComposer({
       setPinned(false);
       setTransparencyReason("");
       setPenaltyDetails("");
+      onClose?.();
     } catch (error) {
       setFormError(
         error?.response?.data?.message ||
@@ -73,15 +76,12 @@ export default function AnnouncementComposer({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-obsidian-border dark:bg-obsidian-card"
-    >
-      <h3 className="font-semibold text-slate-900 dark:text-mist">
-        Post an Announcement
-      </h3>
-
-      <div className="mt-4 space-y-3">
+    <Dialog open={open} onClose={() => !submitting && onClose?.()} title="Post an announcement" description={needsApproval ? `Share an update for review by ${approverLabel}.` : "Write an update your workspace can read and refer back to."} icon={Megaphone} size="md">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-sky-50 px-4 py-3 dark:bg-sky-950/30">
+          <div className="flex items-center gap-2 text-sm font-semibold text-sky-900 dark:text-sky-200"><Megaphone size={16} /> Workspace update</div>
+          <span className="text-xs tabular-nums text-sky-700 dark:text-sky-300">{content.length.toLocaleString()} / 5,000</span>
+        </div>
         <Input
           placeholder="Title"
           hint="Use 3 to 150 characters."
@@ -162,7 +162,7 @@ export default function AnnouncementComposer({
           </p>
         )}
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between dark:border-obsidian-border">
           {canPin && !needsApproval ? (
             <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-mist-muted">
               <input
@@ -175,12 +175,12 @@ export default function AnnouncementComposer({
               Pin to top
             </label>
           ) : <span />}
-
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Posting..." : "Post"}
-          </Button>
+          <div className="flex justify-end gap-2">
+            <button type="button" disabled={submitting} onClick={onClose} className="min-h-10 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-obsidian-border dark:text-mist dark:hover:bg-obsidian-raised">Cancel</button>
+            <button type="submit" disabled={submitting} className="min-h-10 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50">{submitting ? "Posting…" : needsApproval ? "Submit for approval" : "Post announcement"}</button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
+    </Dialog>
   );
 }

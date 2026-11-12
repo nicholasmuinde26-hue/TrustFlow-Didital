@@ -31,7 +31,7 @@ const SLIDES = [
     icon: Users,
     eyebrow: "For chamas & groups",
     title: ["Money your group can", "see, verify and trust."],
-    text: "VeriCircle replaces notebooks, spreadsheets and WhatsApp tallies with one workspace: contributions, loans, rotations and a clear record every member can check.",
+    text: "ChamaManager replaces notebooks, spreadsheets and WhatsApp tallies with one workspace: contributions, loans, rotations and a clear record every member can check.",
     points: ["Contribution plans per chama custom", "Loans, guarantors & share-out", "Welfare and burial cases"],
     Scene: SceneChama,
     Card: ChamaCard,
@@ -134,7 +134,7 @@ export default function HeroSlider() {
       ref={sectionRef}
       className="lp-hero relative overflow-hidden bg-obsidian"
       aria-roledescription="carousel"
-      aria-label="VeriCircle highlights"
+      aria-label="ChamaManager highlights"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => {
         setPaused(false);

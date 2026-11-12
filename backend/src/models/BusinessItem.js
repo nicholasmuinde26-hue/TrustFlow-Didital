@@ -10,12 +10,16 @@ const businessItemSchema = new mongoose.Schema(
     },
     name: { type: String, required: true, trim: true, maxlength: 160 },
     sku: { type: String, trim: true, default: "" },
+    barcode: { type: String, trim: true, default: "", index: true },
     category: { type: String, default: "General", trim: true },
     description: { type: String, default: "", trim: true, maxlength: 500 },
     price: { type: Number, required: true, min: 0 },
     online_price: { type: Number, default: null, min: 0 },
     cost_price: { type: Number, default: 0, min: 0 },
     quantity: { type: Number, required: true, default: 0, min: 0 },
+    reorder_level: { type: Number, default: 5, min: 0 },
+    batch_number: { type: String, trim: true, default: "" },
+    expiry_date: { type: Date, default: null, index: true },
     // false for things like services/menu items that aren't counted as
     // physical stock — quantity is ignored and they're always orderable
     track_stock: { type: Boolean, default: true },

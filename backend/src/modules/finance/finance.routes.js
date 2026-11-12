@@ -12,7 +12,7 @@ import {
     hubMatrix,
     hubMyMonth,
     hubStatement
-} from "../contributionPlan/contributionHub.controller.js";
+} from "../contributionPlan/index.js";
 
 import {
     getFinanceSummary,

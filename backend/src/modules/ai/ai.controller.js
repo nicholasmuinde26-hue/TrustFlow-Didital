@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 import aiService from "./ai.service.js";
 import { resolveWorkspaceLabel } from "./ai.context.service.js";
-import { canAccessWorkspace } from "../chat/chat.permissions.js";
+import { canAccessWorkspace } from "../chat/index.js";
 import Business from "../../models/Business.js";
 import AppError from "../../utils/AppError.js";
 

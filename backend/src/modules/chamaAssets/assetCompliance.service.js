@@ -3,7 +3,7 @@ import AssetComplianceObligation, {
 } from "../../models/AssetComplianceObligation.js";
 import ChamaAsset from "../../models/ChamaAsset.js";
 import AppError from "../../utils/AppError.js";
-import { getIO } from "../realtime/socketServer.js";
+import { getIO } from "../realtime/index.js";
 import { recordExpense } from "./chamaAsset.service.js";
 
 const emitToChama = (chamaId, event, payload) => {

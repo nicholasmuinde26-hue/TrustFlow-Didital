@@ -2,24 +2,18 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Wallet,
-  PiggyBank,
   HeartPulse,
   UserPlus,
-  CreditCard,
-  CalendarClock,
-  ShieldCheck,
   QrCode,
   CheckCircle2,
   RefreshCw,
   AlertTriangle,
-  TrendingUp,
   FileText,
   ChevronRight,
 } from "lucide-react";
 
 import chamaApi from "@/modules/chama/api/chama.api";
-import loansApi from "@/modules/loans/api/loans.api";
+import api from "@/app/services/api";
 import useAuth from "@/app/hooks/useAuth";
 import KycSubmitModal from "@/modules/chama/components/KycSubmitModal";
 
@@ -83,14 +77,14 @@ export default function BurialMemberDashboardPage() {
   const { workspaceId } = useParams();
 
   const [data, setData] = useState(null);
-  const [loanSummary, setLoanSummary] = useState(null);
+  const [coverage, setCoverage] = useState(null);
   const [status, setStatus] = useState("loading");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     if (!workspaceId) {
       setData(null);
-      setLoanSummary(null);
+      setCoverage(null);
       setStatus("error");
       setErrorMessage("No workspace was provided.");
       return undefined;
@@ -100,17 +94,13 @@ export default function BurialMemberDashboardPage() {
     setStatus("loading");
     setErrorMessage("");
     setData(null);
-    setLoanSummary(null);
+    setCoverage(null);
 
     const loadDashboard = async () => {
       try {
-        // Loan summary is one widget on this page, not the page itself —
-        // a role without loan access (Patron, or a Chama whose
-        // permissions haven't been fully configured yet) should still
-        // see their welfare cover status rather than a hard error.
-        const [commandCenterResult, summaryResult] = await Promise.allSettled([
+        const [commandCenterResult, coverageResult] = await Promise.allSettled([
           chamaApi.getCommandCenter(workspaceId, { signal: controller.signal }),
-          loansApi.summary(workspaceId, { signal: controller.signal }),
+          api.get(`/burial-chama/chama/${workspaceId}/coverage/me`, { signal: controller.signal }),
         ]);
 
         if (commandCenterResult.status === "rejected") {
@@ -120,18 +110,8 @@ export default function BurialMemberDashboardPage() {
         const commandCenterData = commandCenterResult.value?.data?.data;
         if (!commandCenterData) throw new Error("Member dashboard data is unavailable.");
 
-        const loanSummaryData =
-          summaryResult.status === "fulfilled" ? summaryResult.value?.data?.data : null;
-
-        if (summaryResult.status === "rejected") {
-          const abortedLoanCall =
-            summaryResult.reason?.name === "AbortError" || summaryResult.reason?.code === "ERR_CANCELED";
-          if (abortedLoanCall) return;
-          console.warn("Loan summary unavailable for My Chama dashboard:", summaryResult.reason);
-        }
-
         setData(commandCenterData);
-        setLoanSummary(loanSummaryData);
+        setCoverage(coverageResult.status === "fulfilled" ? coverageResult.value?.data?.data : null);
         setStatus("ready");
       } catch (error) {
         if (error?.name === "AbortError" || error?.code === "ERR_CANCELED") return;
@@ -158,14 +138,14 @@ export default function BurialMemberDashboardPage() {
     return <DashboardState error>{errorMessage || CONFIG.fallback.error}</DashboardState>;
   }
 
-  return <BurialMemberDashboardView data={data} loanSummary={loanSummary} workspaceId={workspaceId} />;
+  return <BurialMemberDashboardView data={data} coverage={coverage} workspaceId={workspaceId} />;
 }
 
 /* ============================================================================
  * VIEW
  * ========================================================================== */
 
-function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
+function BurialMemberDashboardView({ data, coverage, workspaceId }) {
   const { user } = useAuth();
   const [showKycModal, setShowKycModal] = useState(false);
 
@@ -176,27 +156,13 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
     kycStatus !== CONFIG.kycStatuses.approved && kycStatus !== CONFIG.kycStatuses.pending;
   const memberId = getMemberId(membership);
 
-  const activeLoan = loanSummary?.active_loan || null;
-  const nextPayment = activeLoan?.next_payment || null;
-
-  // Welfare fund position — same backend field the standard chama calls
-  // "savings", reframed here as the member's welfare fund contribution.
-  const welfareFundBalance = loanSummary?.savings_balance ?? 0;
-  const loanLimit = loanSummary?.loan_limit ?? 0;
-
-  const nextPaymentDate = formatDate(nextPayment?.due_date, CONFIG.fallback.noRepayment);
-  const nextPaymentAmount = nextPayment?.amount != null ? `${money(nextPayment.amount)} due` : null;
+  const coverageLabels = { covered: 'Covered', waiting_period: `Waiting period · ${coverage?.days_remaining || 0} days`, at_risk: 'In arrears · cover at risk', out_of_good_standing: 'Out of good standing', lapsed: 'Cover lapsed' };
+  const coverageLabel = coverageLabels[coverage?.status] || 'Cover status unavailable';
 
   const displayMemberId = memberId
     ? String(memberId).slice(-CONFIG.memberIdDisplayLength).toUpperCase()
     : CONFIG.fallback.unknownMemberId;
 
-  const loanPrincipal = activeLoan ? toNumber(activeLoan.amount || activeLoan.principal || 0) : 0;
-  const loanOutstanding = activeLoan ? toNumber(activeLoan.outstanding_balance ?? activeLoan.balance ?? 0) : 0;
-  const loanRepaidPct =
-    activeLoan && loanPrincipal > 0
-      ? Math.max(0, Math.min(100, Math.round(((loanPrincipal - loanOutstanding) / loanPrincipal) * 100)))
-      : 0;
 
   const kycAccent =
     kycStatus === CONFIG.kycStatuses.approved
@@ -205,7 +171,7 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
       ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-400"
       : "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400";
 
-  const coverActive = kycStatus === CONFIG.kycStatuses.approved;
+  const coverActive = coverage?.status === 'covered';
   const base = `/workspace/${workspaceId}`;
 
   return (
@@ -262,7 +228,7 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
        * WELFARE SUMMARY
        * ==================================================================== */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard title="Welfare Fund" value={money(welfareFundBalance)} icon={PiggyBank} accent="emerald" />
+        <SummaryCard title="Your cover status" value={coverageLabel} icon={HeartPulse} accent={coverActive ? "emerald" : "amber"} subtitle={coverage?.covered_since ? `Covered since ${formatDate(coverage.covered_since, "—")}` : coverage?.lapse_reason || "Based on waiting period and contribution standing"} />
         <SummaryCard
           title="Beneficiaries"
           value=""
@@ -275,69 +241,9 @@ function BurialMemberDashboardView({ data, loanSummary, workspaceId }) {
           }
           subtitle="Keep next-of-kin details current"
         />
-        <SummaryCard title="Emergency Loan Limit" value={money(loanLimit)} icon={CreditCard} accent="sky" />
-        <SummaryCard
-          title="Next loan repayment"
-          value={nextPaymentDate}
-          icon={CalendarClock}
-          accent="amber"
-          subtitle={nextPaymentAmount}
-        />
+        <SummaryCard title="Covered dependants" value={String(coverage?.dependants?.length ?? "—")} icon={UserPlus} accent="sky" subtitle="Registered people linked to your cover" />
+        <SummaryCard title="Outstanding welfare dues" value={coverage ? money(coverage.arrears_amount) : "—"} icon={AlertTriangle} accent={coverage?.status === "at_risk" || coverage?.status === "out_of_good_standing" || coverage?.status === "lapsed" ? "amber" : "emerald"} subtitle={coverage?.arrears_months ? `${coverage.arrears_months} overdue period(s)` : "No overdue contributions"} />
       </div>
-
-      {/* ======================================================================
-       * EMERGENCY LOAN POSITION
-       * ==================================================================== */}
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5 mb-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400">
-              <TrendingUp className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Emergency Loan Position</h2>
-              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-                Borrowing against the welfare fund and your repayment position.
-              </p>
-            </div>
-          </div>
-
-          <LoanStatusBadge loan={activeLoan} />
-        </div>
-
-        {activeLoan ? (
-          <div className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Metric label="Loan amount" value={money(loanPrincipal)} />
-              <Metric label="Outstanding" value={money(loanOutstanding)} />
-              <Metric label="Next payment" value={nextPayment?.amount ? money(nextPayment.amount) : "—"} />
-              <Metric label="Due date" value={nextPaymentDate} />
-            </div>
-
-            {loanPrincipal > 0 && (
-              <div>
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
-                  <span>Repaid</span>
-                  <span>{loanRepaidPct}%</span>
-                </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${loanRepaidPct}%` }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center dark:border-slate-700 dark:bg-slate-800/40">
-            <CreditCard className="h-6 w-6 text-slate-400" />
-            <p className="text-sm text-slate-500 dark:text-slate-400">You currently have no active loan.</p>
-          </div>
-        )}
-      </section>
 
       {/* ======================================================================
        * BENEFICIARIES & CASE HISTORY SHORTCUTS
@@ -484,19 +390,6 @@ function SummaryCard({ title, value, subtitle, icon: Icon, accent = "emerald", c
 }
 
 /* ============================================================================
- * METRIC
- * ========================================================================== */
-
-function Metric({ label, value }) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 font-bold">{value}</p>
-    </div>
-  );
-}
-
-/* ============================================================================
  * MEMBER DETAIL
  * ========================================================================== */
 
@@ -513,37 +406,6 @@ function MemberDetail({ label, value, mono = false, badgeClassName }) {
       )}
     </div>
   );
-}
-
-/* ============================================================================
- * LOAN STATUS
- * ========================================================================== */
-
-function LoanStatusBadge({ loan }) {
-  if (!loan) {
-    return (
-      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-        No active loan
-      </span>
-    );
-  }
-
-  const status = String(loan.status || "active").toLowerCase();
-
-  const statusConfig = {
-    active: { label: "Active", className: "bg-emerald-100 text-emerald-700" },
-    pending: { label: "Pending", className: "bg-amber-100 text-amber-700" },
-    approved: { label: "Approved", className: "bg-blue-100 text-blue-700" },
-    defaulted: { label: "Defaulted", className: "bg-red-100 text-red-700" },
-    completed: { label: "Completed", className: "bg-slate-100 text-slate-600" },
-  };
-
-  const config = statusConfig[status] || {
-    label: status.charAt(0).toUpperCase() + status.slice(1),
-    className: "bg-slate-100 text-slate-600",
-  };
-
-  return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${config.className}`}>{config.label}</span>;
 }
 
 /* ============================================================================

@@ -19,13 +19,17 @@ import {
   HeartHandshake,
   Loader2,
   UserCheck,
-  AlertCircle
+  AlertCircle,
+  Pencil,
+  Save,
+  X
 } from "lucide-react";
 import StatCard from "@/shared/components/ui/StatCard";
 import ShareLinkModal from "../components/ShareLinkModal";
 import PledgeModal from "../components/PledgeModal";
 import PledgeStkModal from "../components/PledgeStkModal";
 import contributionGroupApi from "../api/contributionGroup.api";
+import { GROUP_TYPES, GROUP_VISIBILITY } from "../constants";
 
 const money = (value) => `KES ${Number(value || 0).toLocaleString()}`;
 
@@ -66,6 +70,30 @@ const EVENT_THEMES = {
     badge: "bg-teal-500/30 text-teal-200 border-teal-400/30",
     accent: "text-teal-300"
   },
+  party: {
+    title: "Celebration Fundraiser",
+    bg: "from-orange-900 via-rose-950 to-slate-900",
+    badge: "bg-orange-500/30 text-orange-200 border-orange-400/30",
+    accent: "text-orange-300"
+  },
+  emergency: {
+    title: "Emergency Fundraiser",
+    bg: "from-red-950 via-rose-950 to-slate-900",
+    badge: "bg-red-500/30 text-red-200 border-red-400/30",
+    accent: "text-red-300"
+  },
+  community: {
+    title: "Community Contribution Group",
+    bg: "from-teal-950 via-emerald-950 to-slate-900",
+    badge: "bg-teal-500/30 text-teal-200 border-teal-400/30",
+    accent: "text-teal-300"
+  },
+  other: {
+    title: "Contribution Group",
+    bg: "from-violet-950 via-indigo-950 to-slate-900",
+    badge: "bg-violet-500/30 text-violet-200 border-violet-400/30",
+    accent: "text-violet-300"
+  },
   default: {
     title: "Cause Workspace",
     bg: "from-violet-900 via-indigo-900 to-slate-900",
@@ -84,6 +112,10 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isPledgeModalOpen, setIsPledgeModalOpen] = useState(false);
   const [toastNotice, setToastNotice] = useState(null);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editForm, setEditForm] = useState(null);
 
   // Fund & Pledges real-time state from backend fund dashboard
   const [fundData, setFundData] = useState(null);
@@ -123,8 +155,57 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
 
   const eventType = groupDetails.type || workspace.type || "default";
   const theme = EVENT_THEMES[eventType] || EVENT_THEMES.default;
+  const canManage = ["organizer", "co_organizer"].includes(workspace.role);
+  const fundraiserName = groupDetails.name || workspace.name || "Contribution Group";
+  const openDetailsEditor = () => {
+    setEditForm({
+      name: fundraiserName,
+      description: groupDetails.description || "",
+      type: EVENT_THEMES[eventType] ? eventType : "other",
+      event_date: (groupDetails.event_date || workspace.eventDate || "").slice(0, 10),
+      location: groupDetails.location || workspace.location || "",
+      visibility: groupDetails.visibility || "invite_only",
+      target_amount: Number(groupDetails.target_amount) > 0 ? String(groupDetails.target_amount) : "",
+      contribution_end_date: (groupDetails.contribution_end_date || "").slice(0, 10),
+      beneficiary: groupDetails.beneficiary || "",
+    });
+    setEditError("");
+    setEditingDetails(true);
+  };
 
-  const targetGoal = totals.target || workspace.targetGoal || null;
+  const saveDetails = async (event) => {
+    event.preventDefault();
+    setSavingDetails(true);
+    setEditError("");
+    try {
+      const groupUpdate = await contributionGroupApi.update(workspaceId, {
+        name: editForm.name,
+        description: editForm.description,
+        type: editForm.type,
+        event_date: editForm.event_date || null,
+        location: editForm.location,
+        visibility: editForm.visibility,
+      });
+      const fundUpdate = await contributionGroupApi.updateFundDetails(workspaceId, {
+        target_amount: editForm.target_amount === "" ? 0 : Number(editForm.target_amount),
+        contribution_end_date: editForm.contribution_end_date || null,
+        beneficiary: editForm.beneficiary,
+      });
+      setEditingDetails(false);
+      await fetchFundInfo();
+      const sentForReview = fundUpdate.data?.data?.reReviewRequired || groupUpdate.data?.data?.group?.verification?.status === "pending";
+      setToastNotice(sentForReview ? "Details saved. Public donations are paused until an administrator reviews the changes." : "Fundraiser details updated.");
+      setTimeout(() => setToastNotice(null), 4000);
+    } catch (error) {
+      setEditError(error.response?.data?.message || "Could not update fundraiser details.");
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const targetGoal = totals.target != null
+    ? (Number(totals.target) > 0 ? Number(totals.target) : null)
+    : (workspace.targetGoal ?? null);
   const totalPledged = totals.pledged || 0;
   const totalCollected = totals.collected ?? (stats.totalContributed || 0);
 
@@ -168,12 +249,13 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
                 <Sparkles size={13} /> {theme.title}
               </span>
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-300">
-                <ShieldCheck size={14} /> 100% Transparent Ledger
+                <ShieldCheck size={14} /> Organizer-led · Transparent ledger
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-              {groupDetails.name || workspace.name || "Contribution Circle"}
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/60">Fundraiser name</p>
+            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-[1.05]">
+              {fundraiserName}
             </h1>
 
             {groupDetails.description && (
@@ -203,6 +285,7 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
 
           {/* Action CTAs */}
           <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {canManage && <button onClick={openDetailsEditor} className="flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-xs font-bold text-white backdrop-blur-md hover:bg-white/20 transition-all border border-white/20"><Pencil size={15} /> Edit fundraiser</button>}
             <button
               onClick={() => setIsPledgeModalOpen(true)}
               className="flex items-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 text-xs font-black text-emerald-950 shadow-xl hover:bg-emerald-300 transition-all transform hover:-translate-y-0.5"
@@ -231,7 +314,7 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
           <div className="mt-8 rounded-2xl bg-white/10 p-5 backdrop-blur-md border border-white/15 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold">
               <span className="text-slate-200">
-                Cause Target: <strong className="text-white font-mono text-sm">{money(targetGoal)}</strong>
+                Fundraising goal: <strong className="text-white font-mono text-sm">{money(targetGoal)}</strong>
               </span>
               <div className="flex items-center gap-4 text-xs font-mono">
                 <span className="text-amber-300">Pledged: {money(totalPledged)}</span>
@@ -252,20 +335,15 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
                 />
               </div>
               <div className="flex justify-between text-[11px] font-mono text-slate-200/90 font-semibold pt-1">
-                <span>{progressPercent}% Cash Received • {pledgedPercent}% Pledged</span>
-                <span>Target Balance: {money(Math.max(0, targetGoal - totalCollected))}</span>
+                <span>{progressPercent}% of goal received · {pledgedPercent}% including pledges</span>
+                <span>Still needed: {money(Math.max(0, targetGoal - totalCollected))}</span>
               </div>
             </div>
           </div>
         ) : (
-          <div className="mt-8 flex items-center justify-between rounded-2xl bg-white/10 p-4 backdrop-blur-md border border-white/15 text-xs font-medium text-slate-200">
-            <span>No explicit target amount set for this cause yet.</span>
-            <button
-              onClick={() => setIsPledgeModalOpen(true)}
-              className="font-bold text-emerald-300 hover:underline"
-            >
-              + Add a Pledge
-            </button>
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/10 p-4 backdrop-blur-md border border-white/15 text-xs font-medium text-slate-200">
+            <span>No fundraising goal has been set yet. {canManage ? "Add a goal so supporters can track progress." : "Ask an organizer to add a goal."}</span>
+            {canManage && <button onClick={openDetailsEditor} className="inline-flex items-center gap-1.5 font-bold text-emerald-300 hover:underline"><Pencil size={13} /> Set fundraiser goal</button>}
           </div>
         )}
       </section>
@@ -476,6 +554,29 @@ export default function ContributionGroupOverviewPage({ dashboard }) {
       </div>
 
       {/* Modals */}
+      {editingDetails && editForm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingDetails) setEditingDetails(false); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="edit-fundraiser-title" className="my-auto w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-8">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div><p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-600">Organizer controls</p><h2 id="edit-fundraiser-title" className="mt-1 text-xl font-black text-slate-900 dark:text-white">Edit fundraiser details</h2><p className="mt-1 text-xs text-slate-500">This name and information are shown to your supporters.</p></div>
+              <button type="button" onClick={() => setEditingDetails(false)} disabled={savingDetails} aria-label="Close" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"><X size={18} /></button>
+            </div>
+            <form onSubmit={saveDetails} className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Fundraiser or contribution group name</span><input required minLength={2} maxLength={100} value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} placeholder="e.g. Help the Mumo family rebuild" className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Fundraiser category</span><select value={editForm.type} onChange={(event) => setEditForm({ ...editForm, type: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm capitalize dark:border-slate-700 dark:bg-slate-950 dark:text-white">{GROUP_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Visibility</span><select value={editForm.visibility} onChange={(event) => setEditForm({ ...editForm, visibility: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm capitalize dark:border-slate-700 dark:bg-slate-950 dark:text-white">{GROUP_VISIBILITY.map((visibility) => <option key={visibility} value={visibility}>{visibility.replaceAll("_", " ")}</option>)}</select></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Fundraising goal (KES)</span><input type="number" min="0" step="1" value={editForm.target_amount} onChange={(event) => setEditForm({ ...editForm, target_amount: event.target.value })} placeholder="Optional" className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Contribution close date</span><input type="date" value={editForm.contribution_end_date} onChange={(event) => setEditForm({ ...editForm, contribution_end_date: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Beneficiary (optional)</span><input maxLength={120} value={editForm.beneficiary} onChange={(event) => setEditForm({ ...editForm, beneficiary: event.target.value })} placeholder="Who this fundraiser supports" className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Event date (optional)</span><input type="date" value={editForm.event_date} onChange={(event) => setEditForm({ ...editForm, event_date: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              <label className="space-y-1.5"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location (optional)</span><input maxLength={120} value={editForm.location} onChange={(event) => setEditForm({ ...editForm, location: event.target.value })} placeholder="Town or venue" className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-bold text-slate-700 dark:text-slate-300">Story and purpose</span><textarea rows={3} maxLength={1000} value={editForm.description} onChange={(event) => setEditForm({ ...editForm, description: event.target.value })} placeholder="Tell supporters what the fundraiser is for" className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+              {editError && <p role="alert" className="sm:col-span-2 rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">{editError}</p>}
+              <div className="flex justify-end gap-2 pt-2 sm:col-span-2"><button type="button" disabled={savingDetails} onClick={() => setEditingDetails(false)} className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">Cancel</button><button type="submit" disabled={savingDetails} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-60">{savingDetails ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}{savingDetails ? "Saving…" : "Save fundraiser"}</button></div>
+            </form>
+          </section>
+        </div>
+      )}
       <ShareLinkModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}

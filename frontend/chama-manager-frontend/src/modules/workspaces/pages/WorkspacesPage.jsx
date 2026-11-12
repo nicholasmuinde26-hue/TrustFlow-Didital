@@ -29,6 +29,13 @@ import {
 
 import InvitationCard from "@/modules/invitations/components/InvitationCard";
 import Spinner from "@/shared/components/ui/Spinner";
+import { organizationLabel } from '../hooks/useTerminology.js';
+
+const ORG_TYPE_OPTIONS = {
+  chama: [["merry_go_round", "Merry-go-round"], ["table_banking", "Table banking"], ["investment_group", "Investment group"], ["welfare", "Welfare / burial"], ["housing", "Housing group"], ["farmer_group", "Farmer group"], ["custom", "Other / custom"]],
+  sacco: [["community_sacco", "Community SACCO"], ["employee_sacco", "Employee SACCO"], ["farmer_sacco", "Farmer SACCO"], ["housing_sacco", "Housing SACCO"], ["investment_sacco", "Investment SACCO"], ["custom", "Other / custom"]],
+  cooperative: [["agricultural", "Agricultural cooperative"], ["consumer", "Consumer cooperative"], ["housing", "Housing cooperative"], ["worker", "Worker cooperative"], ["producer", "Producer cooperative"], ["custom", "Other / custom"]],
+};
 
 /* ============================================================
    TYPE META — single source of truth for how each workspace
@@ -40,7 +47,7 @@ import Spinner from "@/shared/components/ui/Spinner";
 const TYPE_META = {
   chama: {
     icon: Building2,
-    label: "Chama",
+    label: "Organizations",
     createTo: "/chamas/new",
     iconBg:
       "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/70 dark:text-violet-300 dark:border-violet-800",
@@ -235,6 +242,8 @@ export default function WorkspacesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [organizationFamily, setOrganizationFamily] = useState("all");
+  const [organizationType, setOrganizationType] = useState("all");
 
   /* ==========================================================
      TYPE NAVIGATION — shared by the mobile bottom bar and the
@@ -317,10 +326,13 @@ export default function WorkspacesPage() {
       const matchesSearch = !query || searchableText.includes(query);
 
       const matchesTab = activeTab === "all" ? true : type === activeTab;
+      const family = workspace.organizationFamily || "chama";
+      const matchesFamily = activeTab !== "chama" || organizationFamily === "all" || family === organizationFamily;
+      const matchesOrgType = activeTab !== "chama" || organizationType === "all" || workspace.organizationType === organizationType;
 
-      return matchesSearch && matchesTab;
+      return matchesSearch && matchesTab && matchesFamily && matchesOrgType;
     });
-  }, [workspaces, searchQuery, activeTab]);
+  }, [workspaces, searchQuery, activeTab, organizationFamily, organizationType]);
 
   /* ==========================================================
      OPEN WORKSPACE
@@ -373,7 +385,7 @@ export default function WorkspacesPage() {
           </h1>
 
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Your chamas, groups and businesses, all in one place.
+            Your organizations, groups and businesses, all in one place.
           </p>
 
           <div className="relative mt-5 max-w-md">
@@ -405,7 +417,7 @@ export default function WorkspacesPage() {
             <FilterButton
               active={activeTab === "chama"}
               onClick={() => setActiveTab("chama")}
-              label="Chama"
+              label="Organizations"
               count={chamaCount}
             />
 
@@ -423,6 +435,15 @@ export default function WorkspacesPage() {
               count={businessCount}
             />
           </div>
+
+          {activeTab === "chama" && <div className="mb-4 flex flex-wrap gap-2">
+            <select aria-label="Filter organization family" value={organizationFamily} onChange={(event) => { setOrganizationFamily(event.target.value); setOrganizationType("all"); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900 dark:text-white">
+              <option value="all">All organizations</option><option value="chama">Chamas</option><option value="sacco">SACCOs</option><option value="cooperative">Cooperatives</option>
+            </select>
+            {organizationFamily !== "all" && <select aria-label="Filter organization type" value={organizationType} onChange={(event) => setOrganizationType(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-900 dark:text-white">
+              <option value="all">All types</option>{ORG_TYPE_OPTIONS[organizationFamily].map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>}
+          </div>}
 
           {loading ? (
             <LoadingState />
@@ -540,7 +561,7 @@ export default function WorkspacesPage() {
               </div>
 
               <div>
-                <h3 className="text-base font-black">Have a Chama invitation code?</h3>
+                <h3 className="text-base font-black">Have an organization invitation code?</h3>
 
                 <p className="mt-1 text-xs text-slate-400">Join an existing community workspace.</p>
               </div>
@@ -550,7 +571,7 @@ export default function WorkspacesPage() {
               to="/chamas/join"
               className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-violet-50 sm:w-auto"
             >
-              Join Chama
+              Join Organization
               <ArrowRight size={15} />
             </Link>
           </div>
@@ -673,7 +694,7 @@ function WorkspaceRow({ workspace, index, onOpen }) {
       contributionAmount !== null ? ` · ${formatCurrency(contributionAmount)} target` : "";
     subtitle = `${memberStr}${contribStr}`;
   } else {
-    const memberStr = memberCount !== null ? `${memberCount} members` : "Chama workspace";
+    const memberStr = memberCount !== null ? `${memberCount} members` : `${organizationLabel(workspace.organizationFamily, workspace.config?.terminology?.workspace)} workspace`;
     const balStr = treasury !== null ? ` · ${formatCurrency(treasury)} treasury` : "";
     subtitle = `${memberStr}${balStr}`;
   }
@@ -762,7 +783,7 @@ function BottomNavigation({ activeTab, onSelectType, chamaCount, contributionCou
             <CreateSheetItem
               to="/chamas/new"
               icon={Building2}
-              label="New Chama"
+              label="New Organization"
               onNavigate={() => setCreateOpen(false)}
             />
             <CreateSheetItem
@@ -775,7 +796,7 @@ function BottomNavigation({ activeTab, onSelectType, chamaCount, contributionCou
             <CreateSheetItem
               to="/chamas/join"
               icon={UserPlus}
-              label="Join Chama with a Code"
+              label="Join Organization with a Code"
               onNavigate={() => setCreateOpen(false)}
             />
           </motion.div>

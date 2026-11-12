@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -172,7 +173,13 @@ export default function BillingPage() {
   };
 
   const switchToFree = async () => {
-    if (!window.confirm("Switch this chama to the Free plan? Paid features will stop accepting new records. Existing records stay available.")) return;
+    const ok = await confirmAction({
+      title: "Switch to the Free plan?",
+      message: "Paid features will stop accepting new records. Existing records stay available.",
+      variant: "warning",
+      confirmText: "Switch to Free",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await billingService.switchToFree(workspaceId);

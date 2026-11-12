@@ -24,11 +24,9 @@ export function ServiceJobsSnapshot({ workspaceId }) {
   const jobs = Array.isArray(sales) ? sales : [];
   const clients = Array.isArray(customers) ? customers : [];
 
-  if ((loadingJobs && loadingClients) || (jobs.length === 0 && clients.length === 0)) {
-    return null;
-  }
+  if (loadingJobs && loadingClients) return <div className="h-36 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Loading service overview" />;
 
-  const pendingCount = jobs.filter((j) => j.status && j.status !== "completed").length;
+  const pendingCount = jobs.filter((j) => j.status === "pending").length;
   const completedCount = jobs.filter((j) => !j.status || j.status === "completed").length;
 
   return (
@@ -39,10 +37,11 @@ export function ServiceJobsSnapshot({ workspaceId }) {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SnapshotStat label="Total Jobs" value={jobs.length} icon={ClipboardList} tone="emerald" />
-        <SnapshotStat label="Pending Invoices" value={pendingCount} icon={Clock} tone="amber" />
-        <SnapshotStat label="Completed" value={completedCount} icon={CheckCircle2} tone="violet" />
-        <SnapshotStat label="Active Clients" value={clients.length} icon={Users} tone="cyan" />
+        <SnapshotStat label="Awaiting payment" value={pendingCount} icon={Clock} tone="amber" />
+        <SnapshotStat label="Paid / completed" value={completedCount} icon={CheckCircle2} tone="violet" />
+        <SnapshotStat label="Customers" value={clients.length} icon={Users} tone="cyan" />
       </div>
+      {jobs.length === 0 && clients.length === 0 && <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">Add a client or create a job to track service activity here.</p>}
     </div>
   );
 }

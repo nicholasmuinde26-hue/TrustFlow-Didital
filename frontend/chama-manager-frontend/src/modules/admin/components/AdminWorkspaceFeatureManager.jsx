@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Settings2 } from "lucide-react";
 
-import { useModuleCatalog } from "@/modules/workspaces/hooks/useWorkspaceModules";
-import WorkspaceSetupPicker from "@/modules/workspaces/components/WorkspaceSetupPicker";
-import { dependencyProblems, diffSelections, matchPreset } from "@/modules/workspaces/utils/moduleSelection";
+import { useModuleCatalog } from '@/modules/workspaces/index.js';
+import { WorkspaceSetupPicker } from '@/modules/workspaces/index.js';
+import { dependencyProblems, diffSelections, matchPreset } from '@/modules/workspaces/index.js';
 import adminService from "../services/admin.service";
 
 export default function AdminWorkspaceFeatureManager({ onChanged }) {
@@ -12,6 +12,8 @@ export default function AdminWorkspaceFeatureManager({ onChanged }) {
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState({ preset: "custom", modules: [] });
   const [note, setNote] = useState("");
+  const [moduleLabels, setModuleLabels] = useState({});
+  const [workspaceLabel, setWorkspaceLabel] = useState("Chama");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -34,7 +36,9 @@ export default function AdminWorkspaceFeatureManager({ onChanged }) {
   const selected = chamas.find((item) => String(item.id) === String(selectedId));
   useEffect(() => {
     if (!selected || !catalog) return;
-    setDraft({ preset: selected.preset || matchPreset(catalog, selected.modules), modules: selected.modules || [] });
+    setDraft({ preset: selected.preset || matchPreset(catalog, selected.modules), modules: selected.modules || [], organizationFamily: selected.organization_family || "chama", organizationType: selected.organization_type || "custom" });
+    setModuleLabels(selected.terminology?.module_labels || {});
+    setWorkspaceLabel(selected.terminology?.workspace || "Chama");
     setNote("");
   }, [selected, catalog]);
 
@@ -43,14 +47,16 @@ export default function AdminWorkspaceFeatureManager({ onChanged }) {
   const draftChamaType = draft.modules.includes("burial_welfare") ? "Burial & welfare" : "Standard";
   const problems = catalog ? dependencyProblems(catalog, draft.modules) : [];
   const blockedNames = Object.keys(selected?.blocked || {}).filter((key) => disable.includes(key));
+  const labelsChanged = JSON.stringify(moduleLabels) !== JSON.stringify(selected?.terminology?.module_labels || {}) || workspaceLabel !== (selected?.terminology?.workspace || "Chama");
+  const orgChanged = Boolean(selected) && (draft.organizationFamily !== (selected.organization_family || "chama") || draft.organizationType !== (selected.organization_type || "custom"));
 
   async function save() {
-    if (!selected || saving || (!enable.length && !disable.length) || problems.length || blockedNames.length) return;
+    if (!selected || saving || (!enable.length && !disable.length && !labelsChanged && !orgChanged) || problems.length || blockedNames.length) return;
     setSaving(true);
     setMessage(null);
     try {
-      await adminService.configureChamaFeatures(selected.id, { ...draft, note });
-      setMessage({ type: "success", text: `${selected.name} feature configuration applied.` });
+      await adminService.configureChamaFeatures(selected.id, { preset: draft.preset, modules: draft.modules, organizationFamily: draft.organizationFamily, organizationType: draft.organizationType, moduleLabels, workspaceLabel, note });
+      setMessage({ type: "success", text: `${selected.name} organization configuration applied.` });
       await load();
       onChanged?.();
     } catch (error) {
@@ -80,7 +86,7 @@ export default function AdminWorkspaceFeatureManager({ onChanged }) {
         <>
           <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">Choose a Chama
             <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-              {chamas.map((chama) => <option key={chama.id} value={chama.id}>{chama.name} · {chama.chama_type === "burial" ? "Burial & welfare" : "Standard"}</option>)}
+              {chamas.map((chama) => <option key={chama.id} value={chama.id}>{chama.name} · {chama.organization_family || "chama"} / {chama.organization_type || "custom"}</option>)}
             </select>
           </label>
 
@@ -93,9 +99,22 @@ export default function AdminWorkspaceFeatureManager({ onChanged }) {
 
             {blockedNames.length > 0 && <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><p className="font-bold">Some features cannot be removed while they contain active records.</p><ul className="mt-1 list-disc pl-4">{blockedNames.map((key) => <li key={key}>{selected.blocked[key].reason}</li>)}</ul></div>}
 
-            <WorkspaceSetupPicker value={draft} onChange={setDraft} baseline={selected.modules} blocked={selected.blocked || {}} />
+            <WorkspaceSetupPicker value={draft} onChange={setDraft} baseline={selected.modules} blocked={selected.blocked || {}} showOrganization />
 
-            {(enable.length > 0 || disable.length > 0) && <div className="space-y-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+            <details className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+              <summary className="cursor-pointer text-xs font-bold text-slate-800 dark:text-white">Customize organization terminology</summary>
+              <p className="mt-2 text-[11px] text-slate-500">Change how enabled modules are named in this organization’s navigation. Leave blank to use the standard name.</p>
+              <label className="mt-3 block text-[11px] font-semibold text-slate-600 dark:text-slate-300">Organization name used in the UI
+                <input value={workspaceLabel} maxLength={50} onChange={(event) => setWorkspaceLabel(event.target.value)} placeholder={selected.organization_family === "sacco" ? "SACCO" : selected.organization_family === "cooperative" ? "Cooperative" : "Chama"} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              </label>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {(catalog?.modules || []).filter((module) => draft.modules.includes(module.key) && !module.locked).map((module) => <label key={module.key} className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{module.label}
+                  <input value={moduleLabels[module.key] || ""} maxLength={60} onChange={(event) => setModuleLabels((previous) => ({ ...previous, [module.key]: event.target.value }))} placeholder={module.label} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                </label>)}
+              </div>
+            </details>
+
+            {(enable.length > 0 || disable.length > 0 || labelsChanged || orgChanged) && <div className="space-y-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
               <div className="grid gap-2 sm:grid-cols-2 text-xs">
                 <p className="rounded-xl bg-emerald-50 p-3 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"><strong>Enable:</strong> {enable.length ? enable.map((key) => labels[key] || key).join(", ") : "None"}</p>
                 <p className="rounded-xl bg-rose-50 p-3 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300"><strong>Remove:</strong> {disable.length ? disable.map((key) => labels[key] || key).join(", ") : "None"}</p>
@@ -104,7 +123,7 @@ export default function AdminWorkspaceFeatureManager({ onChanged }) {
               <div className="flex justify-end">
                 <button type="button" onClick={save} disabled={saving || problems.length > 0 || blockedNames.length > 0} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
                   {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  {saving ? "Applying…" : "Apply feature configuration"}
+                  {saving ? "Applying…" : "Apply organization configuration"}
                 </button>
               </div>
             </div>}

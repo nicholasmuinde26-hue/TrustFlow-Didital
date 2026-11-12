@@ -1,4 +1,4 @@
-import { SETTLEMENTS } from '../modules/yearEnd/yearEnd.constants.js';
+import { SETTLEMENTS } from './settlement.constants.js';
 
 /**
  * ============================================================================
@@ -15,7 +15,7 @@ import { SETTLEMENTS } from '../modules/yearEnd/yearEnd.constants.js';
  */
 
 export const FUND_KINDS = Object.freeze([
-  'general', 'welfare', 'savings', 'shares', 'project', 'fee', 'fine', 'other',
+  'general', 'welfare', 'case', 'reserve', 'savings', 'shares', 'project', 'fee', 'fine', 'other',
 ]);
 
 export const FUND_SETTLEMENTS = Object.freeze(Object.values(SETTLEMENTS));

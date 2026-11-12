@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import ContributionObligation from '../../../models/ContributionObligation.js';
+import ContributionPlan from '../../../models/ContributionPlan.js';
 import ChamaMembership from '../../../models/ChamaMembership.js';
 import ContributionGroupMember from '../../../models/ContributionGroupMember.js';
 import ContributionGroup from '../../../models/ContributionGroup.js';
@@ -7,15 +8,17 @@ import Business from '../../../models/Business.js';
 import PaymentIntent from '../../../models/PaymentIntent.js';
 import AppError from '../../../utils/AppError.js';
 
-import { reconcileB2cResult, reconcileStkCallback } from '../../../modules/business/business.service.js';
-import { settleBillingStkCallback } from '../../../modules/billing/billingPayment.service.js';
-import { reconcileProfitDistributionB2c } from '../../../modules/chamaAssets/chamaAsset.service.js';
-import { confirmMpesaDisbursement } from '../../../modules/loans/Loandisbursement.service.js';
-import { reconcileMemberWalletDeposit, reconcileMemberWalletWithdrawal } from '../../../modules/finance/memberWallet.service.js';
-import { maybeCreateMgrPayoutForChama } from '../../../modules/chama/chamaFinance.service.js'; 
+import { reconcileB2cResult, reconcileStkCallback } from '../../../modules/business/index.js';
+import { settleBillingStkCallback } from '../../../modules/billing/index.js';
+import { reconcileProfitDistributionB2c } from '../../../modules/chamaAssets/index.js';
+import { confirmMpesaDisbursement } from '../../../modules/loans/index.js';
+import { reconcileMemberWalletDeposit, reconcileMemberWalletWithdrawal } from '../../../modules/finance/index.js';
+import { maybeCreateMgrPayoutForChama } from '../../../modules/chama/index.js';
+import { BurialChamaService } from '../../../modules/burialChama/index.js';
 import MpesaAttempt from '../../../models/MpesaAttempt.js';
 import paymentService from '../../../payment/payment.service.js';
 import phoneUtil from '../../../utils/phone.js';
+import { isPublicGivingIntent } from '../../../modules/publicGiving/publicGiving.logic.js';
 
 const generateUniqueReference = (displayRef) => {
   const ts = Date.now();
@@ -47,6 +50,11 @@ export const initiateStkPush = async (req, res, next) => {
 
     const targetWorkspaceId = chamaId || workspaceId || groupId;
     if (!targetWorkspaceId) throw new AppError("Workspace ID is required", 400);
+
+    const targetContributionGroup = await ContributionGroup.findById(targetWorkspaceId).select('status').lean();
+    if (targetContributionGroup?.status === 'suspended') {
+      throw new AppError('This contribution group is suspended while it is reviewed.', 423);
+    }
 
     let ownerType = "Chama";
     let ownerId = targetWorkspaceId;
@@ -91,11 +99,21 @@ export const initiateStkPush = async (req, res, next) => {
     }
 
     let resolvedPlanId = planId;
-    if (!resolvedPlanId && obligationId) {
-      const obligation = await ContributionObligation.findById(obligationId).select('plan_id').lean();
-      if (obligation) {
-        resolvedPlanId = obligation.plan_id;
+    if (obligationId) {
+      const obligation = await ContributionObligation.findById(obligationId).select('plan_id owner_id participant_id expected_amount paid_amount').lean();
+      if (!obligation) throw new AppError('Contribution obligation not found', 404);
+      if (String(obligation.owner_id) !== String(targetWorkspaceId) || String(obligation.participant_id) !== String(participantId)) {
+        throw new AppError('You can only start a payment for your own obligation in this workspace', 403);
       }
+      if (resolvedPlanId && String(resolvedPlanId) !== String(obligation.plan_id)) {
+        throw new AppError('The selected contribution plan does not match this obligation', 400);
+      }
+      const plan = await ContributionPlan.findById(obligation.plan_id).select('behavior system_key').lean();
+      if (plan?.behavior === 'fine' || plan?.system_key === 'late_penalties') {
+        const outstanding = Math.max(0, Number(obligation.expected_amount?.toString?.() ?? obligation.expected_amount) - Number(obligation.paid_amount?.toString?.() ?? obligation.paid_amount ?? 0));
+        if (Number(amount) > outstanding) throw new AppError(`Fine payment cannot exceed the outstanding amount of KES ${outstanding.toFixed(2)}`, 400);
+      }
+      resolvedPlanId = obligation.plan_id;
     }
 
     const key = idempotencyKey || req.get('Idempotency-Key') || crypto.randomUUID();
@@ -164,6 +182,16 @@ export const handleMpesaCallback = async (req, res) => {
   try {
     const callbackBody = req.body;
     const stk = callbackBody?.Body?.stkCallback;
+
+    // Public fundraiser STK requests use their own callback endpoint and worker.
+    // Safaricom retries can still hit this URL during a callback URL migration;
+    // never let the platform process the same giving intent a second time.
+    if (stk?.CheckoutRequestID) {
+      const givingIntent = await PaymentIntent.findOne({ provider: 'mpesa', provider_request_id: stk.CheckoutRequestID }).select('reference metadata.publicDonation').lean();
+      if (isPublicGivingIntent(givingIntent)) {
+        return res.status(200).json({ ResultCode: 0, ResultDesc: 'Giving callback is handled by the Giving API' });
+      }
+    }
     
     // 1. Let PaymentService process it. It updates Intent, Payment, and EMITS PAYMENT_COMPLETED event
     // FinanceEngine listens to that event and posts GL for savings/contrib/mgr automatically
@@ -253,12 +281,13 @@ export const handleB2cResult = async (req, res) => {
     // a loan disbursement's B2C confirmation was silently dropped and the
     // loan stayed stuck in "disbursement_pending" (Processing...) forever,
     // even though Safaricom had already settled the payout.
-    const handledAsBusinessPayout = await reconcileB2cResult(result);
-    const handledAsProfitDistribution = !handledAsBusinessPayout && await reconcileProfitDistributionB2c(result);
-    const handledAsMemberWallet = !handledAsBusinessPayout && !handledAsProfitDistribution && conversationId
+    const handledAsBurialBenefit = conversationId ? await BurialChamaService.reconcileBurialBenefitB2c(result).catch((error) => { console.error('Burial benefit reconciliation failed:', error.message); return false; }) : false;
+    const handledAsBusinessPayout = !handledAsBurialBenefit && await reconcileB2cResult(result);
+    const handledAsProfitDistribution = !handledAsBurialBenefit && !handledAsBusinessPayout && await reconcileProfitDistributionB2c(result);
+    const handledAsMemberWallet = !handledAsBurialBenefit && !handledAsBusinessPayout && !handledAsProfitDistribution && conversationId
       ? await reconcileMemberWalletWithdrawal({ conversationId, success, receipt: result?.Result?.TransactionID, reason: failureReason })
       : null;
-    if (!handledAsBusinessPayout && !handledAsProfitDistribution && !handledAsMemberWallet && conversationId) {
+    if (!handledAsBurialBenefit && !handledAsBusinessPayout && !handledAsProfitDistribution && !handledAsMemberWallet && conversationId) {
       await confirmMpesaDisbursement({ conversationId, success, failureReason }).catch((error) => {
         console.error("M-Pesa B2C loan disbursement reconciliation error:", error);
       });

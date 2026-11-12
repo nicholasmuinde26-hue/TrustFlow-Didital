@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import User from '../../models/User.js';
+import AuthHandoff from './AuthHandoff.js';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -17,7 +18,7 @@ import {
   resolveOtpChannel,
   deliverOtp,
 } from '../../services/notifications/otpDelivery.service.js';
-import { ingestEvent as ingestSecurityEvent } from '../security/security.service.js';
+import { ingestEvent as ingestSecurityEvent } from '../security/index.js';
 
 // ========================================
 // SECURITY TELEMETRY (failed logins / OTP attempts)
@@ -585,6 +586,40 @@ export const verifyOtp = async ({ phone, email, identifier, otpCode, context }) 
     accessToken,
     refreshToken,
   };
+};
+
+// ========================================
+// SHORT-LIVED CROSS-APP AUTH HANDOFF
+// ========================================
+
+const hashHandoffCode = (code) => crypto.createHash('sha256').update(String(code)).digest('hex');
+
+export const createAuthHandoff = async (userId) => {
+  const code = crypto.randomBytes(32).toString('base64url');
+  await AuthHandoff.create({
+    codeHash: hashHandoffCode(code),
+    userId,
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  return { code, expiresInSeconds: 60 };
+};
+
+export const redeemAuthHandoff = async (code) => {
+  if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{40,50}$/.test(code)) {
+    throw new AppError('The sign-in handoff is invalid or expired. Please sign in again.', 401);
+  }
+  const handoff = await AuthHandoff.findOneAndDelete({
+    codeHash: hashHandoffCode(code),
+    expiresAt: { $gt: new Date() },
+  });
+  if (!handoff) throw new AppError('The sign-in handoff is invalid, expired, or already used. Please sign in again.', 401);
+
+  const user = await User.findById(handoff.userId).select('+refreshToken');
+  if (!user || user.status === 'inactive' || user.status === 'suspended' || user.status === 'unverified') {
+    throw new AppError('This account cannot open a workspace right now.', 403);
+  }
+  const { accessToken, refreshToken } = await issueTokens(user);
+  return { accessToken, refreshToken };
 };
 
 // ========================================

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 
 // ======================================================================
 // RATE LIMITING
@@ -11,20 +12,9 @@ import crypto from 'crypto';
 //
 // IMPLEMENTATION NOTE — READ BEFORE DEPLOYING
 // -------------------------------------------
-// This is a dependency-free, in-process fixed-window counter. It was
-// written this way because I could not verify which packages are
-// installed in your project, and a limiter that ships today beats one
-// that waits on a dependency decision.
-//
-// Its limitation is real: counters live in this process's memory, so
-// with N application instances behind a load balancer an attacker gets
-// N times the configured limit, and every counter resets on deploy.
-//
-// For production at more than one instance, swap this for
-// `express-rate-limit` backed by `rate-limit-redis`. The middleware
-// signature below deliberately matches express-rate-limit's options
-// (windowMs / max / keyGenerator / message) so the swap is a change of
-// import rather than a change of call sites.
+// Existing platform routes use the process-local counter. The independently
+// deployed Giving API opts into atomic MongoDB-backed counters shared by its
+// instances. For high-volume deployments, replace that store with Redis.
 //
 // ======================================================================
 
@@ -80,10 +70,42 @@ export const rateLimit = ({
   keyGenerator = defaultKeyGenerator,
   message = 'Too many requests. Please try again shortly.',
   skipSuccessfulRequests = false,
+  distributed = false,
 } = {}) => {
+  let ttlIndexPromise;
+  const distributedHit = async (key, now) => {
+    const collection = mongoose.connection.collection('ratelimitbuckets');
+    ttlIndexPromise ||= collection.createIndex({ resetAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {});
+    await ttlIndexPromise;
+    const nowDate = new Date(now);
+    const nextResetAt = new Date(now + windowMs);
+    await collection.updateOne({ _id: key }, [{ $set: {
+      count: { $cond: [{ $gt: ['$resetAt', nowDate] }, { $add: [{ $ifNull: ['$count', 0] }, 1] }, 1] },
+      resetAt: { $cond: [{ $gt: ['$resetAt', nowDate] }, '$resetAt', nextResetAt] },
+    } }], { upsert: true });
+    return collection.findOne({ _id: key });
+  };
   return (req, res, next) => {
-    const key = `${req.baseUrl}${req.path}:${keyGenerator(req)}`;
+    // Hash the path so bearer-like URL segments (e.g. donation status tokens)
+    // never become keys in Mongo or process memory.
+    const routeHash = crypto.createHash('sha256').update(req.path).digest('hex').slice(0, 16);
+    const key = `${req.baseUrl}:${routeHash}:${keyGenerator(req)}`;
     const now = Date.now();
+
+    if (distributed) {
+      distributedHit(key, now).then((bucket) => {
+        if (!bucket) return next(new Error('Shared rate limiter did not return a counter.'));
+        const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt.getTime() - now) / 1000));
+        res.setHeader('RateLimit-Limit', String(max));
+        res.setHeader('RateLimit-Remaining', String(Math.max(0, max - bucket.count)));
+        if (bucket.count > max) {
+          res.setHeader('Retry-After', String(retryAfterSeconds));
+          return res.status(429).json({ success: false, code: 'RATE_LIMITED', message, retryAfterSeconds });
+        }
+        return next();
+      }).catch(next);
+      return;
+    }
 
     let bucket = buckets.get(key);
 

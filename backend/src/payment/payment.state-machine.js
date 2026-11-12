@@ -31,9 +31,12 @@ const TRANSITIONS = Object.freeze({
 
     ],
 
-    [PAYMENT_STATUS.FAILED]: [],
+    // A callback can arrive after a reconciliation timeout marked the attempt
+    // failed. If M-Pesa later confirms that funds were actually received,
+    // settlement must be allowed to complete rather than losing the payment.
+    [PAYMENT_STATUS.FAILED]: [PAYMENT_STATUS.COMPLETED],
 
-    [PAYMENT_STATUS.CANCELLED]: [],
+    [PAYMENT_STATUS.CANCELLED]: [PAYMENT_STATUS.COMPLETED],
 
     [PAYMENT_STATUS.REFUNDED]: []
 

@@ -46,11 +46,14 @@ function Kpi({ icon: Icon, label, value, sub, tone = "violet" }) {
 function PlanEditor({ plan, onSaved }) {
   const [price, setPrice] = useState(String(plan.price_monthly));
   const [members, setMembers] = useState(plan.max_members ?? "");
+  const allFamilies = ["chama", "sacco", "cooperative"];
+  const [families, setFamilies] = useState(plan.organization_families?.length ? plan.organization_families : allFamilies);
   const [saving, setSaving] = useState(false);
   const isFree = plan.code === "free";
 
   const dirty =
-    Number(price) !== plan.price_monthly || (members === "" ? null : Number(members)) !== (plan.max_members ?? null);
+    Number(price) !== plan.price_monthly || (members === "" ? null : Number(members)) !== (plan.max_members ?? null) ||
+    JSON.stringify([...families].sort()) !== JSON.stringify([...(plan.organization_families?.length ? plan.organization_families : allFamilies)].sort());
 
   const save = async () => {
     if (!isFree && (!Number.isInteger(Number(price)) || Number(price) < MIN_PRICE)) {
@@ -62,6 +65,7 @@ function PlanEditor({ plan, onSaved }) {
       await billingAdminService.updatePlan(plan.code, {
         price_monthly: Number(price),
         max_members: members === "" ? null : Number(members),
+        organization_families: families,
       });
       toast.success(`${plan.name} updated`);
       onSaved();
@@ -86,6 +90,15 @@ function PlanEditor({ plan, onSaved }) {
           className="mt-1 block h-9 w-32 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950"
         />
       </label>
+      <fieldset className="min-w-[210px] text-[11px] font-bold">
+        <legend>Available to</legend>
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          {allFamilies.map((family) => <label key={family} className="flex items-center gap-1 font-medium capitalize">
+            <input type="checkbox" checked={families.includes(family)} onChange={(event) => setFamilies((current) => event.target.checked ? [...current, family] : current.filter((item) => item !== family))} />
+            {family}
+          </label>)}
+        </div>
+      </fieldset>
       <label className="text-[11px] font-bold">
         Member limit (blank = unlimited)
         <input

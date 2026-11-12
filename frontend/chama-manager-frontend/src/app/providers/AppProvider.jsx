@@ -3,6 +3,7 @@ import ThemeProvider from "./ThemeProvider";
 import AuthProvider from "./AuthProvider";
 import WorkspaceProvider from "./WorkspaceProvider";
 import SocketProvider from "./SocketProvider";
+import { ConfirmProvider } from "@/shared/feedback/ConfirmProvider";
 import LeadershipSessionProvider from "@/modules/leadership/context/LeadershipSessionProvider";
 
 
@@ -17,6 +18,7 @@ export default function AppProvider({ children }) {
           <WorkspaceProvider>
 
             <ThemeProvider>
+<ConfirmProvider>
 
               {/* Holds the Leadership Desk PIN session in memory and
                   renders the global step-up prompt. Sits inside
@@ -28,7 +30,8 @@ export default function AppProvider({ children }) {
                 {children}
               </LeadershipSessionProvider>
 
-            </ThemeProvider>
+            </ConfirmProvider>
+</ThemeProvider>
 
           </WorkspaceProvider>
 

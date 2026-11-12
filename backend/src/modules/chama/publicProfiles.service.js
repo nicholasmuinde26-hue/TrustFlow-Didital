@@ -185,6 +185,39 @@ export async function getChamaPublicPage(chamaId) {
   };
 }
 
+// A safe, compact directory for visitors who are not signed in. Only
+// published profiles on active, public Chamas are eligible.
+export async function listPublicChamaProfiles({ search = '', limit = 12 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 12, 1), 30);
+  const profileFilter = { 'public_profile.enabled': true };
+  const profiles = await ChamaProfile.find(profileFilter)
+    .select('chama_id public_profile.tagline public_profile.purpose public_profile.description public_profile.location public_profile.logo_url')
+    .lean();
+  if (!profiles.length) return [];
+  const chamaFilter = { _id: { $in: profiles.map((profile) => profile.chama_id) }, status: 'active', visibility: 'public' };
+  if (String(search).trim()) chamaFilter.name = { $regex: String(search).trim().slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+  const published = await Chama.find(chamaFilter).select('_id name').sort({ createdAt: -1 }).limit(safeLimit).lean();
+  if (!published.length) return [];
+  const byChama = new Map(profiles.map((profile) => [String(profile.chama_id), profile]));
+  const counts = await ChamaMembership.aggregate([
+    { $match: { chama_id: { $in: published.map((item) => item._id) }, status: 'active' } },
+    { $group: { _id: '$chama_id', count: { $sum: 1 } } },
+  ]);
+  const countById = new Map(counts.map((row) => [String(row._id), row.count]));
+  return published.map((chama) => {
+    const profile = byChama.get(String(chama._id)).public_profile || {};
+    return {
+      id: chama._id,
+      name: chama.name,
+      tagline: profile.tagline || '',
+      purpose: profile.purpose || profile.description || '',
+      location: profile.location || '',
+      logo_url: profile.logo_url || null,
+      member_count: countById.get(String(chama._id)) || 0,
+    };
+  });
+}
+
 // The chama's own public details, editable at any time by its officials.
 // Dedicated and separate from saveProfile on purpose: that route repoints
 // money (M-Pesa/bank) and rightly needs a payment PIN; changing a tagline

@@ -1,12 +1,12 @@
 import env from '../../config/env.js';
-import { otpMatches } from '../auth/auth.service.js';
+import { otpMatches } from '../auth/index.js';
 import bcrypt from 'bcryptjs';
 
 import ChamaMembership from '../../models/ChamaMembership.js';
 import User from '../../models/User.js';
 import AppError from '../../utils/AppError.js';
 import { createAuditLog } from '../../services/audit.service.js';
-import { sendOtp } from '../auth/auth.service.js';
+import { sendOtp } from '../auth/index.js';
 import {
   signDeskToken,
   signStepUpToken,

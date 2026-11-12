@@ -3,19 +3,24 @@ import mongoose from 'mongoose';
 import Chama from '../../models/Chama.js';
 import User from '../../models/User.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
+import ChamaProfile from '../../models/ChamaProfile.js';
 
 import AppError from '../../utils/AppError.js';
 import { generateUniqueJoinCode } from '../../utils/joinCode.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
+import { organizationLabel } from '../../utils/organizationTerminology.js';
+import { assertMemberCanRejoin } from './chamaInvitation.rules.js';
 import permissionService from '../../services/permission.service.js';
-import mgrService from '../mgr/mgr.service.js';
-import { getOrCreatePolicy as getOrCreateLoanPolicy } from '../loans/Loanpolicy.service.js';
+import { mgrService } from '../mgr/index.js';
+import { getOrCreatePolicy as getOrCreateLoanPolicy } from '../loans/index.js';
 import {
   WORKSPACE_PRESETS,
   LEGACY_PRESET_BY_CHAMA_TYPE,
   buildWorkspaceConfig,
   validateModuleSelection,
+  sanitizeModuleLabels,
 } from '../../constants/workspaceModules.constants.js';
+import { isOrganizationTypeValid, getOrganizationPresetKey, getDefaultTerminology } from '../../constants/organizationTypes.constants.js';
 
 // ========================================
 // CHAMA CREATION PRESETS
@@ -142,6 +147,8 @@ export const createChama = async ({
   patronUserId,
   patronInput,
   workspaceModules,
+  organizationFamily = 'chama',
+  organizationType = 'custom',
 }) => {
 
 
@@ -334,6 +341,9 @@ export const createChama = async ({
   // ----------------------------------------
 
   const joinCode = await generateUniqueJoinCode();
+  if (!isOrganizationTypeValid(organizationFamily, organizationType)) {
+    throw new AppError('Choose a valid organization family and type.', 400);
+  }
   const chamaVisibility = ['public', 'private'].includes(visibility) ? visibility : 'private';
   // A 'burial' preset implies chama_type 'burial' even if the caller
   // didn't separately pass chamaType — the preset IS the type here.
@@ -355,16 +365,24 @@ export const createChama = async ({
     workspaceConfig = buildWorkspaceConfig({
       preset: workspaceModules.preset,
       enabled: selection.enabled,
+      terminology: { ...getDefaultTerminology(organizationFamily), module_labels: sanitizeModuleLabels(workspaceModules.moduleLabels) },
       configuredBy: userId,
     });
     shellChamaType = selection.enabled.includes('burial_welfare') ? 'burial' : 'standard';
   } else {
-    const legacyPreset = LEGACY_PRESET_BY_CHAMA_TYPE[resolvedChamaType] || 'standard';
+    // Plain chama with no subtype keeps the legacy set; any other
+    // family/type starts from its own preset.
+    const legacy = organizationFamily === 'chama' && organizationType === 'custom';
+    const startPreset = legacy
+      ? (LEGACY_PRESET_BY_CHAMA_TYPE[resolvedChamaType] || 'standard')
+      : getOrganizationPresetKey(organizationFamily, organizationType);
     workspaceConfig = buildWorkspaceConfig({
-      preset: legacyPreset,
-      enabled: WORKSPACE_PRESETS[legacyPreset].modules,
+      preset: startPreset,
+      enabled: WORKSPACE_PRESETS[startPreset].modules,
+      terminology: getDefaultTerminology(organizationFamily),
       configuredBy: userId,
     });
+    shellChamaType = WORKSPACE_PRESETS[startPreset].modules.includes('burial_welfare') ? 'burial' : shellChamaType;
   }
 
   const chama = await Chama.create({
@@ -374,6 +392,8 @@ export const createChama = async ({
     status: 'active',
     visibility: chamaVisibility,
     chama_type: shellChamaType,
+    organization_family: organizationFamily,
+    organization_type: organizationType,
     workspace_config: workspaceConfig,
     join_code: joinCode
   });
@@ -1046,15 +1066,31 @@ export const updateChama = async (
 // GET PUBLIC CHAMAS
 // ========================================
 
-export const getPublicChamas = async () => {
-  const chamas = await Chama.find({
+export const getPublicChamas = async ({ organizationFamily, organizationType } = {}) => {
+  const filter = {
     status: 'active',
     visibility: 'public'
-  })
-    .select('name monthly_savings visibility status createdAt')
+  };
+  if (organizationFamily === 'chama') filter.$or = [{ organization_family: 'chama' }, { organization_family: { $exists: false } }];
+  else if (['sacco', 'cooperative'].includes(organizationFamily)) filter.organization_family = organizationFamily;
+  if (typeof organizationType === 'string' && organizationType.trim()) {
+    if (organizationType === 'custom') filter.$and = [{ $or: [{ organization_type: 'custom' }, { organization_type: { $exists: false } }] }];
+    else filter.organization_type = organizationType.trim();
+  }
+  const chamas = await Chama.find(filter)
+    .select('name monthly_savings visibility status organization_family organization_type workspace_config createdAt')
     .sort({ createdAt: -1 });
+  const profiles = await ChamaProfile.find({
+    chama_id: { $in: chamas.map((chama) => chama._id) },
+    'public_profile.enabled': true,
+  }).select('chama_id public_profile.tagline public_profile.purpose public_profile.description public_profile.location public_profile.logo_url').lean();
+  const profileByChama = new Map(profiles.map((profile) => [String(profile.chama_id), profile.public_profile || {}]));
 
-  return chamas;
+  return chamas.map((chama) => ({
+    ...chama.toObject(),
+    has_public_profile: profileByChama.has(String(chama._id)),
+    public_profile: profileByChama.get(String(chama._id)) || null,
+  }));
 };
 
 // ========================================
@@ -1074,29 +1110,18 @@ export const joinWithCode = async (userId, joinCode) => {
   if (!chama) {
     throw new AppError('Invalid or inactive join code', 404);
   }
-
   const existingMembership = await ChamaMembership.findOne({
     user_id: userId,
     chama_id: chama._id
   });
 
-  if (existingMembership) {
-    if (existingMembership.status === 'active') {
-      throw new AppError('You are already a member of this Chama', 409);
-    }
-    if (existingMembership.status === 'pending') {
-      throw new AppError('Your request to join this Chama is already pending approval', 409);
-    }
-  }
+  const cooldownDays = ['burial', 'burial_welfare'].includes(chama.chama_type) || ['burial', 'burial_welfare'].includes(chama.workspace_config?.preset) ? 180 : 30;
+  assertMemberCanRejoin(existingMembership, new Date(), cooldownDays);
 
   // Create pending membership
-  const membership = await ChamaMembership.create({
-    user_id: userId,
-    chama_id: chama._id,
-    role: 'member',
-    status: 'pending',
-    joined_at: new Date()
-  });
+  const membership = existingMembership
+    ? await ChamaMembership.findByIdAndUpdate(existingMembership._id, { $set: { role: 'member', status: 'pending', payout_position: null, removed_at: null, removed_by: null } }, { new: true, runValidators: true })
+    : await ChamaMembership.create({ user_id: userId, chama_id: chama._id, role: 'member', status: 'pending', joined_at: new Date() });
 
   await membership.populate("chama_id", "name");
 
@@ -1134,14 +1159,15 @@ export const requestToJoinPublicChama = async (userId, chamaId) => {
   });
 
   if (!chama) {
-    throw new AppError('Chama not found', 404);
+    throw new AppError('Organization not found', 404);
   }
+  const orgLabel = organizationLabel(chama.organization_family, chama.workspace_config?.terminology);
 
   // Deliberately not exposed for private Chamas — those still require
   // a join_code or invite link so they stay undiscoverable to anyone
   // who wasn't given one directly.
   if (chama.visibility !== 'public') {
-    throw new AppError('This Chama is not open to public join requests', 403);
+    throw new AppError(`This ${orgLabel} is not open to public join requests`, 403);
   }
 
   const existingMembership = await ChamaMembership.findOne({
@@ -1149,22 +1175,11 @@ export const requestToJoinPublicChama = async (userId, chamaId) => {
     chama_id: chama._id
   });
 
-  if (existingMembership) {
-    if (existingMembership.status === 'active') {
-      throw new AppError('You are already a member of this Chama', 409);
-    }
-    if (existingMembership.status === 'pending') {
-      throw new AppError('Your request to join this Chama is already pending approval', 409);
-    }
-  }
+  assertMemberCanRejoin(existingMembership);
 
-  const membership = await ChamaMembership.create({
-    user_id: userId,
-    chama_id: chama._id,
-    role: 'member',
-    status: 'pending',
-    joined_at: new Date()
-  });
+  const membership = existingMembership
+    ? await ChamaMembership.findByIdAndUpdate(existingMembership._id, { $set: { role: 'member', status: 'pending', payout_position: null, removed_at: null, removed_by: null } }, { new: true, runValidators: true })
+    : await ChamaMembership.create({ user_id: userId, chama_id: chama._id, role: 'member', status: 'pending', joined_at: new Date() });
 
   await membership.populate('chama_id', 'name');
 

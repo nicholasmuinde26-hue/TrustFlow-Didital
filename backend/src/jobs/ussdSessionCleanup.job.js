@@ -9,7 +9,7 @@
  * derives every screen from the AT `text` string, not session state.
  */
 
-import UssdMenuService from "../modules/ussd/ussd.service.js";
+import { UssdMenuService } from "../modules/ussd/index.js";
 
 const SWEEP_INTERVAL_MS = Number(process.env.USSD_CLEANUP_INTERVAL_MS) || 2 * 60 * 1000;
 

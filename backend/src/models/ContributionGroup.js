@@ -166,6 +166,13 @@ const contributionGroupSchema =
 
       },
 
+      workspace_request_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'WorkspaceRequest',
+        default: null,
+        index: true,
+      },
+
 
       // ======================================
       // GROUP STATUS
@@ -185,7 +192,8 @@ const contributionGroupSchema =
 
           'cancelled',
 
-          'archived'
+          'archived',
+          'suspended'
 
         ],
 
@@ -197,6 +205,23 @@ const contributionGroupSchema =
 
 
       // ======================================
+      // Public giving is separately granted during admin review. Approval
+      // starts with members-only verification and public donations disabled.
+      verification: {
+        status: { type: String, enum: ['pending', 'verified', 'suspended', 'expired'], default: 'pending', index: true },
+        level: { type: String, enum: ['members', 'public'], default: 'members' },
+        verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        verified_at: { type: Date, default: null },
+        expires_at: { type: Date, default: null },
+        public_giving_enabled: { type: Boolean, default: false, index: true },
+        payout_destination: {
+          method: { type: String, enum: ['mpesa', 'paybill', 'till', 'bank', ''], default: '' },
+          phone: { type: String, trim: true, default: '' },
+          paybill: { type: String, trim: true, default: '' },
+          account_name: { type: String, trim: true, default: '' },
+        },
+      },
+
       // GROUP VISIBILITY
       // ======================================
 

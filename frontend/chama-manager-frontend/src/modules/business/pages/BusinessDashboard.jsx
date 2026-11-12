@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Smartphone, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Smartphone, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 
 import { useBusinessSummary, useInitiateBusinessStkPush } from "../hooks/useBusiness";
 import { BusinessHeader } from "../components/BusinessHeader";
@@ -14,6 +14,7 @@ import { RetailInventorySnapshot } from "../components/RetailInventorySnapshot";
 import { RestaurantKitchenSnapshot } from "../components/RestaurantKitchenSnapshot";
 import { ServiceJobsSnapshot } from "../components/ServiceJobsSnapshot";
 import { ChamaBusinessDashboard } from "../components/ChamaBusinessDashboard";
+import { GeneralBusinessSnapshot } from "../components/GeneralBusinessSnapshot";
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import BusinessMpesaModal from "../components/BusinessMpesaModal";
 
@@ -47,10 +48,10 @@ const CATEGORY_CONFIG = {
     Snapshot: ServiceJobsSnapshot,
   },
   other: {
-    badge: "Live Operations",
-    tagline: "Collect payments directly via M-Pesa STK Push and monitor real-time sales performance.",
-    recentListTitle: "Recent Sales",
-    Snapshot: null,
+    badge: "Business Operations",
+    tagline: "Track sales, customers, stock and day-to-day business activity in one place.",
+    recentListTitle: "Recent Transactions",
+    Snapshot: GeneralBusinessSnapshot,
   },
 };
 
@@ -82,27 +83,24 @@ export default function BusinessDashboard() {
     );
   }
 
+  if (!data) {
+    return <div className="mx-auto max-w-3xl p-6"><div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200"><AlertCircle size={18} className="mt-0.5 shrink-0" /><div><p className="font-bold">Business overview could not be loaded</p><p className="mt-1 text-sm">Check your connection and try again.</p><button type="button" onClick={() => refetch()} className="mt-3 rounded-lg bg-rose-700 px-3 py-2 text-xs font-bold text-white hover:bg-rose-800">Try again</button></div></div></div>;
+  }
+
   const profile = data?.profile || data;
   const stats = data?.dashboard || data?.stats || data;
   const accounts = data?.accounts || [];
-  const recentSales = data?.recentSales || data?.sales || [];
+  const category = ["retail", "rental", "restaurant", "service", "other"].includes(profile?.category) ? profile.category : "other";
+  const recentSales = category === "other"
+    ? (data?.recentTransactions || data?.recentSales || data?.sales || [])
+    : (data?.recentSales || data?.sales || []);
   const chartData = data?.salesChart || data?.chartData || [];
 
-  const category = profile?.category || "other";
   const config = getCategoryConfig(category);
   const Snapshot = config.Snapshot;
   // Chama-owned businesses get the chama + category-aware dashboard (served by
   // /chama-dashboard) instead of the single client-side snapshot.
   const isChamaOwned = profile?.owner_type === "chama";
-
-  const handleQuickAction = (action) => {
-    const actionKey = String(action).toLowerCase();
-    if (["mpesa", "stk", "stk_push", "payment", "collect"].includes(actionKey)) {
-      setIsMpesaModalOpen(true);
-    } else {
-      console.log(`Action triggered: ${action}`);
-    }
-  };
 
   const handleMpesaSubmit = async (payload) => {
     const response = await stkPush.mutateAsync({
@@ -113,7 +111,7 @@ export default function BusinessDashboard() {
       description: payload.description || `Payment to ${profile?.name || "Business"}`,
     });
 
-    setToastNotice(`STK prompt sent to ${payload.phoneNumber} for KES ${payload.amount.toLocaleString()}. Verified receipt with VeriCircle- guarantee queued!`);
+    setToastNotice(`Payment request sent to ${payload.phoneNumber} for ${profile?.currency || "KES"} ${Number(payload.amount).toLocaleString()}.`);
     setTimeout(() => setToastNotice(null), 6000);
 
     // Refresh dashboard stats and sales to show newly pending transaction
@@ -126,12 +124,12 @@ export default function BusinessDashboard() {
 
   const handlePaymentSuccess = () => {
     refetch();
-    setToastNotice(`Payment completed and posted to ledger! Dashboard sales & cash accounts updated.`);
+    setToastNotice("Payment completed. Business totals and payment balances have been refreshed.");
     setTimeout(() => setToastNotice(null), 7000);
   };
 
   return (
-    <div className="p-4 sm:p-8 space-y-8 max-w-7xl mx-auto font-sans">
+    <div className="mx-auto max-w-[1500px] space-y-7 p-4 font-sans sm:p-6 xl:p-8">
       {/* Toast Notification Banner */}
       {toastNotice && (
         <div className="flex items-center gap-3 rounded-2xl border border-emerald-300 bg-emerald-500 p-4 text-white shadow-xl dark:border-emerald-600 dark:bg-emerald-600 animate-bounce">
@@ -145,13 +143,11 @@ export default function BusinessDashboard() {
         <div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-emerald-500/30 px-2.5 py-0.5 text-xs font-bold text-emerald-200 uppercase tracking-wider">
-              {config.badge}
+              {profile?.category_label || config.badge}
             </span>
           </div>
-          <h1 className="mt-2 text-2xl font-black">
-            {profile?.name || profile?.businessName || "Business Dashboard"}
-          </h1>
-          <p className="mt-1 text-xs text-emerald-100">
+          <h1 className="mt-2 text-2xl font-black">Business overview</h1>
+          <p className="mt-1 max-w-2xl text-sm text-emerald-100">
             {config.tagline}
           </p>
         </div>
@@ -173,18 +169,16 @@ export default function BusinessDashboard() {
             className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-xs font-black text-emerald-950 shadow-lg hover:bg-emerald-300 transition-all transform hover:-translate-y-0.5"
           >
             <Smartphone size={18} className="text-emerald-950" />
-            Collect M-Pesa Payment
+            Collect Payment
           </button>
         </div>
       </div>
 
       <BusinessHeader
         profile={profile}
-        onRefresh={() => refetch()}
-        refreshing={isRefetching}
       />
 
-      <BusinessStatCards stats={stats} />
+      <BusinessStatCards stats={stats} category={category} currency={profile?.currency || "KES"} />
 
       {isChamaOwned ? (
         <ChamaBusinessDashboard workspaceId={workspaceId} currency={profile?.currency || "KES"} />
@@ -192,22 +186,18 @@ export default function BusinessDashboard() {
         Snapshot && <Snapshot workspaceId={workspaceId} currency={profile?.currency || "KES"} />
       )}
 
-      <QuickActions
-        category={profile?.category}
-        onAction={handleQuickAction}
-        onOpenMpesa={() => setIsMpesaModalOpen(true)}
-      />
+      <QuickActions category={category} />
 
       {isChamaOwned ? (
         <CashAccountsCard accounts={accounts} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
-          <SalesChart data={chartData} />
-          <CashAccountsCard accounts={accounts} />
+          <SalesChart data={chartData} category={category} currency={profile?.currency || "KES"} />
+          <CashAccountsCard accounts={accounts} currency={profile?.currency || "KES"} />
         </div>
       )}
 
-      <RecentSales sales={recentSales} title={config.recentListTitle} />
+      <RecentSales sales={recentSales} title={config.recentListTitle} currency={profile?.currency || "KES"} showType={category === "other"} />
 
       {/* Operational Business M-Pesa STK Modal */}
       <BusinessMpesaModal

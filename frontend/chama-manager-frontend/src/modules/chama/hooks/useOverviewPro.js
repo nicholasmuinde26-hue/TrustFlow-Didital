@@ -53,7 +53,7 @@ export default function useOverviewPro(workspaceId, enabled, modules = null, can
   const trustHistory = useQuery({
     queryKey: [ROOT, workspaceId, "trust-history"],
     queryFn: () => trustScoreService.getHistory(workspaceId, { page: 1, limit: 6 }),
-    enabled: official,
+    enabled: official && on("trust"),
     ...opts,
   });
 
@@ -69,6 +69,6 @@ export default function useOverviewPro(workspaceId, enabled, modules = null, can
     accounts: shape(accounts, official),
     audit: shape(audit, official && canViewAudit),
     polls: shape(polls, official && on("polls")),
-    trustHistory: shape(trustHistory, official),
+    trustHistory: shape(trustHistory, official && on("trust")),
   };
 }

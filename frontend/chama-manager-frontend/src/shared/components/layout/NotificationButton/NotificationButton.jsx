@@ -92,6 +92,11 @@ function getPriorityBadge(priority) {
   }
 }
 
+function getWorkspaceIdForNotification(item) {
+  const value = item?.workspace_id || item?.workspaceId || item?.chama_id;
+  return String(typeof value === "object" ? value?._id || value?.id || value?.toString?.() || "" : value || "");
+}
+
 export default function NotificationButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
@@ -102,15 +107,23 @@ export default function NotificationButton() {
   // Fetch a larger sample than we display so every category tab has
   // something to filter down to - the popover only shows 20 rows at a
   // time regardless of which tab is active.
-  const { data: notifications, isLoading } = useUnreadNotifications({ limit: 100 });
-  const { data: counts } = useNotificationCounts();
+  const { data: notifications, isLoading } = useUnreadNotifications({ limit: 100, workspaceId });
+  const { data: counts } = useNotificationCounts({ workspaceId });
 
   const markReadMutation = useMarkNotificationAsRead();
-  const markAllReadMutation = useMarkAllNotificationsAsRead();
+  const markAllReadMutation = useMarkAllNotificationsAsRead({ workspaceId });
 
-  const allNotifications = notifications || [];
+  const allNotifications = (notifications || []).filter(
+    (item) => workspaceId && getWorkspaceIdForNotification(item) === String(workspaceId)
+  );
   const unreadCount = counts?.unread || 0;
   const byCategory = counts?.byCategory || {};
+
+  // Do not leave the previous chama's open feed visible during a switch.
+  useEffect(() => {
+    setIsOpen(false);
+    setActiveTab("all");
+  }, [workspaceId]);
 
   // This is the actual "detect notifications by section/category" bit -
   // previously the tabs rendered and could be clicked, but the list below

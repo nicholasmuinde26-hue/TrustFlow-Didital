@@ -5,7 +5,7 @@ import crypto from "node:crypto"; // not needed here but keep imports clean
 // CONSTANTS
 // ========================================
 const OWNER_TYPES = ['Chama', 'ContributionGroup', 'Business'];
-const PARTICIPANT_TYPES = ['ChamaMembership', 'ContributionGroupMember', 'User'];
+const PARTICIPANT_TYPES = ['ChamaMembership', 'ContributionGroupMember', 'ContributionDonor', 'User'];
 const PAYMENT_METHODS = ['cash', 'bank', 'mpesa', 'mobile_money', 'card', 'transfer', 'other'];
 const PAYMENT_STATUSES = ['pending', 'processing', 'completed', 'failed', 'reversed', 'cancelled', 'refunded']; // FIX: added processing + refunded
 const CHANNEL_TYPES = ['cash', 'mpesa', 'mobile_money', 'bank_account', 'bank_transfer', 'card', 'internal_transfer', 'other'];
@@ -149,7 +149,7 @@ const contributionPaymentSchema = new mongoose.Schema(
     failure_code: { type: String, trim: true, maxlength: 100, default: null },
     failure_message: { type: String, trim: true, maxlength: 500, default: null },
     recorded_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     verified_at: { type: Date, default: null },
     financial_transaction_id: { type: mongoose.Schema.Types.ObjectId, ref: 'FinancialTransaction', default: null },

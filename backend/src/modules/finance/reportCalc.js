@@ -16,8 +16,7 @@
 // `total` is whatever Decimal128 / string / number the aggregation returned.
 // ============================================================================
 
-import { toScaled, fromScaled, signedEffect, classifyBucket } from '../yearEnd/yearEnd.calc.js';
-import { PAYOUT_TX_TYPES } from '../yearEnd/yearEnd.constants.js';
+import { toScaled, fromScaled, signedEffect, classifyBucket, PAYOUT_TX_TYPES } from '../yearEnd/index.js';
 
 export const num = (scaled) => Number(fromScaled(scaled));
 

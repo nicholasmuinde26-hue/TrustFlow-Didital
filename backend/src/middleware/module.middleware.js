@@ -4,7 +4,7 @@ import Chama from '../models/Chama.js';
 import AppError from '../utils/AppError.js';
 import { isModuleEnabled, WORKSPACE_MODULES } from '../constants/workspaceModules.constants.js';
 import { isBillingEnforced } from '../constants/billing.constants.js';
-import { checkBillingAccess } from '../modules/billing/billingEntitlement.service.js';
+import { checkBillingAccess } from '../modules/billing/index.js';
 
 const isChamaDocument = (chama) => chama?.constructor?.modelName === 'Chama';
 

@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useState, useEffect } from "react";
 import {
   ShieldCheck,
@@ -86,13 +87,13 @@ export default function AdminSubAdminsPage() {
   }
 
   async function handleDemote(targetUserId, targetName) {
-    if (
-      !window.confirm(
-        `Are you sure you want to revoke Sub-Admin access for ${targetName || "this user"}?`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmAction({
+      title: "Revoke Sub-Admin access?",
+      message: `${targetName || "This user"} will immediately lose Sub-Admin access.`,
+      variant: "danger",
+      confirmText: "Revoke access",
+    });
+    if (!ok) return;
 
     setActionLoading(true);
     setAlertMsg({ text: "", type: "" });

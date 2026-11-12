@@ -3,6 +3,7 @@ import { Palette, Eye, EyeOff, ExternalLink, Copy, Check } from "lucide-react";
 import toast from "react-hot-toast";
 import marketplaceService from "../../marketplace/services/marketplace.service";
 import Spinner from "@/shared/components/ui/Spinner";
+import { marketplaceStoreUrl } from "@/shared/lib/marketplaceUrl";
 
 const INPUT =
   "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white";
@@ -89,7 +90,7 @@ export default function MerchantStoreProfile({ businessId, hubSlug, onSaved }) {
     }
   };
 
-  const storeUrl = slug ? `${window.location.origin}/businesses/${slug}` : "";
+  const storeUrl = slug ? marketplaceStoreUrl(slug) : "";
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(storeUrl);

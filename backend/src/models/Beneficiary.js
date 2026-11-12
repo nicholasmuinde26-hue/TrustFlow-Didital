@@ -66,6 +66,7 @@ const beneficiarySchema = new mongoose.Schema(
         'spouse',
         'child',
         'parent',
+        'parent_in_law',
         'sibling',
         'guardian',
         'grandparent',
@@ -93,6 +94,11 @@ const beneficiarySchema = new mongoose.Schema(
       type: Number,
       min: 0,
       max: 150
+    },
+    education_status: {
+      type: String,
+      enum: ['not_applicable', 'in_school', 'college'],
+      default: 'not_applicable'
     },
 
     // ---------------------------------------------------
@@ -125,8 +131,12 @@ const beneficiarySchema = new mongoose.Schema(
     national_id: {
       type: String,
       trim: true,
-      maxlength: 50
+      maxlength: 50,
+      select: false
     },
+    national_id_encrypted: { type: String, select: false, default: null },
+    national_id_hash: { type: String, select: false, default: null },
+    national_id_last4: { type: String, default: null },
     other_identifier: {
       type: String,
       trim: true,
@@ -179,7 +189,7 @@ const beneficiarySchema = new mongoose.Schema(
     // ---------------------------------------------------
     eligibility_status: {
       type: String,
-      enum: ['eligible', 'ineligible', 'pending_verification', 'suspended'],
+      enum: ['eligible', 'ineligible', 'pending_verification', 'suspended', 'deceased'],
       default: 'eligible',
       index: true
     },
@@ -196,6 +206,8 @@ const beneficiarySchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    deceased_at: { type: Date, default: null },
+    deceased_case_id: { type: mongoose.Schema.Types.ObjectId, ref: 'BurialCase', default: null },
 
     // ---------------------------------------------------
     // Documents

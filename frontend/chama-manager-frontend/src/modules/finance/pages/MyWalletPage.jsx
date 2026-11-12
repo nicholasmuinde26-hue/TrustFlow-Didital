@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Wallet,
@@ -10,9 +10,13 @@ import {
   Clock,
   RefreshCw,
   Info,
+  ShieldCheck,
+  HeartHandshake,
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
+import api from "@/app/services/api";
+import useFinanceSummary from "../hooks/useFinanceSummary";
 import useMyWallet from "../hooks/useMyWallet";
 import financeService from "../services/finance.service";
 import Spinner from "@/shared/components/ui/Spinner";
@@ -45,7 +49,7 @@ import { HIDE_STORAGE_KEY, readStored, writeStored } from "../components/wallet/
 // directly to M-Pesa. Every figure is read from GET /finance/wallet.
 // ============================================================
 
-export default function MyWalletPage() {
+function StandardMyWalletPage() {
   const routeParams = useParams();
   const workspaceCtx = useWorkspace();
   const workspaceId = workspaceCtx?.workspaceId || routeParams?.workspaceId;
@@ -305,15 +309,15 @@ export default function MyWalletPage() {
           <EmptyState icon={Receipt} title="No payments yet" />
         ) : (
           <div className="space-y-2">
-            {wallet.contributions.recent_activity.map((p) => (
-              <div key={p.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-obsidian-border dark:bg-obsidian-raised/40">
+            {wallet.contributions.recent_activity.map((payment) => (
+              <div key={payment.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-obsidian-border dark:bg-obsidian-raised/40">
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-bold text-slate-900 dark:text-mist">{money(p.amount)}</p>
-                  <p className="text-[11px] text-slate-400">{p.method || "—"} {p.reference ? `· ${p.reference}` : ""}</p>
+                  <p className="truncate text-xs font-bold text-slate-900 dark:text-mist">{money(payment.amount)}</p>
+                  <p className="text-[11px] text-slate-400">{payment.method || "—"} {payment.reference ? `· ${payment.reference}` : ""}</p>
                 </div>
                 <div className="text-right">
-                  <StatusPill status={p.status} />
-                  <p className="mt-1 text-[10px] text-slate-400">{timeAgo(p.paid_at)}</p>
+                  <StatusPill status={payment.status} />
+                  <p className="mt-1 text-[10px] text-slate-400">{timeAgo(payment.paid_at)}</p>
                 </div>
               </div>
             ))}
@@ -322,4 +326,87 @@ export default function MyWalletPage() {
       </Card>
     </div>
   );
+}
+
+function BurialCoverWalletPage() {
+  const routeParams = useParams();
+  const workspace = useWorkspace();
+  const workspaceId = workspace?.workspaceId || routeParams?.workspaceId;
+  const base = `/workspace/${workspaceId}`;
+  const { summary, isLoading: summaryLoading } = useFinanceSummary(workspaceId);
+  const [coverage, setCoverage] = useState(null);
+  const [coverageLoading, setCoverageLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setCoverageLoading(true);
+    api.get(`/burial-chama/chama/${workspaceId}/coverage/me`)
+      .then((response) => { if (active) setCoverage(response.data?.data || null); })
+      .catch(() => { if (active) setCoverage(null); })
+      .finally(() => { if (active) setCoverageLoading(false); });
+    return () => { active = false; };
+  }, [workspaceId]);
+
+  const statusLabels = {
+    covered: "Covered",
+    waiting_period: `In waiting period${coverage?.days_remaining ? ` · ${coverage.days_remaining} days left` : ""}`,
+    at_risk: "In arrears · cover at risk",
+    lapsed: "Cover lapsed",
+  };
+  const statusLabel = statusLabels[coverage?.status] || "Coverage status unavailable";
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+      <header>
+        <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">Burial welfare</p>
+        <h1 className="mt-2 text-3xl font-black text-slate-950 dark:text-mist">Your cover</h1>
+        <p className="mt-1 text-sm text-slate-500">Your contributions support the shared fund; they do not build a withdrawable personal balance.</p>
+      </header>
+
+      <section className="grid gap-4 md:grid-cols-2" aria-label="Burial cover and fund health">
+        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-800 to-teal-900 p-6 text-white">
+          <div className="flex items-start gap-4">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/10"><ShieldCheck size={24} /></span>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-emerald-100">Your cover status</p>
+              <p className="mt-2 text-2xl font-black">{coverageLoading ? "Checking…" : statusLabel}</p>
+              {coverage?.covered_since && <p className="mt-2 text-sm text-emerald-100">Covered since {new Date(coverage.covered_since).toLocaleDateString()}</p>}
+              {Number(coverage?.arrears_amount) > 0 && <p className="mt-2 text-sm text-emerald-100">Outstanding welfare dues: KES {Number(coverage.arrears_amount).toLocaleString()}</p>}
+            </div>
+          </div>
+          {coverage?.lapse_reason && <p className="mt-4 rounded-xl bg-white/10 p-3 text-sm">{coverage.lapse_reason}</p>}
+        </Card>
+
+        <Card className="p-6">
+          <div className="flex items-start gap-4">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700"><HeartHandshake size={23} /></span>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Shared welfare fund</p>
+              <p className="mt-2 text-3xl font-black text-slate-950 dark:text-mist">{summaryLoading ? "Loading…" : money(summary?.welfare_fund_balance)}</p>
+              <p className="mt-2 text-sm text-slate-500">KES {Number(summary?.fund_available_for_cases || 0).toLocaleString()} available above the KES {Number(summary?.fund_reserve_floor || 0).toLocaleString()} reserve floor.</p>
+            </div>
+          </div>
+        </Card>
+      </section>
+
+      {coverage?.dependants?.length > 0 && (
+        <Card className="p-5">
+          <SectionHeading title="Covered dependants" subtitle="Eligible people registered under your membership" />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {coverage.dependants.map((person) => <div key={person._id} className="rounded-xl border border-slate-200 p-4"><p className="font-bold text-slate-900 dark:text-mist">{person.first_name} {person.last_name}</p><p className="mt-1 text-sm capitalize text-slate-500">{person.relationship} · {person.eligibility_status}</p></div>)}
+          </div>
+        </Card>
+      )}
+
+      <div className="flex flex-wrap gap-3">
+        <Link to={`${base}/finance`} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-800">View fund health <ArrowDownLeft size={16} /></Link>
+        <Link to={`${base}/burial-cases`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 dark:border-obsidian-border dark:bg-obsidian-card dark:text-mist">Burial cases <HeartHandshake size={16} /></Link>
+      </div>
+    </div>
+  );
+}
+
+export default function MyWalletPage() {
+  const workspace = useWorkspace();
+  return workspace?.isBurialChama ? <BurialCoverWalletPage /> : <StandardMyWalletPage />;
 }

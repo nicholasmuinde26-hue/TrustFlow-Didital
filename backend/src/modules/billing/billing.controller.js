@@ -45,7 +45,7 @@ export const getSummary = async (req, res, next) => {
 
 export const getPlans = async (req, res, next) => {
   try {
-    const [plans, subscription] = await Promise.all([listPlans(), getOrCreateSubscription(req.chama._id)]);
+    const [plans, subscription] = await Promise.all([listPlans({ organizationFamily: req.chama.organization_family || 'chama' }), getOrCreateSubscription(req.chama._id)]);
     res.json({
       success: true,
       // price_monthly is what THIS chama pays; list_price_monthly appears only
@@ -73,7 +73,7 @@ export const createInvoiceController = async (req, res, next) => {
     const months = Number(req.body?.months || 1);
     if (!planCode) throw new AppError('plan_code is required', 400);
     if (!ALLOWED_MONTHS.includes(months)) throw new AppError(`months must be one of ${ALLOWED_MONTHS.join(', ')}`, 400);
-    const invoice = await createInvoice({ chamaId: req.chama._id, planCode, months, userId: uid(req) });
+    const invoice = await createInvoice({ chamaId: req.chama._id, planCode, months, userId: uid(req), organizationFamily: req.chama.organization_family || 'chama' });
     res.status(201).json({ success: true, data: present(invoice) });
   } catch (error) { next(error); }
 };

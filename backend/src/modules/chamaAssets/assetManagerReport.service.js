@@ -5,7 +5,7 @@ import AssetTransaction from "../../models/AssetTransaction.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import User from "../../models/User.js";
 import AppError from "../../utils/AppError.js";
-import { getIO } from "../realtime/socketServer.js";
+import { getIO } from "../realtime/index.js";
 import notificationService from "../../services/notification.service.js";
 
 const emitToChama = (chamaId, event, payload) => {

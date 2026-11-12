@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Pencil, Trash2, X, Home, MapPin, BedDouble, Bath, Ruler, ImagePlus, Share2 } from "lucide-react";
@@ -159,7 +160,13 @@ export default function RentalListingsPage() {
   };
 
   const handleDelete = async (listing) => {
-    if (!window.confirm(`Remove "${listing.title}"? This can't be undone.`)) return;
+    const ok = await confirmAction({
+      title: "Remove this listing?",
+      message: `"${listing.title}" will be removed. This can't be undone.`,
+      variant: "danger",
+      confirmText: "Remove listing",
+    });
+    if (!ok) return;
     await deleteListing(listing._id || listing.id);
   };
 

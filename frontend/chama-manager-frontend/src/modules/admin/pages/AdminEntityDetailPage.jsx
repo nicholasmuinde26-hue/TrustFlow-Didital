@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
@@ -70,7 +71,13 @@ export default function AdminEntityDetailPage() {
       ? `Make ${memberName || "this member"} the new Chairperson? The current Chairperson (if any) will automatically be moved to Member.`
       : `Change ${memberName || "this member"}'s role to ${newRole.replace("_", " ")}?`;
 
-    if (!window.confirm(confirmMsg)) return;
+    const ok = await confirmAction({
+      title: isChairTransfer ? "Transfer chairpersonship?" : "Change member role?",
+      message: confirmMsg,
+      variant: isChairTransfer ? "danger" : "warning",
+      confirmText: isChairTransfer ? "Transfer" : "Change role",
+    });
+    if (!ok) return;
 
     setActionLoading(membershipId);
     setAlertMsg({ text: "", type: "" });
@@ -95,7 +102,13 @@ export default function AdminEntityDetailPage() {
         ? `Suspend ${memberName || "this member"}? They will lose access to this Chama's workspace until reactivated.`
         : `Reactivate ${memberName || "this member"}?`;
 
-    if (!window.confirm(confirmMsg)) return;
+    const ok = await confirmAction({
+      title: nextStatus === "suspended" ? "Suspend member?" : "Reactivate member?",
+      message: confirmMsg,
+      variant: nextStatus === "suspended" ? "danger" : "info",
+      confirmText: nextStatus === "suspended" ? "Suspend" : "Reactivate",
+    });
+    if (!ok) return;
 
     setActionLoading(membershipId);
     setAlertMsg({ text: "", type: "" });

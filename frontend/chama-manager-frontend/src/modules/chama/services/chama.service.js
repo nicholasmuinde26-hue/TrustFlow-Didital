@@ -16,8 +16,8 @@ const chamaService = {
     return data.data.chama;
   },
 
-  async getPublicChamas() {
-    const { data } = await chamaApi.getPublicChamas();
+  async getPublicChamas(params = {}) {
+    const { data } = await chamaApi.getPublicChamas(params);
     return data.data.chamas || [];
   },
 

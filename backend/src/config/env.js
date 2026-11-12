@@ -70,6 +70,7 @@ const env = {
   demoOtpAutofill: process.env.DEMO_OTP_AUTOFILL === 'true',
 
   port: Number(process.env.PORT) || 5000,
+  givingPort: Number(process.env.GIVING_PORT) || 5002,
 
   mongoUri: process.env.MONGO_URI,
 
@@ -103,6 +104,10 @@ const env = {
   otpDefaultChannel: process.env.OTP_DEFAULT_CHANNEL || 'sms',
 
   // ========================================
+  // Public URL of the web app, used for links in email/SMS notifications
+  // (falls back to the first allowed CORS origin).
+  appUrl: process.env.APP_URL || (process.env.CORS_ALLOWED_ORIGINS || '').split(',')[0].trim() || null,
+
   // CORS
   // ========================================
   // Comma-separated list of exact origins permitted to call the API
@@ -115,6 +120,19 @@ const env = {
     .map((origin) => origin.trim())
     .filter(Boolean),
 
+  // Origins of the standalone marketplace site(s), separate from the app CORS list.
+  marketplaceAllowedOrigins: (process.env.MARKETPLACE_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
+  givingAllowedOrigins: (process.env.GIVING_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
+  // Public URL of ChamaManager, used for links back to merchant workspaces.
+  chamamanagerUrl: (process.env.CHAMAMANAGER_URL || '').replace(/\/+$/, ''),
   // ========================================
   // M-PESA
   // ========================================
@@ -186,6 +204,9 @@ const env = {
     // an approved "authentication" template - free-form text will be rejected.
     templateName: process.env.WHATSAPP_OTP_TEMPLATE_NAME || 'otp_verification',
     templateLanguage: process.env.WHATSAPP_OTP_TEMPLATE_LANG || 'en_US',
+    // Utility template for alerts/approvals/reminders: two body variables ({{1}} headline, {{2}} detail).
+    alertTemplateName: process.env.WHATSAPP_ALERT_TEMPLATE_NAME || null,
+    alertTemplateLanguage: process.env.WHATSAPP_ALERT_TEMPLATE_LANG || null,
   },
 };
 

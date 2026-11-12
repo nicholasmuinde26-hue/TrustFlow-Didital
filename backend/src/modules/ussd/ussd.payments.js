@@ -4,8 +4,8 @@ import ContributionObligation from '../../models/ContributionObligation.js';
 import paymentService from '../../payment/payment.service.js';
 import mpesaService from '../../payment/providers/mpesa/mpesa.service.js';
 import { PAYMENT_PROVIDER } from '../../payment/payment.constants.js';
-import { previewContributionPayment } from '../contributionPlan/contributionAllocation.service.js';
-import { getOrCreateSavingsPlan } from '../chama/chamaFinance.service.js';
+import { previewContributionPayment } from '../contributionPlan/index.js';
+import { getOrCreateSavingsPlan } from '../chama/index.js';
 import { toDecimal } from '../../shared/decimal.js';
 
 // ======================================================================

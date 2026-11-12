@@ -3,7 +3,7 @@ import AssetLease from "../../models/AssetLease.js";
 import AssetTransaction from "../../models/AssetTransaction.js";
 import ChamaAsset from "../../models/ChamaAsset.js";
 import AppError from "../../utils/AppError.js";
-import { getIO } from "../realtime/socketServer.js";
+import { getIO } from "../realtime/index.js";
 import { recordIncome } from "./chamaAsset.service.js";
 
 const emitToChama = (chamaId, event, payload) => {

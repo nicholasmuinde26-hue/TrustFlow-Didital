@@ -53,8 +53,8 @@ export async function getWorkspaceDashboard(req, res, next) {
 
 export async function getWorkspaceDirectory(req, res, next) {
   try {
-    const { type, query, search } = req.query;
-    const directory = await WorkspaceService.getDirectoryWorkspaces(type, query || search || '');
+    const { type, query, search, organizationFamily, organizationType } = req.query;
+    const directory = await WorkspaceService.getDirectoryWorkspaces(type, query || search || '', { organizationFamily, organizationType });
     res.status(200).json({
       success: true,
       data: directory,

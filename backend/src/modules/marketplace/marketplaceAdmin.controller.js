@@ -1,5 +1,5 @@
 import * as marketplaceService from "./marketplace.service.js";
-import { getMyAdminProfile } from "../admin/admin.service.js";
+import { getMyAdminProfile } from "../admin/index.js";
 
 const sendError = (error, response, next) => {
   if (error.statusCode) return response.status(error.statusCode).json({ success: false, message: error.message });

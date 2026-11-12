@@ -49,8 +49,9 @@ import {
   Vote,
 } from "lucide-react";
 
-import { canViewAdministration, canViewLeadershipDesk } from "../permissions/Permissions";
-import { buildChamaNavigation } from "./chamaNavigation";
+import { canViewAdministration, canViewLeadershipDesk } from '../permissions/Permissions.js';
+import { buildChamaNavigation } from './chamaNavigation.js';
+import { moduleForPath, relativeWorkspacePath } from './workspaceModules.js';
 
 // The Leadership Desk lives only as the pinned "Desk" button in the sidebar
 // rail (and the Ctrl+K palette) - not in any nav section, so it does not
@@ -70,7 +71,7 @@ export function getLeadershipDeskItem(workspaceId, type, role) {
 // whose route belongs to a switched-off module are dropped, and sections left
 // empty disappear - so a chama without loans has no Loans link anywhere.
 // null/undefined means "no module information": nothing is hidden.
-export function getWorkspaceNavigation(workspaceId, type, role, category, workspaceSettings = null, enabledModules = null) {
+export function getWorkspaceNavigation(workspaceId, type, role, category, workspaceSettings = null, enabledModules = null, terminology = null) {
   const base = `/workspace/${workspaceId}`;
   const normalizedType = type?.toLowerCase().replace(/[-_]/g, "");
   // Category flags
@@ -345,26 +346,36 @@ export function getWorkspaceNavigation(workspaceId, type, role, category, worksp
   // =====================================================
   // WORKSPACE ROUTER MATCHING
   // =====================================================
+  let result;
   switch (normalizedType) {
     case "business": {
       const configuredSections = workspaceSettings?.enabled_sections;
       const visibleSections = Array.isArray(configuredSections)
         ? businessNavigation.filter((section) => configuredSections.includes(section.sectionKey))
         : businessNavigation;
-      return filterByRole(visibleSections);
+      result = filterByRole(visibleSections); break;
     }
 
     case "contribution":
     case "contributiongroup":
-      return filterByRole(contributionNavigation);
+      result = filterByRole(contributionNavigation); break;
 
     case "burialchama":
-      return buildChamaNavigation({ workspaceId, type, role, shell: "burial", enabledModules });
+      result = buildChamaNavigation({ workspaceId, type, role, shell: "burial", enabledModules }); break;
 
     case "chama":
     default:
-      return buildChamaNavigation({ workspaceId, type, role, shell: "chama", enabledModules });
+      result = buildChamaNavigation({ workspaceId, type, role, shell: "chama", enabledModules }); break;
   }
+  const labels = terminology?.module_labels || {};
+  if (!Object.keys(labels).length) return result;
+  return result.map((section) => ({
+    ...section,
+    items: section.items.map((item) => {
+      const moduleKey = item.module || moduleForPath(relativeWorkspacePath(item.to || "", workspaceId));
+      return moduleKey && labels[moduleKey] ? { ...item, title: labels[moduleKey] } : item;
+    }),
+  }));
 }
 
 // Resolve the single navigation section that owns a route. Longest-path wins,

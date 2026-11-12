@@ -1,16 +1,27 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import notificationsApi from "../api/notifications.api";
+import { useWorkspace } from "@/app/hooks/useWorkspace";
+
+function useWorkspaceNotificationParams(params = {}) {
+  const { workspaceId } = useWorkspace();
+  const scopedWorkspaceId = Object.prototype.hasOwnProperty.call(params, "workspaceId")
+    ? params.workspaceId
+    : workspaceId;
+  return { ...params, ...(scopedWorkspaceId ? { workspaceId: scopedWorkspaceId } : {}) };
+}
 
 // Notification Center Hooks
 export function useUnreadNotifications(params = {}) {
+  const scopedParams = useWorkspaceNotificationParams(params);
   return useQuery({
-    queryKey: ["notifications", "unread", params],
+    queryKey: ["notifications", "unread", scopedParams],
     queryFn: async () => {
-      const res = await notificationsApi.getUnreadNotifications(params);
+      const res = await notificationsApi.getUnreadNotifications(scopedParams);
       return res.data?.data || res.data;
     },
+    enabled: Boolean(scopedParams.workspaceId),
     refetchInterval: 10000, // Poll every 10s for live notifications
     staleTime: 5000,
     refetchOnWindowFocus: true,
@@ -18,12 +29,14 @@ export function useUnreadNotifications(params = {}) {
 }
 
 export function useActionRequiredNotifications(params = {}) {
+  const scopedParams = useWorkspaceNotificationParams(params);
   return useQuery({
-    queryKey: ["notifications", "action-required", params],
+    queryKey: ["notifications", "action-required", scopedParams],
     queryFn: async () => {
-      const res = await notificationsApi.getActionRequiredNotifications(params);
+      const res = await notificationsApi.getActionRequiredNotifications(scopedParams);
       return res.data?.data || res.data;
     },
+    enabled: Boolean(scopedParams.workspaceId),
     refetchInterval: 10000,
     staleTime: 5000,
     refetchOnWindowFocus: true,
@@ -31,12 +44,14 @@ export function useActionRequiredNotifications(params = {}) {
 }
 
 export function useHighPriorityNotifications(params = {}) {
+  const scopedParams = useWorkspaceNotificationParams(params);
   return useQuery({
-    queryKey: ["notifications", "high-priority", params],
+    queryKey: ["notifications", "high-priority", scopedParams],
     queryFn: async () => {
-      const res = await notificationsApi.getHighPriorityNotifications(params);
+      const res = await notificationsApi.getHighPriorityNotifications(scopedParams);
       return res.data?.data || res.data;
     },
+    enabled: Boolean(scopedParams.workspaceId),
     refetchInterval: 10000,
     staleTime: 5000,
     refetchOnWindowFocus: true,
@@ -44,25 +59,29 @@ export function useHighPriorityNotifications(params = {}) {
 }
 
 export function useNotificationsByCategory(category, params = {}) {
+  const scopedParams = useWorkspaceNotificationParams(params);
   return useQuery({
-    queryKey: ["notifications", "category", category, params],
+    queryKey: ["notifications", "category", category, scopedParams],
     queryFn: async () => {
-      const res = await notificationsApi.getNotificationsByCategory(category, params);
+      const res = await notificationsApi.getNotificationsByCategory(category, scopedParams);
       return res.data?.data || res.data;
     },
+    enabled: Boolean(scopedParams.workspaceId && category),
     refetchInterval: 10000,
     staleTime: 5000,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useNotificationCounts() {
+export function useNotificationCounts(params = {}) {
+  const scopedParams = useWorkspaceNotificationParams(params);
   return useQuery({
-    queryKey: ["notifications", "counts"],
+    queryKey: ["notifications", "counts", scopedParams],
     queryFn: async () => {
-      const res = await notificationsApi.getNotificationCounts();
+      const res = await notificationsApi.getNotificationCounts(scopedParams);
       return res.data?.data || res.data;
     },
+    enabled: Boolean(scopedParams.workspaceId),
     refetchInterval: 10000,
     staleTime: 5000,
     refetchOnWindowFocus: true,
@@ -86,9 +105,10 @@ export function useNotificationCounts() {
 // action_url is `/workspace/123/loans` marks the "Loans" section tab and
 // sidebar item as having an update; `hasUpdateForRoute` prefix-matches so
 // a nested page like `/workspace/123/loans/42` still lights up "Loans".
-export function useNotificationBadges() {
-  const { data: notifications } = useUnreadNotifications({ limit: 100 });
-  const { data: counts } = useNotificationCounts();
+export function useNotificationBadges(workspaceId) {
+  const scope = workspaceId ? { workspaceId } : {};
+  const { data: notifications } = useUnreadNotifications({ limit: 100, ...scope });
+  const { data: counts } = useNotificationCounts(scope);
 
   return useMemo(() => {
     const list = Array.isArray(notifications) ? notifications : [];
@@ -141,8 +161,11 @@ export function normalizePath(value) {
 // "Contributions" badge.
 export function useClearNotificationsOnVisit() {
   const { pathname } = useLocation();
+  const { workspaceId: routeWorkspaceId } = useParams();
+  const { workspaceId: activeWorkspaceId } = useWorkspace();
+  const workspaceId = routeWorkspaceId || activeWorkspaceId;
   const queryClient = useQueryClient();
-  const { data: unread } = useUnreadNotifications({ limit: 100 });
+  const { data: unread } = useUnreadNotifications({ limit: 100, workspaceId });
   const sent = useRef(new Set());
 
   useEffect(() => {
@@ -164,15 +187,19 @@ export function useClearNotificationsOnVisit() {
     queryClient.setQueriesData({ queryKey: ["notifications", "unread"] }, (old) =>
       Array.isArray(old) ? old.filter((item) => !ids.has(String(item._id))) : old
     );
-    queryClient.setQueryData(["notifications", "counts"], (old) =>
-      old ? { ...old, unread: Math.max((old.unread || 0) - ids.size, 0) } : old
+    queryClient.setQueriesData(
+      {
+        queryKey: ["notifications", "counts"],
+        predicate: (query) => query.queryKey[2]?.workspaceId === workspaceId,
+      },
+      (old) => old ? { ...old, unread: Math.max((old.unread || 0) - ids.size, 0) } : old
     );
 
     notificationsApi
       .markReadByRoute(here)
       .catch(() => ids.forEach((id) => sent.current.delete(id)))
       .finally(() => queryClient.invalidateQueries({ queryKey: ["notifications"] }));
-  }, [pathname, unread, queryClient]);
+  }, [pathname, unread, queryClient, workspaceId]);
 }
 
 // Notification Management Hooks
@@ -188,11 +215,12 @@ export function useMarkNotificationAsRead() {
   });
 }
 
-export function useMarkAllNotificationsAsRead() {
+export function useMarkAllNotificationsAsRead(scope = {}) {
   const queryClient = useQueryClient();
+  const params = useWorkspaceNotificationParams(scope);
 
   return useMutation({
-    mutationFn: () => notificationsApi.markAllNotificationsAsRead(),
+    mutationFn: () => notificationsApi.markAllNotificationsAsRead(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       queryClient.invalidateQueries({ queryKey: ["notifications", "counts"] });

@@ -34,6 +34,7 @@ export const verifyKyc = send(async (req) => {
 });
 export const getPublicProfile = send((req) => operations.getPublicProfile(req.params.chamaId));
 export const makeInvite = send(async (req) => { await official(req); return operations.createInvite(req.chama._id, req.user._id, req.body); });
+export const cancelInvite = send(async (req) => { await official(req); return operations.revokeInvite(req.chama._id, req.params.invitationId); });
 // Loans moved to the dedicated loan module — see modules/loans/loan.routes.js
 // mounted at /api/v1/chamas/:chamaId/loans (spec: full loan lifecycle engine).
 export const createMeetingRecord = send(async (req) => { await official(req); return operations.createMeetingRecord(req.chama._id, req.user._id, req.body); });
@@ -41,7 +42,7 @@ export const checkInMeeting = send((req) => operations.checkIn(req.chama._id, re
 export const castVote = send((req) => operations.vote(req.chama._id, req.params.meetingId, req.membership, req.body.voteIndex, req.body.option));
 export const saveMeetingRecord = send(async (req) => { await official(req); return operations.updateMeetingRecord(req.chama._id, req.params.meetingId, req.body); });
 
-import * as moduleChangeService from "../workspaces/workspacemodulechange.service.js";
+import * as moduleChangeService from "../workspaces/index.js";
 
 export const getModuleSettings = send((req) => moduleChangeService.getModuleSettings(req.chama._id));
 export const requestModuleChange = send(async (req) => {

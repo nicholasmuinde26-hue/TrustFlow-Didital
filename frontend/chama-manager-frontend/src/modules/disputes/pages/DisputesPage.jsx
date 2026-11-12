@@ -9,7 +9,7 @@ import Button from "@/shared/components/ui/Button/Button";
 import Spinner from "@/shared/components/ui/Spinner";
 
 import { useWorkspace } from "@/app/hooks/useWorkspace";
-import { canManageDisputes } from "@/modules/workspaces/permissions/Permissions";
+import { canManageDisputes } from '@/modules/workspaces/index.js';
 
 import { useDisputes, useRaiseDispute, useUpdateDisputeStatus } from "../hooks/useDisputes";
 import DisputeCard from "../components/DisputeCard";

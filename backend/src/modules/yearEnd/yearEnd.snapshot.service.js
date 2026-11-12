@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import FinancialAccount from '../../models/FinancialAccount.js';
 import LedgerEntry from '../../models/LedgerEntry.js';
 import FinancialTransaction from '../../models/FinancialTransaction.js';
+import ContributionPlan from '../../models/ContributionPlan.js';
 import YearEndClose from '../../models/YearEndClose.js';
 import YearEndSnapshot from '../../models/YearEndSnapshot.js';
 import YearOpeningBalance from '../../models/YearOpeningBalance.js';
@@ -82,6 +83,13 @@ export const computeSnapshot = async ({ chamaId, year, overrides = {} }) => {
     return byAccount.get(k);
   };
   const accountById = new Map(accounts.map((a) => [String(a._id), a]));
+  const finePlans = await ContributionPlan.find({
+    owner_type: OWNER_TYPE,
+    owner_id: new mongoose.Types.ObjectId(String(chamaId)),
+    ledger_account_id: { $ne: null },
+    $or: [{ behavior: 'fine' }, { system_key: 'late_penalties' }],
+  }).select('ledger_account_id').lean();
+  const fineAccountIds = new Set(finePlans.map((plan) => String(plan.ledger_account_id)));
 
   for (const g of beforeRaw) {
     const a = accountById.get(String(g._id.a)); if (!a) continue;
@@ -93,7 +101,11 @@ export const computeSnapshot = async ({ chamaId, year, overrides = {} }) => {
   }
   for (const g of periodRaw) {
     const a = accountById.get(String(g._id.a)); if (!a) continue;
-    const bucket = classifyBucket({ accountType: a.account_type, transactionType: g._id.tx });
+    const bucket = classifyBucket({
+      accountType: a.account_type,
+      transactionType: g._id.tx,
+      behavior: fineAccountIds.has(String(a._id)) ? 'fine' : null,
+    });
     slot(g._id.a).movements[bucket] += signedEffect(a.normal_balance, g._id.t, toScaled(g.total));
   }
 

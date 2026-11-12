@@ -57,6 +57,30 @@ const workspaceRequestSchema = new mongoose.Schema(
     // records funding against the business asset afterwards.
     requestedCapital: { type: Number, default: 0, min: 0 },
 
+    // Sensitive formation and verification details for a contribution group.
+    // These remain on the private request; only approved, non-sensitive fields
+    // are copied to the ContributionGroup.
+    contributionGroupDetails: {
+      type: { type: String, enum: ['party', 'wedding', 'graduation', 'funeral', 'birthday', 'emergency', 'medical_emergency', 'fundraiser', 'community', 'other'], default: 'other' },
+      targetAmount: { type: Number, min: 0, default: 0 },
+      eventDate: { type: Date, default: null },
+      contributionEndDate: { type: Date, default: null },
+      beneficiary: { type: String, trim: true, maxlength: 120, default: '' },
+      location: { type: String, trim: true, maxlength: 255, default: '' },
+      visibility: { type: String, enum: ['private', 'invite_only', 'public'], default: 'invite_only' },
+      nationalIdNumber: { type: String, trim: true, maxlength: 30, default: '' },
+      evidence: [{ kind: { type: String, trim: true, maxlength: 60 }, url: { type: String, trim: true, maxlength: 1000 } }],
+      referees: [{ name: { type: String, trim: true, maxlength: 120 }, phone: { type: String, trim: true, maxlength: 30 }, relationship: { type: String, trim: true, maxlength: 80 } }],
+      payout: {
+        method: { type: String, enum: ['mpesa', 'paybill', 'till', 'bank', ''], default: '' },
+        phone: { type: String, trim: true, maxlength: 30, default: '' },
+        paybill: { type: String, trim: true, maxlength: 30, default: '' },
+        accountName: { type: String, trim: true, maxlength: 120, default: '' },
+      },
+      publicGivingRequested: { type: Boolean, default: false },
+    },
+    riskFlags: { type: [String], default: [] },
+
     // Sections the approving admin enables on the new business workspace.
     // Empty means the Business model default (all sections).
     businessWorkspaceSettings: {
@@ -92,7 +116,13 @@ const workspaceRequestSchema = new mongoose.Schema(
     workspaceConfig: {
       preset: { type: String, trim: true, default: '' },
       modules: { type: [String], default: [] },
+      // Admin-chosen display names, { moduleKey: 'Custom label' }.
+      moduleLabels: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
     },
+    // Organization family + type (chama / sacco / cooperative). Descriptive;
+    // modules decide capabilities. Copied onto the Chama at approval.
+    organizationFamily: { type: String, enum: ['chama', 'sacco', 'cooperative'], default: 'chama' },
+    organizationType: { type: String, trim: true, default: 'custom', maxlength: 60 },
 
     // Detailed metadata for Kenyan Chamas and organizations
     details: {

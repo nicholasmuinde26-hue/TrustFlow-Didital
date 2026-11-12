@@ -3,7 +3,7 @@ import { CalendarCheck, Loader2, Video, Vote } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import chamaApi from "@/modules/chama/api/chama.api";
-import { canManageMeetings, canManagePolls } from "@/modules/workspaces/permissions/Permissions";
+import { canManageMeetings, canManagePolls } from '@/modules/workspaces/index.js';
 
 import { InputField, Notice, RoleLocked, SectionCard } from "../components/DeskUI";
 

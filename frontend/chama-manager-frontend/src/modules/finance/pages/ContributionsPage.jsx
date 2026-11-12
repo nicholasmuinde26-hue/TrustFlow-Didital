@@ -11,6 +11,7 @@ import MyContributions from "@/modules/finance/components/contributions/MyContri
 import MpesaStkModal from "@/modules/finance/components/MpesaStkModal";
 import useWorkspacePermissions from "@/modules/finance/hooks/useworkspacepermissions";
 import financeService from "@/modules/finance/services/finance.service";
+import api from "@/app/services/api";
 import { cadenceLabel } from "@/modules/finance/components/MoneyHub";
 import { Card, Avatar } from "@/modules/finance/components/FinanceUi";
 import Spinner from "@/shared/components/ui/Spinner";
@@ -51,6 +52,7 @@ export default function ContributionsPage() {
   const workspaceId = routeId || ws?.workspaceId;
   const base = `/workspace/${workspaceId}`;
   const groupName = ws?.currentWorkspace?.name || "Your group";
+  const isBurialChama = Boolean(ws?.isBurialChama);
 
   const { role, isLoading: permsLoading, canForOthers } = useWorkspacePermissions(workspaceId);
   const canSeeAll = canForOthers("contributions.view");
@@ -62,6 +64,7 @@ export default function ContributionsPage() {
   const { socket } = useSocket();
 
   const [register, setRegister] = useState(null);
+  const [burialProfile, setBurialProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncedAt, setSyncedAt] = useState(null);
 
@@ -81,6 +84,20 @@ export default function ContributionsPage() {
     window.addEventListener("finance:updated", load);
     return () => { clearInterval(timer); window.removeEventListener("finance:updated", load); };
   }, [load, permsLoading, canSeeAll]);
+
+  useEffect(() => {
+    if (!isBurialChama || !workspaceId) {
+      setBurialProfile(null);
+      return undefined;
+    }
+    let alive = true;
+    api.get(`/burial-chama/chama/${workspaceId}/profile`)
+      .then((response) => { if (alive) setBurialProfile(response.data?.data || null); })
+      .catch(() => { if (alive) setBurialProfile(null); });
+    return () => { alive = false; };
+  }, [isBurialChama, workspaceId]);
+
+  const sampleDataEnabled = SHOW_SAMPLE && !isBurialChama;
 
   // ---- local, per-device state ----
   const key = (k) => `chama:${workspaceId}:${k}`;
@@ -117,24 +134,58 @@ export default function ContributionsPage() {
     const d = new Date(now);
     const start = new Date(d.getFullYear(), d.getMonth(), 1);
     const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-    const deadlines = activePlans
+    const monthlyPlans = activePlans.filter((p) => String(p.frequency || "").toLowerCase() === "monthly");
+    const deadlines = monthlyPlans
       .map((p) => p.deadline || p.due_date || p.next_due_at)
       .filter(Boolean).map((x) => new Date(x)).filter((x) => x >= start && x <= end);
-    const due = deadlines.length ? new Date(Math.min(...deadlines)) : end;
+    const due = deadlines.length ? new Date(Math.min(...deadlines)) : monthlyPlans.length ? end : null;
     const total = Math.round((end - start) / DAY_MS) + 1;
     const elapsed = Math.min(total, Math.max(0, Math.ceil((now - start) / DAY_MS)));
-    const dueIn = Math.ceil((due - now) / DAY_MS);
+    const dueIn = due ? Math.ceil((due - now) / DAY_MS) : null;
     return {
       name: start.toLocaleDateString("en-KE", { month: "long", year: "numeric" }),
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      hasMonthlyPlan: monthlyPlans.length > 0,
       start, end, due, total, elapsed, dueIn,
       pctElapsed: (elapsed / total) * 100,
-      overdue: now > due,
+      overdue: Boolean(due && now > due),
     };
   }, [now, activePlans]);
 
   // ---------- derived: members ----------
   const payments = useMemo(() => register?.payments || [], [register]);
-  const rule = PENALTY_RULES[0];
+  const rule = isBurialChama
+    ? { graceDays: Number(burialProfile?.grace_period_rules?.default_grace_days || 0), fee: 0 }
+    : PENALTY_RULES[0];
+  const currentWelfareObligations = useMemo(() => {
+    if (!isBurialChama) return [];
+    const monthlyPlanIds = new Set(activePlans
+      .filter((plan) => String(plan.frequency || "").toLowerCase() === "monthly")
+      .map(planId));
+    return (register?.obligations || []).filter((obligation) =>
+      monthlyPlanIds.has(String(obligation.plan_id)) && obligation.period_key === cycle.key
+    );
+  }, [isBurialChama, activePlans, register, cycle.key]);
+  const currentWelfareByMember = useMemo(() => {
+    const totalsByMember = new Map();
+    currentWelfareObligations.forEach((obligation) => {
+      const id = String(obligation.member?.membership_id || "");
+      const row = totalsByMember.get(id) || { expected: 0, paid: 0, outstanding: 0, overdue_days: 0 };
+      const expected = Number(obligation.expected || 0);
+      const paid = Number(obligation.paid || 0);
+      const outstanding = Math.max(0, Number(obligation.outstanding ?? expected - paid));
+      const dueDate = obligation.due_date ? new Date(obligation.due_date) : null;
+      const overdueDays = outstanding > 0 && dueDate && dueDate < now
+        ? Math.floor((now - dueDate) / DAY_MS)
+        : 0;
+      row.expected += expected;
+      row.paid += paid;
+      row.outstanding += outstanding;
+      row.overdue_days = Math.max(row.overdue_days, overdueDays);
+      totalsByMember.set(id, row);
+    });
+    return totalsByMember;
+  }, [currentWelfareObligations, now]);
 
   const rows = useMemo(() => {
     const latest = new Map();
@@ -144,20 +195,26 @@ export default function ContributionsPage() {
     });
     return (register?.members || []).map((m) => {
       const id = String(m.membership_id);
-      const expected = Number(m.expected || 0);
-      const paid = Number(m.paid || 0);
-      const outstanding = Math.max(0, Number(m.outstanding ?? expected - paid));
-      const arrearsDays = Number(m.overdue_days ?? (outstanding > 0 && cycle.overdue ? Math.floor((now - cycle.due) / DAY_MS) : 0));
+      const monthlyWelfare = currentWelfareByMember.get(id);
+      const expected = isBurialChama ? Number(monthlyWelfare?.expected || 0) : Number(m.expected || 0);
+      const paid = isBurialChama ? Number(monthlyWelfare?.paid || 0) : Number(m.paid || 0);
+      const outstanding = isBurialChama
+        ? Number(monthlyWelfare?.outstanding || 0)
+        : Math.max(0, Number(m.outstanding ?? expected - paid));
+      const arrearsDays = isBurialChama
+        ? Number(monthlyWelfare?.overdue_days || 0)
+        : Number(m.overdue_days ?? (outstanding > 0 && cycle.overdue ? Math.floor((now - cycle.due) / DAY_MS) : 0));
       const cyclesLate = Number(m.overdue_cycles ?? (arrearsDays > 0 ? 1 : 0));
       let status = "pending";
       if (m.excused || m.status === "excused") status = "excused";
       else if (outstanding <= 0 && (expected > 0 || paid > 0)) status = "paid";
       else if (arrearsDays > 0) status = "arrears";
       else if (paid > 0) status = "partial";
+      else if (isBurialChama && expected <= 0) status = "no_dues";
       const accrued = m.penalty_amount != null
         ? Number(m.penalty_amount)
         : status === "arrears" && arrearsDays > rule.graceDays ? rule.fee * Math.max(1, cyclesLate) : 0;
-      const waiver = waivers[id];
+      const waiver = isBurialChama ? null : waivers[id];
       const lp = latest.get(id);
       return {
         id, name: m.name || "Member", avatar: m.avatar_url, role: m.role || "member", phone: m.phone || m.user?.phone || "",
@@ -166,10 +223,10 @@ export default function ContributionsPage() {
         lastPaidAt: m.last_payment_at || lp?.paid_at, code: lp?.external_reference || lp?.reference || "",
       };
     });
-  }, [register, payments, cycle, now, waivers, rule]);
+  }, [register, payments, cycle, now, waivers, rule, isBurialChama, currentWelfareByMember]);
 
   const counts = useMemo(() => {
-    const c = { all: rows.length, paid: 0, pending: 0, arrears: 0, partial: 0, excused: 0 };
+    const c = { all: rows.length, paid: 0, pending: 0, arrears: 0, partial: 0, excused: 0, no_dues: 0 };
     rows.forEach((r) => { c[r.status] += 1; });
     return c;
   }, [rows]);
@@ -196,14 +253,18 @@ export default function ContributionsPage() {
   useEffect(() => { setPage(1); }, [q, statusF, roleF, sort]);
 
   // ---------- derived: headline numbers ----------
-  const collected = Number(totals.collected || 0);
-  const expected = Number(totals.expected || 0);
+  const collected = isBurialChama
+    ? currentWelfareObligations.reduce((sum, obligation) => sum + Number(obligation.paid || 0), 0)
+    : Number(totals.collected || 0);
+  const expected = isBurialChama
+    ? currentWelfareObligations.reduce((sum, obligation) => sum + Number(obligation.expected || 0), 0)
+    : Number(totals.expected || 0);
   const remaining = Math.max(0, expected - collected);
   const rate = expected > 0 ? Math.min(100, (collected / expected) * 100) : 0;
   const defaulters = rows.filter((r) => r.status === "arrears");
   const arrearsTotal = defaulters.reduce((s, r) => s + r.outstanding, 0);
   const penaltyTotal = rows.reduce((s, r) => s + r.penalty, 0);
-  const activeCount = rows.filter((r) => r.status !== "excused").length;
+  const activeCount = rows.filter((r) => r.status !== "excused" && r.status !== "no_dues").length;
   const paidCount = counts.paid;
 
   const mom = useMemo(() => {
@@ -217,11 +278,19 @@ export default function ContributionsPage() {
   }, [payments, now]);
 
   const pace = rate - cycle.pctElapsed;
-  const health = rate >= 100 || pace >= -10 ? ["On track", "emerald"] : pace >= -30 ? ["At risk", "amber"] : ["Behind", "rose"];
+  const health = isBurialChama && !cycle.hasMonthlyPlan
+    ? ["No monthly plan", "amber"]
+    : rate >= 100 || pace >= -10 ? ["On track", "emerald"] : pace >= -30 ? ["At risk", "amber"] : ["Behind", "rose"];
 
   // ---------- derived: M-Pesa ----------
-  const account = (groupName.split(" ").slice(0, 2).join("-") || "GROUP").toUpperCase();
-  const paybill = ws?.currentWorkspace?.paybill || ws?.currentWorkspace?.mpesa_paybill || SAMPLE_PAYBILL.paybill;
+  const burialMpesa = burialProfile?.payment_rules?.mpesa_config || {};
+  const account = isBurialChama
+    ? burialMpesa.account_number || ws?.currentWorkspace?.mpesa_account || ws?.currentWorkspace?.account_number || ""
+    : (groupName.split(" ").slice(0, 2).join("-") || "GROUP").toUpperCase();
+  const paybill = isBurialChama
+    ? burialMpesa.paybill_number || burialMpesa.till_number || ""
+    : ws?.currentWorkspace?.paybill || ws?.currentWorkspace?.mpesa_paybill || SAMPLE_PAYBILL.paybill;
+  const paymentLabel = burialMpesa.till_number && !burialMpesa.paybill_number ? "Till" : "Paybill";
   const paybillIsSample = !(ws?.currentWorkspace?.paybill || ws?.currentWorkspace?.mpesa_paybill);
 
   const realFeed = useMemo(
@@ -231,15 +300,15 @@ export default function ContributionsPage() {
     })),
     [payments]
   );
-  const sampleFeed = realFeed.length === 0 && SHOW_SAMPLE;
+  const sampleFeed = realFeed.length === 0 && sampleDataEnabled;
   const feed = sampleFeed ? SAMPLE_FEED() : realFeed;
-  const unmatched = SHOW_SAMPLE ? SAMPLE_UNMATCHED().filter((u) => !resolved.includes(u.id)) : [];
+  const unmatched = sampleDataEnabled ? SAMPLE_UNMATCHED().filter((u) => !resolved.includes(u.id)) : [];
 
   const synced = syncedAt ? Math.max(0, Math.round((now - syncedAt) / 1000)) : null;
 
   // ---------- actions ----------
   const reminderText = (r) =>
-    `Hello ${firstName(r.name)}, your ${groupName} contribution for ${cycle.name} has KES ${fmt(r.outstanding)} outstanding` +
+    `Hello ${firstName(r.name)}, your ${groupName} ${isBurialChama ? "welfare contribution" : "contribution"} for ${cycle.name} has KES ${fmt(r.outstanding)} outstanding` +
     `${r.penalty ? ` plus KES ${fmt(r.penalty)} in penalties` : ""}. Due ${shortDate(cycle.due)}. ` +
     `Pay via M-Pesa Paybill ${paybill}, account ${account}. Thank you.`;
 
@@ -318,9 +387,9 @@ export default function ContributionsPage() {
       {/* ================= header ================= */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Contributions</h1>
+          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{isBurialChama ? "Welfare contributions" : "Contributions"}</h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500 dark:text-mist-muted">
-            <span>{cycle.name} cycle</span>
+            <span>{isBurialChama ? `${cycle.name} welfare cycle` : `${cycle.name} cycle`}</span>
             <span className="inline-flex items-center gap-1.5">
               <span className={`h-1.5 w-1.5 rounded-full ${socket?.connected ? "bg-emerald-500" : "bg-amber-500"}`} />
               {socket?.connected ? "Live" : "Refreshing every 15s"}{synced != null && ` · synced ${synced}s ago`}
@@ -329,7 +398,7 @@ export default function ContributionsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {canOpenDesk && (
-            <Link to={`${base}/leadership?tab=contributions`} className={btnGhost}><Layers size={14} /> Contribution plans</Link>
+            <Link to={isBurialChama ? `${base}/burial-chama-setup` : `${base}/leadership?tab=contributions`} className={btnGhost}><Layers size={14} /> {isBurialChama ? "Welfare setup" : "Contribution plans"}</Link>
           )}
           <button onClick={() => exportMembers()} className={btnGhost}><Download size={14} /> Export</button>
           {canRecordForOthers && (
@@ -337,7 +406,7 @@ export default function ContributionsPage() {
               <button onClick={() => setImportOpen(true)} className={btnGhost}><Upload size={14} /> Import CSV</button>
               <button onClick={() => setStkOpen(true)} className={btnGhost}><Smartphone size={14} /> STK push</button>
               <Link to={`${base}/finance/record-contribution${activePlans[0] ? `?plan=${planId(activePlans[0])}` : ""}`} className={btnPrimary}>
-                <Plus size={14} /> Record payment
+                <Plus size={14} /> {isBurialChama ? "Record welfare payment" : "Record payment"}
               </Link>
             </>
           )}
@@ -361,28 +430,28 @@ export default function ContributionsPage() {
             </Ring>
             <div className="min-w-0">
               <p className="text-sm font-bold">{cycle.name}</p>
-              <p className="text-[11px] text-slate-500 dark:text-mist-muted">{shortDate(cycle.start)} to {shortDate(cycle.end)}</p>
+              <p className="text-[11px] text-slate-500 dark:text-mist-muted">{cycle.hasMonthlyPlan ? `${shortDate(cycle.start)} to ${shortDate(cycle.end)}` : "Set a monthly welfare plan to track dues"}</p>
               <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${
                 health[1] === "emerald" ? "bg-emerald-100 text-emerald-800 dark:bg-mint-deep dark:text-mint"
                 : health[1] === "amber" ? "bg-amber-100 text-amber-800 dark:bg-amber-deep-bg dark:text-amber-deep-text"
                 : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"}`}>{health[0]}</span>
               <p className={`mt-2 text-xs font-bold ${cycle.overdue ? "text-rose-600 dark:text-rose-300" : ""}`}>
-                {cycle.overdue ? `Overdue by ${Math.abs(cycle.dueIn)} day${Math.abs(cycle.dueIn) === 1 ? "" : "s"}` : cycle.dueIn === 0 ? "Due today" : `Due in ${cycle.dueIn} day${cycle.dueIn === 1 ? "" : "s"}`}
+                {!cycle.hasMonthlyPlan ? "No monthly welfare plan configured" : cycle.overdue ? `Overdue by ${Math.abs(cycle.dueIn)} day${Math.abs(cycle.dueIn) === 1 ? "" : "s"}` : cycle.dueIn === 0 ? "Due today" : `Due in ${cycle.dueIn} day${cycle.dueIn === 1 ? "" : "s"}`}
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 dark:divide-obsidian-border sm:grid-cols-4 sm:divide-y-0">
-            <Kpi label="Total collected" value={`KES ${fmt(collected)}`}
+            <Kpi label={isBurialChama ? "Welfare collected" : "Total collected"} value={`KES ${fmt(collected)}`}
               foot={mom.pct == null ? "No earlier month to compare" : `${mom.pct >= 0 ? "+" : ""}${mom.pct}% vs last month`} tone={mom.pct != null && mom.pct < 0 ? "rose" : "emerald"} />
-            <Kpi label="Monthly goal" value={`KES ${fmt(expected)}`} foot={`KES ${fmt(remaining)} to go`}>
+            <Kpi label={isBurialChama ? "Monthly welfare due" : "Monthly goal"} value={`KES ${fmt(expected)}`} foot={`KES ${fmt(remaining)} to go`}>
               <div className="relative mt-2 h-1.5 rounded-full bg-slate-100 dark:bg-obsidian-raised">
                 <div className="h-full rounded-full bg-emerald-500 dark:bg-mint" style={{ width: `${rate}%` }} />
                 <div className="absolute -top-1 h-3.5 w-0.5 bg-slate-500" style={{ left: `${cycle.pctElapsed}%` }} title="Where the cycle should be by today" />
               </div>
             </Kpi>
-            <Kpi label="Collection rate" value={`${Math.round(rate)}%`} foot={`${paidCount} of ${activeCount} members paid`} tone={health[1]} />
-            <Kpi label="Arrears" value={`KES ${fmt(arrearsTotal)}`} foot={`${defaulters.length} defaulter${defaulters.length === 1 ? "" : "s"}`} tone={defaulters.length ? "rose" : "emerald"} />
+            <Kpi label={isBurialChama ? "Welfare collection rate" : "Collection rate"} value={`${Math.round(rate)}%`} foot={`${paidCount} of ${activeCount} members paid`} tone={health[1]} />
+            <Kpi label={isBurialChama ? "Welfare arrears" : "Arrears"} value={`KES ${fmt(arrearsTotal)}`} foot={`${defaulters.length} member${defaulters.length === 1 ? "" : "s"} in arrears`} tone={defaulters.length ? "rose" : "emerald"} />
           </div>
         </div>
       </Card>
@@ -393,13 +462,13 @@ export default function ContributionsPage() {
           <Tabs value={tab} onChange={setTab} tabs={[
             { key: "members", label: "Members", count: rows.length },
             { key: "payments", label: "Payments", count: payments.length },
-            { key: "arrears", label: "Arrears and penalties", count: defaulters.length, alert: defaulters.length > 0 },
+            { key: "arrears", label: isBurialChama ? "Welfare arrears" : "Arrears and penalties", count: defaulters.length, alert: defaulters.length > 0 },
           ]} />
 
           {tab === "members" && (
             <>
               <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
-                {[["all", "All"], ["paid", "Paid"], ["pending", "Pending"], ["arrears", "Arrears"], ["partial", "Partial"], ["excused", "Excused"]].map(([k, l]) => (
+                {[["all", "All"], ["paid", "Paid"], ["pending", "Pending"], ["arrears", "Arrears"], ["partial", "Partial"], ...(isBurialChama ? [["no_dues", "No dues"]] : [["excused", "Excused"]])].map(([k, l]) => (
                   <button key={k} onClick={() => setStatusF(k)} aria-pressed={statusF === k}
                     className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${statusF === k
                       ? "border-emerald-600 bg-emerald-600 text-white dark:border-mint dark:bg-mint dark:text-mint-strong"
@@ -565,7 +634,7 @@ export default function ContributionsPage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Card className="p-4"><p className="text-[11px] font-semibold text-slate-500 dark:text-mist-muted">Defaulters</p><p className="mt-1 text-xl font-black">{defaulters.length}</p></Card>
                 <Card className="p-4"><p className="text-[11px] font-semibold text-slate-500 dark:text-mist-muted">Contributions outstanding</p><p className="mt-1 text-xl font-black text-rose-600 dark:text-rose-300">KES {fmt(arrearsTotal)}</p></Card>
-                <Card className="p-4"><p className="text-[11px] font-semibold text-slate-500 dark:text-mist-muted">Penalties accrued</p><p className="mt-1 text-xl font-black">KES {fmt(penaltyTotal)}</p></Card>
+                {!isBurialChama && <Card className="p-4"><p className="text-[11px] font-semibold text-slate-500 dark:text-mist-muted">Penalties accrued</p><p className="mt-1 text-xl font-black">KES {fmt(penaltyTotal)}</p></Card>}
               </div>
 
               <Card className="overflow-hidden">
@@ -600,7 +669,7 @@ export default function ContributionsPage() {
                 </div>
               </Card>
 
-              {SHOW_SAMPLE && (
+              {sampleDataEnabled && (
                 <Card className="p-4">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h2 className="text-sm font-bold">Penalty rules from the constitution</h2>
@@ -631,12 +700,13 @@ export default function ContributionsPage() {
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
-              <div><dt className="text-[11px] text-slate-500 dark:text-mist-muted">Paybill</dt><dd className="mt-0.5 font-mono text-base font-black">{paybill}</dd></div>
-              <div><dt className="text-[11px] text-slate-500 dark:text-mist-muted">Account</dt><dd className="mt-0.5 font-mono text-base font-black break-all">{account}</dd></div>
+              <div><dt className="text-[11px] text-slate-500 dark:text-mist-muted">{paymentLabel}</dt><dd className="mt-0.5 font-mono text-base font-black">{paybill || "Not set"}</dd></div>
+              <div><dt className="text-[11px] text-slate-500 dark:text-mist-muted">Account</dt><dd className="mt-0.5 font-mono text-base font-black break-all">{account || "Not set"}</dd></div>
             </dl>
-            {paybillIsSample && SHOW_SAMPLE && <div className="mt-2"><SampleTag title="Paybill number is a placeholder until it is saved on the workspace." /></div>}
-            <button onClick={() => { navigator.clipboard?.writeText(`Paybill ${paybill}, account ${account}`); toast.success("Payment details copied"); }}
-              className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 dark:text-mint"><Copy size={12} /> Copy payment details</button>
+            {paybillIsSample && sampleDataEnabled && <div className="mt-2"><SampleTag title="Paybill number is a placeholder until it is saved on the workspace." /></div>}
+            {isBurialChama && !paybill && <p className="mt-3 text-xs text-slate-500 dark:text-mist-muted">Payment details are not configured yet. Add the group Paybill or Till in Welfare setup.</p>}
+            <button disabled={!paybill && !account} onClick={() => { navigator.clipboard?.writeText(`${paymentLabel} ${paybill}, account ${account}`); toast.success("Payment details copied"); }}
+              className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-mint"><Copy size={12} /> Copy payment details</button>
           </Card>
 
           <Card className="p-4">

@@ -9,8 +9,11 @@ import ChamaMemberKyc from "../../models/ChamaMemberKyc.js";
 import ChamaMeetingRecord from "../../models/ChamaMeetingRecord.js";
 import ChamaInvitation from "../../models/ChamaInvitation.js";
 import Chama from "../../models/Chama.js";
+import User from "../../models/User.js";
 import { assertImageDataUri, IMAGE_LIMITS, cleanText } from "../../utils/imageData.js";
 import { getChamaPublicPage } from "./publicProfiles.service.js";
+import { formatPhone } from "../../utils/phone.js";
+import { assertInvitePhoneMatches, assertInviteRoleAllowed, assertMemberCanRejoin } from "./chamaInvitation.rules.js";
 
 // officialRoles gates broad chama-management permissions (dashboard's
 // "officials" widget, who can create invites/goals/meeting records —
@@ -148,7 +151,17 @@ export async function reviewKyc(chamaId, membershipId, userId, status, reason = 
 }
 
 export const getPublicProfile = (chamaId) => getChamaPublicPage(chamaId);
-export async function createInvite(chamaId, userId, data) { const token = crypto.randomBytes(24).toString("hex"); const invitation = await ChamaInvitation.create({ chama_id: chamaId, phone: data.phone || null, role: data.role || "member", token, invited_by: userId, expires_at: new Date(Date.now() + 7 * 86400000) }); return { invitation, token, join_path: `/chamas/join?token=${token}` }; }
+export async function createInvite(chamaId, userId, data = {}) {
+  assertInviteRoleAllowed(data.role);
+  const phone = data.phone ? formatPhone(data.phone) : null;
+  const maxUses = phone ? 1 : Number(data.max_uses ?? 100);
+  if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 500) throw new AppError("Invite max_uses must be between 1 and 500", 400);
+  const expiresAt = data.expires_at ? new Date(data.expires_at) : new Date(Date.now() + 7 * 86400000);
+  if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) throw new AppError("Invite expiration must be a future date", 400);
+  const token = crypto.randomBytes(24).toString("hex");
+  const invitation = await ChamaInvitation.create({ chama_id: chamaId, phone, role: "member", token, invited_by: userId, expires_at: expiresAt, max_uses: maxUses });
+  return { invitation, token, join_path: `/chamas/join?token=${token}` };
+}
 
 // ========================================
 // PREVIEW INVITE (PUBLIC, UNAUTHENTICATED)
@@ -162,7 +175,7 @@ export async function createInvite(chamaId, userId, data) { const token = crypto
 // ========================================
 
 export async function previewInvite(token) {
-  const invite = await ChamaInvitation.findOne({ token })
+  const invite = await ChamaInvitation.findOne({ token, revoked_at: null })
     .populate("chama_id", "name status")
     .populate("invited_by", "name");
 
@@ -171,11 +184,14 @@ export async function previewInvite(token) {
   }
 
   const expired = invite.expires_at.getTime() < Date.now();
+  const exhausted = (invite.use_count || 0) >= (invite.max_uses || 100);
   const chamaActive = invite.chama_id?.status === "active";
 
   return {
-    valid: Boolean(!expired && chamaActive && invite.chama_id),
+    valid: Boolean(!expired && !exhausted && chamaActive && invite.chama_id),
     expired,
+    exhausted,
+    phone_bound: Boolean(invite.phone),
     chama: invite.chama_id ? { id: invite.chama_id._id, name: invite.chama_id.name } : null,
     role: invite.role,
     invited_by: invite.invited_by ? { name: invite.invited_by.name } : null,
@@ -187,9 +203,9 @@ export async function previewInvite(token) {
 // ACCEPT INVITE -> REQUEST TO JOIN
 // ========================================
 //
-// A join link may be shared with many people (it's not a one-time-use
-// code — ChamaInvitation.phone is informational only, not enforced),
-// so accepting it does NOT immediately grant membership. It creates a
+// An invitation requests membership but never grants access immediately.
+// Phone-bound invitations must be accepted by the matching user account.
+// It creates a
 // ChamaMembership with status "pending", which requireChamaMember
 // rejects until the Treasurer or Chairperson approves it (see
 // member.service.js updateMemberStatus / member.routes.js
@@ -198,37 +214,59 @@ export async function previewInvite(token) {
 // ========================================
 
 export async function acceptInvite(token, userId) {
-  const invite = await ChamaInvitation.findOne({ token, expires_at: { $gt: new Date() } });
+  const invite = await ChamaInvitation.findOne({ token, expires_at: { $gt: new Date() }, revoked_at: null });
   if (!invite) throw new AppError("This invite link is invalid or has expired", 404);
+
+  const user = await User.findById(userId).select("phone").lean();
+  if (!user) throw new AppError("Account not found", 404);
+  assertInvitePhoneMatches(invite.phone, user.phone);
 
   const existing = await ChamaMembership.findOne({ chama_id: invite.chama_id, user_id: userId });
 
-  if (existing && existing.status === "active") {
-    throw new AppError("You are already a member of this Chama", 409);
-  }
-  if (existing && existing.status === "pending") {
-    throw new AppError("Your request to join this Chama is already pending approval", 409);
-  }
+  const chama = await Chama.findById(invite.chama_id).select('chama_type workspace_config').lean();
+  const cooldownDays = ['burial', 'burial_welfare'].includes(chama?.chama_type) || ['burial', 'burial_welfare'].includes(chama?.workspace_config?.preset) ? 180 : 30;
+  assertMemberCanRejoin(existing, new Date(), cooldownDays);
 
-  const member = await ChamaMembership.findOneAndUpdate(
-    { chama_id: invite.chama_id, user_id: userId },
-    {
-      $setOnInsert: { invited_by: invite.invited_by, joined_at: new Date() },
-      $set: { role: invite.role, status: "pending", payout_position: null, accepted_at: null, removed_at: null, removed_by: null },
-    },
-    { upsert: true, returnDocument: 'after' }
+  const now = new Date();
+  const claimedInvite = await ChamaInvitation.findOneAndUpdate(
+    { _id: invite._id, revoked_at: null, expires_at: { $gt: now }, $expr: { $lt: [{ $ifNull: ["$use_count", 0] }, { $ifNull: ["$max_uses", 100] }] } },
+    { $inc: { use_count: 1 } },
+    { new: true }
   );
+  if (!claimedInvite) throw new AppError("This invite link has expired, been revoked, or reached its usage limit", 409);
 
-  // Records that the link has been used at least once. Informational
-  // only — does NOT invalidate the link for the next person, since a
-  // Chairperson/Treasurer's join link is meant to be shared with the
-  // whole prospective membership, not a single named invitee.
-  invite.accepted_at = new Date();
-  await invite.save();
+  let member;
+  try {
+    member = await ChamaMembership.findOneAndUpdate(
+      { chama_id: invite.chama_id, user_id: userId },
+      {
+        $setOnInsert: { invited_by: invite.invited_by, joined_at: now },
+        $set: { role: "member", status: "pending", payout_position: null, accepted_at: null, removed_at: null, removed_by: null, suspended_at: null },
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+    await ChamaInvitation.updateOne(
+      { _id: claimedInvite._id },
+      { $set: { accepted_at: now }, $push: { uses: { user_id: userId, membership_id: member._id, accepted_at: now } } }
+    );
+  } catch (error) {
+    await ChamaInvitation.updateOne({ _id: claimedInvite._id, use_count: { $gt: 0 } }, { $inc: { use_count: -1 } });
+    throw error;
+  }
 
   await member.populate("chama_id", "name");
 
   return member;
+}
+
+export async function revokeInvite(chamaId, invitationId) {
+  const invitation = await ChamaInvitation.findOneAndUpdate(
+    { _id: invitationId, chama_id: chamaId, revoked_at: null },
+    { $set: { revoked_at: new Date() } },
+    { new: true }
+  );
+  if (!invitation) throw new AppError("Active invitation not found", 404);
+  return invitation;
 }
 
 // ========================================

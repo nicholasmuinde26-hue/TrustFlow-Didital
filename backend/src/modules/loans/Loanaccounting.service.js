@@ -4,7 +4,7 @@ import FinancialAccount from '../../models/FinancialAccount.js';
 import FinancialTransaction from '../../models/FinancialTransaction.js';
 import Journal from '../../models/Journal.js';
 import LedgerEntry from '../../models/LedgerEntry.js';
-import financeAccountService from '../finance/financeAccount.service.js';
+import { financeAccountService } from '../finance/index.js';
 
 // ========================================
 // CHART OF ACCOUNTS USED BY THE LOAN ENGINE

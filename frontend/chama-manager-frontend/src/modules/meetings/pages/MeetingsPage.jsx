@@ -3,7 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { CalendarClock, Plus, Link2, Users, Vote } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { canManageMeetings } from "@/modules/workspaces/permissions/Permissions";
+import { useTerminology } from '@/modules/workspaces/index.js';
+import { canManageMeetings } from '@/modules/workspaces/index.js';
 import { usePolls } from "@/modules/polls/hooks/usePolls";
 
 import {
@@ -30,6 +31,7 @@ function formatWhen(value) {
 export default function MeetingsPage() {
   const { workspaceId } = useParams();
   const { workspaces } = useWorkspace();
+  const { moduleLabel } = useTerminology();
   const [showComposer, setShowComposer] = useState(false);
 
   const workspace = workspaces.find((w) => (w.id ?? w._id) === workspaceId);
@@ -79,7 +81,7 @@ export default function MeetingsPage() {
             <span>›</span>
             <span className="text-slate-600 dark:text-mist-muted font-bold">Meetings &amp; decisions</span>
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-mist">Meetings</h1>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-mist">{moduleLabel("meetings", "Meetings")}</h1>
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-mist-muted">
             Keep every decision moving forward.
           </p>
@@ -87,16 +89,18 @@ export default function MeetingsPage() {
 
         {manage && (
           <button
-            onClick={() => setShowComposer((v) => !v)}
+            onClick={() => setShowComposer(true)}
             className="flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-2.5 text-xs font-black text-slate-950 shadow-md hover:bg-emerald-400 transition dark:bg-mint dark:text-obsidian-rail dark:hover:bg-mint-hover"
           >
-            <Plus size={16} /> {showComposer ? "Cancel" : "Schedule meeting"}
+            <Plus size={16} /> Schedule meeting
           </button>
         )}
       </div>
 
-      {manage && showComposer && (
+      {manage && (
         <MeetingComposer
+          open={showComposer}
+          onClose={() => setShowComposer(false)}
           submitting={createMeeting.isPending}
           onSubmit={handleCreate}
         />

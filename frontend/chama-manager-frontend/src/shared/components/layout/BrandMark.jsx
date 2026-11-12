@@ -1,13 +1,13 @@
 import { useId } from "react";
 
 /**
- * The VeriCircle mark.
+ * The ChamaManager mark.
  *
- * Three members sit on a circle (the "circle" - a chama is people passing
- * trust around), joined by three arcs that stop short of every member so the
- * ring reads as a hand-off rather than a closed loop. In the middle a single
- * check stroke marks the "veri": every contribution, loan and payout is
- * verified on a ledger anyone in the group can inspect.
+ * Three members sit on a circle (a chama is people passing trust around),
+ * joined by three arcs that stop short of every member so the ring reads as
+ * a hand-off rather than a closed loop. In the middle a single check stroke
+ * marks the "manager": every contribution, loan and payout is recorded,
+ * approved and verified on a ledger anyone in the group can inspect.
  *
  * It is drawn from one stroke weight, three dots and one check, so it stays
  * legible down to ~16px. The geometry is computed (not hand-typed) so the
@@ -37,7 +37,7 @@ const ARCS = NODE_ANGLES.map((start, i) => {
 
 const NODES = NODE_ANGLES.map(point);
 
-export default function BrandMark({ size = 40, tile = true, className = "", title = "VeriCircle" }) {
+export default function BrandMark({ size = 40, tile = true, className = "", title = "ChamaManager" }) {
   const gradientId = useId().replace(/:/g, "");
   const ink = tile ? "#08201a" : "currentColor";
 

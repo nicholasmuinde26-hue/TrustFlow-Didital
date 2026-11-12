@@ -13,6 +13,8 @@ import ChamaMembership from "../../models/ChamaMembership.js";
 import ChamaAsset from "../../models/ChamaAsset.js";
 import RentalListing from "../../models/RentalListing.js";
 import BusinessItem from "../../models/BusinessItem.js";
+import BusinessStaff from "../../models/BusinessStaff.js";
+import BusinessActivity from "../../models/BusinessActivity.js";
 import MarketplaceListing from "../../models/MarketplaceListing.js";
 import {
   publishInventoryItem as publishItemToMarketplace,
@@ -22,13 +24,13 @@ import {
   archiveItemListings,
   attachMarketplaceState,
   approveUnreviewedInventoryListings,
-} from "../marketplace/inventoryMarketplaceSync.service.js";
+} from "../marketplace/index.js";
 import User from "../../models/User.js";
 import { formatPhone } from "../../utils/phone.js";
 import mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
-import { recordExpense as recordChamaAssetExpense, recordIncome as recordChamaAssetIncome } from "../chamaAssets/chamaAsset.service.js";
+import { recordExpense as recordChamaAssetExpense, recordIncome as recordChamaAssetIncome } from "../chamaAssets/index.js";
 import { sendBusinessReceiptEmail } from "../../services/notifications/email.service.js";
-import { getIO } from "../realtime/socketServer.js";
+import { getIO } from "../realtime/index.js";
 
 const getUserId = (user) => user?._id || user?.id;
 
@@ -117,7 +119,7 @@ const accessError = (message, statusCode = 403) => {
  * Pass { write: true } for anything that changes data. The resolved access is
  * attached to the returned business as `business.access` (not persisted).
  */
-export async function getOwnedBusiness(businessId, user, { write = false } = {}) {
+export async function getOwnedBusiness(businessId, user, { write = false, permission = null } = {}) {
   if (!mongoose.isValidObjectId(businessId)) {
     throw accessError("Workspace not found or access denied", 404);
   }
@@ -161,11 +163,19 @@ export async function getOwnedBusiness(businessId, user, { write = false } = {})
 
     // Personal business
     const ownerRef = business.owner_id || business.created_by;
-    if (!sameId(ownerRef, userId)) {
+    const isOwner = sameId(ownerRef, userId);
+    const staff = isOwner ? null : await BusinessStaff.findOne({ business_id: business._id, user_id: userId, status: "active" }).lean();
+    if (!isOwner && !staff) {
       // Same 404 as a missing business, so IDs can't be probed.
       throw accessError("Workspace not found or access denied", 404);
     }
-    business.access = { ownerType: "user", role: "owner", canManage: true };
+    const granted = staff ? new Set(staff.permissions || []) : null;
+    if (staff && permission && !granted.has(permission) && !granted.has("*") && staff.role !== "manager") {
+      throw accessError("Your business role does not allow this action");
+    }
+    const canManage = isOwner || Boolean(staff && (!permission || granted.has(permission) || granted.has("*") || staff.role === "manager"));
+    if (write && !canManage) throw accessError("Your business role does not allow this action");
+    business.access = { ownerType: "user", role: isOwner ? "owner" : staff.role, permissions: staff?.permissions || [], canManage: isOwner || Boolean(staff && (staff.role === "manager" || granted.has("*") || granted.has(permission))) };
     return business;
   }
 
@@ -203,7 +213,7 @@ export async function ensureBusinessAccounts(businessId, createdBy, ownerType = 
     { name: "M-Pesa Till & Paybill", account_code: "MPESA_TILL", system_key: "till", account_type: "asset", normal_balance: "debit", account_category: "mpesa" },
     { name: ownerType === "ContributionGroup" ? "Member Contributions" : "Sales Revenue", account_code: ownerType === "ContributionGroup" ? "MEMBER_CONTRIBUTIONS" : "SALES_REVENUE", system_key: ownerType === "ContributionGroup" ? "member_contributions" : "sales_revenue", account_type: "income", normal_balance: "credit", account_category: "income" },
     { name: "Operating Expenses", account_code: "OPERATING_EXPENSES", system_key: "operating_expenses", account_type: "expense", normal_balance: "debit", account_category: "expense" },
-    ...(ownerType === "Business" ? [{ name: "Chama Capital", account_code: "CHAMA_CAPITAL", system_key: "chama_capital", account_type: "equity", normal_balance: "credit", account_category: "equity" }] : []),
+    ...(ownerType === "Business" ? [{ name: "Owner Capital", account_code: "CHAMA_CAPITAL", system_key: "chama_capital", account_type: "equity", normal_balance: "credit", account_category: "equity" }] : []),
   ];
 
   const map = {};
@@ -503,6 +513,8 @@ export async function createBusiness(data, user) {
 
 export async function getSummary(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
+  const now = new Date();
+  const trendStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
   const [transactions, totals, accounts] = await Promise.all([
     BusinessTransaction.find({ business_id: business._id, status: "completed" }).sort({ createdAt: -1 }).limit(10),
     BusinessTransaction.aggregate([
@@ -511,6 +523,19 @@ export async function getSummary(businessId, user) {
     ]),
     FinancialAccount.find({ owner_type: "Business", owner_id: business._id, status: "active" }),
   ]);
+  const trendRows = await BusinessTransaction.aggregate([
+    { $match: { business_id: business._id, status: "completed", createdAt: { $gte: trendStart } } },
+    { $group: { _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" }, direction: "$direction" }, total: { $sum: "$amount" } } },
+  ]);
+  const salesChart = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(Date.UTC(trendStart.getUTCFullYear(), trendStart.getUTCMonth() + index, 1));
+    const rows = trendRows.filter((row) => row._id.year === date.getUTCFullYear() && row._id.month === date.getUTCMonth() + 1);
+    return {
+      month: date.toLocaleDateString("en-KE", { month: "short" }),
+      sales: Number(rows.find((row) => row._id.direction === "cash_in")?.total || 0),
+      expenses: Number(rows.find((row) => row._id.direction === "cash_out")?.total || 0),
+    };
+  });
 
   const total = (direction) => String(totals.find((item) => item._id === direction)?.total || 0);
 
@@ -523,21 +548,29 @@ export async function getSummary(businessId, user) {
     const chama = await Chama.findById(profile.owner_id).select("name").lean();
     profile.chamaName = chama?.name || null;
   }
+  const canViewFinancials = business.access?.role === "owner" || business.access?.role === "manager" || business.access?.permissions?.some((permission) => ["reports.view", "*"].includes(permission));
+  const availableCash = accounts
+    .filter((account) => account.account_type === "asset")
+    .reduce((sum, account) => sum + Number(account.current_balance || 0), 0);
 
   return {
     profile,
     dashboard: {
-      cashIn: total("cash_in"),
-      cashOut: total("cash_out"),
-      netCash: String(Number(total("cash_in")) - Number(total("cash_out"))),
+      cashIn: canViewFinancials ? total("cash_in") : "0",
+      cashOut: canViewFinancials ? total("cash_out") : "0",
+      netCash: canViewFinancials ? String(Number(total("cash_in")) - Number(total("cash_out"))) : "0",
+      availableCash: canViewFinancials ? String(availableCash) : "0",
     },
-    accounts: accounts.map((acc) => ({
+    accounts: canViewFinancials ? accounts.filter((acc) => acc.account_type === "asset").map((acc) => ({
       name: acc.name,
       channel: acc.account_category,
       code: acc.account_code,
+      account_type: acc.account_type,
       balance: acc.current_balance ? acc.current_balance.toString() : "0",
-    })),
-    recentSales: transactions.filter((transaction) => transaction.type === "sale"),
+    })) : [],
+    recentSales: canViewFinancials ? transactions.filter((transaction) => transaction.type === "sale") : [],
+    recentTransactions: canViewFinancials ? transactions : [],
+    salesChart: canViewFinancials ? salesChart : [],
   };
 }
 
@@ -587,8 +620,57 @@ export async function updateSettings(businessId, user, data) {
   return business;
 }
 
-export async function listTransactions(businessId, user, type) {
+const STAFF_PERMISSION_OPTIONS = new Set(["sales.create", "sales.view", "expenses.create", "expenses.view", "inventory.view", "inventory.manage", "customers.manage", "reports.view", "*"]);
+
+export async function listBusinessStaff(businessId, user) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  if (business.access?.role !== "owner") throw accessError("Only the business owner can manage staff");
+  return BusinessStaff.find({ business_id: business._id, status: "active" }).populate("user_id", "name email phone").sort({ createdAt: -1 }).lean();
+}
+
+export async function appointBusinessStaff(businessId, user, data) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  if (business.access?.role !== "owner") throw accessError("Only the business owner can appoint staff");
+  const lookup = data.email ? { email: String(data.email).trim().toLowerCase() } : data.phone ? { phone: String(data.phone).trim() } : null;
+  if (!lookup) throw accessError("Enter the worker's registered email or phone number", 400);
+  const worker = await User.findOne(lookup).select("_id");
+  if (!worker) throw accessError("No account matches that email or phone. Ask the worker to register first.", 404);
+  if (sameId(worker._id, getUserId(user))) throw accessError("The owner already has full access", 400);
+  const role = ["manager", "cashier", "inventory", "accountant"].includes(data.role) ? data.role : "cashier";
+  const defaults = { manager: ["*"], cashier: ["sales.create", "inventory.view", "customers.manage"], inventory: ["inventory.view", "inventory.manage"], accountant: ["expenses.create", "expenses.view", "reports.view"] };
+  const permissions = Array.isArray(data.permissions) ? [...new Set(data.permissions.map(String))] : defaults[role];
+  if (permissions.some((permission) => !STAFF_PERMISSION_OPTIONS.has(permission))) throw accessError("One or more permissions are invalid", 400);
+  const record = await BusinessStaff.findOneAndUpdate(
+    { business_id: business._id, user_id: worker._id },
+    { $set: { role, permissions, status: "active", appointed_by: getUserId(user) } },
+    { upsert: true, new: true, runValidators: true }
+  ).populate("user_id", "name email phone");
+  return record;
+}
+
+export async function revokeBusinessStaff(businessId, staffId, user) {
+  const business = await getOwnedBusiness(businessId, user, { write: true });
+  if (business.access?.role !== "owner") throw accessError("Only the business owner can manage staff");
+  const staff = await BusinessStaff.findOneAndUpdate({ _id: staffId, business_id: business._id, status: "active" }, { $set: { status: "revoked" } }, { new: true });
+  if (!staff) throw accessError("Staff member not found", 404);
+  return { success: true };
+}
+
+export async function getBusinessActivity(businessId, user) {
   const business = await getOwnedBusiness(businessId, user);
+  if (business.access?.role !== "owner") throw accessError("Only the business owner can view the team activity report");
+  const [rows, actions] = await Promise.all([
+    BusinessTransaction.find({ business_id: business._id }).populate("created_by", "name email").sort({ createdAt: -1 }).limit(50).lean(),
+    BusinessActivity.find({ business_id: business._id }).populate("actor_id", "name email").sort({ createdAt: -1 }).limit(100).lean(),
+  ]);
+  return [
+    ...rows.map((row) => ({ id: `transaction-${row._id}`, action: `${row.type}.transaction`, description: row.description, amount: row.amount?.toString?.() || "0", status: row.status, payment_channel: row.payment_channel, worker: row.created_by, created_at: row.createdAt })),
+    ...actions.map((row) => ({ id: `activity-${row._id}`, action: row.action, description: row.detail, amount: "0", worker: row.actor_id, created_at: row.createdAt })),
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 100);
+}
+
+export async function listTransactions(businessId, user, type) {
+  const business = await getOwnedBusiness(businessId, user, { permission: type === "sale" ? "sales.view" : "expenses.view" });
   const query = { business_id: business._id, type };
   if (type === "sale") {
     query.status = "completed";
@@ -597,7 +679,7 @@ export async function listTransactions(businessId, user, type) {
 }
 
 export async function createTransaction(businessId, user, type, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: type === "sale" ? "sales.create" : "expenses.create" });
   assertAmount(data.amount);
   let rentalListingId = data.rentalListingId || data.rental_listing_id || null;
   if (rentalListingId) {
@@ -907,12 +989,12 @@ export async function forceCompleteTransaction(businessId, transactionId, user) 
  * ============================================================
  */
 export async function listCustomers(businessId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { permission: "customers.manage" });
   return BusinessCustomer.find({ business_id: business._id }).sort({ last_transaction_at: -1 });
 }
 
 export async function createCustomer(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "customers.manage" });
   if (!data.name?.trim()) {
     const error = new Error("Customer name is required");
     error.statusCode = 400;
@@ -933,12 +1015,12 @@ export async function createCustomer(businessId, user, data) {
  * ============================================================
  */
 export async function listSuppliers(businessId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { permission: "inventory.manage" });
   return BusinessSupplier.find({ business_id: business._id }).sort({ last_payout_at: -1 });
 }
 
 export async function createSupplier(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   if (!data.name?.trim()) {
     const error = new Error("Supplier name is required");
     error.statusCode = 400;
@@ -960,7 +1042,7 @@ export async function createSupplier(businessId, user, data) {
  * ============================================================
  */
 export async function getBusinessAccounts(businessId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { permission: "reports.view" });
   const ownerType = business.isGroup ? "ContributionGroup" : "Business";
   const accountsMap = await ensureBusinessAccounts(business._id, getUserId(user), ownerType);
   return Object.values(accountsMap);
@@ -981,7 +1063,7 @@ const DEFAULT_INVENTORY_SEED = [
 ];
 
 export async function listInventoryItems(businessId, user) {
-  const business = await getOwnedBusiness(businessId, user);
+  const business = await getOwnedBusiness(businessId, user, { permission: "inventory.view" });
   let items = await BusinessItem.find({ business_id: business._id, status: "active" }).sort({ createdAt: -1 });
 
   // Lazy-seed initial inventory items if empty (rentals don't use a product
@@ -998,7 +1080,7 @@ export async function listInventoryItems(businessId, user) {
 }
 
 export async function createInventoryItem(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   if (!data.name?.trim()) {
     const error = new Error("Item name is required");
     error.statusCode = 400;
@@ -1008,12 +1090,16 @@ export async function createInventoryItem(businessId, user, data) {
     business_id: business._id,
     name: data.name.trim(),
     sku: data.sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+    barcode: data.barcode || "",
     category: data.category || "General",
     description: data.description || "",
     price: Number(data.price || 0),
     online_price: data.online_price !== undefined && data.online_price !== null ? Number(data.online_price) : Number(data.price || 0),
     cost_price: Number(data.cost_price || 0),
     quantity: Number(data.quantity || 0),
+    reorder_level: Number(data.reorder_level ?? 5),
+    batch_number: data.batch_number || "",
+    expiry_date: data.expiry_date || null,
     track_stock: data.track_stock !== undefined ? Boolean(data.track_stock) : true,
     visible_online: data.visible_online !== undefined ? Boolean(data.visible_online) : true,
     icon: data.icon || "ðŸ“¦",
@@ -1036,7 +1122,7 @@ export async function createInventoryItem(businessId, user, data) {
 }
 
 export async function updateInventoryItem(businessId, itemId, user, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
   if (!item) {
     const error = new Error("Item not found");
@@ -1046,12 +1132,16 @@ export async function updateInventoryItem(businessId, itemId, user, data) {
 
   if (data.name !== undefined) item.name = data.name.trim();
   if (data.sku !== undefined) item.sku = data.sku;
+  if (data.barcode !== undefined) item.barcode = data.barcode;
   if (data.category !== undefined) item.category = data.category;
   if (data.description !== undefined) item.description = data.description;
   if (data.price !== undefined) item.price = Number(data.price);
   if (data.online_price !== undefined) item.online_price = data.online_price !== null ? Number(data.online_price) : null;
   if (data.cost_price !== undefined) item.cost_price = Number(data.cost_price);
   if (data.quantity !== undefined) item.quantity = Number(data.quantity);
+  if (data.reorder_level !== undefined) item.reorder_level = Number(data.reorder_level);
+  if (data.batch_number !== undefined) item.batch_number = data.batch_number;
+  if (data.expiry_date !== undefined) item.expiry_date = data.expiry_date || null;
   if (data.track_stock !== undefined) item.track_stock = Boolean(data.track_stock);
   if (data.visible_online !== undefined) item.visible_online = Boolean(data.visible_online);
   if (data.icon !== undefined) item.icon = data.icon;
@@ -1066,7 +1156,7 @@ export async function updateInventoryItem(businessId, itemId, user, data) {
 }
 
 export async function deleteInventoryItem(businessId, itemId, user) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   await archiveItemListings(business._id, itemId);
   await BusinessItem.deleteOne({ _id: itemId, business_id: business._id });
   return { success: true };
@@ -1074,7 +1164,7 @@ export async function deleteInventoryItem(businessId, itemId, user) {
 
 /** Publish one inventory item to the marketplace (creates or refreshes its listing). */
 export async function publishInventoryItemToMarketplace(businessId, itemId, user) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
   if (!item) {
     const error = new Error("Item not found");
@@ -1087,7 +1177,7 @@ export async function publishInventoryItemToMarketplace(businessId, itemId, user
 }
 
 export async function unpublishInventoryItemFromMarketplace(businessId, itemId, user) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
   if (!item) {
     const error = new Error("Item not found");
@@ -1101,7 +1191,7 @@ export async function unpublishInventoryItemFromMarketplace(businessId, itemId, 
 
 /** Publish several (or all active) inventory items at once. */
 export async function publishInventoryBulkToMarketplace(businessId, user, itemIds = []) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   const ids = Array.isArray(itemIds) ? itemIds.filter((id) => mongoose.isValidObjectId(id)) : [];
   const { published, skipped } = await publishItemsToMarketplace(business, ids);
   return { published, skipped };
@@ -1109,7 +1199,7 @@ export async function publishInventoryBulkToMarketplace(businessId, user, itemId
 
 /** Restock â€” add (or set) stock quantity without touching any other field */
 export async function restockInventoryItem(businessId, itemId, user, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "inventory.manage" });
   const item = await BusinessItem.findOne({ _id: itemId, business_id: business._id });
   if (!item) {
     const error = new Error("Item not found");
@@ -1145,7 +1235,7 @@ export async function restockInventoryItem(businessId, itemId, user, data) {
  * ============================================================
  */
 export async function createPosSale(businessId, user, data) {
-  const business = await getOwnedBusiness(businessId, user, { write: true });
+  const business = await getOwnedBusiness(businessId, user, { write: true, permission: "sales.create" });
 
   if (!Array.isArray(data.items) || data.items.length === 0) {
     const error = new Error("Sale must contain at least one item");
@@ -1168,6 +1258,12 @@ export async function createPosSale(businessId, user, data) {
 
     if (!item) {
       const error = new Error("One or more items were not found in inventory");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (item.expiry_date && new Date(item.expiry_date) < new Date(new Date().toDateString())) {
+      const error = new Error(`"${item.name}" has expired and cannot be sold`);
       error.statusCode = 400;
       throw error;
     }

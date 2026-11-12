@@ -7,14 +7,13 @@ import ContributionObligation from '../../models/ContributionObligation.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
 import ChamaMembership from '../../models/ChamaMembership.js';
 import Payout from '../../models/Payout.js';
-import approvalService from '../approval/approval.service.js';
+import approvalService from '../approval/index.js';
 import mgrEligibilityService from './mgrEligibility.service.js';
 import mgrReconciliationService from './mgrReconciliation.service.js';
 import paymentService from '../../payment/payment.service.js';
 import { PAYMENT_PROVIDER } from '../../payment/payment.constants.js';
-import accountingService from '../finance/accounting/accounting.service.js';
+import { accountingService, creditMemberWallet } from '../finance/index.js';
 import { toDecimal } from '../../shared/decimal.js';
-import { creditMemberWallet } from '../finance/memberWallet.service.js';
 import mongoose from 'mongoose';
 
 const OWNER_TYPE = 'Chama';

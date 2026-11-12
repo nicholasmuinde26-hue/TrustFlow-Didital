@@ -8,15 +8,16 @@ import PlatformAdmin from '../../models/PlatformAdmin.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
 import ChamaLoan from '../../models/ChamaLoan.js';
 import MemberExitRequest from '../../models/MemberExitRequest.js';
-import approvalService from '../approval/approval.service.js';
-import accountingService from '../finance/accounting/accounting.service.js';
-import { OPEN_LOAN_STATUSES } from '../loans/Loan.constants.js';
-import { getMemberSavingsBalance } from '../savingsShareout/savingsShareout.service.js';
+import approvalService from '../approval/index.js';
+import { notifyWorkspace } from '../../services/workspaceNotify.js';
+import { accountingService, creditMemberWallet } from '../finance/index.js';
+import { OPEN_LOAN_STATUSES } from '../loans/index.js';
+import { getMemberSavingsBalance } from '../savingsShareout/index.js';
 import ContributionPlan from '../../models/ContributionPlan.js';
-import { creditMemberWallet } from '../finance/memberWallet.service.js';
+import BurialChamaProfile from '../../models/BurialChamaProfile.js';
 
 import AppError from '../../utils/AppError.js';
-import { assertMemberCapacity } from '../billing/billingEntitlement.service.js';
+import { assertMemberCapacity } from '../billing/index.js';
 import { formatPhone, isValidKenyanPhone } from '../../utils/phone.js';
 
 import {
@@ -336,6 +337,21 @@ const requireChamaRole = async ({
 // ========================================
 // ADD MEMBER TO CHAMA
 // ========================================
+
+// Fire-and-forget notification about a change to one member's membership. The
+// member is the "subject": personal events reach only them, plus the officials
+// who need to know (see PERSONAL_EVENTS in notification.service.js).
+const notifyMemberChange = (event, chamaId, membership, extra = {}) => {
+  const userRef = membership.user_id;
+  notifyWorkspace('Chama', chamaId, event, {
+    membershipId: membership._id,
+    userId: userRef?._id || userRef,
+    memberName: userRef?.name || 'A member',
+    entityType: 'ChamaMembership',
+    entityId: membership._id,
+    ...extra
+  });
+};
 
 export const addMemberToChama = async ({
   chamaId,
@@ -899,6 +915,10 @@ export const updateMemberRole = async ({
 
   });
 
+  notifyMemberChange('ROLE_CHANGED', chamaId, membership, {
+    newRole: String(membership.role || '').replace(/_/g, ' '),
+    previousRole: before?.role
+  });
 
   return membership;
 
@@ -1218,6 +1238,16 @@ export const updateMemberStatus = async ({
 
   });
 
+  // Tell the member (and leadership) what just happened to their membership.
+  if (wasPendingJoinRequest && status === 'active') {
+    notifyMemberChange('MEMBER_JOINED', chamaId, membership);
+  } else if (status === 'suspended') {
+    notifyMemberChange('MEMBER_SUSPENDED', chamaId, membership);
+  } else if (status === 'active' && before.status === 'suspended') {
+    notifyMemberChange('MEMBER_REINSTATED', chamaId, membership);
+  } else if (status === 'removed' && !wasPendingJoinRequest) {
+    notifyMemberChange('MEMBER_REMOVED', chamaId, membership);
+  }
 
   return membership;
 
@@ -1290,7 +1320,7 @@ export const assessMemberExit = async ({ chamaId, memberId }) => {
   const membership = await ChamaMembership.findOne({ _id: memberId, chama_id: chamaId });
   if (!membership) throw new AppError('Member not found in this Chama', 404);
 
-  const [obligations, loans, plans] = await Promise.all([
+  const [obligations, loans, plans, burialProfile] = await Promise.all([
     ContributionObligation.find({
       owner_type: 'Chama', owner_id: chamaId,
       participant_type: 'ChamaMembership', participant_id: memberId,
@@ -1298,14 +1328,15 @@ export const assessMemberExit = async ({ chamaId, memberId }) => {
     }).select('expected_amount paid_amount due_date status'),
     ChamaLoan.find({ chama_id: chamaId, membership_id: memberId, status: { $in: OPEN_LOAN_STATUSES } }).select('balances status'),
     ContributionPlan.find({ owner_type: 'Chama', owner_id: chamaId, participant_type: 'ChamaMembership', contribution_type: 'free_will' }).select('_id currency'),
+    BurialChamaProfile.findOne({ chama_id: chamaId }).select('exit_policy').lean(),
   ]);
 
   const arrears = obligations.reduce((sum, o) => sum + Math.max(0, moneyNumber(o.expected_amount) - moneyNumber(o.paid_amount)), 0);
   const loanOutstanding = loans.reduce((sum, l) => sum + moneyNumber(l.balances?.principal_outstanding) + moneyNumber(l.balances?.interest_outstanding) + moneyNumber(l.balances?.penalty_outstanding), 0);
 
   let savings = 0;
-  for (const plan of plans) {
-    savings += moneyNumber(await getMemberSavingsBalance(chamaId, plan._id, memberId));
+  if (!burialProfile || burialProfile.exit_policy?.refund_welfare_contributions === true) {
+    for (const plan of plans) savings += moneyNumber(await getMemberSavingsBalance(chamaId, plan._id, memberId));
   }
 
   return {

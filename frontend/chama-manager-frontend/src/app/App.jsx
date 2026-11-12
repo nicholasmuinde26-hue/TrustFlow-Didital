@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import router from "./router/router";
-import { MarketplaceCartProvider } from "@/modules/marketplace/context/MarketplaceCartContext";
 import RealtimeNotificationHost from "@/modules/notifications/components/RealtimeNotificationHost";
 
 // Follows the app's light/dark switch (ThemeProvider toggles the "dark"
@@ -43,7 +42,7 @@ export default function App() {
   const isDark = useIsDark();
 
   return (
-    <MarketplaceCartProvider>
+    <>
       <Toaster
         position="top-right"
         gutter={12}
@@ -78,6 +77,6 @@ export default function App() {
           v7_startTransition: true,
         }}
       />
-    </MarketplaceCartProvider>
+    </>
   );
 }

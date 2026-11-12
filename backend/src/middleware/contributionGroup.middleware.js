@@ -119,6 +119,13 @@ async (
 
     );
 
+    const groupRecord = await ContributionGroup.findById(groupId).select('status').lean();
+    if (groupRecord?.status === 'suspended') {
+      const error = new Error('This contribution group is suspended while it is reviewed.');
+      error.statusCode = 423;
+      throw error;
+    }
+
 
     // ======================================
     // 4. VALIDATE USER ID

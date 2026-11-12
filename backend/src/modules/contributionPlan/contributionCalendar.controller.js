@@ -1,6 +1,6 @@
 import AppError from '../../utils/AppError.js';
 import { pausePlan, resumePlan, archivePlan, restorePlan } from './planLifecycle.service.js';
-import mgrService from '../mgr/mgr.service.js';
+import { mgrService } from '../mgr/index.js';
 import { CHAMA_TEMPLATES } from '../../constants/chamaTemplates.constants.js';
 import {
   getLeadershipOverview,

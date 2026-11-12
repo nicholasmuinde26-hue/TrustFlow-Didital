@@ -20,7 +20,7 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { hasModule } from "@/modules/workspaces/config/workspaceModules";
+import { hasModule } from '@/modules/workspaces/index.js';
 
 import { Button, CopyButton, DeskPanel, MetricCard, money } from "../components/DeskUI";
 

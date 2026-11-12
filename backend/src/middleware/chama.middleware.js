@@ -5,6 +5,7 @@ import ChamaMembership from '../models/ChamaMembership.js';
 import ContributionGroup from '../models/ContributionGroup.js';
 import ContributionGroupMember from '../models/ContributionGroupMember.js';
 import Business from '../models/Business.js';
+import BusinessStaff from '../models/BusinessStaff.js';
 
 
 import AppError from '../utils/AppError.js';
@@ -23,8 +24,20 @@ const getChamaId = async (req) => {
   // requireChamaMember() throws "Invalid Chama ID", and req.membership
   // never gets attached, so requirePermission() 401s on every request.
   if (req.params.workspaceId) return req.params.workspaceId;
-  if (req.body?.chamaId) return req.body.chamaId;
-  if (req.query?.chamaId) return req.query.chamaId;
+  // Burial pages can be mounted with either a chama id or a profile id.
+  // Resolve the profile first so a profile identifier is never mistaken for
+  // the chama identifier by the generic membership middleware.
+  const burialChamaProfileId =
+    req.body?.burial_chama_profile_id || req.query?.burial_chama_profile_id;
+
+  if (burialChamaProfileId && mongoose.Types.ObjectId.isValid(burialChamaProfileId)) {
+    const BurialChamaProfile = (await import('../models/BurialChamaProfile.js')).default;
+    const profile = await BurialChamaProfile.findById(burialChamaProfileId).lean();
+    if (profile?.chama_id) return String(profile.chama_id);
+  }
+
+  if (req.body?.chamaId && mongoose.Types.ObjectId.isValid(req.body.chamaId)) return req.body.chamaId;
+  if (req.query?.chamaId && mongoose.Types.ObjectId.isValid(req.query.chamaId)) return req.query.chamaId;
   // Generic cross-owner routes (e.g. contribution-plans, which serve
   // Chama, ContributionGroup and Business owners alike) identify the
   // owner as { owner_type, owner_id } rather than chamaId. Without this,
@@ -81,6 +94,22 @@ const getChamaId = async (req) => {
     if (burialCase) return String(burialCase.chama_id);
   }
 
+  // Burial fundraising and equipment operations use resource IDs on their
+  // write routes. Resolve the owning chama before applying member/role guards.
+  const burialResourceParams = [
+    ['campaignId', '../models/BurialFundraisingCampaign.js', 'default'],
+    ['equipmentId', '../models/BurialEquipmentHire.js', 'BurialEquipment'],
+    ['bookingId', '../models/BurialEquipmentHire.js', 'BurialEquipmentBooking'],
+  ];
+  for (const [param, path, exportName] of burialResourceParams) {
+    const resourceId = req.params[param];
+    if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) continue;
+    const module = await import(path);
+    const Model = exportName === 'default' ? module.default : module[exportName];
+    const resource = await Model.findById(resourceId).select('chama_id').lean();
+    if (resource?.chama_id) return String(resource.chama_id);
+  }
+
   if (req.params.waiverId && mongoose.Types.ObjectId.isValid(req.params.waiverId)) {
     const PenaltyWaiver = (await import('../models/PenaltyWaiver.js')).default;
     const waiver = await PenaltyWaiver.findById(req.params.waiverId).lean();
@@ -110,15 +139,6 @@ const getChamaId = async (req) => {
     const ContributionPlan = (await import('../models/ContributionPlan.js')).default;
     const plan = await ContributionPlan.findById(bodyPlanId).select('owner_type owner_id').lean();
     if (plan && String(plan.owner_type) === 'Chama') return String(plan.owner_id);
-  }
-
-  const burialChamaProfileId =
-    req.body?.burial_chama_profile_id || req.query?.burial_chama_profile_id;
-
-  if (burialChamaProfileId && mongoose.Types.ObjectId.isValid(burialChamaProfileId)) {
-    const BurialChamaProfile = (await import('../models/BurialChamaProfile.js')).default;
-    const profile = await BurialChamaProfile.findById(burialChamaProfileId).lean();
-    if (profile) return String(profile.chama_id);
   }
 
   return null;
@@ -349,7 +369,18 @@ export const requireChamaMember = async (
       // --------------------------------------
       const business = await Business.findById(chamaId);
       if (business) {
-        const isOwner = String(business.created_by) === String(req.user._id);
+        const chamaMembership = business.owner_type === 'chama'
+          ? await ChamaMembership.findOne({ chama_id: business.owner_id, user_id: req.user._id, status: 'active' }).select('role')
+          : null;
+        const isOwner = String(business.owner_id || business.created_by) === String(req.user._id);
+        const staff = isOwner || business.owner_type === 'chama' ? null : await BusinessStaff.findOne({ business_id: business._id, user_id: req.user._id, status: 'active' }).lean();
+        if ((business.owner_type === 'chama' && !chamaMembership) || (business.owner_type !== 'chama' && !isOwner && !staff)) {
+          throw new AppError('You are not assigned to this business workspace', 403);
+        }
+        const chamaCanViewFinance = ['chairperson', 'treasurer', 'auditor'].includes(chamaMembership?.role);
+        const role = isOwner ? 'owner' : staff?.role || (chamaCanViewFinance ? 'manager' : chamaMembership?.role || 'member');
+        const permissions = staff?.permissions || (chamaCanViewFinance ? ['reports.view'] : []);
+        req.businessAccess = { role, permissions };
         req.chama = {
           _id: business._id,
           name: business.name,
@@ -362,46 +393,15 @@ export const requireChamaMember = async (
           _id: business._id,
           user_id: req.user._id,
           chama_id: business._id,
-          role: isOwner ? "treasurer" : "member",
+          role: business.owner_type === 'chama' ? (chamaCanViewFinance ? 'treasurer' : 'member') : isOwner || staff?.role === 'manager' ? 'treasurer' : 'member',
           status: "active",
         };
 
-        return next();
-      }
-
-      // --------------------------------------
-      // Fallback C: Auto-create Chama for valid ObjectId
-      // --------------------------------------
-      const createdChama = await Chama.create({
-        _id: chamaId,
-        name: "Chama Workspace",
-        monthly_savings: 1000,
-        created_by: req.user._id,
-        status: "active",
-      }).catch(() => null);
-
-      if (createdChama) {
-        const createdMembership = await ChamaMembership.create({
-          user_id: req.user._id,
-          chama_id: createdChama._id,
-          role: "treasurer",
-          status: "active",
-          payout_position: 1,
-        }).catch(() => null);
-
-        req.chama = createdChama;
-        req.membership = createdMembership || {
-          _id: createdChama._id,
-          user_id: req.user._id,
-          chama_id: createdChama._id,
-          role: "treasurer",
-          status: "active",
-        };
         return next();
       }
 
       throw new AppError(
-        'Chama not found',
+        'Workspace not found',
         404
       );
 

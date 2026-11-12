@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useCallback, useEffect, useState } from "react";
 import {
   Archive,
@@ -60,7 +61,8 @@ const STATE_TONE = {
 };
 
 const emptyNewYear = { label: "", start_date: "", end_date: "" };
-export default function ContributionsOversightTab({ chamaId }) {
+export default function ContributionsOversightTab({ chamaId, type }) {
+  const isBurialChama = type?.toLowerCase().replace(/[-_]/g, "") === "burialchama";
   const [overview, setOverview] = useState(null);
   const [viewYearId, setViewYearId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -127,17 +129,35 @@ export default function ContributionsOversightTab({ chamaId }) {
     });
   };
 
-  const handleActivateYear = (yearId) =>
-    runAction(
+  const handleActivateYear = async (yearId) => {
+    const ok = await confirmAction({
+      title: "Activate this financial year?",
+      message: "New contributions and obligations will be recorded against it from now on.",
+      variant: "warning",
+      confirmText: "Activate year",
+    });
+    if (!ok) return;
+    return runAction(
       () => contributionPlanApi.activateFinancialYear(chamaId, yearId),
       "Financial year activated."
     );
+  };
 
-  const handleCloseYear = (yearId) =>
-    runAction(
+  const handleCloseYear = async (yearId) => {
+    const ok = await confirmAction({
+      title: "Close this financial year?",
+      message:
+        "Closing locks the year's records and starts year-end processing. It cannot be reopened from here. Make sure every payment has been recorded first.",
+      variant: "danger",
+      requireText: "CLOSE",
+      confirmText: "Close financial year",
+    });
+    if (!ok) return;
+    return runAction(
       () => contributionPlanApi.closeFinancialYear(chamaId, yearId),
       "Financial year closed."
     );
+  };
 
   const handleRefreshNow = () =>
     runAction(async () => {
@@ -169,7 +189,7 @@ export default function ContributionsOversightTab({ chamaId }) {
   const updateDraft = (planId, patch) =>
     setScheduleDrafts((prev) => ({
       ...prev,
-      [planId]: { ...draftFor(overview.plans.find((p) => p.id === planId)), ...prev[planId], ...patch },
+      [planId]: { ...draftFor(visiblePlans.find((p) => p.id === planId)), ...prev[planId], ...patch },
     }));
 
   const handleSaveSchedule = (plan) =>
@@ -249,10 +269,25 @@ export default function ContributionsOversightTab({ chamaId }) {
     await load();
   };
 
-  const categories = overview?.categories || [];
+  const categories = (overview?.categories || []).filter((category) => !isBurialChama || ["welfare", "fine", "other", "registration", "annual_fee"].includes(category.value));
   const years = overview?.years || [];
   const fy = overview?.financial_year;
-  const summary = overview?.summary;
+  const visiblePlans = (overview?.plans || []).filter((plan) => !isBurialChama || !["savings", "shares", "rotation"].includes(plan.behavior));
+  const behaviors = (overview?.behaviors || []).filter((behavior) => !isBurialChama || ["dues", "welfare", "target", "fee", "fine", "other"].includes(behavior.value));
+  const templates = (overview?.templates || []).filter((template) => !isBurialChama || ["welfare", "registration_fee", "annual_subscription", "harambee"].includes(template.key));
+  const summary = isBurialChama ? visiblePlans.reduce((totals, plan) => {
+    totals.aligned_plans += plan.aligned ? 1 : 0;
+    totals.rolling_plans += plan.aligned ? 0 : 1;
+    totals.outstanding_now += Number(plan.legacy?.outstanding || 0);
+    totals.overdue_members += Number(plan.legacy?.overdue_count || 0);
+    const periods = plan.periods || [];
+    for (const period of periods) {
+      if (period.state !== "upcoming") totals.outstanding_now += Math.max(0, Number(period.expected || 0) - Number(period.paid || 0));
+      totals.overdue_members += Number(period.overdue_count || 0);
+      if (period.key === plan.current_period_key) totals.collected_this_period += Number(period.paid || 0);
+    }
+    return totals;
+  }, { outstanding_now: 0, overdue_members: 0, collected_this_period: 0, aligned_plans: 0, rolling_plans: 0 }) : overview?.summary;
   const presets = overview?.presets || [];
 
   if (loading && !overview) {
@@ -271,7 +306,7 @@ export default function ContributionsOversightTab({ chamaId }) {
       <SectionCard
         icon={CalendarRange}
         title="Financial year"
-        description="Every contribution's calendar - MGR, welfare, shares, whatever this chama runs - is drawn inside this year. Kenyan chamas don't all run January-December, so set whatever range fits yours."
+        description={isBurialChama ? "Set the contribution year for welfare collections, burial support dues and case levies. Each plan keeps its own due date and grace period." : "Every contribution's calendar - MGR, welfare, shares, whatever this chama runs - is drawn inside this year. Kenyan chamas don't all run January-December, so set whatever range fits yours."}
         action={
           fy ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -362,7 +397,7 @@ export default function ContributionsOversightTab({ chamaId }) {
               label="Label"
               value={newYear.label}
               onChange={(v) => setNewYear((n) => ({ ...n, label: v }))}
-              placeholder="FY 2026/2027"
+              placeholder={isBurialChama ? "Burial welfare year 2026/2027" : "FY 2026/2027"}
             />
             <InputField
               label="Start date"
@@ -393,18 +428,18 @@ export default function ContributionsOversightTab({ chamaId }) {
         <EmptyState
           icon={CalendarClock}
           title="Set the financial year to continue"
-          detail="Contributions are scheduled inside a financial year, so nothing else on this tab is available until one is active."
+          detail={isBurialChama ? "Create the burial chama's financial year to schedule member welfare contributions and case levies." : "Contributions are scheduled inside a financial year, so nothing else on this tab is available until one is active."}
         />
       ) : (
         <>
           {/* ---------------- Summary ---------------- */}
           {summary && (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard title="Outstanding now" value={money(summary.outstanding_now)} icon={AlertTriangle} />
-              <MetricCard title="Overdue members" value={summary.overdue_members} icon={Users} />
-              <MetricCard title="Collected this period" value={money(summary.collected_this_period)} icon={CheckCircle2} />
+              <MetricCard title={isBurialChama ? "Outstanding welfare dues" : "Outstanding now"} value={money(summary.outstanding_now)} icon={AlertTriangle} />
+              <MetricCard title={isBurialChama ? "Overdue obligations" : "Overdue members"} value={summary.overdue_members} icon={Users} />
+              <MetricCard title={isBurialChama ? "Welfare collected this period" : "Collected this period"} value={money(summary.collected_this_period)} icon={CheckCircle2} />
               <MetricCard
-                title="On the calendar"
+                title={isBurialChama ? "Burial plans on calendar" : "On the calendar"}
                 value={summary.aligned_plans}
                 subtitle={`${summary.rolling_plans} rolling (not calendar-aligned)`}
                 icon={CalendarClock}
@@ -415,8 +450,8 @@ export default function ContributionsOversightTab({ chamaId }) {
           {/* ---------------- Contribution plans ---------------- */}
           <SectionCard
             icon={Settings2}
-            title="Contribution obligations"
-            description="Each contribution keeps its own start/end month, due day, grace period and reminder lead time - configure MGR to start in a different month than Welfare, for example. Merry-Go-Round rotations are still set up from the MGR page; align them to the calendar here once created."
+            title={isBurialChama ? "Welfare and burial contribution plans" : "Contribution obligations"}
+            description={isBurialChama ? "Schedule recurring welfare contributions, burial case levies and approved support collections. Savings, shares and member payout rotations are not part of this burial chama calendar." : "Each contribution keeps its own start/end month, due day, grace period and reminder lead time - configure MGR to start in a different month than Welfare, for example. Merry-Go-Round rotations are still set up from the MGR page; align them to the calendar here once created."}
             action={
               <div className="flex gap-2">
                 <button
@@ -442,8 +477,8 @@ export default function ContributionsOversightTab({ chamaId }) {
             {(showWizard || editingPlan) && (
               <ContributionWizard
                 chamaId={chamaId}
-                behaviors={overview?.behaviors || []}
-                templates={overview?.templates || []}
+                behaviors={behaviors}
+                templates={templates}
                 plan={editingPlan}
                 onClose={() => {
                   setShowWizard(false);
@@ -453,11 +488,11 @@ export default function ContributionsOversightTab({ chamaId }) {
               />
             )}
 
-            {(overview?.plans || []).length === 0 ? (
-              <EmptyState icon={CalendarClock} title="No contributions yet" detail="Create the first one above." />
+            {visiblePlans.length === 0 ? (
+              <EmptyState icon={CalendarClock} title={isBurialChama ? "No burial contributions yet" : "No contributions yet"} detail={isBurialChama ? "Start a welfare contribution or configure a case levy to collect member support." : "Create the first one above."} />
             ) : (
               <div className="space-y-3">
-                {overview.plans.map((plan) => {
+                {visiblePlans.map((plan) => {
                   const expanded = expandedPlanId === plan.id;
                   const draft = draftFor(plan);
                   const currentPeriod = plan.periods?.find((p) => p.key === plan.current_period_key);

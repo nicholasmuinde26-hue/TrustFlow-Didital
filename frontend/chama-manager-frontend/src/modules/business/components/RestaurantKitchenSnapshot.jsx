@@ -24,9 +24,7 @@ export function RestaurantKitchenSnapshot({ workspaceId }) {
   const queuedCount = Array.isArray(tickets) ? tickets.length : 0;
   const readyCount = Array.isArray(readySales) ? readySales.length : 0;
 
-  if ((loadingOrders && loadingMenu) || (queuedCount === 0 && readyCount === 0 && menuItems.length === 0)) {
-    return null;
-  }
+  if (loadingOrders && loadingMenu) return <div className="h-36 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Loading kitchen snapshot" />;
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -45,6 +43,7 @@ export function RestaurantKitchenSnapshot({ workspaceId }) {
           tone="cyan"
         />
       </div>
+      {queuedCount === 0 && readyCount === 0 && menuItems.length === 0 && <p className="mt-4 text-xs text-slate-500">Add menu items or record an order to start tracking kitchen activity.</p>}
     </div>
   );
 }

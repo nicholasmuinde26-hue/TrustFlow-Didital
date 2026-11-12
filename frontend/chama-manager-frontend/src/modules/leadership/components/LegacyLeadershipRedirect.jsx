@@ -2,7 +2,7 @@ import { Navigate, useParams } from "react-router-dom";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 import Spinner from "@/shared/components/ui/Spinner";
-import { canViewLeadershipDesk } from "@/modules/workspaces/permissions/Permissions";
+import { canViewLeadershipDesk } from '@/modules/workspaces/index.js';
 
 // ========================================
 // LEGACY LEADERSHIP ROUTE REDIRECT

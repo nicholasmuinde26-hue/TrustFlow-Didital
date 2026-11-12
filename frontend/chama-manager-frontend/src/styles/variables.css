@@ -25,7 +25,7 @@
     --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 24px rgb(15 23 42 / 0.06);
 
     /*
-      VeriCircle dark theme — sampled from the Doc1 mockup screens.
+      ChamaManager dark theme — sampled from the Doc1 mockup screens.
       Named independently of the light palette (not just "dark:slate")
       so components can reach for the exact mockup colors on purpose,
       e.g. dark:bg-obsidian, dark:bg-obsidian-card, dark:text-mint.

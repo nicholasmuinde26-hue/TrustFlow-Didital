@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import { useState } from "react";
 import { Scale, Plus, Check, X as XIcon, Ban, Loader2 } from "lucide-react";
 import useWorkspace from "../../../app/hooks/useWorkspace";
@@ -37,6 +38,14 @@ export default function AdjustmentsPage() {
   };
 
   const cancel = async (adjustment) => {
+    const ok = await confirmAction({
+      title: "Cancel this adjustment?",
+      message: "It will no longer be applied to the books.",
+      variant: "warning",
+      confirmText: "Cancel adjustment",
+      cancelText: "Keep it",
+    });
+    if (!ok) return;
     setBusyId(adjustment._id);
     setError(null);
     try {

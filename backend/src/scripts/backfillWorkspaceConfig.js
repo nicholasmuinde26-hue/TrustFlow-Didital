@@ -3,19 +3,33 @@ import Chama from '../models/Chama.js';
 import {
   WORKSPACE_PRESETS,
   LEGACY_PRESET_BY_CHAMA_TYPE,
+  LEGACY_MODULES_BY_PRESET,
   buildWorkspaceConfig,
 } from '../constants/workspaceModules.constants.js';
+import { ORGANIZATION_TYPES, ORGANIZATION_FAMILIES, getDefaultTerminology } from '../constants/organizationTypes.constants.js';
+
+const FAMILY_BY_LEGACY_TYPE = Object.freeze({
+  ...Object.fromEntries(ORGANIZATION_TYPES.sacco.map(({ key }) => [key, 'sacco'])),
+  ...Object.fromEntries(ORGANIZATION_TYPES.cooperative.map(({ key }) => [key, 'cooperative'])),
+  property_sacco: 'chama', // historical chama subtype, not a regulated SACCO classification
+  investment: 'chama',
+});
+
+export function inferOrganizationType(chama) {
+  const raw = String(chama.chama_type || '').toLowerCase();
+  const family = FAMILY_BY_LEGACY_TYPE[raw] || 'chama';
+  const normalized = raw === 'investment' ? 'investment_group' : raw === 'burial' ? 'welfare' : raw === 'property_sacco' ? 'housing' : raw;
+  const match = ORGANIZATION_TYPES[family].find(({ key }) => key === normalized);
+  return { family, type: match?.key || 'custom' };
+}
 
 /**
- * Backfill: Workspace config (feature modules) for existing chamas
+ * Backfill: Workspace config and organization classification for existing chamas
  * ================================================================
  *
- * Chamas created before configurable workspaces have no `workspace_config`.
- * The app already treats such a chama as "its legacy set" (see
- * getEnabledModules), so running this is OPTIONAL and changes nothing anyone
- * sees: it writes the exact legacy module set (`standard` or `burial`,
- * chosen from chama_type) onto each chama, so that from now on every chama has
- * an explicit, editable config.
+ * Classifies legacy records from their existing chama_type and stores the
+ * frozen legacy module list where no explicit selection exists. It never
+ * overwrites organization fields or module selections already stored.
  *
  * Idempotent: chamas that already have modules stored are skipped.
  *
@@ -28,31 +42,49 @@ export async function runBackfillWorkspaceConfig(options = {}) {
   const { chamaId = null, dryRun = false, silent = false } = options;
   const log = (...args) => { if (!silent) console.log(...args); };
 
-  const query = {
-    $or: [
-      { 'workspace_config.modules': { $exists: false } },
-      { 'workspace_config.modules': null },
-    ],
-  };
+  const query = { $or: [
+    { 'workspace_config.modules': { $exists: false } },
+    { 'workspace_config.modules': null },
+    { organization_family: { $exists: false } },
+    { organization_family: null },
+    { organization_family: { $nin: ORGANIZATION_FAMILIES.map(({ key }) => key) } },
+    { organization_type: { $exists: false } },
+    { organization_type: null },
+    { organization_type: { $nin: Object.values(ORGANIZATION_TYPES).flat().map(({ key }) => key) } },
+  ] };
   if (chamaId) query._id = chamaId;
 
-  const chamas = await Chama.find(query).select('name chama_type workspace_config');
-  log(`Found ${chamas.length} chama(s) without a workspace config${dryRun ? ' (dry run)' : ''}`);
+  const chamas = await Chama.find(query).select('name chama_type organization_family organization_type workspace_config').lean();
+  log(`Found ${chamas.length} organization record(s) needing backfill${dryRun ? ' (dry run)' : ''}`);
 
-  const summary = { total: chamas.length, updated: 0, failed: 0 };
+  const summary = { total: chamas.length, updated: 0, failed: 0, modulesBackfilled: 0, organizationsClassified: 0 };
 
   for (const chama of chamas) {
     try {
-      const presetKey = LEGACY_PRESET_BY_CHAMA_TYPE[chama.chama_type] || 'standard';
+      const needsClassification = !chama.organization_family || !chama.organization_type;
+      const inferred = inferOrganizationType(chama);
+      const family = ORGANIZATION_FAMILIES.some((item) => item.key === chama.organization_family)
+        ? chama.organization_family : inferred.family;
+      const type = ORGANIZATION_TYPES[family].some((item) => item.key === chama.organization_type)
+        ? chama.organization_type : (family === inferred.family ? inferred.type : 'custom');
+      const needsModules = !chama.workspace_config?.modules || Object.keys(chama.workspace_config.modules.toObject?.() || chama.workspace_config.modules || {}).length === 0;
+      const presetKey = needsModules
+        ? (LEGACY_PRESET_BY_CHAMA_TYPE[chama.chama_type] || 'standard')
+        : null;
       if (!dryRun) {
-        chama.workspace_config = buildWorkspaceConfig({
+        const updates = { organization_family: family, organization_type: type };
+        if (needsModules) updates.workspace_config = buildWorkspaceConfig({
           preset: presetKey,
-          enabled: WORKSPACE_PRESETS[presetKey].modules,
+          enabled: LEGACY_MODULES_BY_PRESET[presetKey] || WORKSPACE_PRESETS[presetKey].modules,
+          terminology: chama.workspace_config?.terminology || getDefaultTerminology(family),
+          assetTypes: chama.workspace_config?.asset_types || null,
         });
-        await chama.save();
+        await Chama.updateOne({ _id: chama._id }, { $set: updates });
       }
       summary.updated += 1;
-      log(`  ${dryRun ? 'would set' : 'set'} ${chama.name} -> ${presetKey}`);
+      if (needsModules) summary.modulesBackfilled += 1;
+      if (needsClassification) summary.organizationsClassified += 1;
+      log(`  ${dryRun ? 'would classify' : 'classified'} ${chama.name} -> ${family} / ${type}${presetKey ? `; modules ${presetKey}` : ''}`);
     } catch (error) {
       summary.failed += 1;
       console.error(`  failed ${chama._id} (${chama.name}): ${error.message}`);

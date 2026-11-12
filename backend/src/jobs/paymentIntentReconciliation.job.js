@@ -7,6 +7,10 @@
  */
 
 import PaymentIntent from "../models/PaymentIntent.js";
+import ContributionObligation from "../models/ContributionObligation.js";
+import ContributionPledge from "../models/ContributionPledge.js";
+import { sendPublicGivingReceipt } from '../services/publicGivingReceipt.service.js';
+import { isPublicGivingIntent } from '../modules/publicGiving/publicGiving.logic.js';
 import MpesaAttempt from "../models/MpesaAttempt.js";
 import mpesaService from "../payment/providers/mpesa/mpesa.service.js";
 import paymentService from "../payment/payment.service.js";
@@ -60,7 +64,7 @@ const reconcileOne = async (intent) => {
       : PAYMENT_STATUS.FAILED;
 
     // Use processCallback with standard lowercase PAYMENT_STATUS enum values
-    await paymentService.processCallback({
+    const settlement = await paymentService.processCallback({
       provider: 'mpesa',
       paymentId: intent._id,
       success: successful,
@@ -74,6 +78,11 @@ const reconcileOne = async (intent) => {
         chamaId: intent.owner_id
       }
     });
+    if (isPublicGivingIntent(intent) && successful) {
+      await restoreSettledPublicDonation(intent.obligation_id);
+      await sendPublicGivingReceipt(intent._id);
+    }
+    if (isPublicGivingIntent(intent) && !successful && !settlement?.amountMismatch) await rollbackUnsettledPublicDonation(intent.obligation_id);
 
   } catch (error) {
     if (error.statusCode === 429 || error.statusCode === 500) {
@@ -84,7 +93,36 @@ const reconcileOne = async (intent) => {
   }
 };
 
-export const sweepStalePaymentIntents = async () => {
+async function rollbackUnsettledPublicDonation(obligationId) {
+  if (!obligationId) return;
+  const obligation = await ContributionObligation.findById(obligationId);
+  if (!obligation) return;
+  const paid = Number(obligation.paid_amount?.toString?.() ?? obligation.paid_amount ?? 0);
+  obligation.expected_amount = paid;
+  obligation.status = paid > 0 ? 'paid' : 'pending';
+  await obligation.save();
+  await ContributionPledge.updateOne({ obligation_id: obligation._id }, { $set: { pledged_amount: paid, status: paid > 0 ? 'paid' : 'pledged' } });
+}
+
+async function restoreSettledPublicDonation(obligationId) {
+  if (!obligationId) return;
+  const obligation = await ContributionObligation.findById(obligationId);
+  if (!obligation) return;
+  const paid = Number(obligation.paid_amount?.toString?.() ?? obligation.paid_amount ?? 0);
+  const expected = Number(obligation.expected_amount?.toString?.() ?? obligation.expected_amount ?? 0);
+  if (paid > expected) obligation.expected_amount = paid;
+  obligation.status = 'paid';
+  await obligation.save();
+  const pledge = await ContributionPledge.findOne({ obligation_id: obligation._id });
+  if (pledge) {
+    const pledged = Number(pledge.pledged_amount?.toString?.() ?? pledge.pledged_amount ?? 0);
+    if (paid > pledged) pledge.pledged_amount = paid;
+    pledge.status = 'paid';
+    await pledge.save();
+  }
+}
+
+export const sweepStalePaymentIntents = async ({ publicGivingOnly = false, excludePublicGiving = false } = {}) => {
   if (sweepInProgress) return;
   sweepInProgress = true;
 
@@ -93,11 +131,14 @@ export const sweepStalePaymentIntents = async () => {
     const cutoff = new Date(now - MIN_AGE_MS);
     const oldestAllowed = new Date(now - MAX_AGE_MS);
 
-    const candidates = await PaymentIntent.find({
+    const filter = {
       provider: "mpesa",
       status: { $in: ["pending", "processing"] },
       updatedAt: { $lte: cutoff, $gte: oldestAllowed },
-    })
+    };
+    if (publicGivingOnly) filter.$or = [{ 'metadata.publicDonation': true }, { reference: /^GIVE-/ }];
+    else if (excludePublicGiving) filter.$nor = [{ 'metadata.publicDonation': true }, { reference: /^GIVE-/ }];
+    const candidates = await PaymentIntent.find(filter)
      .sort({ updatedAt: 1 })
      .limit(BATCH_SIZE * 2);
 
@@ -114,12 +155,14 @@ export const sweepStalePaymentIntents = async () => {
       await new Promise(r => setTimeout(r, 500)); // 500ms backoff to avoid 429
     }
 
-    const timeoutResult = await PaymentIntent.updateMany(
-      {
+    const timeoutFilter = {
         provider: "mpesa",
         status: { $in: ["pending", "processing"] },
         updatedAt: { $lt: oldestAllowed },
-      },
+    };
+    if (publicGivingOnly) timeoutFilter.$or = [{ 'metadata.publicDonation': true }, { reference: /^GIVE-/ }];
+    else if (excludePublicGiving) timeoutFilter.$nor = [{ 'metadata.publicDonation': true }, { reference: /^GIVE-/ }];
+    const timeoutResult = await PaymentIntent.updateMany(timeoutFilter,
       {
         $set: {
           status: "failed",
@@ -128,6 +171,11 @@ export const sweepStalePaymentIntents = async () => {
         },
       }
     );
+
+    if (publicGivingOnly) {
+      const timedOut = await PaymentIntent.find({ ...timeoutFilter, status: 'failed' }).select('obligation_id').lean();
+      for (const intent of timedOut) await rollbackUnsettledPublicDonation(intent.obligation_id);
+    }
 
     if (timeoutResult.modifiedCount > 0) {
         console.log(`[reconciliation] Timed out ${timeoutResult.modifiedCount} intent(s) older than 1h.`);
@@ -140,9 +188,9 @@ export const sweepStalePaymentIntents = async () => {
   }
 };
 
-export const startPaymentIntentReconciliationJob = () => {
+export const startPaymentIntentReconciliationJob = ({ publicGivingOnly = false, excludePublicGiving = false } = {}) => {
   console.log(`[reconciliation] Payment intent reconciliation job started (every ${SWEEP_INTERVAL_MS / 1000}s)`);
-  const timer = setInterval(sweepStalePaymentIntents, SWEEP_INTERVAL_MS);
+  const timer = setInterval(() => sweepStalePaymentIntents({ publicGivingOnly, excludePublicGiving }), SWEEP_INTERVAL_MS);
   timer.unref?.();
   return timer;
 };

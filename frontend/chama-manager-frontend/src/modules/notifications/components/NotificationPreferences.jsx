@@ -1,4 +1,6 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import React, { useState } from "react";
+import toast from "react-hot-toast";
 import {
   Save,
   Bell,
@@ -14,6 +16,7 @@ import {
   useUpdateCategoryPreferences,
   useUpdateQuietHours,
   useUpdateDoNotDisturb,
+  useUpdateSMSSettings,
   useResetPreferencesToDefaults,
 } from "@/modules/notifications/hooks/useNotifications";
 
@@ -25,48 +28,94 @@ export default function NotificationPreferences() {
   const updateQuietHoursMutation = useUpdateQuietHours();
   const updateDoNotDisturbMutation = useUpdateDoNotDisturb();
   const resetMutation = useResetPreferencesToDefaults();
+  const smsSettingsMutation = useUpdateSMSSettings();
+
+  // WhatsApp arrived after many preference documents were saved, so a missing
+  // value means "on" (matching the server default), not "off".
+  const channelOn = (id) =>
+    id === "whatsapp"
+      ? preferences?.default_channels?.whatsapp !== false
+      : Boolean(preferences?.default_channels?.[id]);
+
+  const categoryChannelOn = (categoryId, channel) => {
+    const value = preferences?.category_preferences?.[categoryId]?.[channel];
+    return channel === "whatsapp" ? value !== false : Boolean(value);
+  };
+
+  const feedback = (okMessage) => ({
+    onSuccess: () => toast.success(okMessage),
+    onError: (err) =>
+      toast.error(err?.response?.data?.message || "Could not save that change. Please try again."),
+  });
+
+  const [phone, setPhone] = useState(null);
+  const [whatsappNumber, setWhatsappNumber] = useState(null);
+  const savedPhone = preferences?.sms_settings?.phone_number || "";
+  const savedWhatsapp = preferences?.sms_settings?.whatsapp_number || "";
+
+  const handleSaveNumbers = () => {
+    smsSettingsMutation.mutate(
+      {
+        phone_number: (phone ?? savedPhone).trim() || null,
+        whatsapp_number: (whatsappNumber ?? savedWhatsapp).trim() || null,
+      },
+      {
+        ...feedback("Contact numbers saved"),
+        onSuccess: () => {
+          toast.success("Contact numbers saved");
+          setPhone(null);
+          setWhatsappNumber(null);
+        },
+      }
+    );
+  };
 
   const [expandedSection, setExpandedSection] = useState("channels");
 
   const handleToggleChannel = (channel) => {
-    updateChannelMutation.mutate({
-      [channel]: !preferences?.default_channels?.[channel],
-    });
+    const next = !channelOn(channel);
+    updateChannelMutation.mutate(
+      { [channel]: next },
+      feedback(`${channel === "in_app" ? "In-app" : channel.replace(/^./, (c) => c.toUpperCase())} notifications ${next ? "turned on" : "turned off"}`)
+    );
   };
 
   const handleToggleCategoryChannel = (category, channel) => {
-    updateCategoryMutation.mutate({
-      category,
-      categoryPreferences: {
-        [channel]:
-          !preferences?.category_preferences?.[category]?.[channel],
-      },
-    });
+    const current = preferences?.category_preferences?.[category]?.[channel];
+    const on = channel === "whatsapp" ? current !== false : Boolean(current);
+    updateCategoryMutation.mutate(
+      { category, categoryPreferences: { [channel]: !on } },
+      feedback(`Saved - ${category} ${channel.replace("_", "-")} ${on ? "off" : "on"}`)
+    );
   };
 
   const handleToggleQuietHours = () => {
-    updateQuietHoursMutation.mutate({
-      enabled: !preferences?.quiet_hours?.enabled,
-      start_time: preferences?.quiet_hours?.start_time || "22:00",
-      end_time: preferences?.quiet_hours?.end_time || "08:00",
-    });
+    updateQuietHoursMutation.mutate(
+      {
+        enabled: !preferences?.quiet_hours?.enabled,
+        start_time: preferences?.quiet_hours?.start_time || "22:00",
+        end_time: preferences?.quiet_hours?.end_time || "08:00",
+      },
+      feedback(preferences?.quiet_hours?.enabled ? "Quiet hours turned off" : "Quiet hours turned on")
+    );
   };
 
   const handleToggleDoNotDisturb = () => {
-    updateDoNotDisturbMutation.mutate({
-      enabled: !preferences?.do_not_disturb?.enabled,
-      until: null,
-    });
+    updateDoNotDisturbMutation.mutate(
+      { enabled: !preferences?.do_not_disturb?.enabled, until: null },
+      feedback(preferences?.do_not_disturb?.enabled ? "Do not disturb turned off" : "Do not disturb on - alerts are still saved in the app")
+    );
   };
 
-  const handleReset = () => {
-    if (
-      confirm(
-        "Are you sure you want to reset all preferences to defaults?"
-      )
-    ) {
-      resetMutation.mutate();
-    }
+  const handleReset = async () => {
+    const ok = await confirmAction({
+      title: "Reset all notification settings?",
+      message:
+        "Every channel, category, quiet-hours and do-not-disturb choice goes back to the defaults. Alerts will start reaching you by SMS and WhatsApp again.",
+      variant: "warning",
+      confirmText: "Reset to defaults",
+    });
+    if (ok) resetMutation.mutate();
   };
 
   if (isLoading) {
@@ -142,6 +191,7 @@ export default function NotificationPreferences() {
               { id: "toast", label: "Toast", icon: "🔔" },
               { id: "push", label: "Push", icon: "📲" },
               { id: "sms", label: "SMS", icon: "💬" },
+              { id: "whatsapp", label: "WhatsApp", icon: "🟢" },
               { id: "email", label: "Email", icon: "📧" },
             ].map((channel) => (
               <div
@@ -159,14 +209,14 @@ export default function NotificationPreferences() {
                 <button
                   onClick={() => handleToggleChannel(channel.id)}
                   className={`w-12 h-6 rounded-full transition-colors ${
-                    preferences?.default_channels?.[channel.id]
+                    channelOn(channel.id)
                       ? "bg-violet-600"
                       : "bg-slate-300 dark:bg-slate-600"
                   }`}
                 >
                   <div
                     className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                      preferences?.default_channels?.[channel.id]
+                      channelOn(channel.id)
                         ? "translate-x-6"
                         : "translate-x-1"
                     }`}
@@ -174,6 +224,47 @@ export default function NotificationPreferences() {
                 </button>
               </div>
             ))}
+
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-600">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Where should SMS and WhatsApp alerts go?
+              </p>
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                Leave blank to use the number you registered with. Include the country code, e.g. +254712345678.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs text-slate-500 dark:text-slate-400">
+                  SMS number
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={phone ?? savedPhone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+254712345678"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  />
+                </label>
+                <label className="text-xs text-slate-500 dark:text-slate-400">
+                  WhatsApp number
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={whatsappNumber ?? savedWhatsapp}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    placeholder="Same as SMS number"
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveNumbers}
+                disabled={smsSettingsMutation.isPending || (phone === null && whatsappNumber === null)}
+                className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {smsSettingsMutation.isPending ? "Saving..." : "Save numbers"}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -235,7 +326,7 @@ export default function NotificationPreferences() {
                 </div>
 
                 <div className="p-3 space-y-2">
-                  {["in_app", "toast", "push", "sms", "email"].map(
+                  {["in_app", "toast", "push", "sms", "whatsapp", "email"].map(
                     (channel) => (
                       <div
                         key={channel}
@@ -253,18 +344,14 @@ export default function NotificationPreferences() {
                             )
                           }
                           className={`w-10 h-5 rounded-full transition-colors ${
-                            preferences?.category_preferences?.[
-                              category.id
-                            ]?.[channel]
+                            categoryChannelOn(category.id, channel)
                               ? "bg-violet-600"
                               : "bg-slate-300 dark:bg-slate-600"
                           }`}
                         >
                           <div
                             className={`w-4 h-4 rounded-full bg-white transition-transform ${
-                              preferences?.category_preferences?.[
-                                category.id
-                              ]?.[channel]
+                              categoryChannelOn(category.id, channel)
                                 ? "translate-x-5"
                                 : "translate-x-1"
                             }`}

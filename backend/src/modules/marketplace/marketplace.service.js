@@ -16,7 +16,7 @@ import * as mpesaService from "../../payment/providers/mpesa/mpesa.service.js";
 import AppError from "../../utils/AppError.js";
 import { getHubSlugForBusinessCategory, isBusinessEligibleForHub } from "./marketplaceHubs.js";
 import { pushListingEditsToItem } from "./inventoryMarketplaceSync.service.js";
-import { getOwnedBusiness } from "../business/business.service.js";
+import { getOwnedBusiness } from "../business/index.js";
 import { DEFAULT_RENTAL_PROPERTIES } from "./defaultRentals.data.js";
 import { DEFAULT_RETAIL_STORES, DEFAULT_RETAIL_PRODUCTS } from "./defaultRetail.data.js";
 import { DEFAULT_FOOD_RESTAURANTS, DEFAULT_FOOD_MENU } from "./defaultFood.data.js";

@@ -12,8 +12,18 @@ import {
 } from "lucide-react";
 import adminService from "../services/admin.service";
 import Spinner from "@/shared/components/ui/Spinner";
-import WorkspaceSetupPicker from "@/modules/workspaces/components/WorkspaceSetupPicker";
+import { WorkspaceSetupPicker } from '@/modules/workspaces/index.js';
 import AdminModuleChangesPanel from "../components/AdminModuleChangesPanel";
+
+function GivingSafetyPanel() {
+  const [reports, setReports] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const load = async () => { setBusy(true); try { setReports(await adminService.getPublicGivingReports()); setError(""); } catch (e) { setError(e.response?.data?.message || "Could not load reports."); } finally { setBusy(false); } };
+  useEffect(() => { load(); }, []);
+  const act = async (report, action) => { setBusy(true); try { await adminService.reviewPublicGivingReports(report.contribution_group_id?._id, action); await load(); } catch (e) { setError(e.response?.data?.message || "Review failed."); } finally { setBusy(false); } };
+  return <section className="space-y-3 rounded-2xl border border-amber-200 bg-white p-5 dark:border-amber-900 dark:bg-slate-900"><div className="flex justify-between"><div><h2 className="font-black">Public giving safety</h2><p className="text-xs text-slate-500">Open reports and paused fundraisers</p></div><button className="rounded-lg border px-3 py-1 text-xs" onClick={load}>Refresh</button></div>{error && <p className="text-xs text-red-600">{error}</p>}{busy && <p className="text-xs text-slate-500">Updating…</p>}{!busy && reports.length === 0 && <p className="text-xs text-slate-500">No open reports.</p>}{reports.map((report) => <article key={report._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"><div><strong>{report.contribution_group_id?.name || "Removed fundraiser"}</strong><p className="text-xs">{report.category.replaceAll("_", " ")} · {report.details || "No details"} · {new Date(report.createdAt).toLocaleString()}</p><p className="text-[11px] text-slate-500">Status: {report.contribution_group_id?.status || "unknown"}</p></div><div className="flex gap-2"><button className="rounded-lg border px-2 py-1 text-xs" onClick={() => act(report, "dismiss")}>Dismiss report</button><button className="rounded-lg bg-red-600 px-2 py-1 text-xs text-white" onClick={() => act(report, "suspend")}>Suspend</button>{report.contribution_group_id?.status === "suspended" && <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs text-white" onClick={() => act(report, "reverify")}>Reverify &amp; reopen</button>}</div></article>)}</section>;
+}
 
 const emptyPerson = () => ({ fullName: "", phone: "", email: "", idNumber: "" });
 
@@ -31,11 +41,31 @@ function buildFormFromRequest(req) {
     secretary: { ...emptyPerson(), ...(req.secretary || {}) },
     committeeMembers: (req.committeeMembers || []).map((cm) => ({ ...emptyPerson(), role: "Committee Member", ...cm })),
     adminNotes: req.adminNotes || "",
+    contributionGroupDetails: {
+      type: req.contributionGroupDetails?.type || "other",
+      targetAmount: req.contributionGroupDetails?.targetAmount ?? "",
+      eventDate: req.contributionGroupDetails?.eventDate ? String(req.contributionGroupDetails.eventDate).slice(0, 10) : "",
+      contributionEndDate: req.contributionGroupDetails?.contributionEndDate ? String(req.contributionGroupDetails.contributionEndDate).slice(0, 10) : "",
+      beneficiary: req.contributionGroupDetails?.beneficiary || "",
+      location: req.contributionGroupDetails?.location || "",
+      visibility: req.contributionGroupDetails?.visibility || "invite_only",
+      publicGivingRequested: Boolean(req.contributionGroupDetails?.publicGivingRequested),
+      evidence: req.contributionGroupDetails?.evidence || [],
+      referees: req.contributionGroupDetails?.referees || [],
+      nationalIdNumber: req.contributionGroupDetails?.nationalIdNumber || "",
+      payout: req.contributionGroupDetails?.payout || {},
+    },
+    publicGivingEnabled: false,
     // Workspace Setup: what the requester proposed (empty = nothing proposed,
     // the picker then fills in the preset matching the category).
+    organizationFamily: req.organizationFamily || "chama",
+    organizationType: req.organizationType || "custom",
     workspaceConfig: {
       preset: req.workspaceConfig?.preset || "",
       modules: req.workspaceConfig?.modules || [],
+      moduleLabels: req.workspaceConfig?.moduleLabels || {},
+      organizationFamily: req.organizationFamily || "chama",
+      organizationType: req.organizationType || "custom",
     },
   };
 }
@@ -238,6 +268,8 @@ export default function AdminRequestsPage() {
           </button>
         ))}
       </div>
+
+      <GivingSafetyPanel />
 
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -517,7 +549,7 @@ export default function AdminRequestsPage() {
                         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                       />
                     </Field>
-                    <Field label={selectedRequest.entityType === "chama" ? "Chama type" : "Category"}>
+                    <Field label={selectedRequest.entityType === "chama" ? "Chama type" : selectedRequest.entityType === "contribution_group" ? "Contribution group category" : "Category"}>
                       {selectedRequest.entityType === "chama" ? (
                         <select
                           className="input"
@@ -525,11 +557,15 @@ export default function AdminRequestsPage() {
                           onChange={(event) => setForm((f) => ({
                             ...f,
                             category: event.target.value,
-                            workspaceConfig: { preset: "", modules: [] },
+                            workspaceConfig: { ...f.workspaceConfig, preset: "", modules: [] },
                           }))}
                         >
                           <option value="standard">Standard Chama</option>
                           <option value="burial">Burial &amp; welfare Chama</option>
+                        </select>
+                      ) : selectedRequest.entityType === "contribution_group" ? (
+                        <select className="input capitalize" value={form.contributionGroupDetails.type} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, type: e.target.value } }))}>
+                          {["party", "wedding", "graduation", "funeral", "birthday", "emergency", "medical_emergency", "fundraiser", "community", "other"].map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}
                         </select>
                       ) : (
                         <input
@@ -539,14 +575,14 @@ export default function AdminRequestsPage() {
                         />
                       )}
                     </Field>
-                    <Field label="Monthly Savings (KES)">
+                    {selectedRequest.entityType === "chama" && <Field label="Monthly Savings (KES)">
                       <input
                         type="number"
                         className="input"
                         value={form.monthlySavings}
                         onChange={(e) => setForm((f) => ({ ...f, monthlySavings: e.target.value }))}
                       />
-                    </Field>
+                    </Field>}
                   </div>
                   <Field label="Description / Purpose">
                     <textarea
@@ -555,6 +591,16 @@ export default function AdminRequestsPage() {
                       onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     />
                   </Field>
+
+                  {selectedRequest.entityType === "contribution_group" && <div className="grid gap-3 sm:grid-cols-2 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+                    <Field label="Fundraising goal (KES)"><input type="number" min="0" className="input" value={form.contributionGroupDetails.targetAmount} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, targetAmount: e.target.value } }))} /></Field>
+                    <Field label="Visibility"><select className="input" value={form.contributionGroupDetails.visibility} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, visibility: e.target.value } }))}><option value="private">Private</option><option value="invite_only">Invite only</option><option value="public">Public</option></select></Field>
+                    <Field label="Beneficiary"><input className="input" value={form.contributionGroupDetails.beneficiary} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, beneficiary: e.target.value } }))} /></Field>
+                    <Field label="Location"><input className="input" value={form.contributionGroupDetails.location} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, location: e.target.value } }))} /></Field>
+                    <Field label="Event date"><input type="date" className="input" value={form.contributionGroupDetails.eventDate} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, eventDate: e.target.value } }))} /></Field>
+                    <Field label="Contribution close date"><input type="date" className="input" value={form.contributionGroupDetails.contributionEndDate} onChange={(e) => setForm((f) => ({ ...f, contributionGroupDetails: { ...f.contributionGroupDetails, contributionEndDate: e.target.value } }))} /></Field>
+                    {form.contributionGroupDetails.publicGivingRequested && <label className="sm:col-span-2 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-[11px] font-semibold text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"><input type="checkbox" checked={form.publicGivingEnabled} onChange={(e) => setForm((f) => ({ ...f, publicGivingEnabled: e.target.checked }))} className="mt-0.5" />Enable public giving only after strict evidence, referee, identity, and payout verification has been completed.</label>}
+                  </div>}
 
                   {/* Editable leadership */}
                   <div className="space-y-3">
@@ -640,7 +686,7 @@ export default function AdminRequestsPage() {
                     </div>
                   </div>
 
-                  <Field label="Admin notes (internal)">
+                  <Field label={selectedRequest.entityType === "contribution_group" ? "Message to requester (save to request more information)" : "Admin notes (internal)"}>
                     <textarea
                       className="input min-h-[50px]"
                       value={form.adminNotes}
@@ -675,15 +721,15 @@ export default function AdminRequestsPage() {
                     <div>
                       <span className="text-slate-400 block">{selectedRequest.entityType === "chama" ? "Chama type" : "Category"}</span>
                       <span className="font-bold text-slate-900 dark:text-white">
-                        {selectedRequest.entityType === "chama" ? (form.category === "burial" ? "Burial & welfare" : "Standard") : form.category}
+                        {selectedRequest.entityType === "chama" ? (form.category === "burial" ? "Burial & welfare" : "Standard") : selectedRequest.entityType === "contribution_group" ? form.contributionGroupDetails.type.replaceAll("_", " ") : form.category}
                       </span>
                     </div>
-                    <div>
+                    {selectedRequest.entityType === "chama" && <div>
                       <span className="text-slate-400 block">Monthly Savings</span>
                       <span className="font-bold text-slate-900 dark:text-white">
                         KES {Number(form.monthlySavings || 1000).toLocaleString()}
                       </span>
-                    </div>
+                    </div>}
                     <div>
                       <span className="text-slate-400 block">Submitted</span>
                       <span className="font-bold text-slate-900 dark:text-white">
@@ -702,6 +748,15 @@ export default function AdminRequestsPage() {
                       </p>
                     </div>
                   )}
+
+                  {selectedRequest.entityType === "contribution_group" && <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20">
+                    <div><h4 className="font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">Fundraiser verification materials</h4><p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">Sensitive details submitted by the organizer. Confirm identity and destination before approval.</p></div>
+                    <div className="grid gap-3 sm:grid-cols-2 text-slate-700 dark:text-slate-200"><div><span className="block text-slate-400">Organizer ID number</span><strong>{form.contributionGroupDetails.nationalIdNumber || "Not supplied"}</strong></div><div><span className="block text-slate-400">Payout destination</span><strong>{form.contributionGroupDetails.payout?.method || "Not supplied"} · {form.contributionGroupDetails.payout?.accountName || ""} {form.contributionGroupDetails.payout?.phone || form.contributionGroupDetails.payout?.paybill || ""}</strong></div></div>
+                    <div><span className="block text-slate-400">Evidence links</span>{form.contributionGroupDetails.evidence.length ? <div className="mt-1 flex flex-wrap gap-2">{form.contributionGroupDetails.evidence.map((item, index) => <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer" className="rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-blue-700 underline dark:bg-slate-900 dark:text-blue-300">{item.kind || "Document"} · Open evidence</a>)}</div> : <strong>None attached</strong>}</div>
+                    <div><span className="block text-slate-400">Referees</span><div className="mt-1 grid gap-2 sm:grid-cols-2">{form.contributionGroupDetails.referees.map((referee, index) => <div key={`${referee.phone}-${index}`} className="rounded-xl bg-white p-3 dark:bg-slate-900"><strong>{referee.name}</strong><p>{referee.phone} · {referee.relationship || "Relationship not supplied"}</p></div>)}</div></div>
+                    {!!selectedRequest.riskFlags?.length && <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200"><strong>Duplicate risk flags</strong><ul className="mt-1 list-inside list-disc">{selectedRequest.riskFlags.map((flag, index) => <li key={`${flag.code || flag}-${index}`}>{flag.message || flag.code || String(flag)}</li>)}</ul><p className="mt-1 text-[10px]">Resolve these before granting public giving.</p></div>}
+                    {form.contributionGroupDetails.publicGivingRequested && <label className="flex items-start gap-2 rounded-xl border border-amber-300 bg-white p-3 text-[11px] font-semibold text-amber-900 dark:border-amber-800 dark:bg-slate-900 dark:text-amber-200"><input type="checkbox" checked={form.publicGivingEnabled} onChange={(e) => setForm((f) => ({ ...f, publicGivingEnabled: e.target.checked }))} className="mt-0.5" />Grant public giving after strict review. If unchecked, approval creates a verified members-only contribution group.</label>}
+                  </section>}
 
                   <div className="space-y-3">
                     <h4 className="font-black text-slate-900 dark:text-white uppercase tracking-wider">
@@ -777,10 +832,14 @@ export default function AdminRequestsPage() {
                     onChange={(workspaceConfig) => setForm((f) => ({
                       ...f,
                       category: workspaceConfig.modules.includes("burial_welfare") ? "burial" : "standard",
+                      organizationFamily: workspaceConfig.organizationFamily || f.organizationFamily,
+                      organizationType: workspaceConfig.organizationType || f.organizationType,
                       workspaceConfig,
                     }))}
                     readOnly={["APPROVED", "REJECTED"].includes(String(selectedRequest.status).toUpperCase())}
                     defaultPreset={form.category === "burial" ? "burial" : "standard"}
+                    showOrganization
+                    allowRename
                   />
                 </div>
               )}

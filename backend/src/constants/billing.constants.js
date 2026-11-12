@@ -65,6 +65,7 @@ export const DEFAULT_PLANS = Object.freeze([
     price_monthly: 0,
     max_members: 20,
     modules: withLocked(FREE_MODULES),
+    organization_families: ['chama', 'sacco', 'cooperative'],
     sort_order: 1,
   },
   {
@@ -74,6 +75,7 @@ export const DEFAULT_PLANS = Object.freeze([
     price_monthly: 500,
     max_members: 100,
     modules: withLocked(STANDARD_MODULES),
+    organization_families: ['chama', 'sacco', 'cooperative'],
     sort_order: 2,
   },
   {
@@ -83,7 +85,28 @@ export const DEFAULT_PLANS = Object.freeze([
     price_monthly: 1500,
     max_members: null, // unlimited
     modules: [...MODULE_KEYS],
+    organization_families: ['chama', 'sacco', 'cooperative'],
     sort_order: 3,
+  },
+  {
+    code: 'sacco_plus',
+    name: 'SACCO Plus',
+    tagline: 'Member capital, savings, lending and SACCO governance',
+    price_monthly: 1500,
+    max_members: null,
+    modules: withLocked(['contributions', 'savings', 'payouts', 'withdrawals', 'loans', 'loan_products', 'share_capital', 'dividends_interest', 'member_numbers', 'share_linked_limits', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'regulator_reporting', 'annual_returns']),
+    organization_families: ['sacco'],
+    sort_order: 4,
+  },
+  {
+    code: 'cooperative_plus',
+    name: 'Cooperative Plus',
+    tagline: 'Cooperative trade, member returns and governance',
+    price_monthly: 1500,
+    max_members: null,
+    modules: withLocked(['contributions', 'savings', 'payouts', 'loans', 'assets', 'businesses', 'produce_collection', 'cooperative_sales', 'patronage_refunds', 'cooperative_store', 'meetings', 'agm', 'resolutions', 'committees', 'polls', 'announcements', 'chat', 'annual_returns']),
+    organization_families: ['cooperative'],
+    sort_order: 5,
   },
 ]);
 

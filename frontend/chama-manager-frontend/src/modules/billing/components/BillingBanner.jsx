@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { AlertTriangle, Clock, Lock, X } from "lucide-react";
 import clsx from "clsx";
 
-import { isChamaBackedType } from "@/modules/workspaces/config/workspaceModules";
+import { isChamaBackedType } from '@/modules/workspaces/index.js';
 import useBillingSummary from "../hooks/useBilling";
 
 const BILLING_ROLES = ["treasurer", "chairperson"];

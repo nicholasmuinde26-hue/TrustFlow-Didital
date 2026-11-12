@@ -171,6 +171,10 @@ const financeApi = {
     return api.post("/mpesa/contributions/stk-push", payload);
   },
 
+  initiateContributionObligationPayment(payload) {
+    return api.post("/contributions", payload);
+  },
+
   // ========================================
   // LEDGER ADJUSTMENTS
   // ========================================

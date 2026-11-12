@@ -15,6 +15,7 @@ import {
 
 import { useWorkspace } from "../../../app/hooks/useWorkspace";
 import MpesaStkModal from "../../finance/components/MpesaStkModal";
+import { useTerminology } from '../hooks/useTerminology.js';
 
 const baseActions = [
   {
@@ -76,6 +77,7 @@ export default function WorkspaceQuickActions() {
   const workspaceCtx = useWorkspace();
   const workspaceId = paramId || workspaceCtx?.workspaceId;
   const isChama = workspaceCtx?.isChama;
+  const { moduleLabel } = useTerminology();
 
   const [isStkOpen, setIsStkOpen] = useState(false);
 
@@ -153,7 +155,7 @@ export default function WorkspaceQuickActions() {
               </div>
 
               <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">
-                {action.title}
+              {action.module ? moduleLabel(action.module, action.title) : action.title}
               </h3>
 
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">

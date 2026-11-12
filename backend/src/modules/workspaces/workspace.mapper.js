@@ -45,11 +45,13 @@ export function mapChamaWorkspace(
         modules:getEnabledModules(chama),
 
         modulePreset:chama.workspace_config?.preset ?? null,
+        organizationFamily: chama.organization_family || 'chama',
+        organizationType: chama.organization_type || 'custom',
 
         config: chama.workspace_config || {
             preset: chama.workspace_config?.preset || (chama.chama_type === 'burial' ? 'burial' : 'standard'),
             modules: getEnabledModules(chama).reduce((acc, k) => ({ ...acc, [k]: { enabled: true } }), {}),
-            terminology: { workspace: 'Chama' },
+            terminology: { workspace: 'Chama', module_labels: {} },
             version: 1
         },
 
@@ -110,7 +112,7 @@ export function mapContributionWorkspace(
 
 }
 
-export function mapBusinessWorkspace(business, chamaMembership = null, chamaName = null) {
+export function mapBusinessWorkspace(business, chamaMembership = null, chamaName = null, staffAccess = null) {
     const isChamaOwned = business.owner_type === "chama";
     const chamaRole = chamaMembership?.role || "member";
     return {
@@ -118,7 +120,7 @@ export function mapBusinessWorkspace(business, chamaMembership = null, chamaName
         workspaceId: business._id,
         type: WORKSPACE_TYPES.BUSINESS,
         name: business.name,
-        role: business.owner_type === "chama" ? (chamaMembership?.role || "member") : "owner",
+        role: business.owner_type === "chama" ? (chamaMembership?.role || "member") : staffAccess?.role || "owner",
         ownerType: business.owner_type || "user",
         chamaId: isChamaOwned ? business.owner_id : null,
         // Shown as the "Chama-owned" badge. The business is owned by the chama,
@@ -126,7 +128,8 @@ export function mapBusinessWorkspace(business, chamaMembership = null, chamaName
         chamaName: isChamaOwned ? chamaName : null,
         isChamaOwned,
         // Leaders manage; other members are read-only (the server enforces this too).
-        canManage: isChamaOwned ? ["chairperson", "treasurer"].includes(chamaRole) : true,
+        canManage: isChamaOwned ? ["chairperson", "treasurer"].includes(chamaRole) : !staffAccess || staffAccess.role === "manager" || staffAccess.permissions?.includes("*"),
+        businessAccess: staffAccess ? { role: staffAccess.role, permissions: staffAccess.permissions || [] } : null,
         category: business.category,
         // Business workspaces already store which nav sections they show; ship it
         // so the sidebar can actually apply it.

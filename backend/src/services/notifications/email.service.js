@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
 import env from '../../config/env.js';
+import { organizationLabel } from '../../utils/organizationTerminology.js';
 
 // ========================================
 // EMAIL OTP & TRANSACTIONAL DELIVERY
@@ -233,26 +234,36 @@ export const sendWorkspaceRequestStatusEmail = async ({
   contactName,
   entityName,
   entityType = "chama",
-  status, // 'APPROVED' | 'REJECTED'
+  status, // 'APPROVED' | 'UNDER_REVIEW' | 'REJECTED'
   rejectionReason = "",
   loginPhone = "",
   requestNumber = "",
 }) => {
   if (!to || !to.includes("@") || !isConfigured()) return null;
 
-  const entityLabel =
-    entityType === "business" ? "business" : entityType === "contribution_group" ? "contribution group" : "chama";
+  const normalizedEntityType = String(entityType || "chama").toLowerCase();
+  const entityLabel = normalizedEntityType === "business" ? "business"
+    : normalizedEntityType === "contribution_group" ? "contribution group"
+    : normalizedEntityType === "sacco" ? "SACCO"
+    : normalizedEntityType === "cooperative" ? "Cooperative"
+    : normalizedEntityType === "chama" ? "Chama"
+    : organizationLabel("chama", { workspace: normalizedEntityType });
   const isApproved = String(status).toUpperCase() === "APPROVED";
+  const isUnderReview = String(status).toUpperCase() === "UNDER_REVIEW";
 
   const subject = isApproved
     ? `Your ${entityLabel} "${entityName}" is ready`
-    : `Update on your ${entityLabel} request "${entityName}"`;
+    : isUnderReview
+      ? `More information needed for your ${entityLabel} request`
+      : `Update on your ${entityLabel} request "${entityName}"`;
 
   const text = isApproved
     ? `Good news, ${contactName || "there"}! Your ${entityLabel} "${entityName}" has been reviewed and fully created. You can log in now${
         loginPhone ? ` using ${loginPhone}` : ""
       } to get started. Reference: ${requestNumber || "N/A"}.`
-    : `Hello ${contactName || "there"}, your request to create the ${entityLabel} "${entityName}" was not approved. Reason: ${
+    : isUnderReview
+      ? `Hello ${contactName || "there"}, an administrator is reviewing your ${entityLabel} request "${entityName}" and needs more information: ${rejectionReason || "Please sign in and check your request."} Reference: ${requestNumber || "N/A"}.`
+      : `Hello ${contactName || "there"}, your request to create the ${entityLabel} "${entityName}" was not approved. Reason: ${
         rejectionReason || "Not specified."
       } You're welcome to submit a new request with the corrected details. Reference: ${requestNumber || "N/A"}.`;
 
@@ -274,6 +285,12 @@ export const sendWorkspaceRequestStatusEmail = async ({
         </div>
         <p style="color: #94a3b8; font-size: 11px;">Reference: ${requestNumber || "N/A"}</p>
       </div>
+    </div>`
+    : isUnderReview
+      ? `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 480px; margin: 0 auto; border: 1px solid #bfdbfe; border-radius: 16px; overflow: hidden;">
+      <div style="background-color: #1d4ed8; padding: 24px; text-align: center; color: #ffffff;"><h1 style="margin: 0; font-size: 18px; font-weight: 800;">More information needed</h1></div>
+      <div style="padding: 24px;"><p style="color: #334155; font-size: 14px;">Hi <strong>${contactName || "there"}</strong>,</p><p style="color: #475569; font-size: 14px; line-height: 1.6;">Our team is reviewing your ${entityLabel} request <strong>"${entityName}"</strong> and needs more information:</p><div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin: 16px 0; color: #1e3a8a;">${rejectionReason || "Please sign in and check your request."}</div><p style="color: #94a3b8; font-size: 11px;">Reference: ${requestNumber || "N/A"}</p></div>
     </div>`
     : `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 480px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
@@ -340,6 +357,46 @@ export const sendSecurityAlertEmail = async ({ to, name, title, summary, severit
   try { const fromEmail = env.smtp.resendFromEmail || env.smtp.fromEmail || 'onboarding@resend.dev'; const fromName = env.smtp.fromName || 'VeriCircle'; if (isResendConfigured()) await getResendClient().emails.send({ from: `${fromName} <${fromEmail}>`, to, subject, text, html: `<p>${text}</p>` }); else await getTransporter()?.sendMail({ from: `"${fromName}" <${fromEmail}>`, to, subject, text, html: `<p>${text}</p>` }); return { channel: 'email', to }; } catch (error) { console.error('sendSecurityAlertEmail failed:', error); return null; }
 };
 
+// Generic notification email (alerts, approvals, reminders). Best-effort, like
+// the other transactional senders: returns null when email is not configured.
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+export const sendNotificationEmail = async ({ to, name, title, message, actionUrl, priority = 'normal' }) => {
+  if (!to || !String(to).includes('@')) throw new Error('Email delivery failed: recipient has no email address');
+  if (!isConfigured()) throw new Error('Email is not configured on this server.');
+  const subject = priority === 'urgent' ? `[Urgent] ${title}` : title;
+  const link = actionUrl && /^https?:\/\//i.test(actionUrl) ? actionUrl : null;
+  const text = `Hello ${name || 'there'},\n\n${message}${link ? `\n\nOpen: ${link}` : ''}\n\n- ${env.smtp.fromName || 'VeriCircle'}`;
+  const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto"><h2 style="color:#111827">${escapeHtml(title)}</h2><p style="color:#374151;font-size:15px">${escapeHtml(message)}</p>${link ? `<p><a href="${escapeHtml(link)}" style="background:#059669;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Open</a></p>` : ''}<p style="color:#9ca3af;font-size:12px">You are receiving this because of your notification settings.</p></div>`;
+  const fromEmail = env.smtp.resendFromEmail || env.smtp.fromEmail || 'onboarding@resend.dev';
+  const fromName = env.smtp.fromName || 'VeriCircle';
+  if (isResendConfigured()) {
+    const { error } = await getResendClient().emails.send({ from: `${fromName} <${fromEmail}>`, to, subject, text, html });
+    if (error) throw new Error(`Email delivery failed: ${error.message || error}`);
+  } else {
+    await getTransporter().sendMail({ from: `"${fromName}" <${fromEmail}>`, to, subject, text, html });
+  }
+  return { channel: 'email', to };
+};
+
+export const sendPublicGivingReceiptEmail = async ({ to, name, amount, causeName, reference }) => {
+  if (!to || !String(to).includes('@')) throw new Error('A valid receipt email is required.');
+  if (!isConfigured()) throw new Error('Email is not configured on this server.');
+  const subject = 'Your GiveTogether donation receipt';
+  const text = `Hello ${name || 'there'},\n\nWe received your KES ${amount} donation to ${causeName}. Payment reference: ${reference}. Thank you for giving.\n\nGiveTogether`;
+  const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#22352a"><h2>Your donation receipt</h2><p>Hello ${escapeHtml(name || 'there')},</p><p>We received your <strong>KES ${escapeHtml(amount)}</strong> donation to <strong>${escapeHtml(causeName)}</strong>.</p><p>Payment reference: ${escapeHtml(reference)}</p><p>Thank you for giving.<br/>GiveTogether</p></div>`;
+  const fromEmail = env.smtp.resendFromEmail || env.smtp.fromEmail || 'onboarding@resend.dev';
+  const fromName = env.smtp.fromName || 'GiveTogether';
+  if (isResendConfigured()) {
+    const { error } = await getResendClient().emails.send({ from: `${fromName} <${fromEmail}>`, to, subject, text, html });
+    if (error) throw new Error(`Email delivery failed: ${error.message || error}`);
+  } else {
+    await getTransporter().sendMail({ from: `"${fromName}" <${fromEmail}>`, to, subject, text, html });
+  }
+  return { channel: 'email', to };
+};
+
 export const isEmailChannelConfigured = isConfigured;
 
 export default {
@@ -348,5 +405,6 @@ export default {
   sendWorkspaceRequestStatusEmail,
   sendAdminAccessEmail,
   sendSecurityAlertEmail,
+  sendNotificationEmail,
   isEmailChannelConfigured,
 };

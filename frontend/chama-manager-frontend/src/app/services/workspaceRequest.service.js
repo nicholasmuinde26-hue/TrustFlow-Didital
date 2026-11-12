@@ -10,6 +10,10 @@ const workspaceRequestService = {
     const { data } = await api.get('/workspace-requests/my');
     return data.data || [];
   },
+  async updateMyContributionGroupRequest(requestId, requestData) {
+    const { data } = await api.patch(`/workspace-requests/my/${requestId}`, requestData);
+    return data;
+  },
 };
 
 export default workspaceRequestService;

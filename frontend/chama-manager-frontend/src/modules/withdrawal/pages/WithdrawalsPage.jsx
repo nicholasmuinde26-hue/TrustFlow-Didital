@@ -12,7 +12,7 @@ import {
   canDecideWithdrawal,
   canSettleWithdrawal,
   canCancelAnyWithdrawal,
-} from "@/modules/workspaces/permissions/Permissions";
+} from '@/modules/workspaces/index.js';
 
 export default function WithdrawalsPage() {
   const { workspaceId: paramId } = useParams();

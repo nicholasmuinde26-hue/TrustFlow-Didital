@@ -8,7 +8,7 @@ import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 
 import ChamaMembership from '../../models/ChamaMembership.js';
 import { allGuaranteesAccepted } from './Loanguarantor.service.js';
-import { creditMemberWallet } from '../finance/memberWallet.service.js';
+import { creditMemberWallet } from '../finance/index.js';
 
 /**
  * Kicks off disbursement. The loan is NOT marked `disbursed` here — only

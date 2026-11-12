@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { Boxes } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
-import { isChamaBackedType } from "@/modules/workspaces/config/workspaceModules";
+import { isChamaBackedType } from '@/modules/workspaces/index.js';
 
 // Opens the all-tools drawer from the top bar (desktop). On phones the menu
 // button already does this, so this one stays hidden below the lg breakpoint.

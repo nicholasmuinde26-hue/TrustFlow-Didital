@@ -4,6 +4,8 @@ import Committee from '../../models/Committee.js';
 import permissionService from '../../services/permission.service.js';
 import MemberExitRequest from '../../models/MemberExitRequest.js';
 import AssetTransaction from '../../models/AssetTransaction.js';
+import BurialCase from '../../models/BurialCase.js';
+import { notifyWorkspace } from '../../services/workspaceNotify.js';
 
 class ApprovalService {
   /**
@@ -161,6 +163,14 @@ class ApprovalService {
 
     const membership = await ChamaMembership.findById(approverMembershipId);
     if (!membership) throw new Error('Approver membership not found');
+    if (String(membership.chama_id) !== String(request.chama_id) || membership.status !== 'active') throw new Error('Approver must be an active member of this chama');
+
+    if (request.resource_type === 'BURIAL_BENEFIT') {
+      if (!['chairperson', 'secretary'].includes(membership.role)) throw new Error('Burial benefit payouts require chairperson and secretary approvals');
+      const claim = await BurialCase.findOne({ _id: request.resource_id, chama_id: request.chama_id }).select('member claimant');
+      if (!claim) throw new Error('Burial claim not found');
+      if (String(membership.user_id) === String(claim.member.user_id)) throw new Error('A claimant cannot approve their own family benefit');
+    }
 
     // Check if initiator is trying to approve their own request
     if (
@@ -274,6 +284,13 @@ class ApprovalService {
 
     await request.save();
 
+    if (request.resource_type === 'BURIAL_BENEFIT' && ['approved', 'rejected'].includes(request.status)) {
+      await BurialCase.updateOne(
+        { _id: request.resource_id, chama_id: request.chama_id, 'payout.approval_request_id': request._id },
+        { $set: { 'payout.status': request.status === 'approved' ? 'ready' : 'failed' } }
+      );
+    }
+
     // Keep a member-raised asset discrepancy flag in step with its approval
     // request no matter which surface leadership signs off from (the asset
     // page's review queue, or the generic approvals endpoint).
@@ -287,7 +304,7 @@ class ApprovalService {
     // Workspace feature switches: apply (or cancel, if open data appeared while
     // waiting) once the request reaches a final decision, and audit it.
     if (request.resource_type === 'WORKSPACE_MODULES' && ['approved', 'rejected'].includes(request.status)) {
-      const { handleModuleChangeDecision } = await import('../workspaces/workspacemodulechange.service.js');
+      const { handleModuleChangeDecision } = await import('../workspaces/index.js');
       await handleModuleChangeDecision(request, { approverMembershipId });
     }
 
@@ -303,6 +320,16 @@ class ApprovalService {
         { _id: request.resource_id, approval_request_id: request._id, status: 'pending_approval' },
         { $set: { status: 'rejected' } }
       );
+    }
+
+    // Whoever asked for the approval hears the outcome the moment it is final.
+    if (['approved', 'rejected'].includes(request.status) && request.initiated_by) {
+      notifyWorkspace('Chama', request.chama_id, 'APPROVAL_DECIDED', {
+        message: `Your request "${request.title || request.action}" was ${request.status}.`,
+        recipientMembershipIds: [request.initiated_by],
+        entityType: 'ApprovalRequest',
+        entityId: request._id
+      });
     }
 
     return request;

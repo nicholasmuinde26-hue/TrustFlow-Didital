@@ -5,8 +5,8 @@ import Chama from '../models/Chama.js';
 import ChamaMembership from '../models/ChamaMembership.js';
 import ChamaMemberKyc from '../models/ChamaMemberKyc.js';
 import ChamaLoan from '../models/ChamaLoan.js';
-import Dispute from '../models/Dispute.js';
-import OfficialRating from '../models/Officialrating.js';
+import { listDisputeStatusesSince } from '../modules/disputes/index.js';
+import { listRatingsForOfficials } from '../modules/officials/index.js';
 import ApprovalRequest from '../models/ApprovalRequest.js';
 import ChamaTrustScore from '../models/ChamaTrustScore.js';
 
@@ -179,9 +179,7 @@ const computeDisputeRate = async (chamaId, activeMemberCount) => {
 
   const since = new Date(Date.now() - DISPUTE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 
-  const disputes = await Dispute.find({ chama_id: chamaId, createdAt: { $gte: since } })
-    .select('status')
-    .lean();
+  const disputes = await listDisputeStatusesSince(chamaId, since);
 
   const weightedCount = disputes.reduce(
     (sum, d) => sum + (DISPUTE_STATUS_WEIGHT[d.status] ?? 1),
@@ -269,11 +267,7 @@ const computeOfficialAccountability = async (chamaId) => {
   const officialIds = officials.map((o) => o._id);
 
   // --- (a) peer ratings ---
-  const ratings = officialIds.length
-    ? await OfficialRating.find({ chama_id: chamaId, official_membership_id: { $in: officialIds } })
-        .select('rating')
-        .lean()
-    : [];
+  const ratings = await listRatingsForOfficials(chamaId, officialIds);
 
   const avgRating = ratings.length
     ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length

@@ -1,4 +1,4 @@
-import { raiseDispute, listDisputes, updateDisputeStatus } from '../../services/Dispute.service.js';
+import { raiseDispute, listDisputes, updateDisputeStatus } from './dispute.service.js';
 
 // Who sees every dispute in the chama, not just their own. This must be a
 // superset of Dispute.routes.js's requireSecretaryOrManager (chairperson/

@@ -24,9 +24,7 @@ export function RetailInventorySnapshot({ workspaceId, currency = "KES" }) {
   const { inventory, isLoading } = useBusinessInventory(workspaceId);
   const items = Array.isArray(inventory) ? inventory : [];
 
-  if (isLoading || items.length === 0) {
-    return null;
-  }
+  if (isLoading) return <SnapshotLoading title="Inventory & Stock" />;
 
   const trackedItems = items.filter((i) => i.track_stock !== false);
   const totalSkus = items.length;
@@ -40,17 +38,22 @@ export function RetailInventorySnapshot({ workspaceId, currency = "KES" }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">
-        Inventory Snapshot
+        Inventory & Stock
       </h2>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SnapshotStat label="SKUs Listed" value={totalSkus} icon={Package} tone="emerald" />
+        <SnapshotStat label="Products listed" value={totalSkus} icon={Package} tone="emerald" />
         <SnapshotStat label="Units in Stock" value={totalUnitsInStock} icon={Boxes} tone="violet" />
         <SnapshotStat label="Out of Stock" value={outOfStockCount} icon={PackageX} tone="amber" />
-        <SnapshotStat label="Stock Value (cost)" value={formatMoney(stockValue, currency)} icon={Coins} tone="cyan" />
+        <SnapshotStat label="Stock value at cost" value={formatMoney(stockValue, currency)} icon={Coins} tone="cyan" />
       </div>
+      {items.length === 0 && <p className="mt-4 text-xs text-slate-500">Add your first products to track stock, low inventory and stock value here.</p>}
     </div>
   );
+}
+
+function SnapshotLoading({ title }) {
+  return <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-busy="true"><h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">{title}</h2><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div key={item} className="h-28 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />)}</div></div>;
 }
 
 function SnapshotStat({ label, value, icon: Icon, tone }) {

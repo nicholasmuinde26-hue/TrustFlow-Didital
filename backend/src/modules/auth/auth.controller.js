@@ -7,6 +7,8 @@ import {
   getCurrentUser,
   updateCurrentUser,
   getOtpChannelsForPhone,
+  createAuthHandoff,
+  redeemAuthHandoff,
 } from './auth.service.js';
 
 import AppError from '../../utils/AppError.js';
@@ -219,4 +221,19 @@ export const updateMeController = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+
+export const createAuthHandoffController = async (req, res, next) => {
+  try {
+    const result = await createAuthHandoff(req.user._id);
+    res.status(201).json({ success: true, data: result });
+  } catch (error) { next(error); }
+};
+
+export const redeemAuthHandoffController = async (req, res, next) => {
+  try {
+    const result = await redeemAuthHandoff(req.body?.code);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) { next(error); }
 };

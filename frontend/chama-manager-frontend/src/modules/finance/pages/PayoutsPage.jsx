@@ -20,7 +20,7 @@ import {
   isPayoutOfficial,
   canSettlePayout,
   canCancelPayout,
-} from "@/modules/workspaces/permissions/Permissions";
+} from '@/modules/workspaces/index.js';
 import payoutService from "../services/payout.service";
 
 const money = (val) => `KES ${Number(val || 0).toLocaleString()}`;

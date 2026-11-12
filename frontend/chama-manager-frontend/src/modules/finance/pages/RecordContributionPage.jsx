@@ -1,3 +1,4 @@
+import { confirmAction, notifyResult } from "@/shared/feedback/ConfirmProvider";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -16,7 +17,8 @@ import useRecordContribution from "../hooks/useRecordContribution";
 import useInitiateMpesaStkPush from "../hooks/useInitiateMpesaStkPush";
 import useWorkspacePermissions from "../hooks/useworkspacepermissions";
 import financeService from "../services/finance.service";
-import chamaApi from "@/modules/chama/api/chama.api";
+import finesApi from "@/modules/fines/api/fines.api";
+import MpesaStkModal from "../components/MpesaStkModal";
 
 import Button from "@/shared/components/ui/Button";
 import Input from "@/shared/components/ui/Input/Input";
@@ -112,7 +114,7 @@ export default function RecordContributionPage() {
   const [loadingObligations, setLoadingObligations] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [notice, setNotice] = useState(null);
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [stkPayment, setStkPayment] = useState(null);
 
   const [form, setForm] = useState({
     planId: "",
@@ -121,15 +123,6 @@ export default function RecordContributionPage() {
     paymentMethod: "MPESA",
     phoneNumber: "",
   });
-
-  const pollRef = useRef(null);
-
-  useEffect(
-    () => () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    },
-    []
-  );
 
   // Default the method to whatever this caller may actually use, rather
   // than starting on Cash and letting a member discover the 403 only
@@ -283,7 +276,7 @@ export default function RecordContributionPage() {
 
   useEffect(() => {
     if (canRecordForOthers) return undefined;
-    if (!workspaceId || !membershipId || registerPlans.length === 0) {
+    if (!workspaceId || !membershipId) {
       setMyObligations([]);
       return undefined;
     }
@@ -293,7 +286,8 @@ export default function RecordContributionPage() {
     (async () => {
       setLoadingMyObligations(true);
       try {
-        const perPlan = await Promise.all(
+        const [perPlan, finesResponse] = await Promise.all([
+          Promise.all(
           registerPlans.map(async (plan) => {
             const planId = String(plan._id ?? plan.id);
             try {
@@ -316,8 +310,27 @@ export default function RecordContributionPage() {
               return [];
             }
           })
-        );
-        if (!cancelled) setMyObligations(perPlan.flat());
+          ),
+          finesApi.list(workspaceId).catch(() => null),
+        ]);
+        if (!cancelled) {
+          const obligations = perPlan.flat();
+          const knownIds = new Set(obligations.map((item) => String(item._id ?? item.id)));
+          const fines = finesResponse?.data?.data?.fines || [];
+          const fineObligations = fines
+            .filter((fine) => fine.status === "outstanding" && fine.obligationId && !knownIds.has(String(fine.obligationId)))
+            .map((fine) => ({
+              _id: fine.obligationId,
+              expected_amount: fine.amount,
+              paid_amount: fine.paidAmount || 0,
+              due_date: fine.dueDate,
+              status: "pending",
+              notes: fine.reason,
+              __planId: "fine-obligations",
+              __planName: "Fine",
+            }));
+          setMyObligations([...obligations, ...fineObligations]);
+        }
       } finally {
         if (!cancelled) setLoadingMyObligations(false);
       }
@@ -337,6 +350,7 @@ export default function RecordContributionPage() {
           id: String(obligation._id ?? obligation.id),
           planId: obligation.__planId,
           planName: obligation.__planName,
+          notes: obligation.notes || "",
           expected,
           paid,
           balance: Math.max(0, expected - paid),
@@ -344,6 +358,7 @@ export default function RecordContributionPage() {
           status: obligation.status,
         };
       })
+      .filter((item) => item.balance > 0)
       .sort((a, b) => b.balance - a.balance);
   }, [myObligations]);
 
@@ -511,11 +526,12 @@ export default function RecordContributionPage() {
     // Overpaying an obligation is almost always a typo, so confirm it
     // rather than silently posting a credit the books then carry.
     if (selected && selected.balance > 0 && amount > selected.balance) {
-      const proceed = window.confirm(
-        `${money(amount)} is more than ${selected.name}'s outstanding ${money(
-          selected.balance
-        )}. Record it anyway?`
-      );
+      const proceed = await confirmAction({
+        title: "Amount is more than what's owed",
+        message: `${money(amount)} is more than ${selected.name}'s outstanding ${money(selected.balance)}. The extra will be carried as a credit.`,
+        variant: "warning",
+        confirmText: "Record anyway",
+      });
       if (!proceed) return;
     }
 
@@ -533,20 +549,15 @@ export default function RecordContributionPage() {
         });
 
         const paymentIntent = result?.data?.paymentIntent ?? result?.paymentIntent;
-        const customerMessage =
-          result?.data?.stk?.customerMessage ?? result?.stk?.customerMessage;
-
-        toast.loading(customerMessage || "STK push sent.", { id: "stk" });
-        setNotice({
-          type: "info",
-          text:
-            customerMessage ||
-            "STK push sent. Ask the member to complete the prompt on their phone.",
+        const paymentIntentId = paymentIntent?._id || result?.data?.paymentIntentId;
+        if (!paymentIntentId) throw new Error("M-Pesa did not return a payment reference. Please try again.");
+        setNotice(null);
+        setStkPayment({
+          paymentIntentId,
+          checkoutRequestId: result?.data?.stk?.checkoutRequestId || result?.data?.checkoutRequestId || null,
+          amount,
+          phoneNumber: form.phoneNumber.trim(),
         });
-
-        if (ownerType === "Chama" && paymentIntent?._id) {
-          pollPaymentIntent(paymentIntent._id);
-        }
       } else {
         await mutation.mutateAsync({
           workspaceId,
@@ -579,71 +590,11 @@ export default function RecordContributionPage() {
     }
   }
 
-  function pollPaymentIntent(paymentIntentId) {
-    if (pollRef.current) clearInterval(pollRef.current);
-
-    setIsConfirming(true);
-    let elapsed = 0;
-
-    pollRef.current = setInterval(async () => {
-      elapsed += 3000;
-
-      try {
-        const response = await chamaApi.getPaymentIntent(workspaceId, paymentIntentId);
-        const updated =
-          response?.data?.data?.paymentIntent ??
-          response?.data?.paymentIntent ??
-          response?.data;
-
-        if (updated && ["completed", "failed", "cancelled"].includes(updated.status)) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-          setIsConfirming(false);
-          toast.dismiss("stk");
-
-          if (updated.status === "completed") {
-            const receipt =
-              updated.receipt_reference || updated.external_reference || updated._id;
-            toast.success(`Payment confirmed — ${money(updated.amount)}`);
-            setNotice({
-              type: "success",
-              text: `Payment confirmed and recorded. Receipt: ${receipt}`,
-            });
-            setForm((previous) => ({ ...previous, obligationId: "", amount: "" }));
-            loadRegister();
-            window.dispatchEvent(new Event("finance:updated"));
-          } else {
-            const failure =
-              updated.failure_reason ||
-              "The member did not complete the M-Pesa prompt.";
-            toast.error(`Payment ${updated.status}: ${failure}`);
-            setNotice({ type: "error", text: failure });
-          }
-          return;
-        }
-      } catch {
-        // One failed poll shouldn't abandon the wait.
-      }
-
-      if (elapsed >= 60000 && pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        setIsConfirming(false);
-        toast.dismiss("stk");
-        setNotice({
-          type: "info",
-          text: "Still waiting on confirmation. If the member completed the prompt it will settle shortly and appear in Contributions.",
-        });
-      }
-    }, 3000);
-  }
-
   const isSubmitting =
     mutation.isPending ||
     stkPush.isPending ||
     mutation.isLoading ||
-    stkPush.isLoading ||
-    isConfirming;
+    stkPush.isLoading;
 
   const recentPayments = (register?.payments || []).slice(0, 6);
 
@@ -683,6 +634,7 @@ export default function RecordContributionPage() {
   // ------------------------------------------------------------
   if (!canRecordForOthers) {
     return (
+      <>
       <div className="mx-auto max-w-xl space-y-6 pb-12">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -760,6 +712,7 @@ export default function RecordContributionPage() {
                         <p className="truncate text-xs font-bold text-slate-900 dark:text-mist">
                           {item.planName}
                         </p>
+                        {item.notes && <p className="truncate text-[10px] font-medium text-slate-500 dark:text-mist-muted">{item.notes}</p>}
                         <p className="text-[10px] font-semibold text-slate-400">
                           {item.dueDate ? `Due ${formatDate(item.dueDate)}` : "No due date"}
                           {item.paid > 0 && ` · ${money(item.paid)} already paid`}
@@ -882,9 +835,7 @@ export default function RecordContributionPage() {
                 disabled={isSubmitting || !form.planId || !form.obligationId || !form.amount}
                 className="w-full py-3 text-sm font-bold"
               >
-                {isConfirming
-                  ? "Waiting for M-Pesa confirmation..."
-                  : isSubmitting
+                {isSubmitting
                   ? "Processing..."
                   : "Send M-Pesa prompt"}
               </Button>
@@ -892,10 +843,30 @@ export default function RecordContributionPage() {
           </Card>
         )}
       </div>
+      <MpesaStkModal
+        isOpen={Boolean(stkPayment)}
+        onClose={() => setStkPayment(null)}
+        chamaId={workspaceId}
+        ownerType={ownerType}
+        title="Contribution payment"
+        initialAmount={stkPayment?.amount || ""}
+        initialPhoneNumber={stkPayment?.phoneNumber || ""}
+        existingPaymentIntentId={stkPayment?.paymentIntentId}
+        existingCheckoutRequestId={stkPayment?.checkoutRequestId}
+        waitingOnly
+        onSuccess={() => {
+          setStkPayment(null);
+          setForm((previous) => ({ ...previous, obligationId: "", amount: "" }));
+          loadRegister();
+          window.dispatchEvent(new Event("finance:updated"));
+        }}
+      />
+      </>
     );
   }
 
   return (
+    <>
     <div className="space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1228,9 +1199,7 @@ export default function RecordContributionPage() {
                 }
                 className="w-full py-3 text-sm font-bold"
               >
-                {isConfirming
-                  ? "Waiting for M-Pesa confirmation..."
-                  : isSubmitting
+                {isSubmitting
                   ? "Processing..."
                   : isMpesa
                   ? "Send M-Pesa prompt"
@@ -1294,5 +1263,24 @@ export default function RecordContributionPage() {
         </div>
       </div>
     </div>
+    <MpesaStkModal
+      isOpen={Boolean(stkPayment)}
+      onClose={() => setStkPayment(null)}
+      chamaId={workspaceId}
+      ownerType={ownerType}
+      title="Contribution payment"
+      initialAmount={stkPayment?.amount || ""}
+      initialPhoneNumber={stkPayment?.phoneNumber || ""}
+      existingPaymentIntentId={stkPayment?.paymentIntentId}
+      existingCheckoutRequestId={stkPayment?.checkoutRequestId}
+      waitingOnly
+      onSuccess={() => {
+        setStkPayment(null);
+        setForm((previous) => ({ ...previous, obligationId: "", amount: "" }));
+        loadRegister();
+        window.dispatchEvent(new Event("finance:updated"));
+      }}
+    />
+    </>
   );
 }

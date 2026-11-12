@@ -27,7 +27,7 @@
 
 import ChamaLoan from "../models/ChamaLoan.js";
 import mpesaService from "../payment/providers/mpesa/mpesa.service.js";
-import { LOAN_STATUS } from "../modules/loans/Loan.constants.js";
+import { LOAN_STATUS } from "../modules/loans/index.js";
 import { createAuditLog, AUDIT_SCOPE_TYPES } from "../services/audit.service.js";
 import { AUDIT_ACTIONS } from "../constants/audit.constants.js";
 

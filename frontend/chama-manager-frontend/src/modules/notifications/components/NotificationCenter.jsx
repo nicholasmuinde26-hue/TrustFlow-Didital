@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { X, ChevronRight, Filter, Check, CheckCheck, Archive, ExternalLink } from "lucide-react";
 import {
   useUnreadNotifications,
@@ -66,18 +66,20 @@ function getPriorityBadge(priority) {
 
 export default function NotificationCenter() {
   const navigate = useNavigate();
+  const { workspaceId } = useParams();
   const [activeTab, setActiveTab] = useState("unread");
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
 
-  const { data: unreadNotifications, isLoading: unreadLoading } = useUnreadNotifications({ limit: 20 });
-  const { data: actionNotifications, isLoading: actionLoading } = useActionRequiredNotifications({ limit: 10 });
-  const { data: highPriorityNotifications, isLoading: highPriorityLoading } = useHighPriorityNotifications({ limit: 10 });
-  const { data: categoryNotifications, isLoading: categoryLoading } = useNotificationsByCategory(selectedCategory, { limit: 20 });
-  const { data: counts } = useNotificationCounts();
+  const workspaceScope = { workspaceId };
+  const { data: unreadNotifications, isLoading: unreadLoading } = useUnreadNotifications({ limit: 20, ...workspaceScope });
+  const { data: actionNotifications, isLoading: actionLoading } = useActionRequiredNotifications({ limit: 10, ...workspaceScope });
+  const { data: highPriorityNotifications, isLoading: highPriorityLoading } = useHighPriorityNotifications({ limit: 10, ...workspaceScope });
+  const { data: categoryNotifications, isLoading: categoryLoading } = useNotificationsByCategory(selectedCategory, { limit: 20, ...workspaceScope });
+  const { data: counts } = useNotificationCounts(workspaceScope);
 
   const markReadMutation = useMarkNotificationAsRead();
-  const markAllReadMutation = useMarkAllNotificationsAsRead();
+  const markAllReadMutation = useMarkAllNotificationsAsRead(workspaceScope);
   const markArchivedMutation = useMarkNotificationAsArchived();
   const markActionCompletedMutation = useMarkActionCompleted();
 

@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { useNotificationBadges } from "@/modules/notifications/hooks/useNotifications";
-import { findWorkspaceNavigationMatch } from "@/modules/workspaces/config/workspaceNavigation";
+import { findWorkspaceNavigationMatch } from '@/modules/workspaces/index.js';
 
 /**
  * The ONE contextual navigation bar for a workspace.
@@ -21,9 +21,9 @@ import { findWorkspaceNavigationMatch } from "@/modules/workspaces/config/worksp
  * never scrolls over (or hides) the breadcrumbs and page content.
  */
 
-export default function SectionTabs({ sections = [] }) {
+export default function SectionTabs({ sections = [], workspaceId }) {
   const { pathname } = useLocation();
-  const { countForRoute } = useNotificationBadges();
+  const { countForRoute } = useNotificationBadges(workspaceId);
 
   const best = findWorkspaceNavigationMatch(sections, pathname);
 

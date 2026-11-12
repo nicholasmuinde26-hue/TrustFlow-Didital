@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getDashboard } from "../services/dashboard.service";
+import { getDashboard } from '../services/dashboard.service.js';
 
 export default function useDashboard(workspaceId) {
   return useQuery({

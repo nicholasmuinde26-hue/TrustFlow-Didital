@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Card from '@/shared/components/ui/Card/Card';
 import CardContent from '@/shared/components/ui/Card/CardContent';
-import CardHeader from '@/shared/components/ui/Card/CardHeader';
 import Button from '@/shared/components/ui/Button/Button';
 import Input from '@/shared/components/ui/Input/Input';
 import StatCard from '@/shared/components/ui/StatCard/StatCard';
+import Dialog from '@/shared/components/ui/Dialog';
 import { toast } from 'react-hot-toast';
 import {
   Plus,
@@ -14,7 +14,6 @@ import {
   Coins,
   Target,
   Share2,
-  Sparkles,
 } from 'lucide-react';
 import api from '@/app/services/api';
 
@@ -26,40 +25,32 @@ function Label({ children, htmlFor }) {
   );
 }
 
-function CardDescription({ children }) {
-  return <p className="text-sm text-gray-600">{children}</p>;
-}
-
-function CardTitle({ children }) {
-  return <h3 className="text-lg font-semibold">{children}</h3>;
-}
-
-// Seed campaigns — harambees a burial chama typically runs on top of
-// its standard benefit payout, e.g. topping up for a case whose cost
-// exceeds the fixed benefit amount.
-const SEED_CAMPAIGNS = [
-  {
-    id: 'h1',
-    title: 'Top-up for the Otieno Family Funeral',
-    linkedCase: 'Member Death — J. Otieno',
-    target: 80000,
-    raised: 52000,
-    deadline: '2026-09-15',
-  },
-  {
-    id: 'h2',
-    title: 'Hospital Bill Support — Mama Njoki',
-    linkedCase: 'Emergency Welfare',
-    target: 40000,
-    raised: 40000,
-    deadline: '2026-08-30',
-  },
-];
-
 export default function FundraisingPage() {
   const { workspaceId } = useParams();
-  const [campaigns, setCampaigns] = useState(SEED_CAMPAIGNS);
+  const queryClient = useQueryClient();
+  const { data: campaigns = [], isLoading, isError } = useQuery({
+    queryKey: ['burial-fundraising-campaigns', workspaceId],
+    queryFn: async () => (await api.get(`/burial-chama/chama/${workspaceId}/fundraising-campaigns`)).data.data,
+    enabled: !!workspaceId,
+  });
+  const createCampaign = useMutation({
+    mutationFn: (payload) => api.post(`/burial-chama/chama/${workspaceId}/fundraising-campaigns`, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['burial-fundraising-campaigns', workspaceId] }),
+    onError: (error) => toast.error(error.response?.data?.message || 'Could not save the campaign'),
+  });
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [receiptFor, setReceiptFor] = useState('');
+  const [receipt, setReceipt] = useState({ amount: '', donor_name: '', method: 'cash', reference: '', anonymous: false });
+  const recordReceipt = useMutation({
+    mutationFn: ({ campaignId, payload }) => api.post(`/burial-chama/fundraising-campaigns/${campaignId}/contributions`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['burial-fundraising-campaigns', workspaceId] });
+      setReceiptFor('');
+      setReceipt({ amount: '', donor_name: '', method: 'cash', reference: '', anonymous: false });
+      toast.success('Harambee contribution recorded');
+    },
+    onError: (error) => toast.error(error.response?.data?.message || 'Could not record the contribution'),
+  });
   const [formData, setFormData] = useState({
     title: '',
     linkedCaseId: '',
@@ -80,10 +71,10 @@ export default function FundraisingPage() {
     retry: false,
   });
 
-  const activeCampaigns = campaigns.filter((c) => c.raised < c.target).length;
-  const totalRaised = campaigns.reduce((sum, c) => sum + c.raised, 0);
+  const activeCampaigns = campaigns.filter((c) => c.status === 'active').length;
+  const totalRaised = campaigns.reduce((sum, c) => sum + Number(c.raised_amount || 0), 0);
   const totalOutstanding = campaigns.reduce(
-    (sum, c) => sum + Math.max(c.target - c.raised, 0),
+    (sum, c) => sum + Math.max(Number(c.target_amount || 0) - Number(c.raised_amount || 0), 0),
     0
   );
 
@@ -93,30 +84,24 @@ export default function FundraisingPage() {
       toast.error('Please give the harambee a title and a target amount');
       return;
     }
-    const linkedCase = cases?.find((c) => c._id === formData.linkedCaseId);
-    setCampaigns((prev) => [
-      {
-        id: `h${prev.length + 1}`,
-        title: formData.title,
-        linkedCase: linkedCase
-          ? `${linkedCase.case_type || 'Case'} — ${linkedCase.deceased?.first_name || ''} ${
-              linkedCase.deceased?.last_name || ''
-            }`.trim()
-          : formData.description || 'Not linked to a case',
-        target: Number(formData.target),
-        raised: 0,
-        deadline: formData.deadline,
+    createCampaign.mutate({
+      title: formData.title,
+      case_id: formData.linkedCaseId || undefined,
+      target_amount: Number(formData.target),
+      deadline: formData.deadline || undefined,
+      description: formData.description,
+    }, {
+      onSuccess: () => {
+        toast.success('Harambee saved');
+        setIsFormOpen(false);
+        setFormData({ title: '', linkedCaseId: '', target: '', deadline: '', description: '' });
       },
-      ...prev,
-    ]);
-    toast.success('Harambee created (demo only — not yet saved to the server)');
-    setIsFormOpen(false);
-    setFormData({ title: '', linkedCaseId: '', target: '', deadline: '', description: '' });
+    });
   };
 
   const shareOnWhatsApp = (campaign) => {
-    const remaining = Math.max(campaign.target - campaign.raised, 0);
-    const message = `🤝 Harambee: ${campaign.title}\nTarget: KES ${campaign.target.toLocaleString()}\nRaised so far: KES ${campaign.raised.toLocaleString()}\nStill needed: KES ${remaining.toLocaleString()}${
+    const remaining = Math.max(campaign.target_amount - campaign.raised_amount, 0);
+    const message = `🤝 Harambee: ${campaign.title}\nTarget: KES ${campaign.target_amount.toLocaleString()}\nRaised so far: KES ${campaign.raised_amount.toLocaleString()}\nStill needed: KES ${remaining.toLocaleString()}${
       campaign.deadline ? `\nDeadline: ${campaign.deadline}` : ''
     }\n\nPlease contribute what you can — every bit helps 🙏`;
     const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
@@ -142,14 +127,6 @@ export default function FundraisingPage() {
         </Button>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
-        <Sparkles className="w-4 h-4 mt-0.5 shrink-0" />
-        <p>
-          Early preview — campaigns you create here stay on this screen until pledges and
-          M-Pesa contributions are wired up to the finance module.
-        </p>
-      </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard title="Active Harambees" value={activeCampaigns} icon={Megaphone} color="primary" />
         <StatCard
@@ -166,14 +143,8 @@ export default function FundraisingPage() {
         />
       </div>
 
-      {isFormOpen && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Start a Harambee</CardTitle>
-            <CardDescription>Optionally link it to an existing burial case</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+      <Dialog open={isFormOpen} onClose={() => setIsFormOpen(false)} title="Start a Harambee" description="Set a clear target and link the drive to a burial case so every receipt has context." icon={Megaphone}>
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <Label htmlFor="title">Title</Label>
                 <Input
@@ -191,7 +162,7 @@ export default function FundraisingPage() {
                     id="linkedCaseId"
                     value={formData.linkedCaseId}
                     onChange={(e) => setFormData({ ...formData, linkedCaseId: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-md"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-emerald-500 focus:bg-white dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist"
                   >
                     <option value="">— None —</option>
                     {cases.map((c) => (
@@ -202,13 +173,13 @@ export default function FundraisingPage() {
                   </select>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="target">Target Amount (KES)</Label>
                   <Input
                     id="target"
                     type="number"
-                    min="0"
+                    min="1"
                     value={formData.target}
                     onChange={(e) => setFormData({ ...formData, target: e.target.value })}
                     required
@@ -233,31 +204,29 @@ export default function FundraisingPage() {
                   placeholder="Any extra context for members"
                 />
               </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="secondary" onClick={() => setIsFormOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">Create Harambee</Button>
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-obsidian-border">
+                <Button type="button" variant="secondary" onClick={() => setIsFormOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={createCampaign.isPending}>{createCampaign.isPending ? 'Saving…' : 'Create Harambee'}</Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
-      )}
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {campaigns.map((c) => {
-          const pct = Math.min(Math.round((c.raised / c.target) * 100), 100);
+          const raised = Number(c.raised_amount || 0);
+          const target = Number(c.target_amount || 0);
+          const pct = target ? Math.min(Math.round((raised / target) * 100), 100) : 0;
           return (
-            <Card key={c.id}>
+            <Card key={c._id}>
               <CardContent className="space-y-3">
                 <div>
                   <h3 className="font-semibold">{c.title}</h3>
-                  <p className="text-xs text-gray-500">{c.linkedCase}</p>
+                  <p className="text-xs text-gray-500">{cases?.find((item) => String(item._id) === String(c.case_id))?.case_number || c.description || 'General welfare campaign'}</p>
                 </div>
                 <div>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium">KES {c.raised.toLocaleString()}</span>
-                    <span className="text-gray-500">of KES {c.target.toLocaleString()}</span>
+                    <span className="font-medium">KES {raised.toLocaleString()}</span>
+                    <span className="text-gray-500">of KES {target.toLocaleString()}</span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-2">
                     <div
@@ -267,7 +236,7 @@ export default function FundraisingPage() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>{c.deadline ? `Deadline: ${c.deadline}` : 'No deadline set'}</span>
+                  <span>{c.deadline ? `Deadline: ${new Date(c.deadline).toLocaleDateString()}` : 'No deadline set'}</span>
                   <button
                     onClick={() => shareOnWhatsApp(c)}
                     className="flex items-center gap-1 text-primary hover:underline"
@@ -275,14 +244,32 @@ export default function FundraisingPage() {
                     <Share2 className="w-3 h-3" /> Share on WhatsApp
                   </button>
                 </div>
+                <div className="flex items-center gap-3 border-t pt-3">
+                  <Button variant="secondary" onClick={() => setReceiptFor(c._id)}>Record contribution</Button>
+                  <span className="text-xs capitalize text-gray-500">{c.status}</span>
+                </div>
               </CardContent>
             </Card>
           );
         })}
-        {campaigns.length === 0 && (
+        {isLoading && <p className="col-span-2 py-8 text-center text-gray-400">Loading campaigns…</p>}
+        {isError && <p className="col-span-2 py-8 text-center text-rose-600">Campaigns could not be loaded.</p>}
+        {!isLoading && !isError && campaigns.length === 0 && (
           <p className="text-gray-400 col-span-2 text-center py-8">No harambees yet</p>
         )}
       </div>
+      <Dialog open={Boolean(receiptFor)} onClose={() => setReceiptFor('')} title="Record Harambee receipt" description={`Record money received for ${campaigns.find((item) => item._id === receiptFor)?.title || 'this campaign'}. This posts the receipt to the chama books.`} icon={Coins}>
+        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); recordReceipt.mutate({ campaignId: receiptFor, payload: { ...receipt, amount: Number(receipt.amount) } }); }}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><Label htmlFor="donor_name">Donor name</Label><Input id="donor_name" placeholder="Name or leave blank" value={receipt.donor_name} onChange={(event) => setReceipt({ ...receipt, donor_name: event.target.value })} disabled={receipt.anonymous} /></div>
+            <div><Label htmlFor="receipt_amount">Amount (KES)</Label><Input id="receipt_amount" placeholder="0.00" type="number" min="1" required value={receipt.amount} onChange={(event) => setReceipt({ ...receipt, amount: event.target.value })} /></div>
+            <div><Label htmlFor="receipt_method">Payment method</Label><select id="receipt_method" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm dark:border-obsidian-border dark:bg-obsidian-raised dark:text-mist" value={receipt.method} onChange={(event) => setReceipt({ ...receipt, method: event.target.value })}><option value="cash">Cash</option><option value="mpesa">M-Pesa</option><option value="bank">Bank</option></select></div>
+            <div><Label htmlFor="receipt_reference">Receipt / payment reference</Label><Input id="receipt_reference" placeholder="e.g. M-Pesa code" value={receipt.reference} onChange={(event) => setReceipt({ ...receipt, reference: event.target.value })} /></div>
+          </div>
+          <label className="flex items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs text-slate-600 dark:border-obsidian-border dark:text-mist-muted"><input className="mt-0.5" type="checkbox" checked={receipt.anonymous} onChange={(event) => setReceipt({ ...receipt, anonymous: event.target.checked, donor_name: '' })} /><span><span className="block font-semibold text-slate-800 dark:text-mist">Record as anonymous</span><span>The donor’s name will not appear in the campaign record.</span></span></label>
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-obsidian-border"><Button type="button" variant="secondary" onClick={() => setReceiptFor('')}>Cancel</Button><Button type="submit" disabled={recordReceipt.isPending}>{recordReceipt.isPending ? 'Saving…' : 'Save receipt'}</Button></div>
+        </form>
+      </Dialog>
     </div>
   );
 }

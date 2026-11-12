@@ -4,7 +4,8 @@ import Chama from "../../models/Chama.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
-import Meeting from "../../models/Meeting.js";
+import Meeting from "./Meeting.model.js";
+import { notifyWorkspace, formatEventDate } from "../../services/workspaceNotify.js";
 import AppError from "../../utils/AppError.js";
 
 function toMeetingDTO(meeting) {
@@ -88,6 +89,13 @@ export async function createMeeting(req, res, next) {
       link: link?.trim() || null,
       created_by: req.user._id,
     });
+    notifyWorkspace(context.workspaceType, workspaceId, "MEETING_SCHEDULED", {
+      title: "Meeting scheduled",
+      message: `${meeting.title} - ${formatEventDate(meeting.starts_at)}${meeting.link ? ". Join link is in the app." : "."}`,
+      meetingDate: formatEventDate(meeting.starts_at),
+      entityType: "Meeting",
+      entityId: meeting._id,
+    });
     res.status(201).json({ success: true, data: { meeting: toMeetingDTO(meeting) } });
   } catch (error) {
     next(error);
@@ -107,6 +115,11 @@ export async function cancelMeeting(req, res, next) {
       { returnDocument: 'after' }
     );
     if (!meeting) throw new AppError("Meeting not found", 404);
+    notifyWorkspace(context.workspaceType, workspaceId, "MEETING_CANCELLED", {
+      message: `${meeting.title} (${formatEventDate(meeting.starts_at)}) has been cancelled.`,
+      entityType: "Meeting",
+      entityId: meeting._id,
+    });
     res.json({ success: true, data: { meeting: toMeetingDTO(meeting) } });
   } catch (error) {
     next(error);

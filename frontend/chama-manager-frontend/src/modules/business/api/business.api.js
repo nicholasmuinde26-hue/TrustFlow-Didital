@@ -123,6 +123,11 @@ export const businessApi = {
   updateSettings: (workspaceId, payload) =>
     api.put(`/businesses/${workspaceId}/settings`, payload),
 
+  getStaff: (workspaceId) => api.get(`/businesses/${workspaceId}/staff`),
+  appointStaff: (workspaceId, payload) => api.post(`/businesses/${workspaceId}/staff`, payload),
+  revokeStaff: (workspaceId, staffId) => api.delete(`/businesses/${workspaceId}/staff/${staffId}`),
+  getActivity: (workspaceId) => api.get(`/businesses/${workspaceId}/activity`),
+
   // Customer payout (M-Pesa B2C) - matches business.routes.js's
   // POST /:businessId/customer-payouts
   customerPayout: (workspaceId, payload) =>

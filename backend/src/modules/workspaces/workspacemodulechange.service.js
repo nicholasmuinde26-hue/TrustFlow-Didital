@@ -6,14 +6,15 @@ import MgrRound from '../../models/MgrRound.js';
 import Withdrawal from '../../models/Withdrawal.js';
 import Payout from '../../models/Payout.js';
 import SavingsShareout from '../../models/SavingsShareout.js';
-import Dispute from '../../models/Dispute.js';
+import { countUnresolvedDisputes } from '../disputes/index.js';
 import BurialCase from '../../models/BurialCase.js';
 import ChamaAsset from '../../models/ChamaAsset.js';
 import InvestmentProposal from '../../models/InvestmentProposal.js';
 import AssetLease from '../../models/AssetLease.js';
 import ContributionPlan from '../../models/ContributionPlan.js';
 import AppError from '../../utils/AppError.js';
-import approvalService from '../approval/approval.service.js';
+import approvalService from '../approval/index.js';
+import { notifyWorkspace } from '../../services/workspaceNotify.js';
 import { createAuditLog } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 import {
@@ -23,7 +24,9 @@ import {
   buildWorkspaceConfig,
   getEnabledModules,
   validateModuleSelection,
+  sanitizeModuleLabels,
 } from '../../constants/workspaceModules.constants.js';
+import { isOrganizationTypeValid, getDefaultTerminology } from '../../constants/organizationTypes.constants.js';
 
 /**
  * ============================================================================
@@ -87,7 +90,7 @@ const OPEN_CHECKS = {
   disputes: {
     noun: 'unresolved dispute(s)',
     hint: 'Resolve or dismiss them first.',
-    count: (chamaId) => Dispute.countDocuments({ chama_id: chamaId, status: { $in: ['open', 'investigating'] } }),
+    count: countUnresolvedDisputes,
   },
   burial_welfare: {
     noun: 'burial case(s) still open',
@@ -129,7 +132,7 @@ const labelOf = (key) => WORKSPACE_MODULES[key]?.label || key;
 
 const broadcastWorkspaceModulesChanged = async (chamaId, modules, chamaType) => {
   try {
-    const { getIO } = await import('../realtime/socketServer.js');
+    const { getIO } = await import('../realtime/index.js');
     getIO().to(`chama:${String(chamaId)}`).emit('chama:workspace_modules_changed', {
       chama_id: String(chamaId),
       modules,
@@ -199,7 +202,7 @@ function diffSelection(chama, targetInput) {
   };
 }
 
-function assertNothingBlocked(blocked, disable) {
+export function assertNothingBlocked(blocked, disable) {
   const hits = disable.filter((key) => blocked[key]);
   if (hits.length === 0) return;
   const error = new AppError(
@@ -406,7 +409,12 @@ export async function handleModuleChangeDecision(request, { approverMembershipId
     }
 
     const configuredBy = await userIdOfMembership(request.initiated_by);
-    const config = buildWorkspaceConfig({ preset: presetFor(target), enabled: target, configuredBy });
+    const config = buildWorkspaceConfig({
+      preset: presetFor(target),
+      enabled: target,
+      configuredBy,
+      terminology: chama.workspace_config?.terminology || { workspace: 'Chama', module_labels: {} },
+    });
 
     const update = { workspace_config: config };
     // Keep the workspace shell in step with burial cover, as chama creation does.
@@ -434,6 +442,11 @@ export async function handleModuleChangeDecision(request, { approverMembershipId
         disable,
         approvers: (request.approvals || []).filter((a) => a.status === 'approved').map((a) => String(a.approver_id)),
       },
+    });
+    notifyWorkspace('Chama', request.chama_id, 'MODULES_CHANGED', {
+      message: `Workspace features were updated${enable.length ? ` - turned on: ${enable.join(', ').replace(/_/g, ' ')}` : ''}${disable.length ? ` - turned off: ${disable.join(', ').replace(/_/g, ' ')}` : ''}.`,
+      entityType: 'Chama',
+      entityId: request.chama_id,
     });
     return request;
   } catch (error) {
@@ -496,7 +509,7 @@ export async function countPendingModuleChanges() {
 /** Active Chamas and their current module setup for the admin feature console. */
 export async function listChamasForModuleAdmin() {
   const chamas = await Chama.find({ status: 'active' })
-    .select('_id name chama_type workspace_config')
+    .select('_id name chama_type organization_family organization_type workspace_config')
     .sort({ name: 1 })
     .lean();
 
@@ -511,6 +524,9 @@ export async function listChamasForModuleAdmin() {
     id: chama._id,
     name: chama.name,
     chama_type: chama.chama_type,
+    organization_family: chama.organization_family || 'chama',
+    organization_type: chama.organization_type || 'custom',
+    terminology: chama.workspace_config?.terminology || { workspace: 'Chama', module_labels: {} },
     preset: chama.workspace_config?.preset || presetFor(getEnabledModules(chama)),
     modules: getEnabledModules(chama),
     blocked: await getBlockedModules(chama),
@@ -519,9 +535,27 @@ export async function listChamasForModuleAdmin() {
 }
 
 /** Admin override: apply a module configuration directly, with blocker checks and an audit record. */
-export async function adminConfigureWorkspaceModules({ chamaId, adminUser, modules, preset = 'custom', note = '' }) {
-  const chama = await Chama.findById(chamaId).select('name chama_type workspace_config');
+export async function adminConfigureWorkspaceModules({
+  chamaId, adminUser, modules, preset = 'custom', note = '',
+  moduleLabels, workspaceLabel, organizationFamily, organizationType,
+}) {
+  const chama = await Chama.findById(chamaId).select('name chama_type organization_family organization_type workspace_config');
   if (!chama) throw new AppError('Chama not found', 404);
+
+  // Optional: re-classify the organization (family/type are descriptive only).
+  const nextFamily = organizationFamily || chama.organization_family || 'chama';
+  const nextOrgType = organizationType || chama.organization_type || 'custom';
+  if ((organizationFamily || organizationType) && !isOrganizationTypeValid(nextFamily, nextOrgType)) {
+    throw new AppError('Choose a valid organization family and type.', 400);
+  }
+  const existingTerminology = chama.workspace_config?.terminology || getDefaultTerminology(nextFamily);
+  // Labels omitted -> keep what the organization already has. Sending {} clears them.
+  const nextLabels = moduleLabels === undefined
+    ? sanitizeModuleLabels(existingTerminology.module_labels)
+    : sanitizeModuleLabels(moduleLabels);
+  const nextWorkspaceLabel = typeof workspaceLabel === 'string' && workspaceLabel.trim()
+    ? workspaceLabel.trim().slice(0, 40)
+    : (existingTerminology.workspace || getDefaultTerminology(nextFamily).workspace);
 
   const { target, current, disable } = diffSelection(chama, modules);
   const normalizedPreset = PRESET_KEYS.includes(preset) ? preset : presetFor(target);
@@ -529,11 +563,16 @@ export async function adminConfigureWorkspaceModules({ chamaId, adminUser, modul
     preset: normalizedPreset,
     enabled: target,
     configuredBy: adminUser?._id || null,
+    terminology: { ...existingTerminology, workspace: nextWorkspaceLabel, module_labels: nextLabels },
   });
   const nextType = target.includes('burial_welfare') ? 'burial' : 'standard';
   const sameModules = target.length === current.length && target.every((key) => current.includes(key));
   const samePreset = chama.workspace_config?.preset === normalizedPreset;
-  if (sameModules && samePreset && chama.chama_type === nextType) {
+  const currentLabels = chama.workspace_config?.terminology?.module_labels || {};
+  const sameLabels = JSON.stringify(currentLabels) === JSON.stringify(config.terminology.module_labels || {});
+  const sameOrg = nextFamily === (chama.organization_family || 'chama') && nextOrgType === (chama.organization_type || 'custom');
+  const sameWorkspaceLabel = nextWorkspaceLabel === (existingTerminology.workspace || nextWorkspaceLabel);
+  if (sameModules && samePreset && sameLabels && sameOrg && sameWorkspaceLabel && chama.chama_type === nextType) {
     throw new AppError('This Chama already has that feature configuration.', 400);
   }
 
@@ -567,7 +606,7 @@ export async function adminConfigureWorkspaceModules({ chamaId, adminUser, modul
     });
   }
 
-  await Chama.updateOne({ _id: chamaId }, { $set: { workspace_config: config, chama_type: nextType } });
+  await Chama.updateOne({ _id: chamaId }, { $set: { workspace_config: config, chama_type: nextType, organization_family: nextFamily, organization_type: nextOrgType } });
   await broadcastWorkspaceModulesChanged(chamaId, target, nextType);
   await createAuditLog({
     actorUserId: adminUser?._id,
@@ -587,6 +626,7 @@ export async function adminConfigureWorkspaceModules({ chamaId, adminUser, modul
     chama_type: nextType,
     preset: normalizedPreset,
     modules: target,
+    terminology: config.terminology,
   };
 }
 

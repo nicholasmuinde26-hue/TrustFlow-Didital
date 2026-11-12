@@ -7,6 +7,7 @@ import PaymentEventFactory from "./payment.events.js";
 import paymentEventBus from "./payment.event.bus.js"; 
 import { PAYMENT_EVENTS, PAYMENT_STATUS, PAYMENT_PROVIDER } from "./payment.constants.js";
 import PaymentIntent from "../models/PaymentIntent.js";
+import { shouldProcessCallback } from '../modules/publicGiving/publicGiving.logic.js';
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
@@ -86,7 +87,15 @@ class PaymentService {
                 actor: { userId: context.actorId },
                 participant: { memberId: context.participantId, phoneNumber: context.phoneNumber },
                 obligation: { id: context.obligationId },
-                metadata: { productType: context.type, chamaId: context.chamaId }
+                ownerId: context.ownerId,
+                ownerType: context.ownerType,
+                metadata: {
+                    ...(payment.metadata || {}),
+                    productType: context.type,
+                    chamaId: context.chamaId,
+                    owner_id: context.ownerId,
+                    owner_type: context.ownerType
+                }
             }, providerResponse));
 
             return { 
@@ -142,8 +151,8 @@ class PaymentService {
 
             const targetStatus = String(callback.status || PAYMENT_STATUS.FAILED).toLowerCase();
 
-            if (intent.status === PAYMENT_STATUS.COMPLETED) {
-                return { success: true, duplicate: true, intent };
+            if (!shouldProcessCallback(intent.status, callback.status || status)) {
+                return { success: intent.status === PAYMENT_STATUS.COMPLETED, duplicate: true, intent };
             }
 
             // ------------------------------------------------------
@@ -241,7 +250,15 @@ class PaymentService {
                       phoneNumber: payment.payment_instrument?.phone_number 
                     },
                     obligation: { id: payment.obligation_id },
-                    metadata: { productType: intent.type, chamaId: intent.owner_id }
+                    ownerId: intent.owner_id,
+                    ownerType: intent.owner_type,
+                    metadata: {
+                        ...(intent.metadata || {}),
+                        productType: intent.type,
+                        chamaId: intent.owner_id,
+                        owner_id: intent.owner_id,
+                        owner_type: intent.owner_type
+                    }
                 }, callback.raw);
                 await paymentEventBus.emitAsync(eventType, event);
             }

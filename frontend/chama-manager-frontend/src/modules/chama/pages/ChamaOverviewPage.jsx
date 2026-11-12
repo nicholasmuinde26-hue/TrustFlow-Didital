@@ -29,6 +29,7 @@ import {
 import clsx from "clsx";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
+import { useTerminology } from '@/modules/workspaces/index.js';
 import useAuth from "@/app/hooks/useAuth";
 
 import MpesaStkModal from "@/modules/finance/components/MpesaStkModal";
@@ -354,6 +355,7 @@ export default function ChamaOverviewPage({
 }) {
   const { workspaceId: paramId } = useParams();
   const workspaceCtx = useWorkspace();
+  const { workspace: organizationNoun, moduleLabel, organizationTerm } = useTerminology();
   const { user } = useAuth();
 
   const workspaceId = paramId || workspaceCtx?.workspaceId;
@@ -437,7 +439,8 @@ export default function ChamaOverviewPage({
 
   const data = useChamaOverviewData(workspaceId, isFull, workspaceCtx?.modules);
 
-  const { data: trust } = useTrustScore(workspaceId);
+  const trustEnabled = workspaceCtx?.hasModule ? workspaceCtx.hasModule("trust") : true;
+  const { data: trust } = useTrustScore(workspaceId, trustEnabled);
   const { data: meetings } = useMeetings(workspaceId);
 
   const { transactions } = useTransactions(
@@ -1538,7 +1541,7 @@ export default function ChamaOverviewPage({
 
           <div>
             <p className="mb-2 text-xs font-bold text-slate-600 dark:text-mist-muted">
-              Loans by status
+              {moduleLabel("loans", "Loans")} by status
             </p>
 
             <StackedBar
@@ -1725,7 +1728,7 @@ export default function ChamaOverviewPage({
               </span>
 
               <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400 dark:text-mist-muted">
-                Chama financial workspace
+                {organizationNoun} financial workspace
               </span>
 
               {booksPill ? (
@@ -1803,7 +1806,7 @@ export default function ChamaOverviewPage({
                       : "text-slate-500 hover:text-slate-900 dark:text-mist-muted dark:hover:text-mist"
                   )}
                 >
-                  Chama
+                  {organizationNoun}
                 </button>
 
                 <button
@@ -1841,7 +1844,7 @@ export default function ChamaOverviewPage({
               className={clsx(btnCls, "bg-white/80 shadow-sm dark:bg-obsidian-raised")}
             >
               <User size={14} />
-              My Chama
+              My {organizationNoun}
             </Link>
 
             {hasSavings ? (
@@ -2059,7 +2062,7 @@ export default function ChamaOverviewPage({
           label="Your financial position"
           icon={Wallet}
           value={mine?.my_total_contributions}
-          caption="Your total confirmed contributions to this chama"
+          caption={organizationTerm("Your total confirmed contributions to this chama")}
         >
           <StatStrip onDark>
             <Stat
@@ -2097,7 +2100,7 @@ export default function ChamaOverviewPage({
       <section className="space-y-3">
         <SectionHeader
           eyebrow="At a glance"
-          title={viewingFull ? "Financial health" : "Your chama activity"}
+          title={viewingFull ? "Financial health" : organizationTerm("Your chama activity")}
           description={
             viewingFull
               ? "The four signals worth seeing before opening the detailed books."
@@ -2117,19 +2120,19 @@ export default function ChamaOverviewPage({
             />
             <KpiCard
               icon={PiggyBank}
-              label="Savings pool"
+              label={moduleLabel("savings", "Savings pool")}
               value={money(summary?.savings_balance)}
               sub="Member savings"
               tone="emerald"
             />
             <KpiCard
               icon={Coins}
-              label="Loans outstanding"
+              label={`${moduleLabel("loans", "Loans")} outstanding`}
               value={money(summary?.outstanding_loans)}
               sub={
                 loans
                   ? `${loans.count} loan${loans.count === 1 ? "" : "s"} on the book`
-                  : "Owed to the chama"
+                  : organizationTerm("Owed to the chama")
               }
               tone="amber"
             />
@@ -2159,7 +2162,7 @@ export default function ChamaOverviewPage({
               icon={Wallet}
               label="Your contributions"
               value={money(mine?.my_total_contributions)}
-              sub="Total paid into this chama"
+              sub={organizationTerm("Total paid into this chama")}
               tone="violet"
             />
             <KpiCard
@@ -2178,7 +2181,7 @@ export default function ChamaOverviewPage({
             />
             <KpiCard
               icon={ShieldCheck}
-              label="Chama trust"
+              label={organizationTerm("Chama trust")}
               value={trustScore != null ? `${trustScore}/100` : "—"}
               sub={trust?.grade ? `Grade ${trust.grade}` : "Not generated yet"}
               tone="emerald"
@@ -2233,7 +2236,7 @@ export default function ChamaOverviewPage({
             />
             <QuickAction
               icon={Users}
-              label="Contributions"
+              label={moduleLabel("contributions", "Contributions")}
               description="Track member collections"
               to={`${base}/contributions`}
             />

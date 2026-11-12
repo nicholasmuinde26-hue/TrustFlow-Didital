@@ -5,7 +5,7 @@ import TrustProfile from './models/TrustProfile.js';
 import PlatformAdmin from '../../models/PlatformAdmin.js';
 import User from '../../models/User.js';
 import { sendSecurityAlertEmail, isEmailChannelConfigured } from '../../services/notifications/email.service.js';
-import { findUnbalancedOwners } from '../finance/accounting/glBalance.service.js';
+import { findUnbalancedOwners } from '../finance/index.js';
 
 // Recipients are every ACTIVE sub-admin scoped to the `security` category
 // PLUS every Super Admin. Super Admins are stored on User.systemRole and

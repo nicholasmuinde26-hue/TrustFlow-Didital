@@ -5,7 +5,7 @@ import YearEndSnapshot from '../../models/YearEndSnapshot.js';
 import ApprovalRequest from '../../models/ApprovalRequest.js';
 import AuditLog from '../../models/AuditLog.js';
 import AppError from '../../utils/AppError.js';
-import approvalService from '../approval/approval.service.js';
+import approvalService from '../approval/index.js';
 import { createAuditLog } from '../../services/audit.service.js';
 import { AUDIT_ACTIONS } from '../../constants/audit.constants.js';
 import {
@@ -17,7 +17,7 @@ import {
   computeSnapshot, persistSnapshot, verifyStoredSnapshot, countPendingTransactions,
 } from './yearEnd.snapshot.service.js';
 import { seedOpeningBalances, findNextYear } from './yearEnd.opening.service.js';
-import { settlementOverridesWithFunds } from '../finance/fund.service.js';
+import { settlementOverridesWithFunds } from '../finance/index.js';
 
 // Fixed on purpose: the person starting a close must not be able to lower the
 // bar for approving it. The initiator cannot approve their own close.

@@ -5,6 +5,16 @@ import confirmationService from '../services/confirmation.service.js';
 import toastService from '../services/toast.service.js';
 import Notification from '../models/Notification.js';
 
+async function getActiveWorkspaceMembership(req) {
+  const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
+  const query = { user_id: req.user._id, status: 'active' };
+  // A workspace id is supplied by the app's active workspace context. Match
+  // membership to that exact chama so users with several memberships never
+  // receive another chama's notification feed or mark its items read.
+  if (req.query.workspaceId) query.chama_id = req.query.workspaceId;
+  return ChamaMembership.findOne(query);
+}
+
 // ========================================
 // NOTIFICATION CONTROLLER
 // ========================================
@@ -23,11 +33,7 @@ export const getUnreadNotifications = async (req, res) => {
     const { limit = 20, skip = 0, category } = req.query;
 
     // Get user's active membership for the chama
-    const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
-    const membership = await ChamaMembership.findOne({
-      user_id: user._id,
-      status: 'active'
-    });
+    const membership = await getActiveWorkspaceMembership(req);
 
     if (!membership) {
       return res.status(404).json({
@@ -65,11 +71,7 @@ export const getActionRequiredNotifications = async (req, res) => {
     const { user } = req;
     const { limit = 10, skip = 0 } = req.query;
 
-    const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
-    const membership = await ChamaMembership.findOne({
-      user_id: user._id,
-      status: 'active'
-    });
+    const membership = await getActiveWorkspaceMembership(req);
 
     if (!membership) {
       return res.status(404).json({
@@ -106,11 +108,7 @@ export const getHighPriorityNotifications = async (req, res) => {
     const { user } = req;
     const { limit = 10, skip = 0 } = req.query;
 
-    const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
-    const membership = await ChamaMembership.findOne({
-      user_id: user._id,
-      status: 'active'
-    });
+    const membership = await getActiveWorkspaceMembership(req);
 
     if (!membership) {
       return res.status(404).json({
@@ -148,11 +146,7 @@ export const getNotificationsByCategory = async (req, res) => {
     const { category } = req.params;
     const { limit = 20, skip = 0, state } = req.query;
 
-    const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
-    const membership = await ChamaMembership.findOne({
-      user_id: user._id,
-      status: 'active'
-    });
+    const membership = await getActiveWorkspaceMembership(req);
 
     if (!membership) {
       return res.status(404).json({
@@ -189,11 +183,7 @@ export const getNotificationCounts = async (req, res) => {
   try {
     const { user } = req;
 
-    const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
-    const membership = await ChamaMembership.findOne({
-      user_id: user._id,
-      status: 'active'
-    });
+    const membership = await getActiveWorkspaceMembership(req);
 
     if (!membership) {
       return res.status(404).json({
@@ -263,11 +253,7 @@ export const markAllNotificationsAsRead = async (req, res) => {
   try {
     const { user } = req;
 
-    const ChamaMembership = (await import('../models/ChamaMembership.js')).default;
-    const membership = await ChamaMembership.findOne({
-      user_id: user._id,
-      status: 'active'
-    });
+    const membership = await getActiveWorkspaceMembership(req);
 
     if (!membership) {
       return res.status(404).json({

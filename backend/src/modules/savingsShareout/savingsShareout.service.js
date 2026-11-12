@@ -1,3 +1,4 @@
+import { notifyWorkspace } from '../../services/workspaceNotify.js';
 import mongoose from 'mongoose';
 
 import SavingsShareout from '../../models/SavingsShareout.js';
@@ -9,10 +10,9 @@ import ChamaLoan from '../../models/ChamaLoan.js';
 import Withdrawal from '../../models/Withdrawal.js';
 
 import AppError from '../../utils/AppError.js';
-import accountingService from '../finance/accounting/accounting.service.js';
-import { creditMemberWallet } from '../finance/memberWallet.service.js';
+import { accountingService, creditMemberWallet } from '../finance/index.js';
 
-import { OPEN_LOAN_STATUSES } from '../loans/Loan.constants.js';
+import { OPEN_LOAN_STATUSES } from '../loans/index.js';
 
 import {
   toDecimal,
@@ -444,6 +444,14 @@ export const payShareoutItem = async ({
     await shareout.save({ session });
 
     if (useTxn) await session.commitTransaction();
+
+    if (allSettled) {
+      notifyWorkspace('Chama', chamaId, 'SHAREOUT_EXECUTED', {
+        message: 'The savings share-out has been paid out to all members. Check your wallet or M-Pesa.',
+        entityType: 'SavingsShareout',
+        entityId: shareout._id
+      });
+    }
 
     return shareout;
   } catch (error) {

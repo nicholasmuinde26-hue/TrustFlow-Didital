@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pencil, Crown, UserX, UserCheck2, ShieldAlert } from "lucide-react";
 
-import { assignableRoles } from "@/modules/workspaces/permissions/Permissions";
+import { assignableRoles } from '@/modules/workspaces/index.js';
 
 const roleLabel = (role) =>
   String(role || "member")

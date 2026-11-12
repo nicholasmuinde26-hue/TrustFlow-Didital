@@ -2,7 +2,7 @@ import { useParams, Navigate } from "react-router-dom";
 
 import Spinner from "@/shared/components/ui/Spinner";
 
-import useDashboard from "../hooks/useDashboard";
+import useDashboard from '../hooks/useDashboard.js';
 
 import ChamaOverviewPage from "@/modules/chama/pages/ChamaOverviewPage";
 import BurialChamaOverviewPage from "@/modules/burialChama/pages/Burialchamaoverviewpage";

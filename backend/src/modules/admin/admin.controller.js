@@ -1,11 +1,11 @@
 import * as AdminService from './admin.service.js';
-import { listOrgKycForAdmin, getOrgKycForAdmin, reviewOrgKyc } from '../chama/publicProfiles.service.js';
+import { listOrgKycForAdmin, getOrgKycForAdmin, reviewOrgKyc } from '../chama/index.js';
 import {
   listModuleChangeRequestsForAdmin,
   adminDecideModuleChange,
   listChamasForModuleAdmin,
   adminConfigureWorkspaceModules,
-} from '../workspaces/workspacemodulechange.service.js';
+} from '../workspaces/index.js';
 
 export const createAdminStepUpController = async (req, res, next) => {
   try {
@@ -169,6 +169,13 @@ export const listWorkspaceRequestsController = async (req, res, next) => {
   }
 };
 
+export const listPublicGivingReportsController = async (_req, res, next) => {
+  try { res.json({ success: true, data: await AdminService.listPublicGivingReports() }); } catch (error) { next(error); }
+};
+export const reviewPublicGivingReportsController = async (req, res, next) => {
+  try { res.json({ success: true, data: await AdminService.reviewPublicGivingReports(req.params.groupId, req.body, req.user) }); } catch (error) { next(error); }
+};
+
 export const getWorkspaceRequestController = async (req, res, next) => {
   try {
     const { requestId } = req.params;
@@ -284,6 +291,7 @@ const decideModuleChange = (decision) => async (req, res, next) => {
       adminUser: req.user,
       decision,
       note: req.body?.note,
+      moduleLabels: req.body?.moduleLabels,
     });
     res.status(200).json({ success: true, data });
   } catch (error) { next(error); }
@@ -305,6 +313,10 @@ export const configureChamaFeaturesController = async (req, res, next) => {
       modules: req.body?.modules,
       preset: req.body?.preset,
       note: req.body?.note,
+      moduleLabels: req.body?.moduleLabels,
+      workspaceLabel: req.body?.workspaceLabel,
+      organizationFamily: req.body?.organizationFamily,
+      organizationType: req.body?.organizationType,
     });
     res.status(200).json({ success: true, data });
   } catch (error) { next(error); }

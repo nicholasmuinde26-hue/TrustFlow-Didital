@@ -5,11 +5,11 @@ import app from "./app.js";
 import env from "./config/env.js";
 import { connectDatabase } from "./config/database.js";
 
-import { initSocket } from "./modules/realtime/socketServer.js";
+import { initSocket } from "./modules/realtime/index.js";
 
 import { startPaymentIntentReconciliationJob } from "./jobs/paymentIntentReconciliation.job.js"; // FIX: was paymentIntentReconciliation.job
 import { startLoanDisbursementReconciliationJob } from "./jobs/loanDisbursementReconciliation.job.js";
-import { startPollAutoCloseJob } from "./jobs/pollAutoClose.job.js";
+import { startRegisteredModuleJobs } from "./modules/registry.js";
 import { startSavingsShareoutSchedulerJob } from "./jobs/savingsShareoutScheduler.job.js";
 import { startUssdSessionCleanupJob } from "./jobs/ussdSessionCleanup.job.js";
 import { startCashDepositEnforcementJob } from "./jobs/cashDepositEnforcement.job.js";
@@ -17,7 +17,8 @@ import { startAssetManagerReportSchedulerJob } from "./jobs/Assetmanagerreportsc
 import { startAssetNudgesJob } from "./jobs/assetNudges.job.js";
 import { startContributionCalendarJob } from "./jobs/contributionCalendar.job.js";
 import { startMgrRoundLifecycleJob } from "./jobs/mgrRoundLifecycle.job.js";
-import { ensureDefaultPlans } from "./modules/billing/billingEntitlement.service.js";
+import { ensureDefaultPlans } from "./modules/billing/index.js";
+import { startFinanceEngine } from "./modules/finance/index.js";
 
 // NEW: Payment Provider Bootstrap
 import { initializePaymentProviders } from "./payment/providers/provider.bootstrap.js";
@@ -104,18 +105,19 @@ async function startServer() {
         // ============================================================
         const paymentRegistry = initializePaymentProviders();
         console.log(` Registered Payment Providers: [${paymentRegistry.list().join(', ')}]`);
+        startFinanceEngine();
 
         // ============================================================
         // START BACKGROUND JOBS
         // ============================================================
 
-        startPaymentIntentReconciliationJob();
+        startPaymentIntentReconciliationJob({ excludePublicGiving: true });
         console.log(` Payment Intent Reconciliation Job: Started [30s interval]`);
 
         startLoanDisbursementReconciliationJob();
         console.log(` Loan Disbursement Reconciliation Job: Started [60s interval]`);
 
-        startPollAutoCloseJob();
+        startRegisteredModuleJobs();
         console.log(` Poll Auto-Close Job: Started [60s interval]`);
 
         startSavingsShareoutSchedulerJob();

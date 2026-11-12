@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Megaphone } from "lucide-react";
+import { Megaphone, Plus } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
 import {
@@ -9,7 +10,7 @@ import {
   canApproveAnnouncement,
   announcementNeedsApproval,
   canSubmitAnnouncements,
-} from "@/modules/workspaces/permissions/Permissions";
+} from '@/modules/workspaces/index.js';
 
 import {
   useAnnouncements,
@@ -27,6 +28,7 @@ import Spinner from "@/shared/components/ui/Spinner";
 export default function AnnouncementsPage() {
   const { workspaceId } = useParams();
   const { workspaces, currentWorkspace } = useWorkspace();
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const workspace =
     workspaces.find((w) => (w.id ?? w._id) === workspaceId) ||
@@ -60,21 +62,25 @@ export default function AnnouncementsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-mist">
-        Announcements
-      </h1>
-
-      <p className="mt-2 text-slate-500 dark:text-mist-muted">
-        {canSubmit
-          ? needsApproval
-            ? `Submit updates for everyone in this workspace. ${manage ? "Your posts" : "Submissions"} need approval from ${approverLabel} before members see them.`
-            : "Post updates for everyone in this workspace. Members can read but not remove them."
-          : "Updates from your organizer."}
-      </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-mist">Announcements</h1>
+          <p className="mt-2 text-slate-500 dark:text-mist-muted">
+            {canSubmit
+              ? needsApproval
+                ? `Submit updates for everyone in this workspace. ${manage ? "Your posts" : "Submissions"} need approval from ${approverLabel} before members see them.`
+                : "Post updates for everyone in this workspace. Members can read but not remove them."
+              : "Updates from your organizer."}
+          </p>
+        </div>
+        {canSubmit && <button type="button" onClick={() => setComposerOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"><Plus size={16} /> New announcement</button>}
+      </div>
 
       <div className="mt-6 space-y-6">
         {canSubmit && (
           <AnnouncementComposer
+            open={composerOpen}
+            onClose={() => setComposerOpen(false)}
             submitting={createAnnouncement.isPending}
             type={type}
             needsApproval={needsApproval}

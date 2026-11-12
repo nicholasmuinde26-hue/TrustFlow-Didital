@@ -4,13 +4,13 @@ import Chama from "../../models/Chama.js";
 import Business from "../../models/Business.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 
-import { getWorkspaceDashboard } from "../workspaces/workspaceDashboard.service.js";
-import financeService from "../finance/finance.service.js";
-import loanDashboardService from "../loans/Loandashboard.service.js";
-import { getSummary as getBusinessSummary } from "../business/business.service.js";
-import contributionObligationService from "../contributionPlan/contributionObligation.service.js";
-import { findRecentAnomalies } from "../finance/anomalyDetection.service.js";
-import { checkGlBalance } from "../finance/accounting/glBalance.service.js";
+import { getWorkspaceDashboard } from "../workspaces/index.js";
+import { financeService } from "../finance/index.js";
+import { loanDashboardService } from "../loans/index.js";
+import { getSummary as getBusinessSummary } from "../business/index.js";
+import { contributionObligationService } from "../contributionPlan/index.js";
+import { findRecentAnomalies } from "../finance/index.js";
+import { checkGlBalance } from "../finance/index.js";
 import AppError from "../../utils/AppError.js";
 
 const toNumber = (val) => {

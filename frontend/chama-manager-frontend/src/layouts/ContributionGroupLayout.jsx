@@ -21,7 +21,7 @@ import ThemeToggle from "@/shared/components/layout/ThemeToggle/ThemeToggle";
 import NotificationButton from "@/shared/components/layout/NotificationButton/NotificationButton";
 import UserMenu from "@/shared/components/layout/UserMenu/UserMenu";
 import { AiAssistantWidget } from "@/modules/ai";
-import WorkspaceQuickLaunchers from "@/modules/workspaces/components/WorkspaceQuickLaunchers";
+import { WorkspaceQuickLaunchers } from '@/modules/workspaces/index.js';
 
 /*
  * NOTE ON THIS FILE: it was previously a byte-for-byte duplicate of
@@ -83,7 +83,7 @@ export default function ContributionGroupLayout({ workspace, workspaceId }) {
       <header className="sticky top-0 z-30 hidden border-b border-obsidian-border bg-white/80 backdrop-blur-xl dark:bg-obsidian/90 lg:block">
         <div className="flex h-20 items-center justify-between gap-4 px-8">
           <div className="flex min-w-0 items-center gap-4">
-            <Logo />
+            <Logo brand="GiveTogether" />
             <div className="h-8 w-px bg-slate-200 dark:bg-obsidian-border" />
             <p className="truncate text-sm font-bold text-slate-900 dark:text-mist">{workspace?.name || "Contribution group"}</p>
           </div>

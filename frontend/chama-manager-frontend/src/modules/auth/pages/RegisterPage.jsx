@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Building2,
@@ -6,23 +6,18 @@ import {
   Wallet,
   ArrowRight,
   PlusCircle,
-  KeyRound,
   Users,
-  Sparkles,
 } from "lucide-react";
-
 import useAuth from "@/app/hooks/useAuth";
 import useWorkspace from "@/app/hooks/useWorkspace";
 import workspaceService from "@/app/services/workspace.service";
-
 import AuthLayout from "@/layouts/AuthLayout";
 import AuthCard from "@/modules/auth/components/AuthCard";
 import PasswordInput from "@/modules/auth/components/PasswordInput";
 import OtpChannelSelect from "@/modules/auth/components/OtpChannelSelect";
 import Input from "@/shared/components/ui/Input/Input";
 import Button from "@/shared/components/ui/Button";
-import WorkspaceRequestModal from "@/modules/workspaces/components/WorkspaceRequestModal";
-
+import { WorkspaceRequestModal } from '@/modules/workspaces/index.js';
 /* ============================================================
    WORKSPACE TYPE HELPERS — same normalization used on LoginPage
    and across the workspace switcher / hub, so a workspace lands
@@ -49,10 +44,8 @@ export default function RegisterPage() {
   const { selectWorkspace } = useWorkspace();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Registration Steps: "register" (Step 1) | "otp" (Step 2) | "workspace" (Step 3)
+  // Registration Steps: "register" (1) | "otp" (2) | "workspace" (3a, has workspaces) | "onboarding" (3b, none yet)
   const [step, setStep] = useState("register");
-
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -62,26 +55,29 @@ export default function RegisterPage() {
   });
   const [otpCode, setOtpCode] = useState("");
   const [channel, setChannel] = useState("sms");
-
   // Workspace-picker step (post-verification) state — mirrors LoginPage's
   // step 3 exactly, for someone who registered but already belongs to a
   // workspace (e.g. auto-added via a join-link/invite during signup).
   const [myWorkspaces, setMyWorkspaces] = useState([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
-  const [selectedType, setSelectedType] = useState("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
-
   // Post-OTP Onboarding & Discovery State
   const [onboardingType, setOnboardingType] = useState("chama");
   const [directoryItems, setDirectoryItems] = useState([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directorySearch, setDirectorySearch] = useState("");
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-
+  // Ignore out-of-order directory responses (fast typing / quick tab switching)
+  const directoryReqId = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Never leave GuestRoute's redirect suppressed after this page unmounts
+  useEffect(() => {
+    return () => setSuppressGuestRedirect?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Preserve the full path INCLUDING query string (e.g. a Chama
   // join-link's ?token=...) — dropping .search here would silently
   // strip the token and break the join-link flow after registering.
@@ -93,7 +89,6 @@ export default function RegisterPage() {
   const redirectTo = location.state?.from
     ? `${location.state.from.pathname || "/home"}${location.state.from.search || ""}`
     : "/home";
-
   // SMS & WhatsApp ride on the phone number (always offered once one's
   // entered); Email only shows up once the user has typed one in.
   const availableChannels = [
@@ -105,12 +100,41 @@ export default function RegisterPage() {
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-
     // If the user clears the email field while "email" is selected,
     // fall back to SMS rather than submitting with a dead channel.
     if (name === "email" && !value.trim() && channel === "email") {
       setChannel("sms");
     }
+  }
+
+  // ------------------------------------------------------------------
+  // MULTI-FIELD PASTE: paste "name, phone, email" (any order; separated by
+  // tabs, commas, semicolons or new lines, e.g. a row copied from Excel or
+  // Sheets) into name, phone or email and all three fill at once.
+  // ------------------------------------------------------------------
+  function handlePaste(event) {
+    const text = event.clipboardData.getData("text");
+    const parts = text
+      .split(/[\t,;\n]+/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    // A single value: let the normal paste happen
+    if (parts.length < 2) return;
+
+    event.preventDefault();
+
+    const email = parts.find((p) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p)) || "";
+    const phone =
+      parts.find((p) => /^\+?\d{9,15}$/.test(p.replace(/[\s-]/g, ""))) || "";
+    const name = parts.find((p) => p !== email && p !== phone) || "";
+
+    setForm((prev) => ({
+      ...prev,
+      name: name || prev.name,
+      phone: phone ? phone.replace(/[\s-]/g, "") : prev.phone,
+      email: email || prev.email,
+    }));
   }
 
   // ------------------------------------------------------------------
@@ -120,22 +144,18 @@ export default function RegisterPage() {
     event.preventDefault();
     setError("");
     setNotice("");
-
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
-
     if (form.password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
     }
-
     if (channel === "email" && !form.email.trim()) {
       setError("Please provide an email address to receive your security code via Email.");
       return;
     }
-
     if (form.email.trim()) {
       const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!EMAIL_REGEX.test(form.email.trim())) {
@@ -143,9 +163,7 @@ export default function RegisterPage() {
         return;
       }
     }
-
     setSubmitting(true);
-
     try {
       const res = await register({
         name: form.name,
@@ -154,13 +172,11 @@ export default function RegisterPage() {
         password: form.password,
         channel,
       });
-
       if (res?.otpRequired) {
         if (res.phone) {
           setForm((prev) => ({ ...prev, phone: res.phone }));
         }
         if (res.channel) setChannel(res.channel);
-
         const dest = res.channel === "email" ? (res.email || form.email) : (res.phone || form.phone);
         let noticeText = res?.message || `Account created! Security OTP code sent to ${dest}`;
         if (res?.devOtp) {
@@ -170,6 +186,7 @@ export default function RegisterPage() {
         setNotice(noticeText);
         setStep("otp");
       } else {
+        setSuppressGuestRedirect?.(true);
         await finishRegistration();
       }
     } catch (err) {
@@ -188,13 +205,11 @@ export default function RegisterPage() {
     event.preventDefault();
     setError("");
     setSubmitting(true);
-
     // Block GuestRoute's own auto-redirect for the duration of this
     // flow — verifyOtp() below flips isAuthenticated true, and without
     // this GuestRoute would immediately send the person to /home
     // before finishRegistration() gets to show the workspace picker.
     setSuppressGuestRedirect?.(true);
-
     try {
       const identifier = channel === "email" && form.email.trim() ? form.email.trim() : form.phone;
       await verifyOtp({ identifier, phone: form.phone, email: form.email, otpCode });
@@ -225,20 +240,16 @@ export default function RegisterPage() {
       navigate(redirectTo, { replace: true });
       return;
     }
-
     setWorkspacesLoading(true);
-
     try {
       const [items, dir] = await Promise.all([
         workspaceService.getWorkspaces().catch(() => []),
         workspaceService.getDirectory("chama").catch(() => []),
       ]);
-
       setMyWorkspaces(items);
       setDirectoryItems(dir);
       if (items.length > 0) {
         setSelectedWorkspaceId(items[0].id ?? items[0]._id);
-        setSelectedType(normalizeType(items[0].type));
         setStep("workspace");
       } else {
         setOnboardingType("chama");
@@ -247,7 +258,6 @@ export default function RegisterPage() {
     } catch {
       setStep("onboarding");
     } finally {
-
       setWorkspacesLoading(false);
     }
   }
@@ -256,25 +266,27 @@ export default function RegisterPage() {
     setOnboardingType(newType);
     setDirectorySearch("");
     setDirectoryLoading(true);
+    const reqId = ++directoryReqId.current;
     try {
       const items = await workspaceService.getDirectory(newType);
-      setDirectoryItems(items);
+      if (reqId === directoryReqId.current) setDirectoryItems(items);
     } catch (err) {
       console.error(err);
     } finally {
-      setDirectoryLoading(false);
+      if (reqId === directoryReqId.current) setDirectoryLoading(false);
     }
   }
 
   async function handleSearchDirectory(query) {
     setDirectoryLoading(true);
+    const reqId = ++directoryReqId.current;
     try {
       const items = await workspaceService.getDirectory(onboardingType, query);
-      setDirectoryItems(items);
+      if (reqId === directoryReqId.current) setDirectoryItems(items);
     } catch (err) {
       console.error(err);
     } finally {
-      setDirectoryLoading(false);
+      if (reqId === directoryReqId.current) setDirectoryLoading(false);
     }
   }
 
@@ -283,21 +295,16 @@ export default function RegisterPage() {
   // ------------------------------------------------------------------
   function handleOpenWorkspace(event) {
     event.preventDefault();
-
     const workspace = myWorkspaces.find(
       (w) => String(w.id ?? w._id) === String(selectedWorkspaceId)
     );
-
     if (!workspace) {
       setError("Please choose a workspace to continue.");
       return;
     }
-
     selectWorkspace(workspace);
-
     const workspaceId = workspace.id ?? workspace._id;
     const type = normalizeType(workspace.type);
-
     navigate(type === "business" ? `/workspace/${workspaceId}/business` : `/workspace/${workspaceId}`, {
       replace: true,
     });
@@ -308,7 +315,6 @@ export default function RegisterPage() {
     setError("");
     setNotice("");
     setSubmitting(true);
-
     try {
       const identifier = channel === "email" && form.email.trim() ? form.email.trim() : form.phone;
       const res = await sendOtp({ identifier, phone: form.phone, email: form.email, channel });
@@ -327,17 +333,6 @@ export default function RegisterPage() {
       setSubmitting(false);
     }
   }
-
-  // Types the person actually has at least one workspace of — no
-  // point offering "Business" in the dropdown if they don't have one.
-  const availableTypes = Object.keys(TYPE_META).filter((type) =>
-    myWorkspaces.some((w) => normalizeType(w.type) === type)
-  );
-
-  const workspacesOfSelectedType = myWorkspaces.filter(
-    (w) => normalizeType(w.type) === selectedType
-  );
-
   return (
     <AuthLayout>
       <AuthCard>
@@ -352,7 +347,6 @@ export default function RegisterPage() {
             ? "Your Assigned Chama"
             : "Discover & Join Workspaces"}
         </h2>
-
         <p className="mt-1 text-slate-500">
           {step === "register"
             ? "Start managing your Chama today"
@@ -362,21 +356,17 @@ export default function RegisterPage() {
             ? "You have been set as management for the workspace below. Select your Chama to enter:"
             : "Select an entity type to discover verified workspaces or submit a creation request for your committee."}
         </p>
-
-
         {/* Status Alerts & Notifications */}
         {notice && (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
             {notice}
           </div>
         )}
-
         {error && (
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/60 dark:text-red-300">
             {error}
           </div>
         )}
-
         {/* STEP 1 FORM: Registration Form */}
         {step === "register" && (
           <form onSubmit={handleRegisterSubmit} className="mt-6 space-y-4">
@@ -385,33 +375,33 @@ export default function RegisterPage() {
               name="name"
               value={form.name}
               onChange={handleChange}
+              onPaste={handlePaste}
               placeholder="Jane Wanjiru"
               autoComplete="name"
               required
             />
-
             <Input
               label="Phone Number"
               type="tel"
               name="phone"
               value={form.phone}
               onChange={handleChange}
+              onPaste={handlePaste}
               placeholder="0712345678"
               autoComplete="tel"
               required
             />
-
             <Input
               label="Email Address"
               type="email"
               name="email"
               value={form.email}
               onChange={handleChange}
+              onPaste={handlePaste}
               placeholder="jane@example.com"
               autoComplete="email"
               required={channel === "email"}
             />
-
             <div className="space-y-2">
               <label className="text-sm font-medium">Password</label>
               <PasswordInput
@@ -423,7 +413,6 @@ export default function RegisterPage() {
                 required
               />
             </div>
-
             <div className="space-y-2">
               <label className="text-sm font-medium">Confirm Password</label>
               <PasswordInput
@@ -435,20 +424,17 @@ export default function RegisterPage() {
                 required
               />
             </div>
-
             <OtpChannelSelect
               channels={availableChannels}
               value={channel}
               onChange={setChannel}
               disabled={submitting}
             />
-
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Creating account..." : "Create Account & Send OTP"}
             </Button>
           </form>
         )}
-
         {/* STEP 2 FORM: Mandatory 6-Digit Security OTP Verification */}
         {step === "otp" && (
           <form onSubmit={handleOtpSubmit} className="mt-6 space-y-4">
@@ -463,11 +449,9 @@ export default function RegisterPage() {
               className="text-center font-mono text-xl tracking-widest"
               required
             />
-
             <Button type="submit" className="w-full" disabled={submitting || workspacesLoading}>
               {submitting || workspacesLoading ? "Verifying Code..." : "Verify & Activate Account"}
             </Button>
-
             <div className="flex items-center justify-between pt-2 text-xs">
               <button
                 type="button"
@@ -477,7 +461,6 @@ export default function RegisterPage() {
               >
                 Resend OTP
               </button>
-
               <button
                 type="button"
                 onClick={() => {
@@ -492,7 +475,6 @@ export default function RegisterPage() {
             </div>
           </form>
         )}
-
         {/* STEP 3 (IF PRE-ASSIGNED): WORKSPACE PICKER FOR DESIGNATED MANAGEMENT */}
         {step === "workspace" && (
           <form onSubmit={handleOpenWorkspace} className="mt-6 space-y-4">
@@ -507,7 +489,6 @@ export default function RegisterPage() {
                 You have been set as management for the workspace below by the Platform Admin. Select your Chama to enter directly:
               </p>
             </div>
-
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                 Your Assigned Chama / Workspace
@@ -517,8 +498,6 @@ export default function RegisterPage() {
                 onChange={(e) => {
                   const wid = e.target.value;
                   setSelectedWorkspaceId(wid);
-                  const match = myWorkspaces.find((w) => String(w.id ?? w._id) === String(wid));
-                  if (match) setSelectedType(normalizeType(match.type));
                   setError("");
                 }}
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-violet-500 dark:bg-slate-900 text-sm font-medium"
@@ -537,12 +516,10 @@ export default function RegisterPage() {
                 })}
               </select>
             </div>
-
             <Button type="submit" className="w-full mt-2" disabled={!selectedWorkspaceId}>
               Enter Chama Workspace
               <ArrowRight size={16} />
             </Button>
-
             <div className="text-center pt-2">
               <button
                 type="button"
@@ -554,10 +531,9 @@ export default function RegisterPage() {
             </div>
           </form>
         )}
-
+Part 2
         {/* STEP 3: POST-OTP ONBOARDING & ACCESS SELECTION */}
         {step === "onboarding" && (
-
           <div className="mt-6 space-y-6">
             <div>
               <h3 className="text-sm font-black text-slate-900 dark:text-white">
@@ -567,7 +543,6 @@ export default function RegisterPage() {
                 Choose an organization type to discover verified workspaces or submit a creation request
               </p>
             </div>
-
             {/* Access Cards: Chama, Business, Contribution Group */}
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
               {[
@@ -581,7 +556,7 @@ export default function RegisterPage() {
                 {
                   type: "business",
                   title: "Join a Business",
-                  desc: "Access a business that has already been registered on Vericircle",
+                  desc: "Access a business that has already been registered on ChamaManager",
                   icon: Store,
                   color: "blue",
                 },
@@ -625,7 +600,6 @@ export default function RegisterPage() {
                 );
               })}
             </div>
-
             {/* Search Chamas / Workspaces */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -636,7 +610,6 @@ export default function RegisterPage() {
                   <span className="text-[10px] font-bold text-violet-600">Searching...</span>
                 )}
               </div>
-
               <input
                 type="text"
                 placeholder={`Search ${onboardingType === "chama" ? "Chamas (e.g. Umoja, Machakos...)" : "workspaces"}...`}
@@ -647,7 +620,6 @@ export default function RegisterPage() {
                 }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
-
               {/* Workspaces List */}
               {directoryLoading ? (
                 <div className="py-6 text-center text-xs text-slate-400">
@@ -688,7 +660,6 @@ export default function RegisterPage() {
                           )}
                         </div>
                       </div>
-
                       <Link
                         to="/chamas/join"
                         className="inline-flex items-center gap-1 rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-violet-700 transition"
@@ -700,7 +671,6 @@ export default function RegisterPage() {
                 </div>
               )}
             </div>
-
             {/* Can't find your Chama? Request Workspace Card */}
             <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-4 shadow-sm dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/20">
               <div className="flex items-start justify-between gap-4">
@@ -709,10 +679,9 @@ export default function RegisterPage() {
                     Can't find your {onboardingType === "chama" ? "Chama" : onboardingType === "business" ? "Business" : "Group"}?
                   </h4>
                   <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    Submit your committee details and Vericircle platform administration will create your workspace.
+                    Submit your committee details and ChamaManager platform administration will create your workspace.
                   </p>
                 </div>
-
                 <button
                   type="button"
                   onClick={() => setIsRequestModalOpen(true)}
@@ -723,7 +692,6 @@ export default function RegisterPage() {
                 </button>
               </div>
             </div>
-
             {/* If user belongs to an existing workspace, offer opening it */}
             {myWorkspaces.length > 0 && (
               <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 space-y-2">
@@ -754,7 +722,6 @@ export default function RegisterPage() {
                 </div>
               </div>
             )}
-
             {/* Continue to Platform */}
             <div>
               <button
@@ -768,7 +735,6 @@ export default function RegisterPage() {
             </div>
           </div>
         )}
-
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?{" "}
           <Link to="/login" className="font-medium text-primary">
@@ -776,7 +742,6 @@ export default function RegisterPage() {
           </Link>
         </p>
       </AuthCard>
-
       <WorkspaceRequestModal
         isOpen={isRequestModalOpen}
         onClose={() => setIsRequestModalOpen(false)}

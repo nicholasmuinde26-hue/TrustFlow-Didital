@@ -42,12 +42,17 @@ export async function ensureDefaultPlans() {
   }
 }
 
-export async function listPlans({ includeInactive = false } = {}) {
-  if (!includeInactive && plansCache.value && Date.now() - plansCache.at < 60_000) return plansCache.value;
+export async function listPlans({ includeInactive = false, organizationFamily = null } = {}) {
+  if (!includeInactive && plansCache.value && Date.now() - plansCache.at < 60_000) {
+    return organizationFamily ? plansCache.value.filter((p) => !p.organization_families?.length || p.organization_families.includes(organizationFamily)) : plansCache.value;
+  }
   const plans = await BillingPlan.find(includeInactive ? {} : { is_active: true }).sort({ sort_order: 1 }).lean();
   if (!includeInactive) plansCache = { at: Date.now(), value: plans };
-  return plans;
+  return organizationFamily ? plans.filter((p) => !p.organization_families?.length || p.organization_families.includes(organizationFamily)) : plans;
 }
+
+export const isPlanAvailableForFamily = (plan, family) =>
+  !family || !plan?.organization_families?.length || plan.organization_families.includes(family);
 
 export async function getPlan(code) {
   const plans = await listPlans({ includeInactive: true });

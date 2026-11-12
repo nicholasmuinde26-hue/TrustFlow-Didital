@@ -7,7 +7,8 @@
 import mongoose from "mongoose";
 import FinancialAccount from "../../../../models/FinancialAccount.js";
 import ContributionObligation from "../../../../models/ContributionObligation.js";
-import { resolvePlanLedgerAccount } from "../../../contributionPlan/planLedgerAccount.service.js";
+import ContributionPlan from "../../../../models/ContributionPlan.js";
+import { resolvePlanLedgerAccount, ensurePlanLedgerAccount } from "../../../contributionPlan/index.js";
 
 const canUseTransactions = () => {
   const topology = mongoose.connection?.client?.topology;
@@ -19,19 +20,35 @@ const getOpts = (session) => canUseTransactions() && session? { session } : {};
 
 // Resolve the plan behind this payment and return ITS ledger account, if it
 // has one (assigned when the plan was activated). Null = use the shared
-// MEMBER_CONTRIBUTIONS account exactly as before. Read-only: this never
-// creates an account, so a plan that started life on the shared account keeps
-// posting there for its whole life. Never blocks a payment.
+// MEMBER_CONTRIBUTIONS account exactly as before. Fine plans are the exception:
+// they lazily provision their dedicated account instead of mixing a receipt
+// into member contributions. A failed fine-account lookup fails closed.
 const resolvePlanCreditAccount = async (context, inner, metadata) => {
+    let resolvedPlanId = null;
     try {
         const obligationId = context?.obligationId || inner?.obligationId || metadata?.obligationId || metadata?.obligation_id;
-        let planId = context?.planId || inner?.planId || metadata?.planId || metadata?.plan_id || metadata?.contribution_plan_id;
-        if (!planId && obligationId) {
+        resolvedPlanId = context?.planId || inner?.planId || metadata?.planId || metadata?.plan_id || metadata?.contribution_plan_id;
+        if (!resolvedPlanId && obligationId) {
             const ob = await ContributionObligation.findById(obligationId).select("plan_id").lean();
-            planId = ob?.plan_id;
+            resolvedPlanId = ob?.plan_id;
         }
-        return await resolvePlanLedgerAccount(planId);
+        const assignedAccount = await resolvePlanLedgerAccount(resolvedPlanId);
+        if (assignedAccount || !resolvedPlanId) return assignedAccount;
+
+        // Fine plan receipts must never fall back into member contributions
+        // just because the fine sub-ledger has not been provisioned yet.
+        const plan = await ContributionPlan.findById(resolvedPlanId)
+            .select("owner_type owner_id behavior system_key ledger_account_id currency created_by")
+            .lean();
+        if (plan?.owner_type === "Chama" && (plan.behavior === "fine" || plan.system_key === "late_penalties")) {
+            return await ensurePlanLedgerAccount(plan, { actorUserId: context?.created_by || null });
+        }
+        return null;
     } catch (err) {
+        if (resolvedPlanId) {
+            const plan = await ContributionPlan.findById(resolvedPlanId).select("behavior system_key").lean().catch(() => null);
+            if (plan?.behavior === "fine" || plan?.system_key === "late_penalties") throw err;
+        }
         console.warn("[ContributionPaymentRule] plan ledger lookup failed, using shared account:", err.message);
         return null;
     }

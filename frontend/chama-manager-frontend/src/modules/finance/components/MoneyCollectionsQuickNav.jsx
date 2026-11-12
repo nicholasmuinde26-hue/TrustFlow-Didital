@@ -9,6 +9,7 @@ import {
   Send,
   Users,
   Wallet,
+  HandCoins,
 } from "lucide-react";
 
 import useWorkspace from "@/app/hooks/useWorkspace";
@@ -28,6 +29,7 @@ function moneyCollectionsTabs(base, isBurialChama) {
   const tabs = [
     { key: "dashboard", label: "Dashboard", icon: LayoutGrid, to: `${base}/finance` },
     { key: "contributions", label: "Contributions", icon: CircleDollarSign, to: `${base}/finance/contributions` },
+    { key: "fines", label: "My fines", icon: HandCoins, to: `${base}/finance/fines` },
     { key: "record-contribution", label: "Record Contribution", icon: PlusCircle, to: `${base}/finance/record-contribution` },
     {
       key: "savings",

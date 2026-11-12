@@ -11,16 +11,17 @@ import SupportCase from '../../models/SupportCase.js';
 import SupportNote from '../../models/SupportNote.js';
 import AppError from '../../utils/AppError.js';
 import { FREE_PLAN } from '../../constants/billing.constants.js';
-import { addDays, addMonths, computeAccess, nextPeriodStart } from '../billing/billing.logic.js';
+import { addDays, addMonths, computeAccess, nextPeriodStart } from '../billing/index.js';
 import {
   getEntitlement,
   getPlan,
   getOrCreateSubscription,
   invalidateEntitlement,
   listPlans,
-} from '../billing/billingEntitlement.service.js';
-import { applyPaidInvoiceToSubscription } from '../billing/billingPayment.service.js';
-import { generateAndSendOtp } from '../auth/auth.service.js';
+  isPlanAvailableForFamily,
+} from '../billing/index.js';
+import { applyPaidInvoiceToSubscription } from '../billing/index.js';
+import { generateAndSendOtp } from '../auth/index.js';
 
 /**
  * Platform support: billing help per chama, the payments-needing-review
@@ -148,14 +149,14 @@ export async function searchChamas({ query = '' }) {
 
 export async function getChamaBilling(chamaId) {
   if (!isId(chamaId)) throw new AppError('Invalid chama id', 400);
-  const chama = await Chama.findById(chamaId).select('name chama_type createdAt').lean();
+  const chama = await Chama.findById(chamaId).select('name chama_type organization_family createdAt').lean();
   if (!chama) throw new AppError('Chama not found', 404);
 
   const { subscription, plan, access } = await getEntitlement(chamaId);
   const [invoices, activeMembers, plans, openCases, leaders] = await Promise.all([
     Invoice.find({ chama_id: chamaId }).sort({ createdAt: -1 }).limit(40).lean(),
     ChamaMembership.countDocuments({ chama_id: chamaId, status: 'active' }),
-    listPlans({ includeInactive: false }),
+    listPlans({ includeInactive: false, organizationFamily: chama.organization_family || 'chama' }),
     SupportCase.countDocuments({ subject_type: 'chama', subject_id: chamaId, status: { $in: ['open', 'pending'] } }),
     ChamaMembership.find({ chama_id: chamaId, status: 'active', role: { $in: ['chairperson', 'treasurer'] } })
       .populate('user_id', 'name phone')
@@ -163,7 +164,7 @@ export async function getChamaBilling(chamaId) {
   ]);
 
   return {
-    chama: { _id: chama._id, name: chama.name, chama_type: chama.chama_type, created_at: chama.createdAt },
+    chama: { _id: chama._id, name: chama.name, chama_type: chama.chama_type, organization_family: chama.organization_family || 'chama', created_at: chama.createdAt },
     subscription: {
       plan_code: subscription.plan_code,
       plan_name: plan?.name,
@@ -230,6 +231,8 @@ export async function compPlan(chamaId, { plan_code: planCode, months, reason },
   const code = String(planCode || '').toLowerCase().trim();
   const plan = await getPlan(code);
   if (!plan || !plan.is_active || code === FREE_PLAN) throw new AppError('Choose an active paid plan', 400);
+  const organization = await Chama.findById(chamaId).select('organization_family').lean();
+  if (!organization || !isPlanAvailableForFamily(plan, organization.organization_family || 'chama')) throw new AppError('That plan is not available for this organization type', 400);
   const m = Number(months);
   if (!Number.isInteger(m) || m < 1 || m > 12) throw new AppError('Comp for 1 to 12 months', 400);
 
@@ -262,6 +265,8 @@ export async function changePlan(chamaId, { plan_code: planCode, reason }, actor
   const code = String(planCode || '').toLowerCase().trim();
   const plan = await getPlan(code);
   if (!plan || !plan.is_active) throw new AppError('Choose an active plan', 400);
+  const organization = await Chama.findById(chamaId).select('organization_family').lean();
+  if (!organization || !isPlanAvailableForFamily(plan, organization.organization_family || 'chama')) throw new AppError('That plan is not available for this organization type', 400);
 
   const sub = await getOrCreateSubscription(chamaId);
   if (sub.plan_code === code) throw new AppError('The chama is already on that plan', 400);

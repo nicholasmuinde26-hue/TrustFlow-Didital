@@ -1,5 +1,5 @@
 import Chama from '../models/Chama.js';
-import { runCalendarForChama } from '../modules/contributionPlan/contributioncalendar.service.js';
+import { runCalendarForChama } from '../modules/contributionPlan/index.js';
 
 let running = false;
 

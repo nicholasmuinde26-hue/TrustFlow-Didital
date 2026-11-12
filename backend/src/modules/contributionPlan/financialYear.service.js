@@ -1,7 +1,6 @@
 import ChamaFinancialYear from '../../models/Chamafinancialyear.js';
 import AppError from '../../utils/AppError.js';
-import { beginClose } from '../yearEnd/yearEnd.service.js';
-import { yearsOverlap } from '../yearEnd/yearEnd.period.js';
+import { beginClose, yearsOverlap } from '../yearEnd/index.js';
 
 export const getActiveYear = async (chamaId, now = new Date()) => {
   return ChamaFinancialYear.findOne({

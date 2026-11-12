@@ -6,22 +6,23 @@ import ChamaMembership from '../../models/ChamaMembership.js';
 import ContributionPlan from '../../models/ContributionPlan.js';
 import ContributionObligation from '../../models/ContributionObligation.js';
 import PlatformInquiry from '../../models/PlatformInquiry.js';
-import Meeting from '../../models/Meeting.js';
+import { listUpcomingMeetings } from '../meetings/index.js';
 import Beneficiary from '../../models/Beneficiary.js';
 import BurialChamaProfile from '../../models/BurialChamaProfile.js';
 import ContributionPayment from '../../models/ContributionPayment.js';
 import ChamaMeetingRecord from '../../models/ChamaMeetingRecord.js';
-import Announcement from '../../models/Announcement.js';
+import { listLatestApprovedForWorkspace } from '../announcements/index.js';
 import ChamaGoal from '../../models/ChamaGoal.js';
 import phoneUtil from '../../utils/phone.js';
 import { listPayablePlans, initiatePlanPayment } from './ussd.payments.js';
-import { getMemberSavingsBalance } from '../savingsShareout/savingsShareout.service.js';
+import { getMemberSavingsBalance } from '../savingsShareout/index.js';
 import { toDecimal } from '../../shared/decimal.js';
-import { applyForLoan } from '../loans/Loanapplication.service.js';
-import { getMemberLoanSummary } from '../loans/Loandashboard.service.js';
-import { getCurrentPayout } from '../payout/payout.service.js';
+import { applyForLoan } from '../loans/index.js';
+import { getMemberLoanSummary } from '../loans/index.js';
+import { getCurrentPayout } from '../payout/index.js';
 import { isModuleEnabled } from '../../constants/workspaceModules.constants.js';
 import { t, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from './ussd.i18n.js';
+import { organizationLabel, organizationPlural, localizeOrganizationTerms } from '../../utils/organizationTerminology.js';
 
 // ======================================================================
 // CHAMA-FIRST USSD MENU SERVICE  (v3)
@@ -347,15 +348,20 @@ class UssdMenuService {
     if (!user) return [];
     const rows = await ChamaMembership.find({ user_id: user._id, status: 'active' })
       .sort({ joined_at: 1 })
-      .populate('chama_id', 'name monthly_savings chama_type workspace_config')
+      .populate('chama_id', 'name monthly_savings chama_type organization_family organization_type workspace_config')
       .lean();
     const usable = rows.filter((m) => m.chama_id);
     return (filter ? usable.filter(filter) : usable).slice(0, MAX_CHAMAS_SHOWN);
   }
 
   static chamaListScreen(ctx, memberships, title) {
+    const families = [...new Set(memberships.map((m) => m.chama_id?.organization_family || 'chama'))];
+    const family = families.length === 1 ? families[0] : 'organization';
+    const label = family === 'organization' ? 'organization' : organizationLabel(family);
+    const plural = family === 'organization' ? 'organizations' : organizationPlural(label, family);
+    const localizedTitle = localizeOrganizationTerms(title, label, plural);
     const lines = memberships.map((m, i) => `${i + 1}. ${shortName(m.chama_id?.name, ctx.lang)}`);
-    return this.con(`${title}\n${lines.join('\n')}`);
+    return this.con(`${localizedTitle}\n${lines.join('\n')}`);
   }
 
   static chamaIdOf(membership) {
@@ -588,15 +594,9 @@ class UssdMenuService {
     const chamaId = this.chamaIdOf(membership);
 
     const [upcoming, live, announcements] = await Promise.all([
-      Meeting.find({ workspace_id: chamaId, workspace_type: 'Chama', cancelled_at: null, starts_at: { $gte: new Date() } })
-        .sort({ starts_at: 1 })
-        .limit(2)
-        .lean(),
+      listUpcomingMeetings({ workspaceId: chamaId, workspaceType: 'Chama', limit: 2 }),
       ChamaMeetingRecord.find({ chama_id: chamaId, status: 'live' }).sort({ createdAt: -1 }).limit(1).lean(),
-      Announcement.find({ workspace_id: chamaId, workspace_type: 'chama', status: 'approved' })
-        .sort({ is_pinned: -1, createdAt: -1 })
-        .limit(2)
-        .lean(),
+      listLatestApprovedForWorkspace(chamaId, 'chama', 2),
     ]);
 
     if (!upcoming.length && !live.length && !announcements.length) return this.end(t(lang, 'news_none'));

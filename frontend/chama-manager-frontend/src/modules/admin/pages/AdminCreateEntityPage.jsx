@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Building2,
   Store,
-  Wallet,
   Plus,
   Trash2,
   CheckCircle2,
@@ -12,11 +11,14 @@ import {
   Info,
 } from "lucide-react";
 import api from "@/app/services/api";
+import { WorkspaceSetupPicker } from '@/modules/workspaces/index.js';
 
 export default function AdminCreateEntityPage() {
   const [entityType, setEntityType] = useState("chama");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("standard");
+  // Organization family/type + enabled modules + renamed modules (chama / sacco / cooperative).
+  const [setup, setSetup] = useState({ preset: "", modules: [], organizationFamily: "chama", organizationType: "custom", moduleLabels: {} });
   const [monthlySavings, setMonthlySavings] = useState(1000);
 
   // Client Chairperson / Lead (NOT the admin!)
@@ -49,13 +51,6 @@ export default function AdminCreateEntityPage() {
 
   // Business Client Owner
   const [businessOwner, setBusinessOwner] = useState({
-    name: "",
-    phone: "",
-    email: "",
-  });
-
-  // Contribution Group Client Organizer
-  const [groupOrganizer, setGroupOrganizer] = useState({
     name: "",
     phone: "",
     email: "",
@@ -127,7 +122,12 @@ export default function AdminCreateEntityPage() {
         await api.post("/chamas", {
           name: name.trim(),
           monthlySavings: Number(monthlySavings) || 1000,
-          chamaType: category === "burial" ? "burial" : "standard",
+          chamaType: setup.modules.includes("burial_welfare") ? "burial" : "standard",
+          organizationFamily: setup.organizationFamily,
+          organizationType: setup.organizationType,
+          workspaceModules: setup.modules.length
+            ? { preset: setup.preset, modules: setup.modules, moduleLabels: setup.moduleLabels }
+            : undefined,
           visibility: "public",
           chairpersonInput: chairperson.phone || chairperson.email,
           chairpersonName: chairperson.name || "Chairperson",
@@ -167,25 +167,6 @@ export default function AdminCreateEntityPage() {
         setNotice(
           `Business "${name}" created successfully! The client owner (${businessOwner.name || businessOwner.phone}) can now log in or register to access their business dashboard.`
         );
-      } else if (entityType === "contribution_group") {
-        if (!groupOrganizer.phone && !groupOrganizer.email) {
-          setError("Group Organizer phone number or email is required.");
-          setLoading(false);
-          return;
-        }
-
-        await api.post("/contribution-groups", {
-          name: name.trim(),
-          group_type: category || "community",
-          organizerInput: groupOrganizer.phone || groupOrganizer.email,
-          organizerName: groupOrganizer.name || "Group Organizer",
-          organizerPhone: groupOrganizer.phone,
-          organizerEmail: groupOrganizer.email,
-        });
-
-        setNotice(
-          `Contribution Group "${name}" created successfully! The client organizer (${groupOrganizer.name || groupOrganizer.phone}) can now log in or register to manage contributions.`
-        );
       }
 
       // Reset form
@@ -199,7 +180,6 @@ export default function AdminCreateEntityPage() {
         { name: "", phone: "", email: "", role: "Committee Member" },
       ]);
       setBusinessOwner({ name: "", phone: "", email: "" });
-      setGroupOrganizer({ name: "", phone: "", email: "" });
     } catch (err) {
       setError(
         err?.response?.data?.message ||
@@ -214,10 +194,10 @@ export default function AdminCreateEntityPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-black text-slate-900 dark:text-white">
-          Create Workspace for Client
+          Create Chama or Business for Client
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Admin privilege: create a verified Chama, Business, or Contribution Group and assign client management. You will not be added as a chairperson or member.
+          Admin privilege: create a Chama or Business and assign client management. Contribution Groups must be requested by their organizer and reviewed before activation.
         </p>
       </div>
 
@@ -247,11 +227,10 @@ export default function AdminCreateEntityPage() {
         className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 space-y-6"
       >
         {/* Entity Type Picker */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {[
             { type: "chama", label: "Chama", icon: Building2 },
             { type: "business", label: "Business", icon: Store },
-            { type: "contribution_group", label: "Contribution Group", icon: Wallet },
           ].map((et) => {
             const Icon = et.icon;
             const isSelected = entityType === et.type;
@@ -263,7 +242,6 @@ export default function AdminCreateEntityPage() {
                   setEntityType(et.type);
                   if (et.type === "chama") setCategory("standard");
                   else if (et.type === "business") setCategory("retail");
-                  else if (et.type === "contribution_group") setCategory("community");
                 }}
                 className={`flex flex-col items-center gap-2 rounded-2xl border p-3.5 text-center transition ${
                   isSelected
@@ -282,32 +260,28 @@ export default function AdminCreateEntityPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              {entityType === "chama" ? "Chama Name *" : entityType === "business" ? "Business Name *" : "Group Name *"}
+              {entityType === "chama" ? "Chama Name *" : "Business Name *"}
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={entityType === "chama" ? "e.g. Umoja Women Welfare Chama" : entityType === "business" ? "e.g. Nairobi Hardware & Supplies" : "e.g. Kangundo Medical Fund"}
+              placeholder={entityType === "chama" ? "e.g. Umoja Women Welfare Chama" : "e.g. Nairobi Hardware & Supplies"}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
 
           {entityType === "chama" && (
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Chama Type
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="standard">Standard Rotating / Savings</option>
-                  <option value="burial">Burial & Welfare Chama</option>
-                </select>
+              <div className="col-span-2">
+                <WorkspaceSetupPicker
+                  value={setup}
+                  onChange={setSetup}
+                  defaultPreset="standard"
+                  showOrganization
+                  allowRename
+                />
               </div>
 
               <div>
@@ -344,28 +318,6 @@ export default function AdminCreateEntityPage() {
             </div>
           )}
 
-          {entityType === "contribution_group" && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Group Type / Cause
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium outline-none focus:border-violet-600 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="community">Community Fund</option>
-                <option value="fundraiser">Fundraiser</option>
-                <option value="emergency">Emergency Relief</option>
-                <option value="wedding">Wedding Contribution</option>
-                <option value="party">Celebration / Party</option>
-                <option value="graduation">Graduation</option>
-                <option value="funeral">Funeral / Welfare</option>
-                <option value="birthday">Birthday</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-          )}
         </div>
 
         {/* CHAMA LEADERSHIP SECTION */}
@@ -550,46 +502,6 @@ export default function AdminCreateEntityPage() {
                   value={businessOwner.email}
                   onChange={(e) => setBusinessOwner((prev) => ({ ...prev, email: e.target.value }))}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CONTRIBUTION GROUP ORGANIZER SECTION */}
-        {entityType === "contribution_group" && (
-          <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <Users size={15} className="text-emerald-600" />
-              Designate Client Organizer
-            </h3>
-
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20 space-y-3">
-              <h4 className="text-xs font-black uppercase text-emerald-900 dark:text-emerald-300">
-                Group Organizer *
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <input
-                  type="text"
-                  placeholder="Full Name"
-                  value={groupOrganizer.name}
-                  onChange={(e) => setGroupOrganizer((prev) => ({ ...prev, name: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                />
-                <input
-                  type="text"
-                  required
-                  placeholder="Phone (07XXXXXXXX) *"
-                  value={groupOrganizer.phone}
-                  onChange={(e) => setGroupOrganizer((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                />
-                <input
-                  type="email"
-                  placeholder="Email (optional)"
-                  value={groupOrganizer.email}
-                  onChange={(e) => setGroupOrganizer((prev) => ({ ...prev, email: e.target.value }))}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-emerald-600 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>

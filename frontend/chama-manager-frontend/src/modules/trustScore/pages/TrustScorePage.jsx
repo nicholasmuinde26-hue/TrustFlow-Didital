@@ -10,7 +10,7 @@ import Spinner from "@/shared/components/ui/Spinner";
 import Badge from "@/shared/components/ui/Badge";
 
 import { useWorkspace } from "@/app/hooks/useWorkspace";
-import { canManageTrustScore } from "@/modules/workspaces/permissions/Permissions";
+import { canManageTrustScore } from '@/modules/workspaces/index.js';
 
 import {
   useTrustScore,

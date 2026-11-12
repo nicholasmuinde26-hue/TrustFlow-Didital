@@ -12,6 +12,8 @@ import {
   updateSubAdminPermissionsController,
   demoteSubAdminController,
   listWorkspaceRequestsController,
+  listPublicGivingReportsController,
+  reviewPublicGivingReportsController,
   getWorkspaceRequestController,
   updateWorkspaceRequestController,
   approveWorkspaceRequestController,
@@ -95,6 +97,8 @@ router.delete('/sub-admins/:userId', requireSuperAdmin, requireAdminStepUp, demo
 // deciding on it both require the `onboarding` permission (Onboarding and
 // Operations categories carry it by default; Super Admin always does).
 router.get('/workspace-requests', requireAdminPermission('onboarding'), listWorkspaceRequestsController);
+router.get('/public-giving/reports', requireAdminPermission('onboarding'), listPublicGivingReportsController);
+router.post('/public-giving/:groupId/review', requireAdminPermission('onboarding'), reviewPublicGivingReportsController);
 router.get('/workspace-requests/:requestId', requireAdminPermission('onboarding'), getWorkspaceRequestController);
 router.patch('/workspace-requests/:requestId', requireAdminPermission('onboarding'), updateWorkspaceRequestController);
 router.post('/workspace-requests/:requestId/approve', requireAdminPermission('onboarding'), approveWorkspaceRequestController);

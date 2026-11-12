@@ -11,12 +11,12 @@ import {
 } from "./chat.permissions.js";
 import AppError from "../../utils/AppError.js";
 import { notifyWorkspaceMessage, notifyDirectMessage } from "./chatNotifications.service.js";
-import { sendChatMessageToWorkspace } from "../realtime/socketServer.js";
+import { sendChatMessageToWorkspace } from "../realtime/index.js";
 
 import Chama from "../../models/Chama.js";
 import ContributionGroup from "../../models/ContributionGroup.js";
 import User from "../../models/User.js";
-import ChatMessage from "../../models/ChatMessage.js";
+import ChatMessage from "./ChatMessage.model.js";
 import ChamaMembership from "../../models/ChamaMembership.js";
 import ContributionGroupMember from "../../models/ContributionGroupMember.js";
 

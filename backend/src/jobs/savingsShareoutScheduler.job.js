@@ -16,7 +16,7 @@
 import SavingsSharePolicy from '../models/SavingsSharePolicy.js';
 import Chama from '../models/Chama.js';
 import { isModuleEnabled } from '../constants/workspaceModules.constants.js';
-import { createShareout } from '../modules/savingsShareout/savingsShareout.service.js';
+import { createShareout } from '../modules/savingsShareout/index.js';
 
 const SWEEP_INTERVAL_MS = Number(process.env.SAVINGS_SHAREOUT_SCHEDULER_INTERVAL_MS) || 6 * 60 * 60 * 1000; // every 6h
 

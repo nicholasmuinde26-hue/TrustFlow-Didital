@@ -30,7 +30,7 @@ const paymentIntentSchema = new mongoose.Schema(
     },
     participant_type: {
       type: String,
-      enum: ['ChamaMembership', 'ContributionGroupMember'],
+      enum: ['ChamaMembership', 'ContributionGroupMember', 'ContributionDonor'],
       required: true
     },
     participant_id: {
@@ -105,6 +105,9 @@ const paymentIntentSchema = new mongoose.Schema(
     failure_code: { type: String, default: null },
     failure_reason: { type: String, default: null },
     provider_response: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Carries routing and idempotency metadata from PaymentContext. This must
+    // be persisted so the independent Giving API can own GIVE-* callbacks.
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
     contribution_payment_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ContributionPayment',
@@ -116,7 +119,7 @@ const paymentIntentSchema = new mongoose.Schema(
       ref: 'FinancialTransaction',
       default: null
     },
-    created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     completed_at: { type: Date, default: null },
     failed_at: { type: Date, default: null }
   },

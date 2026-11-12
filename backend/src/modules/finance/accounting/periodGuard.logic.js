@@ -6,7 +6,7 @@
 // periodGuard.service.js wires in the real one.
 
 import AppError from '../../../utils/AppError.js';
-import { asObjectIdString, closedYearFilter } from '../../yearEnd/yearEnd.period.js';
+import { asObjectIdString, closedYearFilter } from '../../yearEnd/index.js';
 
 export const PERIOD_CLOSED = 'PERIOD_CLOSED';
 

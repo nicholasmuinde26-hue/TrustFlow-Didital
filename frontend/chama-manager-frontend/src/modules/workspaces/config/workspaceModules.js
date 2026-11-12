@@ -3,8 +3,9 @@
  * ---------------------------------
  * The backend decides WHICH modules a chama has
  * (be/src/constants/workspaceModules.constants.js) and sends the enabled keys
- * with every workspace as `workspace.modules`. This file only knows which
- * ROUTES belong to which module, so one map drives:
+ * with every workspace as `workspace.modules`. Core routes stay listed here;
+ * feature modules contribute workspace paths from their registration files.
+ * One map drives:
  *
  *   - sidebar / drawer / command-palette navigation  (workspaceNavigation.js)
  *   - the route guard in WorkspaceLayout              (deep links)
@@ -21,6 +22,15 @@
  * payload, contribution groups, businesses): nothing is hidden.
  */
 
+import { announcementsRegistration } from "@/modules/announcements/index.js";
+import { chatRegistration } from "@/modules/chat/index.js";
+import { meetingsRegistration } from "@/modules/meetings/index.js";
+import { pollsRegistration } from "@/modules/polls/index.js";
+
+const REGISTERED_WORKSPACE_PATHS = Object.fromEntries(
+  [chatRegistration, meetingsRegistration, pollsRegistration, announcementsRegistration].map(({ key, workspacePaths }) => [key, workspacePaths])
+);
+
 export const MODULE_ROUTES = {
   contributions: ["contributions", "finance/contributions", "finance/record-contribution", "chama-contributions"],
   savings: ["finance/savings"],
@@ -30,10 +40,7 @@ export const MODULE_ROUTES = {
   withdrawals: ["finance/withdrawals"],
   loans: ["loans"],
   assets: ["assets"],
-  meetings: ["meetings"],
-  polls: ["polls"],
-  announcements: ["announcements"],
-  chat: ["chat"],
+  ...REGISTERED_WORKSPACE_PATHS,
   trust: ["trust-score", "trust-timeline"],
   officials: ["officials"],
   disputes: ["disputes"],

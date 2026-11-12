@@ -58,7 +58,10 @@ export function validateInitiatePayment(context) {
     const ownerType = context.ownerType || context.owner_type || (context.chamaId ? "Chama" : "ContributionGroup");
 
     // Required fields for PaymentIntent schema
-    if (!actorId) throw new PaymentValidationError("actorId is required.");
+    const isPublicDonation = context.publicDonation === true || context.metadata?.publicDonation === true;
+    if (!actorId && !(isPublicDonation && participantType === "ContributionDonor")) {
+        throw new PaymentValidationError("actorId is required.");
+    }
     if (!participantId) throw new PaymentValidationError("participantId is required.");
     if (!ownerId) throw new PaymentValidationError("workspaceId/ownerId is required.");
 

@@ -2,14 +2,14 @@ import { useEffect } from "react";
 import { AlertTriangle, Lock, Info } from "lucide-react";
 
 import Spinner from "@/shared/components/ui/Spinner";
-import { useModuleCatalog } from "../hooks/useWorkspaceModules";
+import { useModuleCatalog } from '../hooks/useWorkspaceModules.js';
 import {
   dependencyProblems,
   dependentsOf,
   matchPreset,
   withLocked,
   withPrerequisites,
-} from "../utils/moduleSelection";
+} from '../utils/moduleSelection.js';
 
 /**
  * Workspace Setup - ONE component for the three places a chama's feature set
@@ -30,6 +30,11 @@ import {
  *   readOnly   render the selection without controls
  *   defaultPreset  preset key to fill in once, when `value.modules` is empty
  *              (a form that starts with no selection yet)
+ *   showOrganization  show the family (Chama / SACCO / Cooperative) and type
+ *              pickers. Choosing a type loads its preset; value then also
+ *              carries organizationFamily + organizationType.
+ *   allowRename  show a "Rename features" section; value then also carries
+ *              moduleLabels { moduleKey: "Custom name" }.
  *
  * Validity (for disabling a Submit button) is dependencyProblems(catalog,
  * value.modules).length === 0 - see utils/moduleSelection.js.
@@ -41,6 +46,8 @@ export default function WorkspaceSetupPicker({
   blocked = {},
   readOnly = false,
   defaultPreset = null,
+  showOrganization = false,
+  allowRename = false,
 }) {
   const { data: catalog, isLoading, isError, refetch } = useModuleCatalog();
 
@@ -49,7 +56,7 @@ export default function WorkspaceSetupPicker({
   useEffect(() => {
     if (!catalog || readOnly || !defaultPreset || !empty) return;
     const preset = catalog.presets.find((p) => p.key === defaultPreset);
-    if (preset) onChange?.({ preset: preset.key, modules: preset.modules });
+    if (preset) onChange?.({ ...value, preset: preset.key, modules: preset.modules });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog, defaultPreset, empty, readOnly]);
 
@@ -77,9 +84,48 @@ export default function WorkspaceSetupPicker({
   const problems = dependencyProblems(catalog, selected);
   const labelOf = (key) => catalog.modules.find((m) => m.key === key)?.label || key;
 
-  const emit = (modules, preset) => {
+  const emit = (modules, preset, extra = {}) => {
     const next = withLocked(catalog, modules);
-    onChange?.({ preset: preset ?? matchPreset(catalog, next), modules: next });
+    onChange?.({ ...value, preset: preset ?? matchPreset(catalog, next), modules: next, ...extra });
+  };
+
+  const families = catalog.organizations || [];
+  const family = families.find((f) => f.key === (value?.organizationFamily || "chama")) || families[0];
+  const labels = value?.moduleLabels || {};
+
+  // With the organization selector on, only show presets that belong to the
+  // chosen family (a SACCO never sees Merry-go-round, a chama never sees
+  // Housing SACCO). Without it (e.g. Governance Settings) show everything.
+  const familyPresetKeys = new Set([
+    ...family?.types.map((t) => t.preset) || [],
+    ...(family?.key === "chama" ? ["standard"] : []),
+  ]);
+  const visiblePresets = showOrganization && family
+    ? catalog.presets.filter((p) => familyPresetKeys.has(p.key))
+    : catalog.presets;
+
+  const pickFamily = (familyKey) => {
+    if (readOnly) return;
+    const next = families.find((f) => f.key === familyKey);
+    if (next) pickType(next, next.types[0]);
+  };
+
+  // Choosing a type loads that type's starting modules; the admin then adds,
+  // removes or renames from there.
+  const pickType = (familyObj, type) => {
+    if (readOnly || !type) return;
+    const preset = catalog.presets.find((p) => p.key === type.preset);
+    const keepBlocked = Object.keys(blocked).filter((k) => (baseline || []).includes(k));
+    emit([...(preset?.modules || []), ...keepBlocked], preset?.key, {
+      organizationFamily: familyObj.key,
+      organizationType: type.key,
+    });
+  };
+
+  const setLabel = (key, text) => {
+    const next = { ...labels };
+    if (text.trim()) next[key] = text; else delete next[key];
+    onChange?.({ ...value, moduleLabels: next });
   };
 
   const pickPreset = (preset) => {
@@ -108,6 +154,46 @@ export default function WorkspaceSetupPicker({
 
   return (
     <div className="space-y-5">
+      {/* 0. Organization family + type */}
+      {showOrganization && family && (
+        <div>
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+            Organization type
+          </h4>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {families.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                disabled={readOnly}
+                aria-pressed={family.key === f.key}
+                onClick={() => pickFamily(f.key)}
+                className={`rounded-2xl border p-3 text-xs font-bold transition ${
+                  family.key === f.key
+                    ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500 dark:bg-emerald-950/30"
+                    : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <select
+            value={value?.organizationType || family.types[0]?.key}
+            disabled={readOnly}
+            onChange={(e) => pickType(family, family.types.find((t) => t.key === e.target.value))}
+            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          >
+            {family.types.map((t) => (
+              <option key={t.key} value={t.key}>{t.label}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Picking a type loads its default features. You can add, remove or rename any of them below.
+          </p>
+        </div>
+      )}
+
       {/* 1. Preset picker */}
       <div>
         <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
@@ -118,7 +204,7 @@ export default function WorkspaceSetupPicker({
         </p>
 
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {catalog.presets.map((preset) => {
+          {visiblePresets.map((preset) => {
             const active = activePreset === preset.key;
             return (
               <button
@@ -252,6 +338,18 @@ export default function WorkspaceSetupPicker({
                         <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
                           {module.description}
                         </span>
+
+                        {allowRename && isOn && !module.locked && (
+                          <input
+                            value={labels[module.key] || ""}
+                            maxLength={60}
+                            disabled={readOnly}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setLabel(module.key, e.target.value)}
+                            placeholder={`Rename "${module.label}" (optional)`}
+                            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        )}
 
                         {isOn && needs.length > 0 && (
                           <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
